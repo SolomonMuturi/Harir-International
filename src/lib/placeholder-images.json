@@ -1,0 +1,16 @@
+{
+  "placeholderImages": [
+    {
+      "id": "vms-map",
+      "description": "A placeholder map for the VMS/IoT dashboard widget.",
+      "imageUrl": "https://images.unsplash.com/photo-1476385822777-70eabacbd41f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxjaXR5JTIwbWFwfGVufDB8fHx8MTc1ODk3NjgzMnww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "city map"
+    },
+    {
+      "id": "traceability-map",
+      "description": "A placeholder map for the traceability page.",
+      "imageUrl": "https://images.unsplash.com/photo-1593895648975-6c8c11435f30?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxyb3V0ZSUyMG1hcHxlbnwwfHx8fDE3NTkwMTE1ODl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "route map"
+    }
+  ]
+}

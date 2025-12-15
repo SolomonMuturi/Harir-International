@@ -14,9 +14,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '../ui/textarea';
 import { Separator } from '../ui/separator';
-import { Printer, QrCode, Truck, User, Building, Clock, Calendar } from 'lucide-react';
+import { Printer, QrCode, User, Building, Clock, Calendar } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -25,22 +24,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
-import { Label } from '../ui/label';
 
 const formSchema = z.object({
-  // Visitor/Supplier Type
-  visitorType: z.enum(['visitor', 'supplier'], {
-    required_error: "Please select visitor type",
-  }),
-  
   // Basic Information
-  driverName: z.string().min(2, {
-    message: 'Driver name must be at least 2 characters.',
+  visitorName: z.string().min(2, {
+    message: 'Visitor name must be at least 2 characters.',
   }),
-  vehicleRegNo: z.string().min(1, {
-    message: 'Vehicle registration number is required.',
-  }),
+  vehicleRegNo: z.string().optional(),
   idNumber: z.string().min(5, {
     message: 'ID number must be at least 5 characters.',
   }),
@@ -58,27 +48,10 @@ const formSchema = z.object({
   signOutTime: z.string().optional(),
   
   // Visitor-specific fields
-  department: z.string().optional(),
-  
-  // Supplier-specific fields
-  supplierName: z.string().optional(),
-  cargoDescription: z.string().optional(),
-}).refine(data => {
-    if (data.visitorType === 'visitor' && !data.department) {
-        return false;
-    }
-    return true;
-}, {
-    message: 'Department is required for visitors.',
-    path: ['department'],
-}).refine(data => {
-    if (data.visitorType === 'supplier' && !data.supplierName) {
-        return false;
-    }
-    return true;
-}, {
-    message: 'Supplier name is required for suppliers.',
-    path: ['supplierName'],
+  department: z.string().min(1, {
+    message: 'Department is required.',
+  }),
+  purpose: z.string().optional(),
 });
 
 export type VisitorFormValues = z.infer<typeof formSchema>;
@@ -93,8 +66,7 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
   const form = useForm<VisitorFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      visitorType: 'visitor',
-      driverName: '',
+      visitorName: '',
       vehicleRegNo: '',
       idNumber: '',
       phoneNumber: '',
@@ -102,64 +74,26 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
       signInTime: '',
       signOutTime: '',
       department: '',
-      supplierName: '',
-      cargoDescription: '',
+      purpose: '',
     },
   });
 
   const verificationUrl = typeof window !== 'undefined' ? `${window.location.origin}/self-register` : '';
-  const watchVisitorType = form.watch('visitorType');
 
   return (
     <>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Visitor Type Selection */}
-          <FormField
-            control={form.control}
-            name="visitorType"
-            render={({ field }) => (
-              <FormItem className="space-y-3">
-                <FormLabel>Visitor Type</FormLabel>
-                <FormControl>
-                  <RadioGroup
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    className="flex space-x-4"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="visitor" id="visitor" />
-                      <Label htmlFor="visitor" className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        Visitor
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="supplier" id="supplier" />
-                      <Label htmlFor="supplier" className="flex items-center gap-2">
-                        <Truck className="h-4 w-4" />
-                        Supplier
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <Separator />
-
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
-              name="driverName"
+              name="visitorName"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    Driver Name
+                    Visitor Name
                   </FormLabel>
                   <FormControl>
                     <Input placeholder="e.g. John Doe" {...field} />
@@ -175,8 +109,12 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-2">
-                    <Truck className="h-4 w-4" />
-                    Vehicle Registration No.
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                      <path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"/>
+                      <circle cx="6.5" cy="16.5" r="2.5"/>
+                      <circle cx="16.5" cy="16.5" r="2.5"/>
+                    </svg>
+                    Vehicle Registration No. (Optional)
                   </FormLabel>
                   <FormControl>
                     <Input placeholder="e.g. KDA 123B" {...field} />
@@ -214,6 +152,8 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
               )}
             />
           </div>
+
+          <Separator />
 
           {/* Date and Time Information */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -269,8 +209,10 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
             />
           </div>
 
-          {/* Visitor/Supplier Specific Fields */}
-          {watchVisitorType === 'visitor' && (
+          <Separator />
+
+          {/* Visitor Specific Fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="department"
@@ -293,6 +235,9 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
                         <SelectItem value="security">Security</SelectItem>
                         <SelectItem value="operations">Operations</SelectItem>
                         <SelectItem value="management">Management</SelectItem>
+                        <SelectItem value="it">IT Department</SelectItem>
+                        <SelectItem value="sales">Sales</SelectItem>
+                        <SelectItem value="marketing">Marketing</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormControl>
@@ -300,42 +245,21 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
                 </FormItem>
               )}
             />
-          )}
-
-          {watchVisitorType === 'supplier' && (
-            <>
-              <FormField
-                control={form.control}
-                name="supplierName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Supplier Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. Fresh Farms Inc." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="cargoDescription"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cargo Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Describe the goods being delivered"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </>
-          )}
+            
+            <FormField
+              control={form.control}
+              name="purpose"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Purpose of Visit (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. Meeting, Delivery, Interview" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
           <Separator />
 
@@ -350,7 +274,7 @@ export function CreateVisitorForm({ onSubmit }: CreateVisitorFormProps) {
               Show Self-Registration QR
             </Button>
             <Button type="submit">
-              Register Entry
+              Register Visitor
             </Button>
           </div>
         </form>

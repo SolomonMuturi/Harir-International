@@ -144,7 +144,28 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const id = searchParams.get('id'); // Add this line
     
+    // Handle single carrier request by ID
+    if (id) {
+      const carrier = await prisma.$queryRaw`
+        SELECT * FROM carriers WHERE id = ${id}
+      `;
+      
+      if (!Array.isArray(carrier) || carrier.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'Carrier not found'
+        }, { status: 404 });
+      }
+      
+      return NextResponse.json({
+        success: true,
+        data: carrier[0]
+      });
+    }
+    
+    // Original logic for multiple carriers
     let sql = 'SELECT * FROM carriers';
     const conditions = [];
     const params = [];
@@ -179,10 +200,54 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ GET Error:', error.message);
     return NextResponse.json({
+      success: false,
+      error: 'Failed to fetch carriers'
+    }, { status: 500 });
+  }
+}
+// Add this to your existing route.ts file
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json({
+        success: false,
+        error: 'Carrier ID is required'
+      }, { status: 400 });
+    }
+    
+    console.log(`🗑️ DELETE /api/carriers?id=${id}`);
+    
+    // Check if carrier exists
+    const existing = await prisma.$queryRaw`
+      SELECT id FROM carriers WHERE id = ${id}
+    `;
+    
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'Carrier not found'
+      }, { status: 404 });
+    }
+    
+    // Delete carrier
+    await prisma.$executeRaw`
+      DELETE FROM carriers WHERE id = ${id}
+    `;
+    
+    return NextResponse.json({
       success: true,
-      data: [], // Return empty array on error
-      count: 0,
-      message: 'Using fallback data'
+      message: 'Carrier deleted successfully'
     });
+    
+  } catch (error: any) {
+    console.error('❌ DELETE Error:', error.message);
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to delete carrier'
+    }, { status: 500 });
   }
 }

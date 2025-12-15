@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { FreshTraceLogo } from '../icons';
@@ -10,11 +8,14 @@ import { employeeData } from '@/lib/data';
 import { format } from 'date-fns';
 
 interface PrintableVehicleReportProps {
-  visitors: Visitor[];
-  shipments: Shipment[];
+  visitors?: Visitor[];
+  shipments?: Shipment[];
 }
 
 export function PrintableVehicleReport({ visitors, shipments }: PrintableVehicleReportProps) {
+  // Ensure arrays are never undefined
+  const safeVisitors = visitors || [];
+  const safeShipments = shipments || [];
 
   const visitorStatusVariant = {
     'Checked-in': 'default',
@@ -76,7 +77,7 @@ export function PrintableVehicleReport({ visitors, shipments }: PrintableVehicle
       </div>
       
       <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-2">Vehicle Log ({visitors.length})</h2>
+        <h2 className="text-xl font-semibold mb-2">Vehicle Log ({safeVisitors.length})</h2>
         <Table>
           <TableHeader>
             <TableRow>
@@ -90,7 +91,7 @@ export function PrintableVehicleReport({ visitors, shipments }: PrintableVehicle
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visitors.map(visitor => (
+            {safeVisitors.map(visitor => (
               <TableRow key={visitor.id}>
                 <TableCell>
                   <p className="font-medium">{visitor.name}</p>
@@ -113,7 +114,7 @@ export function PrintableVehicleReport({ visitors, shipments }: PrintableVehicle
       </div>
 
        <div className="mb-8" style={{ pageBreakBefore: 'always' }}>
-        <h2 className="text-xl font-semibold mb-2">Incoming Shipments ({shipments.length})</h2>
+        <h2 className="text-xl font-semibold mb-2">Incoming Shipments ({safeShipments.length})</h2>
          <Table>
           <TableHeader>
             <TableRow>
@@ -126,7 +127,7 @@ export function PrintableVehicleReport({ visitors, shipments }: PrintableVehicle
             </TableRow>
           </TableHeader>
           <TableBody>
-            {shipments.map(shipment => {
+            {safeShipments.map(shipment => {
               return (
                 <TableRow key={shipment.id}>
                   <TableCell className="font-mono">{shipment.shipmentId}</TableCell>

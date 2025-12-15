@@ -7,7 +7,399 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Define all enums first
+model carriers {
+  id                   String          @id @default(cuid()) @db.VarChar(20)
+  name                 String          @unique @db.VarChar(100)
+  contact_name         String?         @db.VarChar(100)
+  contact_email        String?         @db.VarChar(100)
+  contact_phone        String?         @db.VarChar(20)
+  rating               Float?          @default(0) @db.Float
+  status               carriers_status @default(Active)
+  id_number            String?         @db.VarChar(50)
+  vehicle_registration String?         @db.VarChar(20)
+  created_at           DateTime        @default(now()) @db.DateTime(0)
+  updated_at           DateTime        @updatedAt @db.DateTime(0)
+  shipments            shipments[]
+
+  @@map("carriers")
+}
+
+model Employee {
+  id          String       @id @default(cuid())
+  name        String
+  email       String
+  role        String
+  status      String
+  performance String?
+  rating      Int?
+  contract    String
+  salary      String?
+  image       String?
+  id_number   String?
+  phone       String?
+  issue_date  DateTime?
+  expiry_date DateTime?
+  company     String?
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  attendance  Attendance[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  id           String    @id @default(cuid())
+  employeeId   String
+  date         String
+  status       String
+  clockInTime  DateTime?
+  clockOutTime DateTime?
+  designation  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@map("attendance")
+}
+
+model accounts_receivable {
+  id           String                           @id @default(cuid()) @db.VarChar(20)
+  customer_id  String?                          @db.VarChar(20)
+  invoice_id   String?                          @db.VarChar(100)
+  amount       Decimal?                         @db.Decimal(12, 2)
+  due_date     DateTime?                        @db.Date
+  aging_status accounts_receivable_aging_status
+  created_at   DateTime                         @default(now()) @db.DateTime(0)
+  customers    customers?                       @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([customer_id], map: "customer_id_idx")
+  @@map("accounts_receivable")
+}
+
+model activity_logs {
+  id         String               @id @default(cuid()) @db.VarChar(20)
+  user       String?              @db.VarChar(100)
+  avatar     String?              @db.VarChar(255)
+  action     String?              @db.Text
+  ip         String?              @db.VarChar(45)
+  timestamp  DateTime?            @db.DateTime(0)
+  status     activity_logs_status
+  created_at DateTime             @default(now()) @db.DateTime(0)
+
+  @@map("activity_logs")
+}
+
+model anomalies {
+  id                 Int       @id @default(autoincrement())
+  metric_name        String?   @db.VarChar(100)
+  metric_value       Decimal?  @db.Decimal(10, 2)
+  expected_value     Decimal?  @db.Decimal(10, 2)
+  timestamp          DateTime? @db.DateTime(0)
+  additional_context String?   @db.Text
+  created_at         DateTime  @default(now()) @db.DateTime(0)
+
+  @@map("anomalies")
+}
+
+model cold_room_inventory {
+  id                String                       @id @default(cuid()) @db.VarChar(20)
+  product           String                       @db.VarChar(100)
+  category          cold_room_inventory_category
+  quantity          Int?
+  unit              cold_room_inventory_unit
+  location          String?                      @db.VarChar(100)
+  entry_date        DateTime?                    @db.DateTime(0)
+  current_weight    Decimal?                     @db.Decimal(10, 2)
+  reorder_threshold Decimal?                     @db.Decimal(10, 2)
+  created_at        DateTime                     @default(now()) @db.DateTime(0)
+
+  @@map("cold_room_inventory")
+}
+
+model cold_rooms {
+  id          String                @id @default(cuid()) @db.VarChar(20)
+  name        String                @db.VarChar(100)
+  temperature Decimal?              @db.Decimal(4, 1)
+  humidity    Decimal?              @db.Decimal(4, 1)
+  status      cold_rooms_status
+  zone_type   cold_rooms_zone_type?
+  created_at  DateTime              @default(now()) @db.DateTime(0)
+
+  @@map("cold_rooms")
+}
+
+model customer_contacts {
+  id          Int        @id @default(autoincrement())
+  customer_id String?    @db.VarChar(20)
+  name        String     @db.VarChar(100)
+  role        String?    @db.VarChar(100)
+  email       String?    @db.VarChar(100)
+  phone       String?    @db.VarChar(20)
+  is_primary  Boolean?   @default(false)
+  customers   customers? @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([customer_id], map: "customer_id_idx")
+  @@map("customer_contacts")
+}
+
+model customers {
+  id                  String                @id @default(cuid()) @db.VarChar(20)
+  name                String                @db.VarChar(100)
+  location            String?               @db.VarChar(100)
+  tags                String?               @db.LongText
+  logo_url            String?               @db.VarChar(255)
+  website             String?               @db.VarChar(100)
+  ytd_sales           Decimal?              @db.Decimal(12, 2)
+  last_order          DateTime?             @db.Date
+  status              customers_status
+  outstanding_balance Decimal?              @default(0.00) @db.Decimal(12, 2)
+  open_invoices       Int?                  @default(0)
+  created_at          DateTime              @default(now()) @db.DateTime(0)
+  accounts_receivable accounts_receivable[]
+  customer_contacts   customer_contacts[]
+  quotes              quotes[]
+  shipments           shipments[]
+
+  @@map("customers")
+}
+
+model dwell_times {
+  id              String             @id @default(cuid()) @db.VarChar(20)
+  location        String?            @db.VarChar(100)
+  primary_product String?            @db.VarChar(100)
+  avg_dwell_time  String?            @db.VarChar(50)
+  items           Int?
+  status          dwell_times_status
+  next_action     String?            @db.Text
+  entry_date      DateTime?          @db.DateTime(0)
+  weight          Decimal?           @db.Decimal(10, 2)
+  created_at      DateTime           @default(now()) @db.DateTime(0)
+
+  @@map("dwell_times")
+}
+
+model products {
+  id           String            @id @default(cuid()) @db.VarChar(20)
+  name         String            @db.VarChar(100)
+  variety      String?           @db.VarChar(100)
+  storage_temp Decimal?          @db.Decimal(4, 1)
+  category     products_category
+  created_at   DateTime          @default(now()) @db.DateTime(0)
+
+  @@map("products")
+}
+
+model quotes {
+  id          String        @id @default(cuid()) @db.VarChar(20)
+  quote_id    String?       @unique @db.VarChar(100)
+  customer_id String?       @db.VarChar(20)
+  date        DateTime?     @db.Date
+  valid_until DateTime?     @db.Date
+  amount      Decimal?      @db.Decimal(12, 2)
+  status      quotes_status
+  created_at  DateTime      @default(now()) @db.DateTime(0)
+  customers   customers?    @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([customer_id], map: "customer_id_idx")
+  @@map("quotes")
+}
+
+model shipments {
+  id               String           @id @default(cuid()) @db.VarChar(20)
+  shipment_id      String           @unique @db.VarChar(50)
+  customer_id      String?          @db.VarChar(20)
+  origin           String?          @db.VarChar(100)
+  destination      String?          @db.VarChar(100)
+  status           shipments_status
+  product          String?          @db.VarChar(100)
+  tags             String?          @db.VarChar(100)
+  weight           String?          @db.VarChar(50)
+  carrier          String?          @db.VarChar(100)
+  carrier_id       String?          @db.VarChar(20)
+  expected_arrival DateTime?        @db.DateTime(0)
+  created_at       DateTime         @default(now()) @db.DateTime(0)
+  quality_checks   quality_checks[]
+  carriers         carriers?        @relation(fields: [carrier_id], references: [id])
+  customers        customers?       @relation(fields: [customer_id], references: [id])
+
+  @@index([customer_id], map: "customer_id_idx")
+  @@index([carrier_id], map: "carrier_id_idx")
+  @@map("shipments")
+}
+
+model suppliers {
+  id                     String           @id @default(cuid()) @db.VarChar(20)
+  name                   String           @db.VarChar(100)
+  location               String?          @db.VarChar(100)
+  contact_name           String?          @db.VarChar(100)
+  contact_email          String?          @db.VarChar(100)
+  contact_phone          String?          @db.VarChar(20)
+  produce_types          String?          @db.LongText
+  status                 suppliers_status
+  logo_url               String?          @db.VarChar(255)
+  active_contracts       Int?             @default(0)
+  kra_pin                String?          @db.VarChar(20)
+  supplier_code          String?          @unique @db.VarChar(20)
+  vehicle_number_plate   String?          @db.VarChar(20)
+  driver_name            String?          @db.VarChar(100)
+  driver_id_number       String?          @db.VarChar(50)
+  mpesa_paybill          String?          @db.VarChar(20)
+  mpesa_account_number   String?          @db.VarChar(50)
+  bank_name              String?          @db.VarChar(100)
+  bank_account_number    String?          @db.VarChar(50)
+  password               String?          @db.VarChar(255)
+  created_at             DateTime         @default(now()) @db.DateTime(0)
+  vehicle_status         String?          @default("Pre-registered") @db.VarChar(50)
+  vehicle_check_in_time  DateTime?        @db.DateTime(0)
+  vehicle_check_out_time DateTime?        @db.DateTime(0)
+  vehicle_type           String?          @db.VarChar(50)
+  cargo_description      String?          @db.LongText
+
+  @@map("suppliers")
+}
+
+model visitors {
+  id                     String    @id @default(cuid())
+  visitor_code           String    @unique
+  name                   String
+  id_number              String?
+  company                String?
+  email                  String?
+  phone                  String
+  vehicle_plate          String?
+  vehicle_type           String?
+  cargo_description      String?
+  visitor_type           String?   @default("visitor")
+  status                 String?   @default("Pre-registered")
+  check_in_time          DateTime?
+  check_out_time         DateTime?
+  expected_check_in_time DateTime?
+  host_id                String?
+  department             String?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  @@map("visitors")
+}
+
+model weight_entries {
+  id               String              @id @default(uuid()) @db.VarChar(20)
+  pallet_id        String?             @db.VarChar(100)
+  product          String?             @db.VarChar(100)
+  weight           Decimal?            @db.Decimal(10, 2)
+  unit             weight_entries_unit
+  timestamp        DateTime?           @db.DateTime(0)
+  supplier         String?             @db.VarChar(100)
+  truck_id         String?             @db.VarChar(100)
+  driver_id        String?             @db.VarChar(100)
+  gross_weight     Decimal?            @db.Decimal(10, 2)
+  tare_weight      Decimal?            @db.Decimal(10, 2)
+  net_weight       Decimal?            @db.Decimal(10, 2)
+  declared_weight  Decimal?            @db.Decimal(10, 2)
+  rejected_weight  Decimal?            @db.Decimal(10, 2)
+  created_at       DateTime            @default(now()) @db.DateTime(0)
+  supplier_id      String?             @db.VarChar(255)
+  supplier_phone   String?             @db.VarChar(50)
+  fruit_variety    String?             @default("[]") @db.Text
+  number_of_crates Int?                @default(0)
+  region           String?             @db.VarChar(100)
+  image_url        String?             @db.Text
+  driver_name      String?             @db.VarChar(255)
+  driver_phone     String?             @db.VarChar(50)
+  driver_id_number String?             @db.VarChar(100)
+  vehicle_plate    String?             @db.VarChar(50)
+  notes            String?             @db.Text
+  
+  // QUALITY CHECK RELATION - One weight entry can have many quality checks
+  quality_checks   quality_checks[]    // Changed to array for one-to-many
+}
+
+model quality_checks {
+  id                  String     @id @default(cuid()) @db.VarChar(20)
+  shipment_id         String?    @db.VarChar(20)
+  operator_id         String?    @db.VarChar(20)
+  pallet_id           String?    @db.VarChar(100)
+  product             String?    @db.VarChar(100)
+  declared_weight     Decimal?   @db.Decimal(10, 2)
+  net_weight          Decimal?   @db.Decimal(10, 2)
+  rejected_weight     Decimal?   @db.Decimal(10, 2)
+  accepted_weight     Decimal?   @db.Decimal(10, 2)
+  
+  // Packability Assessment Fields for Avocado Varieties
+  fuerte_class1       Decimal?   @db.Decimal(5, 2)  // Fuerte Class 1 percentage (0-100)
+  fuerte_class2       Decimal?   @db.Decimal(5, 2)  // Fuerte Class 2 percentage (0-100)
+  fuerte_overall      Decimal?   @db.Decimal(5, 2)  // Fuerte Overall percentage (0-100)
+  hass_class1         Decimal?   @db.Decimal(5, 2)  // Hass Class 1 percentage (0-100)
+  hass_class2         Decimal?   @db.Decimal(5, 2)  // Hass Class 2 percentage (0-100)
+  hass_overall        Decimal?   @db.Decimal(5, 2)  // Hass Overall percentage (0-100)
+  
+  arrival_temperature Decimal?   @db.Decimal(4, 1)
+  driver_id           String?    @db.VarChar(100)
+  truck_id            String?    @db.VarChar(100)
+  packaging_status    String?    @default("accepted") @db.VarChar(50)
+  freshness_status    String?    @default("accepted") @db.VarChar(50)
+  seals_status        String?    @default("accepted") @db.VarChar(50)
+  overall_status      String?    @default("approved") @db.VarChar(50)
+  notes               String?    @db.Text
+  processed_at        DateTime   @default(now()) @db.DateTime(0)
+  processed_by        String     @db.VarChar(100)
+  created_at          DateTime   @default(now()) @db.DateTime(0)
+  
+  // RELATIONS
+  shipments           shipments? @relation(fields: [shipment_id], references: [id])
+  weight_entry_id     String?    @db.VarChar(20)  // Foreign key to weight_entries
+  weight_entry        weight_entries? @relation(fields: [weight_entry_id], references: [id])
+
+  @@index([shipment_id], map: "shipment_id_idx")
+  @@index([weight_entry_id], map: "weight_entry_id_idx")
+  @@map("quality_checks")
+}
+
+model CountingRecord {
+  id                 String   @id @default(cuid())
+  supplier_id        String
+  supplier_name      String
+  supplier_phone     String?
+  region             String?
+  pallet_id          String
+  total_weight       Float
+  
+  // Counting totals
+  fuerte_4kg_class1  Int      @default(0)
+  fuerte_4kg_class2  Int      @default(0)
+  fuerte_4kg_total   Int      @default(0)
+  
+  fuerte_10kg_class1 Int      @default(0)
+  fuerte_10kg_class2 Int      @default(0)
+  fuerte_10kg_total  Int      @default(0)
+  
+  hass_4kg_class1    Int      @default(0)
+  hass_4kg_class2    Int      @default(0)
+  hass_4kg_total     Int      @default(0)
+  
+  hass_10kg_class1   Int      @default(0)
+  hass_10kg_class2   Int      @default(0)
+  hass_10kg_total    Int      @default(0)
+  
+  // Detailed counting data (stored as JSON)
+  counting_data      Json
+  
+  // Metadata
+  submitted_at       DateTime @default(now())
+  processed_by       String
+  notes              String?
+  
+  // Indexes
+  @@index([supplier_id])
+  @@index([pallet_id])
+  @@index([submitted_at])
+  @@index([supplier_name])
+  
+  // Relationships
+  weight_entry       WeightEntry? @relation(fields: [supplier_id], references: [id], onDelete: SetNull)
+}
+
 enum carriers_status {
   Active
   Inactive
@@ -93,345 +485,10 @@ enum suppliers_status {
   Active
   Inactive
   Onboarding
+  Suspended
 }
 
 enum weight_entries_unit {
   kg
   lb
-}
-
-enum visitors_status {
-  Pre_registered
-  Checked_in
-  Checked_out
-  Pending_Exit
-}
-
-// Define models
-model carriers {
-  id                   String     @id @default(cuid()) @db.VarChar(20)
-  name                 String     @unique @db.VarChar(100)
-  contact_name         String?    @db.VarChar(100)
-  contact_email        String?    @db.VarChar(100)
-  contact_phone        String?    @db.VarChar(20)
-  rating               Float?     @default(0) @db.Float
-  status               carriers_status @default(Active)
-  id_number            String?    @db.VarChar(50)
-  vehicle_registration String?    @db.VarChar(20)
-  created_at           DateTime   @default(now()) @db.DateTime(0)
-  updated_at           DateTime   @updatedAt @db.DateTime(0)
-  shipments            shipments[]
-  
-  @@map("carriers")
-}
-
-model employees {
-  id          String   @id @default(cuid())
-  name        String
-  email       String
-  role        String
-  status      String
-  performance String?
-  rating      Int?
-  contract    String?
-  salary      String?
-  image       String?
-  id_number   String?
-  phone       String?
-  issue_date  DateTime? @db.DateTime(0)
-  expiry_date DateTime? @db.DateTime(0)
-  company     String?
-  created_at  DateTime @default(now()) @db.DateTime(0)
-  updated_at  DateTime @updatedAt @db.DateTime(0)
-  
-  attendance  attendance[]
-  // Note: visitors relationship is commented out since Visitor model doesn't exist
-  // visitors    visitors[]
-  
-  @@map("employees")
-}
-
-model accounts_receivable {
-  id           String                           @id @default(cuid()) @db.VarChar(20)
-  customer_id  String?                          @db.VarChar(20)
-  invoice_id   String?                          @db.VarChar(100)
-  amount       Float?                           @db.Decimal(12, 2)
-  due_date     DateTime?                        @db.Date
-  aging_status accounts_receivable_aging_status
-  created_at   DateTime                         @default(now()) @db.DateTime(0)
-  
-  customers    customers?                       @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  
-  @@index([customer_id], name: "customer_id_idx")
-  @@map("accounts_receivable")
-}
-
-model activity_logs {
-  id         String               @id @default(cuid()) @db.VarChar(20)
-  user       String?              @db.VarChar(100)
-  avatar     String?              @db.VarChar(255)
-  action     String?              @db.Text
-  ip         String?              @db.VarChar(45)
-  timestamp  DateTime?            @db.DateTime(0)
-  status     activity_logs_status
-  created_at DateTime             @default(now()) @db.DateTime(0)
-  
-  @@map("activity_logs")
-}
-
-model anomalies {
-  id                 Int      @id @default(autoincrement())
-  metric_name        String?  @db.VarChar(100)
-  metric_value       Float?   @db.Decimal(10, 2)
-  expected_value     Float?   @db.Decimal(10, 2)
-  timestamp          DateTime? @db.DateTime(0)
-  additional_context String?  @db.Text
-  created_at         DateTime @default(now()) @db.DateTime(0)
-  
-  @@map("anomalies")
-}
-
-model cold_room_inventory {
-  id                String                       @id @default(cuid()) @db.VarChar(20)
-  product           String                       @db.VarChar(100)
-  category          cold_room_inventory_category
-  quantity          Int?
-  unit              cold_room_inventory_unit
-  location          String?                      @db.VarChar(100)
-  entry_date        DateTime?                    @db.DateTime(0)
-  current_weight    Float?                       @db.Decimal(10, 2)
-  reorder_threshold Float?                       @db.Decimal(10, 2)
-  created_at        DateTime                     @default(now()) @db.DateTime(0)
-  
-  @@map("cold_room_inventory")
-}
-
-model cold_rooms {
-  id          String                @id @default(cuid()) @db.VarChar(20)
-  name        String                @db.VarChar(100)
-  temperature Float?                @db.Decimal(4, 1)
-  humidity    Float?                @db.Decimal(4, 1)
-  status      cold_rooms_status
-  zone_type   cold_rooms_zone_type?
-  created_at  DateTime              @default(now()) @db.DateTime(0)
-  
-  @@map("cold_rooms")
-}
-
-model customer_contacts {
-  id          Int        @id @default(autoincrement())
-  customer_id String?    @db.VarChar(20)
-  name        String     @db.VarChar(100)
-  role        String?    @db.VarChar(100)
-  email       String?    @db.VarChar(100)
-  phone       String?    @db.VarChar(20)
-  is_primary  Boolean?   @default(false)
-  
-  customers   customers? @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: Restrict)
-  
-  @@index([customer_id], name: "customer_id_idx")
-  @@map("customer_contacts")
-}
-
-model customers {
-  id                  String                @id @default(cuid()) @db.VarChar(20)
-  name                String                @db.VarChar(100)
-  location            String?               @db.VarChar(100)
-  tags                String?               @db.LongText
-  logo_url            String?               @db.VarChar(255)
-  website             String?               @db.VarChar(100)
-  ytd_sales           Float?                @db.Decimal(12, 2)
-  last_order          DateTime?             @db.Date
-  status              customers_status
-  outstanding_balance Float?                @default(0.00) @db.Decimal(12, 2)
-  open_invoices       Int?                  @default(0)
-  created_at          DateTime              @default(now()) @db.DateTime(0)
-  
-  accounts_receivable accounts_receivable[]
-  customer_contacts   customer_contacts[]
-  quotes              quotes[]
-  shipments           shipments[]
-  
-  @@map("customers")
-}
-
-model dwell_times {
-  id              String             @id @default(cuid()) @db.VarChar(20)
-  location        String?            @db.VarChar(100)
-  primary_product String?            @db.VarChar(100)
-  avg_dwell_time  String?            @db.VarChar(50)
-  items           Int?
-  status          dwell_times_status
-  next_action     String?            @db.Text
-  entry_date      DateTime?          @db.DateTime(0)
-  weight          Float?             @db.Decimal(10, 2)
-  created_at      DateTime           @default(now()) @db.DateTime(0)
-  
-  @@map("dwell_times")
-}
-
-model products {
-  id           String            @id @default(cuid()) @db.VarChar(20)
-  name         String            @db.VarChar(100)
-  variety      String?           @db.VarChar(100)
-  storage_temp Float?            @db.Decimal(4, 1)
-  category     products_category
-  created_at   DateTime          @default(now()) @db.DateTime(0)
-  
-  @@map("products")
-}
-
-model quotes {
-  id          String        @id @default(cuid()) @db.VarChar(20)
-  quote_id    String?       @unique @db.VarChar(100)
-  customer_id String?       @db.VarChar(20)
-  date        DateTime?     @db.Date
-  valid_until DateTime?     @db.Date
-  amount      Float?        @db.Decimal(12, 2)
-  status      quotes_status
-  created_at  DateTime      @default(now()) @db.DateTime(0)
-  
-  customers   customers?    @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  
-  @@index([customer_id], name: "customer_id_idx")
-  @@map("quotes")
-}
-
-model shipments {
-  id               String           @id @default(cuid()) @db.VarChar(20)
-  shipment_id      String           @unique @db.VarChar(50)
-  customer_id      String?          @db.VarChar(20)
-  origin           String?          @db.VarChar(100)
-  destination      String?          @db.VarChar(100)
-  status           shipments_status
-  product          String?          @db.VarChar(100)
-  tags             String?          @db.VarChar(100)
-  weight           String?          @db.VarChar(50)
-  carrier          String?          @db.VarChar(100)
-  carrier_id       String?          @db.VarChar(20)
-  expected_arrival DateTime?        @db.DateTime(0)
-  created_at       DateTime         @default(now()) @db.DateTime(0)
-  
-  quality_checks   quality_checks[]
-  carriers         carriers?        @relation(fields: [carrier_id], references: [id])
-  customers        customers?       @relation(fields: [customer_id], references: [id])
-  
-  @@index([customer_id], name: "customer_id_idx")
-  @@index([carrier_id], name: "carrier_id_idx")
-  @@map("shipments")
-}
-
-model suppliers {
-  id                   String           @id @default(cuid()) @db.VarChar(20)
-  name                 String           @db.VarChar(100)
-  location             String?          @db.VarChar(100)
-  contact_name         String?          @db.VarChar(100)
-  contact_email        String?          @db.VarChar(100)
-  contact_phone        String?          @db.VarChar(20)
-  produce_types        String?          @db.LongText
-  status               suppliers_status
-  logo_url             String?          @db.VarChar(255)
-  active_contracts     Int?             @default(0)
-  kra_pin              String?          @db.VarChar(20)
-  supplier_code        String?          @unique @db.VarChar(20)
-  vehicle_number_plate String?          @db.VarChar(20)
-  driver_name          String?          @db.VarChar(100)
-  driver_id_number     String?          @db.VarChar(50)
-  mpesa_paybill        String?          @db.VarChar(20)
-  mpesa_account_number String?          @db.VarChar(50)
-  bank_name            String?          @db.VarChar(100)
-  bank_account_number  String?          @db.VarChar(50)
-  password             String?          @db.VarChar(255)
-  created_at           DateTime         @default(now()) @db.DateTime(0)
-  
-  @@map("suppliers")
-}
-
-model visitors {
-  id                    String   @id @default(cuid())
-  visitor_code          String   @unique
-  name                  String
-  id_number             String?
-  company               String?
-  email                 String?
-  phone                 String
-  vehicle_plate         String?
-  vehicle_type          String?
-  cargo_description     String?
-  visitor_type          String?  @default("visitor")
-  status                String?  @default("Pre-registered")
-  check_in_time         DateTime?
-  check_out_time        DateTime?
-  expected_check_in_time DateTime?
-  host_id               String?
-  department            String?
-  created_at            DateTime @default(now())
-  updated_at            DateTime @updatedAt
-  
-  @@map("visitors")
-}
-
-model weight_entries {
-  id              String   @id @default(cuid()) @db.VarChar(20)
-  pallet_id       String?  @db.VarChar(100)
-  product         String?  @db.VarChar(100)
-  weight          Float?   @db.Decimal(10, 2)
-  unit            weight_entries_unit
-  timestamp       DateTime? @db.DateTime(0)
-  supplier        String?  @db.VarChar(100)
-  truck_id        String?  @db.VarChar(100)
-  driver_id       String?  @db.VarChar(100)
-  gross_weight    Float?   @db.Decimal(10, 2)
-  tare_weight     Float?   @db.Decimal(10, 2)
-  net_weight      Float?   @db.Decimal(10, 2)
-  declared_weight Float?   @db.Decimal(10, 2)
-  rejected_weight Float?   @db.Decimal(10, 2)
-  created_at      DateTime @default(now()) @db.DateTime(0)
-  
-  @@map("weight_entries")
-}
-
-model quality_checks {
-  id                  String   @id @default(cuid()) @db.VarChar(20)
-  shipment_id         String?  @db.VarChar(20)
-  operator_id         String?  @db.VarChar(20)
-  pallet_id           String?  @db.VarChar(100)
-  product             String?  @db.VarChar(100)
-  declared_weight     Float?   @db.Decimal(10, 2)
-  net_weight          Float?   @db.Decimal(10, 2)
-  rejected_weight     Float?   @db.Decimal(10, 2)
-  accepted_weight     Float?   @db.Decimal(10, 2)
-  arrival_temperature Float?   @db.Decimal(4, 1)
-  driver_id           String?  @db.VarChar(100)
-  truck_id            String?  @db.VarChar(100)
-  packaging_status    String?  @default("accepted") @db.VarChar(50)
-  freshness_status    String?  @default("accepted") @db.VarChar(50)
-  seals_status        String?  @default("accepted") @db.VarChar(50)
-  overall_status      String?  @default("approved") @db.VarChar(50)
-  notes               String?  @db.Text
-  processed_at        DateTime @default(now()) @db.DateTime(0)
-  processed_by        String   @db.VarChar(100)
-  created_at          DateTime @default(now()) @db.DateTime(0)
-  
-  shipments           shipments? @relation(fields: [shipment_id], references: [id])
-  
-  @@index([shipment_id], name: "shipment_id_idx")
-  @@map("quality_checks")
-}
-
-model attendance {
-  id            String   @id @default(cuid())
-  employeeId    String
-  date          DateTime
-  status        String
-  clockInTime   DateTime?
-  clockOutTime  DateTime?
-  designation   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  employee      employees @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  
-  @@unique([employeeId, date])
-  @@map("attendance")
 }

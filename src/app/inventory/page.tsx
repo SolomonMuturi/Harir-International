@@ -26,12 +26,16 @@ import { CreatePackagingForm, type PackagingFormValues } from '@/components/dash
 import { useToast } from '@/hooks/use-toast';
 import type { ColdRoomInventory as ColdRoomInventoryType, PackagingMaterial } from '@/lib/data';
 
-// API Response Types
-interface ColdRoomInventoryAPI {
+// Avocado Inventory Types
+interface AvocadoInventoryAPI {
   id: string;
   product: string;
+  variety: 'Fuerte' | 'Hass';
+  size: string;
+  boxType: '4kg' | '10kg';
+  class: 'Class 1' | 'Class 2';
   quantity: number;
-  unit: 'pallets' | 'tonnes' | 'boxes';
+  unit: 'boxes' | 'crates' | 'pallets';
   location: string;
   temperature: number;
   humidity: number;
@@ -39,6 +43,7 @@ interface ColdRoomInventoryAPI {
   expiryDate: string;
   status: 'fresh' | 'aging' | 'expiring';
   supplier: string;
+  palletId: string;
 }
 
 interface PackagingMaterialAPI {
@@ -57,6 +62,9 @@ interface InventoryKPIs {
   totalValue: number;
   itemsBelowReorder: number;
   inventoryTurnover: number;
+  totalAvocadoBoxes: number;
+  fuerteBoxes: number;
+  hassBoxes: number;
 }
 
 export default function InventoryPage() {
@@ -71,37 +79,96 @@ export default function InventoryPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  // Fetch cold room inventory from database
+  // Sample avocado inventory data for fallback
+  const sampleAvocadoInventory: ColdRoomInventoryType[] = [
+    {
+      id: '1',
+      product: 'Avocado Fuerte',
+      quantity: 50,
+      unit: 'boxes',
+      location: 'A1',
+      temperature: 4,
+      humidity: 85,
+      entryDate: '2024-01-15',
+      expiryDate: '2024-02-15',
+      status: 'fresh',
+      supplier: 'Green Valley Farms',
+    },
+    {
+      id: '2',
+      product: 'Avocado Hass',
+      quantity: 30,
+      unit: 'crates',
+      location: 'A2',
+      temperature: 4,
+      humidity: 85,
+      entryDate: '2024-01-14',
+      expiryDate: '2024-02-14',
+      status: 'fresh',
+      supplier: 'Sunshine Orchards',
+    },
+    {
+      id: '3',
+      product: 'Avocado Fuerte',
+      quantity: 45,
+      unit: 'boxes',
+      location: 'B1',
+      temperature: 4,
+      humidity: 85,
+      entryDate: '2024-01-10',
+      expiryDate: '2024-02-10',
+      status: 'aging',
+      supplier: 'Mountain View Farms',
+    },
+    {
+      id: '4',
+      product: 'Avocado Hass',
+      quantity: 25,
+      unit: 'crates',
+      location: 'B2',
+      temperature: 4,
+      humidity: 85,
+      entryDate: '2024-01-05',
+      expiryDate: '2024-02-05',
+      status: 'expiring',
+      supplier: 'Tropical Fruits Ltd',
+    }
+  ];
+
+  // Transform API data to match ColdRoomInventoryType
+  const transformAvocadoInventory = (data: AvocadoInventoryAPI[]): ColdRoomInventoryType[] => {
+    return data.map(item => ({
+      id: item.id,
+      product: `${item.variety} Avocado - Size ${item.size} - ${item.boxType} - ${item.class}`,
+      quantity: item.quantity,
+      unit: item.boxType === '4kg' ? 'boxes' : 'crates',
+      location: item.location,
+      temperature: item.temperature,
+      humidity: item.humidity,
+      entryDate: item.entryDate,
+      expiryDate: item.expiryDate,
+      status: item.status,
+      supplier: item.supplier,
+    }));
+  };
+
+  // Fetch avocado inventory from database
   const fetchColdRoomInventory = async () => {
     try {
-      const response = await fetch('/api/inventory/cold-room');
+      const response = await fetch('/api/inventory/avocado');
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch cold room inventory: ${response.statusText}`);
+        throw new Error(`Failed to fetch avocado inventory: ${response.statusText}`);
       }
       
-      const data: ColdRoomInventoryAPI[] = await response.json();
-      
-      // Transform to match ColdRoomInventoryType
-      const transformedInventory: ColdRoomInventoryType[] = data.map(item => ({
-        id: item.id || `item-${Date.now()}-${Math.random()}`,
-        product: item.product || 'Unknown',
-        quantity: item.quantity || 0,
-        unit: item.unit || 'pallets',
-        location: item.location || 'Unknown',
-        temperature: item.temperature || 0,
-        humidity: item.humidity || 0,
-        entryDate: item.entryDate || new Date().toISOString(),
-        expiryDate: item.expiryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        status: item.status || 'fresh',
-        supplier: item.supplier || 'Unknown',
-      }));
-      
+      const data: AvocadoInventoryAPI[] = await response.json();
+      const transformedInventory = transformAvocadoInventory(data);
       setColdRoomInventory(transformedInventory);
     } catch (error: any) {
-      console.error('Error fetching cold room inventory:', error);
-      setError(error.message || 'Failed to load cold room inventory');
-      setColdRoomInventory([]);
+      console.error('Error fetching avocado inventory:', error);
+      setError(error.message || 'Failed to load avocado inventory');
+      // Use sample data as fallback
+      setColdRoomInventory(sampleAvocadoInventory);
     }
   };
 
@@ -133,6 +200,7 @@ export default function InventoryPage() {
     } catch (error: any) {
       console.error('Error fetching packaging materials:', error);
       setError(error.message || 'Failed to load packaging materials');
+      // Use empty array as fallback
       setPackagingMaterials([]);
     }
   };
@@ -152,13 +220,24 @@ export default function InventoryPage() {
         totalValue: data.totalValue || 0,
         itemsBelowReorder: data.itemsBelowReorder || 0,
         inventoryTurnover: data.inventoryTurnover || 0,
+        totalAvocadoBoxes: data.totalAvocadoBoxes || coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0),
+        fuerteBoxes: data.fuerteBoxes || coldRoomInventory.filter(item => item.product.includes('Fuerte')).reduce((sum, item) => sum + item.quantity, 0),
+        hassBoxes: data.hassBoxes || coldRoomInventory.filter(item => item.product.includes('Hass')).reduce((sum, item) => sum + item.quantity, 0),
       });
     } catch (error: any) {
       console.error('Error fetching inventory KPIs:', error);
+      // Calculate from current inventory
+      const totalAvocadoBoxes = coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0);
+      const fuerteBoxes = coldRoomInventory.filter(item => item.product.includes('Fuerte')).reduce((sum, item) => sum + item.quantity, 0);
+      const hassBoxes = coldRoomInventory.filter(item => item.product.includes('Hass')).reduce((sum, item) => sum + item.quantity, 0);
+      
       setInventoryKPIs({
         totalValue: 25400000,
         itemsBelowReorder: 3,
         inventoryTurnover: 5.2,
+        totalAvocadoBoxes,
+        fuerteBoxes,
+        hassBoxes,
       });
     }
   };
@@ -319,11 +398,29 @@ export default function InventoryPage() {
       change: 'estimated value on hand',
       changeType: 'increase' as const,
     },
+    totalAvocadoBoxes: {
+      title: 'Avocado Boxes',
+      value: inventoryKPIs ? inventoryKPIs.totalAvocadoBoxes.toString() : '0',
+      change: 'in cold storage',
+      changeType: 'increase' as const,
+    },
     itemsLow: {
       title: 'Items Below Reorder',
       value: inventoryKPIs ? inventoryKPIs.itemsBelowReorder.toString() : '0',
       change: 'produce & packaging',
       changeType: inventoryKPIs?.itemsBelowReorder > 0 ? 'increase' as const : 'decrease' as const,
+    },
+    fuerteBoxes: {
+      title: 'Fuerte Boxes',
+      value: inventoryKPIs ? inventoryKPIs.fuerteBoxes.toString() : '0',
+      change: '4kg & 10kg',
+      changeType: 'increase' as const,
+    },
+    hassBoxes: {
+      title: 'Hass Boxes',
+      value: inventoryKPIs ? inventoryKPIs.hassBoxes.toString() : '0',
+      change: '4kg & 10kg',
+      changeType: 'increase' as const,
     },
     inventoryTurnover: {
       title: 'Inventory Turnover Rate',
@@ -392,7 +489,7 @@ export default function InventoryPage() {
                 Inventory Management
               </h2>
               <p className="text-muted-foreground">
-                Track products in cold storage and manage packaging material stock.
+                Track avocado varieties in cold storage and manage packaging material stock.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -450,15 +547,18 @@ export default function InventoryPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <OverviewCard data={inventoryKpis.totalValue} icon={Weight} />
-            <OverviewCard data={inventoryKpis.itemsLow} icon={Boxes} />
-            <OverviewCard data={inventoryKpis.inventoryTurnover} icon={PackageIcon} />
+            <OverviewCard data={inventoryKpis.totalAvocadoBoxes} icon={Boxes} />
+            <OverviewCard data={inventoryKpis.itemsLow} icon={PackageIcon} />
+            <OverviewCard data={inventoryKpis.fuerteBoxes} icon={Boxes} />
+            <OverviewCard data={inventoryKpis.hassBoxes} icon={Boxes} />
+            <OverviewCard data={inventoryKpis.inventoryTurnover} icon={TrendingUp} />
           </div>
 
           <Tabs defaultValue="produce">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="produce">Produce Inventory</TabsTrigger>
+              <TabsTrigger value="produce">Avocado Inventory</TabsTrigger>
               <TabsTrigger value="packaging">Packaging Materials</TabsTrigger>
             </TabsList>
             <TabsContent value="produce" className="mt-6">
@@ -474,6 +574,37 @@ export default function InventoryPage() {
                 </div>
                 <div className="space-y-6">
                   <InventorySummaryCard inventory={coldRoomInventory} />
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Avocado Breakdown</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-sm text-gray-500 mb-1">Fuerte Avocados</div>
+                          <div className="flex justify-between items-center">
+                            <div className="text-lg font-bold text-blue-600">
+                              {coldRoomInventory
+                                .filter(item => item.product.includes('Fuerte'))
+                                .reduce((sum, item) => sum + item.quantity, 0)}
+                            </div>
+                            <div className="text-sm text-gray-500">boxes</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-gray-500 mb-1">Hass Avocados</div>
+                          <div className="flex justify-between items-center">
+                            <div className="text-lg font-bold text-green-600">
+                              {coldRoomInventory
+                                .filter(item => item.product.includes('Hass'))
+                                .reduce((sum, item) => sum + item.quantity, 0)}
+                            </div>
+                            <div className="text-sm text-gray-500">boxes</div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
             </TabsContent>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -28,15 +27,51 @@ export function FinalTagDialog({
 }: FinalTagDialogProps) {
   if (!weightEntry) return null;
 
+  // Safely get the net weight with fallback
+  const getNetWeight = () => {
+    const netWeight = weightEntry.netWeight || weightEntry.net_weight || 0;
+    return typeof netWeight === 'number' ? netWeight : parseFloat(netWeight as any) || 0;
+  };
+
+  // Safely get the pallet ID with fallback
+  const getPalletId = () => {
+    return weightEntry.palletId || weightEntry.pallet_id || '';
+  };
+
+  // Safely get the unit
+  const getUnit = () => {
+    return weightEntry.unit || 'kg';
+  };
+
+  // Safely get the product
+  const getProduct = () => {
+    return weightEntry.product || '';
+  };
+
+  // Safely get the client
+  const getClient = () => {
+    return weightEntry.client || weightEntry.supplier || '';
+  };
+
+  // Safely get the timestamp
+  const getTimestamp = () => {
+    return weightEntry.timestamp || weightEntry.created_at || new Date().toISOString();
+  };
+
+  // Safely get products array
+  const getProducts = () => {
+    return weightEntry.products || [];
+  };
+
   const generateQrData = () => {
     const data = {
-      tagId: `${weightEntry.palletId}-final`,
-      palletId: weightEntry.palletId,
-      client: weightEntry.client,
-      product: weightEntry.product,
-      weight: `${weightEntry.netWeight} ${weightEntry.unit}`,
-      timestamp: weightEntry.timestamp,
-      products: weightEntry.products
+      tagId: `${getPalletId()}-final`,
+      palletId: getPalletId(),
+      client: getClient(),
+      product: getProduct(),
+      weight: `${getNetWeight().toFixed(1)} ${getUnit()}`,
+      timestamp: getTimestamp(),
+      products: getProducts()
     };
     return JSON.stringify(data);
   };
@@ -63,6 +98,14 @@ export function FinalTagDialog({
     }
   };
 
+  // Get the net weight value safely
+  const netWeightValue = getNetWeight();
+  const palletId = getPalletId();
+  const unit = getUnit();
+  const product = getProduct();
+  const client = getClient();
+  const timestamp = getTimestamp();
+  const products = getProducts();
 
   return (
     <>
@@ -74,7 +117,7 @@ export function FinalTagDialog({
             Final Pallet Sticker Ready
           </DialogTitle>
           <DialogDescription>
-            The final sticker for pallet {weightEntry.palletId} is ready. Print this tag to apply to the pallet.
+            The final sticker for pallet {palletId} is ready. Print this tag to apply to the pallet.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center justify-center gap-4 rounded-lg border bg-muted/50 p-8">
@@ -86,10 +129,10 @@ export function FinalTagDialog({
                 />
             </div>
             <div className='text-center'>
-                <p className="font-bold text-lg">{weightEntry.product}</p>
-                <p className="text-muted-foreground">{weightEntry.client}</p>
-                <p className="font-mono text-sm">{weightEntry.palletId}</p>
-                <p className="font-bold text-2xl">{weightEntry.netWeight.toFixed(1)} {weightEntry.unit}</p>
+                <p className="font-bold text-lg">{product}</p>
+                <p className="text-muted-foreground">{client}</p>
+                <p className="font-mono text-sm">{palletId}</p>
+                <p className="font-bold text-2xl">{netWeightValue.toFixed(1)} {unit}</p>
             </div>
         </div>
         <div className="flex justify-end gap-2">
@@ -120,15 +163,15 @@ export function FinalTagDialog({
                 />
               </div>
               <div className="details">
-                  <p><b>Product:</b> {weightEntry.product}</p>
-                  <p><b>Client:</b> {weightEntry.client}</p>
-                  <p><b>ID:</b> {weightEntry.palletId}</p>
-                  <p><b>Date:</b> {format(new Date(weightEntry.timestamp), 'yyyy-MM-dd HH:mm')}</p>
-                  <p><b>Crates:</b> 30</p>
-                  <div className="weight-display">{weightEntry.netWeight.toFixed(1)} {weightEntry.unit}</div>
+                  <p><b>Product:</b> {product}</p>
+                  <p><b>Client:</b> {client}</p>
+                  <p><b>ID:</b> {palletId}</p>
+                  <p><b>Date:</b> {format(new Date(timestamp), 'yyyy-MM-dd HH:mm')}</p>
+                  <p><b>Crates:</b> {weightEntry.number_of_crates || weightEntry.numberOfCrates || 30}</p>
+                  <div className="weight-display">{netWeightValue.toFixed(1)} {unit}</div>
               </div>
             </div>
-             {weightEntry.products && weightEntry.products.length > 0 && (
+             {products && products.length > 0 && (
                 <div style={{ marginTop: '4px' }}>
                     <table>
                         <thead>
@@ -139,7 +182,7 @@ export function FinalTagDialog({
                             </tr>
                         </thead>
                         <tbody>
-                            {weightEntry.products.map((p, i) => (
+                            {products.map((p, i) => (
                                 <tr key={i}>
                                     <td>{p.product}</td>
                                     <td>{p.quantity}</td>

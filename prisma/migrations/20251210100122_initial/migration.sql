@@ -6,7 +6,7 @@ CREATE TABLE `carriers` (
     `contact_email` VARCHAR(100) NULL,
     `contact_phone` VARCHAR(20) NULL,
     `rating` FLOAT NULL DEFAULT 0,
-    `status` ENUM('Active', 'Inactive') NOT NULL DEFAULT 'Active',
+    `status` ENUM('Active', 'Inactive', 'Suspended') NOT NULL DEFAULT 'Active',
     `id_number` VARCHAR(50) NULL,
     `vehicle_registration` VARCHAR(20) NULL,
     `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
@@ -23,19 +23,35 @@ CREATE TABLE `employees` (
     `email` VARCHAR(191) NOT NULL,
     `role` VARCHAR(191) NOT NULL,
     `status` VARCHAR(191) NOT NULL,
-    `performance` VARCHAR(191) NOT NULL,
-    `rating` INTEGER NOT NULL,
+    `performance` VARCHAR(191) NULL,
+    `rating` INTEGER NULL,
     `contract` VARCHAR(191) NOT NULL,
-    `salary` VARCHAR(191) NOT NULL,
+    `salary` VARCHAR(191) NULL,
     `image` VARCHAR(191) NULL,
     `id_number` VARCHAR(191) NULL,
     `phone` VARCHAR(191) NULL,
-    `issue_date` DATETIME(0) NULL,
-    `expiry_date` DATETIME(0) NULL,
+    `issue_date` DATETIME(3) NULL,
+    `expiry_date` DATETIME(3) NULL,
     `company` VARCHAR(191) NULL,
-    `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
-    `updated_at` DATETIME(0) NOT NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
 
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `attendance` (
+    `id` VARCHAR(191) NOT NULL,
+    `employeeId` VARCHAR(191) NOT NULL,
+    `date` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(191) NOT NULL,
+    `clockInTime` DATETIME(3) NULL,
+    `clockOutTime` DATETIME(3) NULL,
+    `designation` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `attendance_employeeId_date_key`(`employeeId`, `date`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -46,10 +62,10 @@ CREATE TABLE `accounts_receivable` (
     `invoice_id` VARCHAR(100) NULL,
     `amount` DECIMAL(12, 2) NULL,
     `due_date` DATE NULL,
-    `aging_status` ENUM('On Time', 'At Risk', 'Late') NOT NULL,
+    `aging_status` ENUM('On_Time', 'At_Risk', 'Late') NOT NULL,
     `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
 
-    INDEX `customer_id`(`customer_id`),
+    INDEX `customer_id_idx`(`customer_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -119,7 +135,7 @@ CREATE TABLE `customer_contacts` (
     `phone` VARCHAR(20) NULL,
     `is_primary` BOOLEAN NULL DEFAULT false,
 
-    INDEX `customer_id`(`customer_id`),
+    INDEX `customer_id_idx`(`customer_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -180,8 +196,8 @@ CREATE TABLE `quotes` (
     `status` ENUM('Draft', 'Sent', 'Accepted', 'Expired') NOT NULL,
     `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
 
-    UNIQUE INDEX `quote_id`(`quote_id`),
-    INDEX `customer_id`(`customer_id`),
+    UNIQUE INDEX `quotes_quote_id_key`(`quote_id`),
+    INDEX `customer_id_idx`(`customer_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -192,7 +208,7 @@ CREATE TABLE `shipments` (
     `customer_id` VARCHAR(20) NULL,
     `origin` VARCHAR(100) NULL,
     `destination` VARCHAR(100) NULL,
-    `status` ENUM('Awaiting QC', 'Processing', 'Receiving', 'Preparing for Dispatch', 'Ready for Dispatch', 'In-Transit', 'Delivered', 'Delayed') NOT NULL,
+    `status` ENUM('Awaiting_QC', 'Processing', 'Receiving', 'Preparing_for_Dispatch', 'Ready_for_Dispatch', 'In_Transit', 'Delivered', 'Delayed') NOT NULL,
     `product` VARCHAR(100) NULL,
     `tags` VARCHAR(100) NULL,
     `weight` VARCHAR(50) NULL,
@@ -201,9 +217,9 @@ CREATE TABLE `shipments` (
     `expected_arrival` DATETIME(0) NULL,
     `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
 
-    UNIQUE INDEX `shipment_id`(`shipment_id`),
-    INDEX `customer_id`(`customer_id`),
-    INDEX `carrier_id`(`carrier_id`),
+    UNIQUE INDEX `shipments_shipment_id_key`(`shipment_id`),
+    INDEX `customer_id_idx`(`customer_id`),
+    INDEX `carrier_id_idx`(`carrier_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -216,7 +232,7 @@ CREATE TABLE `suppliers` (
     `contact_email` VARCHAR(100) NULL,
     `contact_phone` VARCHAR(20) NULL,
     `produce_types` LONGTEXT NULL,
-    `status` ENUM('Active', 'Inactive', 'Onboarding') NOT NULL,
+    `status` ENUM('Active', 'Inactive', 'Onboarding', 'Suspended') NOT NULL,
     `logo_url` VARCHAR(255) NULL,
     `active_contracts` INTEGER NULL DEFAULT 0,
     `kra_pin` VARCHAR(20) NULL,
@@ -230,33 +246,39 @@ CREATE TABLE `suppliers` (
     `bank_account_number` VARCHAR(50) NULL,
     `password` VARCHAR(255) NULL,
     `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
+    `vehicle_status` VARCHAR(50) NULL DEFAULT 'Pre-registered',
+    `vehicle_check_in_time` DATETIME(0) NULL,
+    `vehicle_check_out_time` DATETIME(0) NULL,
+    `vehicle_type` VARCHAR(50) NULL,
+    `cargo_description` LONGTEXT NULL,
 
-    UNIQUE INDEX `supplier_code`(`supplier_code`),
+    UNIQUE INDEX `suppliers_supplier_code_key`(`supplier_code`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
 CREATE TABLE `visitors` (
-    `id` VARCHAR(20) NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `company` VARCHAR(100) NULL,
-    `host_id` VARCHAR(20) NULL,
-    `id_number` VARCHAR(50) NULL,
-    `email` VARCHAR(100) NULL,
-    `phone` VARCHAR(20) NULL,
-    `visitor_code` VARCHAR(50) NULL,
-    `vehicle_plate` VARCHAR(20) NULL,
-    `vehicle_type` VARCHAR(50) NULL,
-    `cargo_description` TEXT NULL,
-    `reason_for_visit` TEXT NULL,
-    `status` ENUM('Pre-registered', 'Checked-in', 'Checked-out', 'Pending Exit') NOT NULL,
-    `expected_check_in_time` DATETIME(0) NULL,
-    `check_in_time` DATETIME(0) NULL,
-    `check_out_time` DATETIME(0) NULL,
-    `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
+    `id` VARCHAR(191) NOT NULL,
+    `visitor_code` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `id_number` VARCHAR(191) NULL,
+    `company` VARCHAR(191) NULL,
+    `email` VARCHAR(191) NULL,
+    `phone` VARCHAR(191) NOT NULL,
+    `vehicle_plate` VARCHAR(191) NULL,
+    `vehicle_type` VARCHAR(191) NULL,
+    `cargo_description` VARCHAR(191) NULL,
+    `visitor_type` VARCHAR(191) NULL DEFAULT 'visitor',
+    `status` VARCHAR(191) NULL DEFAULT 'Pre-registered',
+    `check_in_time` DATETIME(3) NULL,
+    `check_out_time` DATETIME(3) NULL,
+    `expected_check_in_time` DATETIME(3) NULL,
+    `host_id` VARCHAR(191) NULL,
+    `department` VARCHAR(191) NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
 
-    UNIQUE INDEX `visitor_code`(`visitor_code`),
-    INDEX `host_id`(`host_id`),
+    UNIQUE INDEX `visitors_visitor_code_key`(`visitor_code`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -277,24 +299,76 @@ CREATE TABLE `weight_entries` (
     `declared_weight` DECIMAL(10, 2) NULL,
     `rejected_weight` DECIMAL(10, 2) NULL,
     `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
+    `supplier_id` VARCHAR(255) NULL,
+    `supplier_phone` VARCHAR(50) NULL,
+    `fruit_variety` TEXT NULL DEFAULT '[]',
+    `number_of_crates` INTEGER NULL DEFAULT 0,
+    `region` VARCHAR(100) NULL,
+    `image_url` TEXT NULL,
+    `driver_name` VARCHAR(255) NULL,
+    `driver_phone` VARCHAR(50) NULL,
+    `driver_id_number` VARCHAR(100) NULL,
+    `vehicle_plate` VARCHAR(50) NULL,
+    `notes` TEXT NULL,
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- AddForeignKey
-ALTER TABLE `accounts_receivable` ADD CONSTRAINT `accounts_receivable_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+-- CreateTable
+CREATE TABLE `quality_checks` (
+    `id` VARCHAR(20) NOT NULL,
+    `shipment_id` VARCHAR(20) NULL,
+    `operator_id` VARCHAR(20) NULL,
+    `pallet_id` VARCHAR(100) NULL,
+    `product` VARCHAR(100) NULL,
+    `declared_weight` DECIMAL(10, 2) NULL,
+    `net_weight` DECIMAL(10, 2) NULL,
+    `rejected_weight` DECIMAL(10, 2) NULL,
+    `accepted_weight` DECIMAL(10, 2) NULL,
+    `fuerte_class1` DECIMAL(5, 2) NULL,
+    `fuerte_class2` DECIMAL(5, 2) NULL,
+    `fuerte_overall` DECIMAL(5, 2) NULL,
+    `hass_class1` DECIMAL(5, 2) NULL,
+    `hass_class2` DECIMAL(5, 2) NULL,
+    `hass_overall` DECIMAL(5, 2) NULL,
+    `arrival_temperature` DECIMAL(4, 1) NULL,
+    `driver_id` VARCHAR(100) NULL,
+    `truck_id` VARCHAR(100) NULL,
+    `packaging_status` VARCHAR(50) NULL DEFAULT 'accepted',
+    `freshness_status` VARCHAR(50) NULL DEFAULT 'accepted',
+    `seals_status` VARCHAR(50) NULL DEFAULT 'accepted',
+    `overall_status` VARCHAR(50) NULL DEFAULT 'approved',
+    `notes` TEXT NULL,
+    `processed_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
+    `processed_by` VARCHAR(100) NOT NULL,
+    `created_at` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
+    `weight_entry_id` VARCHAR(20) NULL,
+
+    INDEX `shipment_id_idx`(`shipment_id`),
+    INDEX `weight_entry_id_idx`(`weight_entry_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- AddForeignKey
-ALTER TABLE `customer_contacts` ADD CONSTRAINT `customer_contacts_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE CASCADE ON UPDATE RESTRICT;
+ALTER TABLE `attendance` ADD CONSTRAINT `attendance_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `employees`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `quotes` ADD CONSTRAINT `quotes_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+ALTER TABLE `accounts_receivable` ADD CONSTRAINT `accounts_receivable_customer_id_fkey` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE `shipments` ADD CONSTRAINT `shipments_customer_id_fkey` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `customer_contacts` ADD CONSTRAINT `customer_contacts_customer_id_fkey` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE CASCADE ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `quotes` ADD CONSTRAINT `quotes_customer_id_fkey` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 -- AddForeignKey
 ALTER TABLE `shipments` ADD CONSTRAINT `shipments_carrier_id_fkey` FOREIGN KEY (`carrier_id`) REFERENCES `carriers`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `visitors` ADD CONSTRAINT `visitors_ibfk_1` FOREIGN KEY (`host_id`) REFERENCES `employees`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+ALTER TABLE `shipments` ADD CONSTRAINT `shipments_customer_id_fkey` FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `quality_checks` ADD CONSTRAINT `quality_checks_shipment_id_fkey` FOREIGN KEY (`shipment_id`) REFERENCES `shipments`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `quality_checks` ADD CONSTRAINT `quality_checks_weight_entry_id_fkey` FOREIGN KEY (`weight_entry_id`) REFERENCES `weight_entries`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

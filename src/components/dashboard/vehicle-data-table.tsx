@@ -18,30 +18,29 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Users, Eye, ShieldAlert, Car, CheckCircle, Clock, Calendar } from 'lucide-react';
-import type { Visitor } from '@/lib/data';
-import { employeeData } from '@/lib/data';
+import { Truck, Eye, ShieldAlert, CheckCircle, Clock, Calendar, Package, Fuel } from 'lucide-react';
+import type { Vehicle } from '@/lib/types';
 import { format } from 'date-fns';
 import { ScrollArea } from '../ui/scroll-area';
 import { Skeleton } from '../ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/hooks/use-user';
 
-interface VisitorDataTableProps {
-  visitors: Visitor[];
-  highlightedVisitorId?: string;
-  onCheckIn?: (visitorId: string) => void;
-  onCheckOut?: (visitorId: string, isFinal?: boolean) => void;
-  onRowClick: (visitor: Visitor) => void;
+interface VehicleDataTableProps {
+  vehicles: Vehicle[];
+  highlightedVehicleId?: string;
+  onCheckIn?: (vehicleId: string) => void;
+  onCheckOut?: (vehicleId: string, isFinal?: boolean) => void;
+  onRowClick: (vehicle: Vehicle) => void;
 }
 
-export function VisitorDataTable({ 
-  visitors, 
-  highlightedVisitorId, 
+export function VehicleDataTable({ 
+  vehicles, 
+  highlightedVehicleId, 
   onCheckIn, 
   onCheckOut, 
   onRowClick 
-}: VisitorDataTableProps) {
+}: VehicleDataTableProps) {
   const [hasMounted, setHasMounted] = useState(false);
   const { user } = useUser();
 
@@ -61,20 +60,27 @@ export function VisitorDataTable({
       return <Skeleton className="h-4 w-10" />;
     }
     return ts ? format(new Date(ts), 'HH:mm') : '-';
-  }
-  
-  const getHostName = (hostId?: string) => {
-    if (!hostId) return 'N/A';
-    const host = employeeData.find(e => e.id === hostId);
-    return host ? `${host.name} (${host.role})` : 'Unknown';
   };
-
-  const isHighlighted = (visitorId: string) => {
-    return highlightedVisitorId === visitorId;
+  
+  const getCargoIcon = (cargoDescription?: string) => {
+    if (!cargoDescription) return <Package className="h-4 w-4 text-gray-400" />;
+    
+    if (cargoDescription.toLowerCase().includes('fuel') || 
+        cargoDescription.toLowerCase().includes('oil') ||
+        cargoDescription.toLowerCase().includes('gas')) {
+      return <Fuel className="h-4 w-4 text-amber-600" />;
+    }
+    
+    if (cargoDescription.toLowerCase().includes('food') ||
+        cargoDescription.toLowerCase().includes('produce')) {
+      return <Package className="h-4 w-4 text-green-600" />;
+    }
+    
+    return <Package className="h-4 w-4 text-blue-600" />;
   };
 
   // Get status icon
-  const getStatusIcon = (status: Visitor['status']) => {
+  const getStatusIcon = (status: Vehicle['status']) => {
     switch (status) {
       case 'Checked-in':
         return <CheckCircle className="h-3 w-3" />;
@@ -89,15 +95,40 @@ export function VisitorDataTable({
     }
   };
 
+  const getVehicleTypeBadge = (vehicleType?: string) => {
+    if (!vehicleType) return null;
+    
+    const type = vehicleType.toLowerCase();
+    let variant: "default" | "secondary" | "outline" = "outline";
+    let color = "text-gray-600";
+    
+    if (type.includes('truck')) {
+      variant = "default";
+      color = "text-blue-700";
+    } else if (type.includes('van') || type.includes('pickup')) {
+      variant = "secondary";
+      color = "text-green-700";
+    } else if (type.includes('trailer')) {
+      variant = "outline";
+      color = "text-amber-700";
+    }
+    
+    return (
+      <Badge variant={variant} className={cn("text-xs", color)}>
+        {vehicleType}
+      </Badge>
+    );
+  };
+
   return (
     <Card className="h-full flex flex-col border shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Users className="w-5 h-5 text-primary" />
-          Visitor List
+          <Truck className="w-5 h-5 text-primary" />
+          Vehicle List
         </CardTitle>
         <CardDescription>
-          {visitors.length} visitor{visitors.length !== 1 ? 's' : ''} • Click to select
+          {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} • Click to select
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow p-0">
@@ -105,9 +136,9 @@ export function VisitorDataTable({
           <Table>
             <TableHeader className="sticky top-0 bg-card border-b">
               <TableRow>
-                <TableHead className="font-semibold">Visitor</TableHead>
-                <TableHead className="font-semibold">Host / Department</TableHead>
-                <TableHead className="font-semibold">Vehicle</TableHead>
+                <TableHead className="font-semibold">Driver & Vehicle</TableHead>
+                <TableHead className="font-semibold">Company / Cargo</TableHead>
+                <TableHead className="font-semibold">Registration</TableHead>
                 <TableHead className="font-semibold">Expected</TableHead>
                 <TableHead className="font-semibold">Check-in</TableHead>
                 <TableHead className="font-semibold">Check-out</TableHead>
@@ -116,12 +147,12 @@ export function VisitorDataTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visitors.map((visitor) => {
-                const highlighted = isHighlighted(visitor.id);
+              {vehicles.map((vehicle) => {
+                const highlighted = highlightedVehicleId === vehicle.id;
                 return (
                   <TableRow 
-                    key={visitor.id} 
-                    onClick={() => onRowClick(visitor)}
+                    key={vehicle.id} 
+                    onClick={() => onRowClick(vehicle)}
                     className={cn(
                       "cursor-pointer transition-all hover:bg-gray-50 border-b",
                       highlighted 
@@ -142,34 +173,39 @@ export function VisitorDataTable({
                             "font-medium",
                             highlighted && "text-blue-700"
                           )}>
-                            {visitor.name}
+                            {vehicle.driverName}
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {visitor.company || 'Individual Visitor'}
+                          <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                            <Truck className="h-3 w-3" />
+                            {getVehicleTypeBadge(vehicle.vehicleType)}
                           </div>
                           <div className="text-xs text-muted-foreground font-mono mt-1">
-                            ID: {visitor.visitorCode}
+                            ID: {vehicle.vehicleCode}
                           </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm font-medium">{getHostName(visitor.hostId)}</div>
-                      {visitor.department && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {visitor.department}
+                      <div className="flex items-start gap-2">
+                        {getCargoIcon(vehicle.cargoDescription)}
+                        <div>
+                          <div className="text-sm font-medium">{vehicle.company}</div>
+                          {vehicle.cargoDescription && (
+                            <div className="text-xs text-muted-foreground mt-1 max-w-[150px] truncate">
+                              {vehicle.cargoDescription}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      {visitor.vehiclePlate ? (
-                        <div className="flex items-center gap-2">
-                          <Car className="h-4 w-4 text-gray-500" />
-                          <div>
-                            <div className="font-mono font-medium">{visitor.vehiclePlate}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {visitor.vehicleType || 'Car'}
-                            </div>
+                      {vehicle.vehiclePlate ? (
+                        <div className="flex flex-col gap-1">
+                          <div className="font-mono font-medium bg-black-100 px-2 py-1 rounded text-center">
+                            {vehicle.vehiclePlate}
+                          </div>
+                          <div className="text-xs text-muted-foreground text-center">
+                            ID: {vehicle.idNumber}
                           </div>
                         </div>
                       ) : (
@@ -177,24 +213,24 @@ export function VisitorDataTable({
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="font-mono text-sm">{formatTimestamp(visitor.expectedCheckInTime)}</div>
+                      <div className="font-mono text-sm">{formatTimestamp(vehicle.expectedCheckInTime)}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="font-mono text-sm">{formatTimestamp(visitor.checkInTime)}</div>
+                      <div className="font-mono text-sm">{formatTimestamp(vehicle.checkInTime)}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="font-mono text-sm">{formatTimestamp(visitor.checkOutTime)}</div>
+                      <div className="font-mono text-sm">{formatTimestamp(vehicle.checkOutTime)}</div>
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={statusVariant[visitor.status]}
+                        variant={statusVariant[vehicle.status]}
                         className={cn(
                           "capitalize flex items-center gap-1 px-2 py-1",
                           highlighted && "ring-2 ring-blue-200"
                         )}
                       >
-                        {getStatusIcon(visitor.status)}
-                        {visitor.status}
+                        {getStatusIcon(vehicle.status)}
+                        {vehicle.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
@@ -208,7 +244,7 @@ export function VisitorDataTable({
                           )}
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            onRowClick(visitor); 
+                            onRowClick(vehicle); 
                           }}
                         >
                           <Eye className="mr-1 h-3 w-3" />
@@ -216,14 +252,14 @@ export function VisitorDataTable({
                         </Button>
                         
                         {/* Only show verify button for security on pending exit status */}
-                        {visitor.status === 'Pending Exit' && user?.role === 'Security' && onCheckOut && (
+                        {vehicle.status === 'Pending Exit' && user?.role === 'Security' && onCheckOut && (
                           <Button 
                             size="sm" 
                             variant="destructive"
                             className="h-8 text-xs"
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              onCheckOut(visitor.id, true); 
+                              onCheckOut(vehicle.id, true); 
                             }}
                           >
                             <ShieldAlert className="mr-1 h-3 w-3" />
@@ -236,15 +272,15 @@ export function VisitorDataTable({
                 );
               })}
               
-              {visitors.length === 0 && (
+              {vehicles.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-12">
                     <div className="flex flex-col items-center gap-3">
                       <div className="p-3 bg-gray-100 rounded-full">
-                        <Users className="h-8 w-8 text-gray-400" />
+                        <Truck className="h-8 w-8 text-gray-400" />
                       </div>
                       <div>
-                        <p className="font-medium text-gray-600">No visitors found</p>
+                        <p className="font-medium text-gray-600">No vehicles found</p>
                         <p className="text-sm text-gray-500 mt-1">No data available for this category</p>
                       </div>
                     </div>

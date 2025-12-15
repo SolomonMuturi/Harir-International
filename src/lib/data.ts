@@ -221,6 +221,7 @@ export type ProductItem = {
     weight: number;
 };
 
+
 export type WeightEntry = {
   id: string;
   palletId: string;
@@ -239,6 +240,16 @@ export type WeightEntry = {
   rejectedWeight?: number;
   photoEvidence?: File[] | null;
   client?: string;
+  
+  
+  pallet_id?: string;
+  gross_weight?: number;
+  tare_weight?: number;
+  net_weight?: number;
+  declared_weight?: number;
+  rejected_weight?: number;
+  truck_id?: string;
+  driver_id?: string;
 };
 
 export const weightData: WeightEntry[] = [

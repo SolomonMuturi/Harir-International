@@ -79,15 +79,17 @@ const accessManagementNavItems: NavItem[] = [
 const operationsNavItems: NavItem[] = [
 //  { name: 'Traceability', href: '/traceability', icon: PackageSearch, roles: ['Admin', 'Manager', 'Warehouse', 'Security'] },
 { name: 'Intake', href: '/weight-capture', icon: Weight, roles: ['Admin', 'Manager', 'Warehouse', 'Driver'] },  
+{ name: 'Quality Control', href: '/quality-control', icon: FlaskConical, roles: ['Admin', 'Manager', 'Warehouse'] },
+{ name: 'Counting', href: '/warehouse', icon: Warehouse, roles: ['Admin', 'Manager', 'Warehouse'] },
+{ name: 'Cold Room', href: '/cold-room', icon: Thermometer, roles: ['Admin', 'Manager', 'Warehouse'] },
 { name: 'Shipments', href: '/shipments', icon: Truck, roles: ['Admin', 'Manager', 'Warehouse'] },
-  { name: 'Loading', href: '/outbound', icon: Truck, roles: ['Admin', 'Manager', 'Warehouse'] },
-  { name: 'Carriers', href: '/carriers', icon: Briefcase, roles: ['Admin', 'Manager'] },
-  { name: 'Warehouse', href: '/warehouse', icon: Warehouse, roles: ['Admin', 'Manager', 'Warehouse'] },
-  { name: 'Quality Control', href: '/quality-control', icon: FlaskConical, roles: ['Admin', 'Manager', 'Warehouse'] },
+{ name: 'Carriers', href: '/carriers', icon: Briefcase, roles: ['Admin', 'Manager'] },
+{ name: 'Loading', href: '/outbound', icon: Truck, roles: ['Admin', 'Manager', 'Warehouse'] },
+  
  // { name: 'Tag Management', href: '/tag-management', icon: QrCode, roles: ['Admin', 'Manager', 'Warehouse'] },
-  { name: 'Cold Room', href: '/cold-room', icon: Thermometer, roles: ['Admin', 'Manager', 'Warehouse'] },
+  
   { name: 'Inventory', href: '/inventory', icon: Boxes, roles: ['Admin', 'Manager', 'Warehouse'] },
-  { name: 'Produce', href: '/produce', icon: Leaf, roles: ['Admin', 'Manager', 'Warehouse'] },
+//  { name: 'Produce', href: '/produce', icon: Leaf, roles: ['Admin', 'Manager', 'Warehouse'] },
   { name: 'Utility Management', href: '/utility', icon: Zap, roles: ['Admin', 'Manager'] },
 ];
 

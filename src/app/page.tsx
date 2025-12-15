@@ -55,7 +55,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
-import WeightCapture from '@/components/dashboard/weight-capture';
+import { WeightCapture } from '@/components/dashboard/weight-capture';
 import { GenerateTagsForm } from '@/components/dashboard/generate-tags-form';
 import { ProcessingStationStatus } from '@/components/dashboard/processing-station-status';
 import { useRouter } from 'next/navigation';

@@ -1,11 +1,6 @@
-
-
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import {
   SidebarProvider,
   Sidebar,
@@ -13,10 +8,9 @@ import {
   SidebarContent,
   SidebarInset,
 } from '@/components/layout/client-layout';
-import { FreshViewLogo } from '@/components/icons';
+import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { visitorData, overviewData, shipmentData, type Visitor, type Shipment, employeeData, timeAttendanceData, type Employee, type EmployeeFormValues } from '@/lib/data';
 import { VisitorDataTable } from '@/components/dashboard/visitor-data-table';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,114 +22,192 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { CreateVisitorForm, type VisitorFormValues } from '@/components/dashboard/create-visitor-form';
-import { PlusCircle, Clock, Truck, Users, QrCode, Printer, Calendar as CalendarIcon, CreditCard, Edit, AlertTriangle, Send, RefreshCw } from 'lucide-react';
-import { OverviewCard } from '@/components/dashboard/overview-card';
-import { GatePassDialog } from '@/components/dashboard/gate-pass-dialog';
-import { VisitorDetailDialog } from '@/components/dashboard/visitor-detail-dialog';
-import { CheckInDialog } from '@/components/dashboard/check-in-dialog';
+import { User, QrCode, Printer, DoorOpen, Loader2, RefreshCw, CheckCircle, Clock, Calendar, CheckCheck, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { RegistrationSuccess } from '@/components/dashboard/registration-success';
-import { PrintableVisitorReport } from '@/components/dashboard/printable-visitor-report';
-import { DateRange } from 'react-day-picker';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
-import { format, isWithinInterval, parseISO, add, differenceInDays } from 'date-fns';
-import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { EmployeeIdCardDialog } from '@/components/dashboard/employee-id-card-dialog';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Input } from '@/components/ui/input';
-import { CreateEmployeeForm } from '@/components/dashboard/create-employee-form';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { GatePassDialog } from '@/components/dashboard/gate-pass-dialog';
+import { VisitorDetailDialog } from '@/components/dashboard/visitor-detail-dialog';
+import { PrintableVehicleReport } from '@/components/dashboard/printable-vehicle-report';
 
-type VisitorStatusFilter = 'All' | 'Pre-registered' | 'Checked-in' | 'Checked-out' | 'Pending Exit';
+// Visitor type
+interface Visitor {
+  id: string;
+  visitorCode: string;
+  name: string;
+  idNumber: string;
+  phone: string;
+  vehiclePlate: string;
+  visitorType: 'visitor';
+  status: 'Pre-registered' | 'Checked-in' | 'Pending Exit' | 'Checked-out';
+  checkInTime?: string;
+  checkOutTime?: string;
+  expectedCheckInTime: string;
+  hostId: string;
+  hostName: string;
+  department: string;
+  purpose?: string;
+}
 
 export default function VisitorManagementPage() {
-  const [visitors, setVisitors] = useState<Visitor[]>(visitorData);
-  const [shipments, setShipments] = useState<Shipment[]>(shipmentData);
-  const [employees, setEmployees] = useState<Employee[]>(employeeData);
+  const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
-  const [isCheckInDialogOpen, setIsCheckInDialogOpen] = useState(false);
   const [isGatePassOpen, setIsGatePassOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [isIdCardOpen, setIsIdCardOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [newlyRegisteredVisitor, setNewlyRegisteredVisitor] = useState<Visitor | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState('preregistered');
+  const [apiError, setApiError] = useState<string | null>(null);
   const { toast } = useToast();
-  const [statusFilter, setStatusFilter] = useState<VisitorStatusFilter>('All');
-  const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const printRef = useRef<HTMLDivElement>(null);
-  const [employeeSearch, setEmployeeSearch] = useState('');
 
-  const handleAddVisitor = (values: VisitorFormValues) => {
-    const newVisitor: Visitor = {
-      id: `vis-${Date.now()}`,
-      visitorCode: `VIST-${String(Math.floor(Math.random() * 9000) + 1000)}`,
-      status: 'Pre-registered',
-      name: values.name,
-      hostId: values.hostId,
-      idNumber: values.idNumber,
-      company: values.company,
-      email: values.email,
-      phone: values.phone,
-      expectedCheckInTime: values.expectedCheckInTime,
-      vehiclePlate: values.vehiclePlate || 'N/A',
-      vehicleType: values.vehicleType || 'N/A',
-      cargoDescription: values.cargoDescription,
-    };
-    setVisitors(prev => [newVisitor, ...prev]);
-    setNewlyRegisteredVisitor(newVisitor);
+  // Fetch visitors from database
+  useEffect(() => {
+    fetchVisitors();
+  }, []);
 
-    if (values.logShipment && values.customer && values.origin && values.destination && values.product) {
-      const newShipment: Shipment = {
-        id: `ship-${Date.now()}`,
-        shipmentId: `SH-${Math.floor(Math.random() * 90000) + 10000}`,
-        customer: values.customer,
-        origin: values.origin,
-        destination: values.destination,
-        status: 'Receiving',
-        product: values.product,
-        tags: 'Not tagged',
-        weight: 'Not weighed',
-        expectedArrival: values.expectedCheckInTime,
-      };
-      setShipments(prev => [newShipment, ...prev]);
-       toast({
-        title: 'Visitor & Shipment Registered',
-        description: `${newVisitor.name} has been pre-registered and shipment ${newShipment.shipmentId} has been created.`,
+  const fetchVisitors = async () => {
+    try {
+      setIsLoading(true);
+      setApiError(null);
+      
+      const response = await fetch('/api/visitors');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch visitors: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Convert API data to frontend Visitor type
+      const convertedVisitors: Visitor[] = data.map((visitor: any) => ({
+        id: visitor.id,
+        visitorCode: visitor.visitor_code || `VIS-${visitor.id}`,
+        name: visitor.name || '',
+        idNumber: visitor.id_number || '',
+        phone: visitor.phone || '',
+        vehiclePlate: visitor.vehicle_plate || '',
+        visitorType: 'visitor',
+        status: (visitor.status || 'Pre-registered') as Visitor['status'],
+        checkInTime: visitor.check_in_time,
+        checkOutTime: visitor.check_out_time,
+        expectedCheckInTime: visitor.expected_check_in_time || visitor.date || new Date().toISOString(),
+        hostId: visitor.host_id || '',
+        hostName: visitor.host_name || 'Database Host',
+        department: visitor.department || '',
+        purpose: visitor.purpose || '',
+      }));
+      
+      setVisitors(convertedVisitors);
+      
+    } catch (error: any) {
+      console.error('Error fetching visitors:', error);
+      setApiError(error.message || 'Could not connect to database');
+      
+      toast({
+        title: 'Database Warning',
+        description: 'Could not load visitor data from database.',
+        variant: 'destructive',
       });
-    } else {
-       toast({
-        title: 'Visitor Registered',
-        description: `${newVisitor.name} has been pre-registered.`,
-      });
+      
+      setVisitors([]);
+    } finally {
+      setIsLoading(false);
     }
   };
-  
-  const handleUpdateEmployee = (updatedEmployeeData: EmployeeFormValues) => {
-    if (!selectedEmployee) return;
-    const updatedEmployeeWithDates = {
-      ...updatedEmployeeData,
-      issueDate: updatedEmployeeData.issueDate ? new Date(updatedEmployeeData.issueDate).toISOString() : undefined,
-      expiryDate: updatedEmployeeData.expiryDate ? new Date(updatedEmployeeData.expiryDate).toISOString() : undefined,
-    }
 
-    setEmployees(prev =>
-      prev.map(emp =>
-        emp.id === selectedEmployee.id
-          ? { ...emp, ...updatedEmployeeWithDates }
-          : emp
-      )
-    );
-    setSelectedEmployee(prev => prev ? ({...prev, ...updatedEmployeeWithDates}) : null);
-    setIsEditDialogOpen(false);
-     toast({
-      title: 'Employee Updated',
-      description: `${selectedEmployee.name}'s details have been updated.`,
-    });
+  const refreshAllData = async () => {
+    setIsRefreshing(true);
+    setApiError(null);
+    try {
+      await fetchVisitors();
+      toast({
+        title: 'Data Refreshed',
+        description: 'Latest visitor data has been loaded.',
+      });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast({
+        title: 'Refresh Failed',
+        description: 'Could not refresh data from server.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleAddVisitor = async (values: VisitorFormValues) => {
+    try {
+      const visitorData = {
+        name: values.visitorName,
+        id_number: values.idNumber,
+        phone: values.phoneNumber,
+        vehicle_plate: values.vehicleRegNo || '',
+        visitor_type: 'visitor',
+        status: 'Pre-registered',
+        expected_check_in_time: `${values.date}T${values.signInTime}:00`,
+        department: values.department,
+        purpose: values.purpose || '',
+      };
+
+      const response = await fetch('/api/visitors', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(visitorData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to create visitor');
+      }
+
+      const savedVisitor = await response.json();
+      
+      const newVisitor: Visitor = {
+        id: savedVisitor.id,
+        visitorCode: savedVisitor.visitor_code || `VIS-${savedVisitor.id}`,
+        name: savedVisitor.name,
+        idNumber: savedVisitor.id_number || '',
+        phone: savedVisitor.phone || '',
+        vehiclePlate: savedVisitor.vehicle_plate || '',
+        visitorType: 'visitor',
+        status: savedVisitor.status,
+        expectedCheckInTime: savedVisitor.expected_check_in_time,
+        hostId: savedVisitor.host_id || '',
+        hostName: 'Database Host',
+        department: savedVisitor.department || '',
+        purpose: savedVisitor.purpose || '',
+      };
+      
+      setVisitors(prev => [newVisitor, ...prev]);
+      setNewlyRegisteredVisitor(newVisitor);
+      
+      toast({
+        title: 'Visitor Registered',
+        description: `${newVisitor.name} has been successfully registered.`,
+      });
+      
+    } catch (error: any) {
+      console.error('Error registering visitor:', error);
+      
+      toast({
+        title: 'Registration Failed',
+        description: error.message || 'Failed to register visitor',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleRegistrationDialogClose = (open: boolean) => {
@@ -143,152 +215,210 @@ export default function VisitorManagementPage() {
       setNewlyRegisteredVisitor(null);
     }
     setIsRegisterDialogOpen(open);
-  }
+  };
 
-  const handleCheckIn = (visitorId: string) => {
-    const visitor = visitors.find(v => v.id === visitorId);
-    if (!visitor) return;
-
-    setVisitors(prev => prev.map(v => v.id === visitorId ? { ...v, status: 'Checked-in', checkInTime: new Date().toISOString() } : v));
-    setIsCheckInDialogOpen(false);
+  const handleCheckIn = async (visitorId?: string) => {
+    const visitorIdToCheckIn = visitorId || selectedVisitor?.id;
     
-    const host = employeeData.find(e => e.id === visitor.hostId);
-    toast({
-        title: "Visitor Checked In",
-        description: `${visitor.name} has been checked in. ${host ? `Host (${host.name}) has been notified.` : ''}`,
-    });
+    if (!visitorIdToCheckIn) {
+      toast({
+        title: 'No Visitor Selected',
+        description: 'Please select a visitor to check in.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    if (visitor.vehiclePlate && visitor.vehiclePlate !== 'N/A') {
-        setSelectedVisitor({ ...visitor, status: 'Checked-in' });
-        setIsGatePassOpen(true);
+    try {
+      const visitor = visitors.find(v => v.id === visitorIdToCheckIn);
+      if (!visitor) return;
+
+      // Don't allow checking in non-pre-registered visitors
+      if (visitor.status !== 'Pre-registered') {
         toast({
-          title: "Vehicle Badge Generated",
-          description: `A printable vehicle badge for ${visitor.vehiclePlate} is ready.`
-        })
+          title: 'Cannot Check In',
+          description: `Visitor ${visitor.name} is already ${visitor.status.toLowerCase()}.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/visitors?id=${visitorIdToCheckIn}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: 'Checked-in',
+          check_in_time: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to check in visitor');
+      }
+
+      const updatedVisitorData = await response.json();
+      const updatedVisitor: Visitor = {
+        ...visitor,
+        status: 'Checked-in',
+        checkInTime: updatedVisitorData.check_in_time,
+      };
+
+      setVisitors(prev => prev.map(v => v.id === visitorIdToCheckIn ? updatedVisitor : v));
+      
+      // Clear selection after successful check-in
+      setSelectedVisitor(null);
+      
+      toast({
+        title: "Visitor Checked In",
+        description: `${visitor.name} has been successfully checked in.`,
+      });
+
+      setSelectedVisitor(updatedVisitor);
+      setIsGatePassOpen(true);
+      
+    } catch (error: any) {
+      console.error('Error checking in visitor:', error);
+      toast({
+        title: 'Check-in Failed',
+        description: error.message || 'Failed to check in visitor',
+        variant: 'destructive',
+      });
     }
   };
 
-  const handleCheckOut = (visitorId: string, final: boolean = false) => {
-    const visitor = visitors.find(v => v.id === visitorId);
-    if (!visitor) return;
+  const handleCheckOut = async (visitorId: string, final: boolean = false) => {
+    try {
+      const visitor = visitors.find(v => v.id === visitorId);
+      if (!visitor) return;
 
-    if (final) {
-        // Final verification step at the gate
-        const updatedVisitor = { ...visitor, status: 'Checked-out' as const, checkOutTime: new Date().toISOString() };
-        setSelectedVisitor(updatedVisitor);
-        setVisitors(prev => prev.map(v => v.id === visitorId ? updatedVisitor : v));
-        setIsCheckInDialogOpen(false); // Close the check-in/verification dialog
-        toast({
-            title: "Visitor Verified for Exit",
-            description: `${visitor.name} has been successfully checked out.`,
+      if (final) {
+        const response = await fetch(`/api/visitors?id=${visitorId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'Checked-out',
+            check_out_time: new Date().toISOString(),
+          }),
         });
-    } else {
-        // Initial checkout action (e.g., by host), sets status to 'Pending Exit'
-        const updatedVisitor = { ...visitor, status: 'Pending Exit' as const };
+
+        if (!response.ok) {
+          throw new Error('Failed to check out visitor');
+        }
+
+        const updatedVisitorData = await response.json();
+        const updatedVisitor = { 
+          ...visitor, 
+          status: 'Checked-out', 
+          checkOutTime: updatedVisitorData.check_out_time,
+        };
+
         setSelectedVisitor(updatedVisitor);
         setVisitors(prev => prev.map(v => v.id === visitorId ? updatedVisitor : v));
         
         toast({
-            title: "Checkout Initiated",
-            description: `${visitor.name} is now pending exit. A gate pass can be generated.`,
+          title: "Visitor Verified for Exit",
+          description: `${visitor.name} has been successfully checked out.`,
+        });
+      } else {
+        const response = await fetch(`/api/visitors?id=${visitorId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'Pending Exit',
+          }),
         });
 
-        if(visitor.vehiclePlate && visitor.vehiclePlate !== 'N/A') {
-            setSelectedVisitor(updatedVisitor);
-            setIsGatePassOpen(true);
+        if (!response.ok) {
+          throw new Error('Failed to initiate checkout');
         }
+
+        const updatedVisitorData = await response.json();
+        const updatedVisitor = { 
+          ...visitor, 
+          status: 'Pending Exit',
+        };
+
+        setSelectedVisitor(updatedVisitor);
+        setVisitors(prev => prev.map(v => v.id === visitorId ? updatedVisitor : v));
+        
+        toast({
+          title: "Checkout Initiated",
+          description: `${visitor.name} is now pending exit.`,
+        });
+
+        setIsGatePassOpen(true);
+      }
+    } catch (error: any) {
+      console.error('Error during checkout:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to process checkout',
+        variant: 'destructive',
+      });
     }
   };
 
   const handleRowClick = (visitor: Visitor) => {
     setSelectedVisitor(visitor);
-    setIsDetailDialogOpen(true);
   };
 
   const handlePrintReport = async () => {
     const element = printRef.current;
     if (element) {
-        const canvas = await html2canvas(element, { scale: 2 });
-        const data = canvas.toDataURL('image/jpeg');
+      try {
+        const canvas = await html2canvas(element, { 
+          scale: 2,
+          useCORS: true,
+          logging: false
+        });
+        const data = canvas.toDataURL('image/jpeg', 0.95);
         
         const pdf = new jsPDF('p', 'mm', 'a4');
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         
         pdf.addImage(data, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`visitor-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-    }
-  };
-
-  const handleIdCardClick = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setIsIdCardOpen(true);
-  };
-  
-  const handleEditClick = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setIsIdCardOpen(false); // Close ID card dialog
-    setIsEditDialogOpen(true); // Open Edit dialog
-  };
-
-  const handleSendReminder = (employeeName: string) => {
-      toast({
-          title: 'Reminder Sent',
-          description: `An expiry reminder has been sent to ${employeeName}.`
-      });
-  }
-
-  const handleRenewNow = (employee: Employee) => {
-      if (employee.expiryDate) {
-        const newExpiryDate = add(new Date(employee.expiryDate), { years: 1 });
-        const updatedEmployee = { ...employee, expiryDate: newExpiryDate.toISOString() };
-
-        setEmployees(prev => prev.map(e => e.id === employee.id ? updatedEmployee : e));
+        pdf.save(`visitor-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
         
         toast({
-            title: 'Badge Renewed',
-            description: `${employee.name}'s badge has been renewed until ${format(newExpiryDate, 'PPP')}.`
+          title: 'Report Generated',
+          description: 'Visitor report has been downloaded as PDF.',
+        });
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+        toast({
+          title: 'PDF Generation Failed',
+          description: 'Could not generate PDF report.',
+          variant: 'destructive',
         });
       }
+    }
   };
 
-  const filteredVisitors = visitors.filter(visitor => {
-    const statusMatch = statusFilter === 'All' || visitor.status === statusFilter;
-    
-    let dateMatch = true;
-    if (dateRange?.from && dateRange?.to) {
-        const checkInTime = visitor.checkInTime ? parseISO(visitor.checkInTime) : null;
-        dateMatch = checkInTime ? isWithinInterval(checkInTime, { start: dateRange.from, end: dateRange.to }) : false;
-    } else if (dateRange?.from) {
-        const checkInTime = visitor.checkInTime ? parseISO(visitor.checkInTime) : null;
-        dateMatch = checkInTime ? checkInTime >= dateRange.from : false;
-    }
-    
-    return statusMatch && dateMatch;
-  });
-  
-  const filteredEmployees = employees.filter(employee =>
-    employee.name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-    employee.role.toLowerCase().includes(employeeSearch.toLowerCase())
-  );
+  // Calculate statistics
+  const visitorsOnSite = visitors.filter(v => 
+    (v.status === 'Checked-in' || v.status === 'Pending Exit')
+  ).length;
 
-  const expiringBadges = employees.filter(employee => {
-    if (!employee.expiryDate) return false;
-    const daysUntilExpiry = differenceInDays(new Date(employee.expiryDate), new Date());
-    return daysUntilExpiry >= 0 && daysUntilExpiry <= 30;
-  });
-  
-  const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('');
+  const pendingExitVisitors = visitors.filter(v => v.status === 'Pending Exit');
+  const preRegisteredVisitors = visitors.filter(v => v.status === 'Pre-registered');
 
-  const filterButtons: VisitorStatusFilter[] = ['All', 'Pre-registered', 'Checked-in', 'Pending Exit', 'Checked-out'];
+  const currentVisitors = visitors.filter(v => v.status === 'Checked-in' || v.status === 'Pending Exit');
+  const historyVisitors = visitors.filter(v => v.status === 'Checked-out');
 
-  return (
-    <>
+  if (isLoading) {
+    return (
       <SidebarProvider>
         <Sidebar>
           <SidebarHeader>
             <div className="flex items-center gap-2 p-2">
-              <FreshViewLogo className="w-8 h-8 text-primary" />
+              <FreshTraceLogo className="w-8 h-8 text-primary" />
               <h1 className="text-xl font-headline font-bold text-sidebar-foreground">
                 FreshTrace
               </h1>
@@ -299,214 +429,433 @@ export default function VisitorManagementPage() {
           </SidebarContent>
         </Sidebar>
         <SidebarInset>
-          <div className="non-printable">
+          <div className='non-printable'>
             <Header />
           </div>
-          <main className="p-4 md:p-6 lg:p-8">
-              <div className="flex items-center justify-between mb-6">
-                  <div>
-                      <h2 className="text-2xl font-bold tracking-tight">
-                          Visitor Management
-                      </h2>
-                      <p className="text-muted-foreground">
-                          Manage and track all visitors and vehicle deliveries.
-                      </p>
-                  </div>
+          <main className="p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">
+                  Visitor Management
+                </h2>
+                <p className="text-muted-foreground">
+                  Loading visitor data...
+                </p>
               </div>
-              
-            <Tabs defaultValue="log" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="log">Live Log</TabsTrigger>
-                    <TabsTrigger value="manifest">Manifest</TabsTrigger>
-                    <TabsTrigger value="badges">Employee Badges</TabsTrigger>
-                </TabsList>
-                <TabsContent value="log" className="mt-6 space-y-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="outline" onClick={() => setIsCheckInDialogOpen(true)}>
-                          <QrCode className="mr-2" />
-                          Check-in / Verify Exit
-                      </Button>
-                      <Dialog open={isRegisterDialogOpen} onOpenChange={handleRegistrationDialogClose}>
-                          <DialogTrigger asChild>
-                              <Button>
-                                  <PlusCircle className="mr-2" />
-                                  Pre-register Visitor
-                              </Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-lg">
-                            {!newlyRegisteredVisitor ? (
-                                <>
-                                  <DialogHeader>
-                                  <DialogTitle>Pre-register New Visitor</DialogTitle>
-                                  <DialogDescription>
-                                      Fill in the details below. You can also log an incoming shipment.
-                                  </DialogDescription>
-                                  </DialogHeader>
-                                  <CreateVisitorForm onSubmit={handleAddVisitor} />
-                                </>
-                            ) : (
-                                  <RegistrationSuccess 
-                                    visitor={newlyRegisteredVisitor}
-                                    onDone={() => handleRegistrationDialogClose(false)}
-                                  />
-                            )}
-                          </DialogContent>
-                      </Dialog>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        <Link href="/visitor-management" className="block transition-transform hover:scale-[1.02]">
-                            <OverviewCard data={overviewData.visitorsToday} icon={Users} />
-                        </Link>
-                        <Link href="/vehicle-management" className="block transition-transform hover:scale-[1.02]">
-                            <OverviewCard data={overviewData.vehiclesOnSite} icon={Truck} />
-                        </Link>
-                        <Link href="/visitor-management" className="block transition-transform hover:scale-[1.02]">
-                            <OverviewCard data={overviewData.avgVisitDuration} icon={Clock} />
-                        </Link>
-                    </div>
-                    
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            {filterButtons.map(filter => (
-                                <Button 
-                                    key={filter}
-                                    variant={statusFilter === filter ? 'default' : 'outline'}
-                                    onClick={() => setStatusFilter(filter)}
-                                    className={cn(
-                                        filter === 'Pending Exit' && statusFilter === 'Pending Exit' && 'bg-destructive hover:bg-destructive/90'
-                                    )}
-                                >
-                                    {filter}
-                                </Button>
-                            ))}
-                        </div>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                id="date"
-                                variant={"outline"}
-                                className={cn(
-                                    "w-[300px] justify-start text-left font-normal",
-                                    !dateRange && "text-muted-foreground"
-                                )}
-                                >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {dateRange?.from ? (
-                                    dateRange.to ? (
-                                    <>
-                                        {format(dateRange.from, "LLL dd, y")} -{" "}
-                                        {format(dateRange.to, "LLL dd, y")}
-                                    </>
-                                    ) : (
-                                    format(dateRange.from, "LLL dd, y")
-                                    )
-                                ) : (
-                                    <span>Pick a date range</span>
-                                )}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                initialFocus
-                                mode="range"
-                                defaultMonth={dateRange?.from}
-                                selected={dateRange}
-                                onSelect={setDateRange}
-                                numberOfMonths={2}
-                                />
-                            </PopoverContent>
-                        </Popover>
-                    </div>
+              <Button disabled>
+                <Loader2 className="mr-2 animate-spin" />
+                Loading...
+              </Button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="h-32 bg-gray-100 animate-pulse rounded-lg"></div>
+              <div className="h-32 bg-gray-100 animate-pulse rounded-lg"></div>
+              <div className="h-32 bg-gray-100 animate-pulse rounded-lg"></div>
+            </div>
+            <div className="h-64 bg-gray-100 animate-pulse rounded-lg"></div>
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
 
-                    <VisitorDataTable visitors={filteredVisitors} onCheckIn={() => setIsCheckInDialogOpen(true)} onCheckOut={handleCheckOut} onRowClick={handleRowClick} />
-                </TabsContent>
-                <TabsContent value="manifest" className="mt-6 space-y-6">
-                    <div className="flex justify-end">
-                      <Button variant="outline" onClick={handlePrintReport}>
-                          <Printer className="mr-2" />
-                          Download Report
-                      </Button>
-                    </div>
-                    <div className="border rounded-lg" ref={printRef}>
-                      <PrintableVisitorReport visitors={filteredVisitors} employees={employees} attendance={timeAttendanceData} />
-                    </div>
-                </TabsContent>
-                <TabsContent value="badges" className="mt-6 space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {employees.map(employee => (
-                      <Card key={employee.id}>
-                          <CardContent className="p-4 flex flex-col items-center text-center">
-                              <Avatar className="h-16 w-16 mb-2">
-                                <AvatarImage src={employee.image} alt={employee.name} />
-                                <AvatarFallback className="text-2xl">{getInitials(employee.name)}</AvatarFallback>
-                              </Avatar>
-                              <p className="font-semibold">{employee.name}</p>
-                              <p className="text-sm text-muted-foreground">{employee.role}</p>
-                              <p className="text-xs text-primary">{employee.company || 'FreshTrace'}</p>
-                              <p className="text-xs text-muted-foreground mt-2">Expires: {employee.expiryDate ? format(new Date(employee.expiryDate), 'PPP') : 'N/A'}</p>
-                          </CardContent>
-                          <CardFooter className="flex flex-col gap-2 p-2">
-                              <Button className="w-full" onClick={() => handleIdCardClick(employee)}>
-                                <CreditCard className="mr-2" />
-                                Preview Badge
-                              </Button>
-                          </CardFooter>
-                      </Card>
-                    ))}
-                  </div>
-
-                  {expiringBadges.length > 0 && (
-                      <Card className="bg-destructive/10 border-destructive">
-                          <CardHeader>
-                              <CardTitle className="flex items-center gap-2 text-destructive">
-                                  <AlertTriangle />
-                                  Badges Nearing Expiry
-                              </CardTitle>
-                              <CardDescription className="text-destructive/80">
-                                  These ID badges will expire within the next 30 days. Please send renewal reminders.
-                              </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                              {expiringBadges.map(employee => (
-                                  <div key={employee.id} className="flex items-center justify-between p-3 rounded-md bg-background/50">
-                                      <div>
-                                          <p className="font-semibold">{employee.name}</p>
-                                          <p className="text-sm text-muted-foreground">{employee.role} - Expires on <span className="text-destructive font-medium">{employee.expiryDate ? format(new Date(employee.expiryDate), 'PPP') : 'N/A'}</span></p>
-                                      </div>
-                                      <div className="flex gap-2">
-                                          <Button variant="outline" size="sm" onClick={() => handleSendReminder(employee.name)}>
-                                              <Send className="mr-2"/>
-                                              Send Reminder
-                                          </Button>
-                                          <Button variant="default" size="sm" onClick={() => handleRenewNow(employee)}>
-                                              <RefreshCw className="mr-2" />
-                                              Renew Now
-                                          </Button>
-                                      </div>
-                                  </div>
-                              ))}
-                          </CardContent>
-                      </Card>
-                  )}
-                </TabsContent>
-            </Tabs>
-            
-            <CheckInDialog
-              isOpen={isCheckInDialogOpen}
-              onOpenChange={setIsCheckInDialogOpen}
-              visitors={visitors.filter(v => v.status === 'Pre-registered')}
-              pendingExitVisitors={visitors.filter(v => v.status === 'Pending Exit')}
-              onCheckIn={handleCheckIn}
-              onVerifyExit={(visitorId) => handleCheckOut(visitorId, true)}
-            />
-
-            {selectedVisitor && (
-              <GatePassDialog 
-                  isOpen={isGatePassOpen} 
-                  onOpenChange={setIsGatePassOpen} 
-                  visitor={selectedVisitor} 
-              />
+  return (
+    <>
+      <SidebarProvider>
+        <Sidebar>
+          <SidebarHeader>
+            <div className="flex items-center gap-2 p-2">
+              <FreshTraceLogo className="w-8 h-8 text-primary" />
+              <h1 className="text-xl font-headline font-bold text-sidebar-foreground">
+                FreshTrace
+              </h1>
+            </div>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarNav />
+          </SidebarContent>
+        </Sidebar>
+        <SidebarInset>
+          <div className='non-printable'>
+            <Header />
+          </div>
+          <main className="p-6 space-y-6">
+            {apiError && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertTitle>Database Warning</AlertTitle>
+                <AlertDescription>
+                  {apiError}. You can still manage visitors locally.
+                </AlertDescription>
+              </Alert>
             )}
+
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-400">
+                  Visitor Management
+                </h1>
+                <p className="text-gray-600 mt-1">
+                  Track and manage all visitor entries and exits in real-time
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={refreshAllData}
+                  disabled={isRefreshing}
+                  className="gap-2"
+                >
+                  {isRefreshing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handlePrintReport} 
+                  className="gap-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  Download Report
+                </Button>
+                <Button 
+                  variant="default"
+                  onClick={() => handleCheckIn(selectedVisitor?.id)}
+                  disabled={!selectedVisitor || selectedVisitor.status !== 'Pre-registered'}
+                  className="gap-2 bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCheck className="h-4 w-4" />
+                  Check In Visitor
+                </Button>
+                <Button 
+                  variant="default"
+                  onClick={() => selectedVisitor && handleCheckOut(selectedVisitor.id, false)}
+                  disabled={!selectedVisitor || selectedVisitor.status !== 'Checked-in'}
+                  className="gap-2 bg-amber-600 hover:bg-amber-700"
+                >
+                  <DoorOpen className="h-4 w-4" />
+                  Check Out Now
+                </Button>
+                <Button 
+                  variant="default"
+                  onClick={() => selectedVisitor && handleCheckOut(selectedVisitor.id, true)}
+                  disabled={!selectedVisitor || selectedVisitor.status !== 'Pending Exit'}
+                  className="gap-2 bg-blue-600 hover:bg-blue-700"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Verify Exit
+                </Button>
+                <Dialog open={isRegisterDialogOpen} onOpenChange={handleRegistrationDialogClose}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 bg-primary hover:bg-primary/90">
+                      <User className="h-4 w-4" />
+                      Register Visitor
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-lg">
+                    {!newlyRegisteredVisitor ? (
+                      <>
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl">Register New Visitor</DialogTitle>
+                          <DialogDescription>
+                            Enter visitor details to register them in the system
+                          </DialogDescription>
+                        </DialogHeader>
+                        <CreateVisitorForm onSubmit={handleAddVisitor} />
+                      </>
+                    ) : (
+                      <RegistrationSuccess 
+                        visitor={newlyRegisteredVisitor}
+                        onDone={() => handleRegistrationDialogClose(false)}
+                      />
+                    )}
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
+            {/* Selection Info Banner */}
+            {selectedVisitor && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <User className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <p className="font-medium text-blue-800">
+                        Selected Visitor: {selectedVisitor.name}
+                      </p>
+                      <div className="text-sm text-blue-950">
+                        ID: {selectedVisitor.idNumber} • Vehicle: {selectedVisitor.vehiclePlate || 'None'} • Status: 
+                        <Badge variant="outline" className="ml-2 bg-red-50 text-red-700 border-red-200">
+                          {selectedVisitor.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedVisitor(null)}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+                {selectedVisitor.status === 'Pre-registered' && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="text-sm text-blue-700">
+                      <CheckCheck className="inline h-4 w-4 mr-1" />
+                      Ready to check in. Click "Check In Visitor" button above.
+                    </div>
+                  </div>
+                )}
+                {selectedVisitor.status === 'Checked-in' && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="text-sm text-amber-700">
+                      <DoorOpen className="inline h-4 w-4 mr-1" />
+                      Ready to check out. Click "Check Out Now" button above.
+                    </div>
+                  </div>
+                )}
+                {selectedVisitor.status === 'Pending Exit' && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="text-sm text-green-700">
+                      <CheckCircle className="inline h-4 w-4 mr-1" />
+                      Ready to verify exit. Click "Verify Exit" button above.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Stats Cards - Clean Design like Vehicle Management */}
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Visitors On Site</p>
+                      <h3 className="text-3xl font-bold mt-2 text-white-900">{visitorsOnSite}</h3>
+                      <div className="flex items-center mt-2 text-sm text-gray-500">
+                        <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
+                        <span>Currently checked in</span>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-full">
+                      <Users className="h-8 w-8 text-blue-500" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Pending Exit</p>
+                      <h3 className="text-3xl font-bold mt-2 text-white-900">{pendingExitVisitors.length}</h3>
+                      <div className="flex items-center mt-2 text-sm text-gray-500">
+                        <DoorOpen className="h-4 w-4 mr-1 text-amber-500" />
+                        <span>Awaiting verification</span>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-amber-50 rounded-full">
+                      <DoorOpen className="h-8 w-8 text-amber-500" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-l-4 border-l-green-500 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Pre-registered</p>
+                      <h3 className="text-3xl font-bold mt-2 text-white-900">{preRegisteredVisitors.length}</h3>
+                      <div className="flex items-center mt-2 text-sm text-gray-500">
+                        <Calendar className="h-4 w-4 mr-1 text-green-500" />
+                        <span>Scheduled for today</span>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-green-50 rounded-full">
+                      <Calendar className="h-8 w-8 text-green-500" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            {/* Main Content Tabs - Clean Design */}
+            <Card className="border shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xl">Visitor Logs</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      Total: {visitors.length}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      Today: {visitors.filter(v => 
+                        new Date(v.expectedCheckInTime).toDateString() === new Date().toDateString()
+                      ).length}
+                    </Badge>
+                  </div>
+                </div>
+                <Separator className="my-4" />
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="grid grid-cols-3 w-full">
+                    <TabsTrigger value="current" className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      Currently On Site
+                      {currentVisitors.length > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                          {currentVisitors.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="preregistered" className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Pre-registered
+                      {preRegisteredVisitors.length > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                          {preRegisteredVisitors.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="history" className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      History
+                      {historyVisitors.length > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                          {historyVisitors.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="current" className="space-y-4 mt-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Currently On Site</h3>
+                          <p className="text-sm text-gray-500">
+                            Visitors who are currently checked in or pending exit
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            Count: {currentVisitors.length}
+                          </Badge>
+                        </div>
+                      </div>
+                      {currentVisitors.length === 0 ? (
+                        <Card>
+                          <CardContent className="p-8 text-center">
+                            <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                            <h3 className="text-lg font-semibold mb-2">No Visitors On Site</h3>
+                            <p className="text-gray-500 mb-4">
+                              There are no visitors currently on site.
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <VisitorDataTable 
+                          visitors={currentVisitors} 
+                          selectedVisitorId={selectedVisitor?.id}
+                          onCheckOut={handleCheckOut}
+                          onRowClick={handleRowClick} 
+                        />
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="preregistered" className="space-y-4 mt-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Pre-registered Visitors</h3>
+                          <p className="text-sm text-gray-500">
+                            Visitors scheduled to arrive today - Click to select, then check in
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            Count: {preRegisteredVisitors.length}
+                          </Badge>
+                        </div>
+                      </div>
+                      {preRegisteredVisitors.length === 0 ? (
+                        <Card>
+                          <CardContent className="p-8 text-center">
+                            <Calendar className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                            <h3 className="text-lg font-semibold mb-2">No Pre-registered Visitors</h3>
+                            <p className="text-gray-500 mb-4">
+                              No visitors are pre-registered for today.
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4" />
+                              Click on a visitor to select them, then use the action buttons above.
+                            </div>
+                          </div>
+                          <VisitorDataTable 
+                            visitors={preRegisteredVisitors} 
+                            selectedVisitorId={selectedVisitor?.id}
+                            onRowClick={handleRowClick} 
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="history" className="space-y-4 mt-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Visitor History</h3>
+                          <p className="text-sm text-gray-500">
+                            Complete history of all visitor entries and exits
+                          </p>
+                        </div>
+                        <Badge variant="outline">
+                          {historyVisitors.length} Records
+                        </Badge>
+                      </div>
+                      {historyVisitors.length === 0 ? (
+                        <Card>
+                          <CardContent className="p-8 text-center">
+                            <Clock className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                            <h3 className="text-lg font-semibold mb-2">No Visitor History</h3>
+                            <p className="text-gray-500 mb-4">
+                              No visitor check-out history available.
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <VisitorDataTable 
+                          visitors={historyVisitors} 
+                          selectedVisitorId={selectedVisitor?.id}
+                          onRowClick={handleRowClick} 
+                        />
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardHeader>
+            </Card>
+
+            {/* Dialogs */}
+            <GatePassDialog 
+              isOpen={isGatePassOpen} 
+              onOpenChange={setIsGatePassOpen} 
+              visitor={selectedVisitor} 
+            />
 
             {selectedVisitor && (
               <VisitorDetailDialog
@@ -515,37 +864,14 @@ export default function VisitorManagementPage() {
                 visitor={selectedVisitor}
               />
             )}
-
-            {selectedEmployee && (
-              <EmployeeIdCardDialog
-                isOpen={isIdCardOpen}
-                onOpenChange={setIsIdCardOpen}
-                employee={selectedEmployee}
-                onEdit={() => handleEditClick(selectedEmployee)}
-              />
-            )}
-            
-            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Edit Employee</DialogTitle>
-                        <DialogDescription>
-                            Update the details for {selectedEmployee?.name}.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <CreateEmployeeForm
-                        employee={selectedEmployee}
-                        onUpdate={handleUpdateEmployee}
-                    />
-                </DialogContent>
-            </Dialog>
-
           </main>
         </SidebarInset>
       </SidebarProvider>
+      
+      {/* Hidden printable report */}
       <div className="hidden">
         <div ref={printRef}>
-            <PrintableVisitorReport visitors={filteredVisitors} employees={employees} attendance={timeAttendanceData} />
+          <PrintableVehicleReport visitors={visitors} shipments={[]} />
         </div>
       </div>
     </>

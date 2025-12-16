@@ -292,6 +292,9 @@ export default function ColdRoomPage() {
     forColdroom: boolean;
   }>>([]);
   
+  // NEW: State to track if boxes have been loaded
+  const [boxesLoaded, setBoxesLoaded] = useState<boolean>(false);
+  
   // State for forms
   const [selectedColdRoom, setSelectedColdRoom] = useState<string>('coldroom1');
   const [temperature, setTemperature] = useState<string>('');
@@ -1457,6 +1460,7 @@ export default function ColdRoomPage() {
           }));
           
           setCountingBoxes(boxesWithStatus);
+          setBoxesLoaded(false); // Reset boxes loaded state when fetching new records
           
           toast({
             title: "📦 All Counting Records Loaded",
@@ -1563,7 +1567,7 @@ export default function ColdRoomPage() {
     );
   };
   
-  // Load boxes to cold room
+  // Load boxes to cold room - UPDATED to clear the section after loading
   const handleLoadToColdRoom = async () => {
     const boxesToLoad = countingBoxes.filter(box => box.selected);
     
@@ -1644,19 +1648,17 @@ export default function ColdRoomPage() {
           ),
         });
         
-        // Refresh ALL data to show updated inventory
+        // Clear counting boxes and set boxesLoaded to true
+        setCountingBoxes([]);
+        setBoxesLoaded(true);
+        
+        // Refresh cold room inventory data
         await Promise.all([
-          fetchCountingRecordsForColdRoom(),
           fetchColdRoomBoxes(),
           fetchColdRoomStats(),
           fetchLoadingHistory(),
+          fetchColdRooms(),
         ]);
-        
-        // Then refresh cold rooms to update occupied counts
-        await fetchColdRooms();
-        
-        // Clear selections
-        setCountingBoxes(prev => prev.map(box => ({ ...box, selected: false })));
         
         // Switch to History tab
         setActiveTab('history');
@@ -1874,14 +1876,16 @@ export default function ColdRoomPage() {
           ),
         });
         
+        // Clear counting boxes
+        setSelectedBoxes([]);
+        setCountingHistory([]);
+        setDataSource(null);
+        
         // Refresh data
         fetchColdRoomBoxes();
         fetchColdRooms();
         fetchColdRoomStats();
         fetchLoadingHistory();
-        
-        // Refresh counting history to remove loaded boxes
-        fetchCountingHistory();
         
         // Clear any localStorage data
         localStorage.removeItem('coldRoomSupplierData');
@@ -2353,311 +2357,372 @@ export default function ColdRoomPage() {
             
             {/* Load Boxes Tab */}
             <TabsContent value="loading" className="space-y-6 mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Warehouse className="w-5 h-5" />
-                    Load Boxes to Cold Room
-                    <Badge variant="outline" className="ml-2">
-                      From Counting Records
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    Select boxes from counting records and load them into cold rooms
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-medium">Available Boxes from Counting</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Boxes with status 'pending_coldroom' are ready to load
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => fetchCountingRecordsForColdRoom()}
-                          variant="outline"
-                          size="sm"
-                          disabled={isLoading.countingRecords}
-                        >
-                          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.countingRecords ? 'animate-spin' : ''}`} />
-                          Refresh Counting Records
-                        </Button>
-                        <Button
-                          onClick={handleSelectAllBoxes}
-                          variant="outline"
-                          size="sm"
-                          disabled={countingBoxes.length === 0}
-                        >
-                          <Check className="w-4 h-4 mr-1" />
-                          Select All
-                        </Button>
-                        <Button
-                          onClick={handleDeselectAllBoxes}
-                          variant="outline"
-                          size="sm"
-                          disabled={countingBoxes.length === 0}
-                        >
-                          <X className="w-4 h-4 mr-1" />
-                          Deselect All
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    {/* Loading State */}
-                    {isLoading.countingRecords ? (
-                      <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                        <p className="text-muted-foreground">Loading counting records...</p>
-                      </div>
-                    ) : countingBoxes.length === 0 ? (
-                      <div className="text-center py-8 border rounded">
-                        <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                        <p className="text-gray-500 font-medium">No boxes available to load</p>
-                        <p className="text-sm text-gray-400 mt-1">
-                          Counting records with status 'pending_coldroom' will appear here
-                        </p>
-                        <div className="flex gap-2 justify-center mt-3">
-                          <Button 
+              {/* Conditionally render the Load Boxes section only if boxes are not loaded */}
+              {!boxesLoaded && countingBoxes.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Warehouse className="w-5 h-5" />
+                      Load Boxes to Cold Room
+                      <Badge variant="outline" className="ml-2">
+                        From Counting Records
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Select boxes from counting records and load them into cold rooms
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-medium">Available Boxes from Counting</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Boxes with status 'pending_coldroom' are ready to load
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
                             onClick={() => fetchCountingRecordsForColdRoom()}
                             variant="outline"
                             size="sm"
+                            disabled={isLoading.countingRecords}
                           >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Check Again
+                            <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.countingRecords ? 'animate-spin' : ''}`} />
+                            Refresh Counting Records
                           </Button>
-                          <Button 
-                            onClick={() => window.open('/warehouse', '_blank')}
+                          <Button
+                            onClick={handleSelectAllBoxes}
                             variant="outline"
                             size="sm"
+                            disabled={countingBoxes.length === 0}
                           >
-                            <Warehouse className="w-4 h-4 mr-2" />
-                            Go to Warehouse
+                            <Check className="w-4 h-4 mr-1" />
+                            Select All
+                          </Button>
+                          <Button
+                            onClick={handleDeselectAllBoxes}
+                            variant="outline"
+                            size="sm"
+                            disabled={countingBoxes.length === 0}
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            Deselect All
                           </Button>
                         </div>
                       </div>
-                    ) : (
-                      <>
-                        {/* Boxes Table */}
-                        <div>
-                          <div className="flex items-center justify-between mb-4">
-                            <Label>Available Boxes ({countingBoxes.length} types)</Label>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">
-                                {selectedBoxesCount} selected
-                              </Badge>
-                              <Badge variant="secondary">
-                                {totalSelectedBoxes.toLocaleString()} boxes
-                              </Badge>
+                      
+                      {/* Loading State */}
+                      {isLoading.countingRecords ? (
+                        <div className="text-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                          <p className="text-muted-foreground">Loading counting records...</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Boxes Table */}
+                          <div>
+                            <div className="flex items-center justify-between mb-4">
+                              <Label>Available Boxes ({countingBoxes.length} types)</Label>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">
+                                  {selectedBoxesCount} selected
+                                </Badge>
+                                <Badge variant="secondary">
+                                  {totalSelectedBoxes.toLocaleString()} boxes
+                                </Badge>
+                              </div>
                             </div>
+                            
+                            <ScrollArea className="h-[400px] border rounded">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-12">Select</TableHead>
+                                    <TableHead>Supplier</TableHead>
+                                    <TableHead>Pallet ID</TableHead>
+                                    <TableHead>Variety</TableHead>
+                                    <TableHead>Box Type</TableHead>
+                                    <TableHead>Size</TableHead>
+                                    <TableHead>Grade</TableHead>
+                                    <TableHead className="text-right">Quantity</TableHead>
+                                    <TableHead>Cold Room</TableHead>
+                                    <TableHead className="text-right">Weight</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {countingBoxes.map((item, index) => (
+                                    <TableRow 
+                                      key={`${item.countingRecordId}-${item.variety}-${item.boxType}-${item.size}-${item.grade}`}
+                                      className={item.selected ? "bg-black-50" : ""}
+                                    >
+                                      <TableCell>
+                                        <input
+                                          type="checkbox"
+                                          checked={item.selected}
+                                          onChange={() => handleToggleBoxSelection(index)}
+                                          className="h-4 w-4 rounded border-gray-300"
+                                        />
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="max-w-[120px] truncate" title={item.supplierName || 'Unknown'}>
+                                          {item.supplierName || 'Unknown'}
+                                        </div>
+                                        {item.region && (
+                                          <div className="text-xs text-gray-500">{item.region}</div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-mono text-xs" title={item.palletId}>
+                                          {item.palletId?.substring(0, 10)}...
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="font-medium capitalize">
+                                        {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                      </TableCell>
+                                      <TableCell>{item.boxType}</TableCell>
+                                      <TableCell>{formatSize(item.size)}</TableCell>
+                                      <TableCell className="capitalize">
+                                        <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
+                                          {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">{item.quantity.toLocaleString()}</TableCell>
+                                      <TableCell>
+                                        <Select
+                                          value={item.coldRoomId}
+                                          onValueChange={(value) => handleColdRoomSelectionForBox(index, value)}
+                                          disabled={!item.selected}
+                                        >
+                                          <SelectTrigger className="w-32">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="coldroom1">
+                                              <div className="flex items-center gap-2">
+                                                <Snowflake className="w-3 h-3" />
+                                                Cold Room 1
+                                              </div>
+                                            </SelectItem>
+                                            <SelectItem value="coldroom2">
+                                              <div className="flex items-center gap-2">
+                                                <Snowflake className="w-3 h-3" />
+                                                Cold Room 2
+                                              </div>
+                                            </SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="font-medium">
+                                          {safeToFixed(item.boxWeight)} kg
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {(item.boxType === '4kg' ? '4kg' : '10kg')} each
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </ScrollArea>
                           </div>
                           
-                          <ScrollArea className="h-[400px] border rounded">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead className="w-12">Select</TableHead>
-                                  <TableHead>Supplier</TableHead>
-                                  <TableHead>Pallet ID</TableHead>
-                                  <TableHead>Variety</TableHead>
-                                  <TableHead>Box Type</TableHead>
-                                  <TableHead>Size</TableHead>
-                                  <TableHead>Grade</TableHead>
-                                  <TableHead className="text-right">Quantity</TableHead>
-                                  <TableHead>Cold Room</TableHead>
-                                  <TableHead className="text-right">Weight</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {countingBoxes.map((item, index) => (
-                                  <TableRow 
-                                    key={`${item.countingRecordId}-${item.variety}-${item.boxType}-${item.size}-${item.grade}`}
-                                    className={item.selected ? "bg-black-50" : ""}
-                                  >
-                                    <TableCell>
-                                      <input
-                                        type="checkbox"
-                                        checked={item.selected}
-                                        onChange={() => handleToggleBoxSelection(index)}
-                                        className="h-4 w-4 rounded border-gray-300"
-                                      />
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="max-w-[120px] truncate" title={item.supplierName || 'Unknown'}>
-                                        {item.supplierName || 'Unknown'}
-                                      </div>
-                                      {item.region && (
-                                        <div className="text-xs text-gray-500">{item.region}</div>
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="font-mono text-xs" title={item.palletId}>
-                                        {item.palletId?.substring(0, 10)}...
-                                      </div>
-                                    </TableCell>
-                                    <TableCell className="font-medium capitalize">
-                                      {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                                    </TableCell>
-                                    <TableCell>{item.boxType}</TableCell>
-                                    <TableCell>{formatSize(item.size)}</TableCell>
-                                    <TableCell className="capitalize">
-                                      <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
-                                        {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">{item.quantity.toLocaleString()}</TableCell>
-                                    <TableCell>
-                                      <Select
-                                        value={item.coldRoomId}
-                                        onValueChange={(value) => handleColdRoomSelectionForBox(index, value)}
-                                        disabled={!item.selected}
-                                      >
-                                        <SelectTrigger className="w-32">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="coldroom1">
-                                            <div className="flex items-center gap-2">
-                                              <Snowflake className="w-3 h-3" />
-                                              Cold Room 1
-                                            </div>
-                                          </SelectItem>
-                                          <SelectItem value="coldroom2">
-                                            <div className="flex items-center gap-2">
-                                              <Snowflake className="w-3 h-3" />
-                                              Cold Room 2
-                                            </div>
-                                          </SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      <div className="font-medium">
-                                        {safeToFixed(item.boxWeight)} kg
-                                      </div>
-                                      <div className="text-xs text-gray-500">
-                                        {(item.boxType === '4kg' ? '4kg' : '10kg')} each
-                                      </div>
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </ScrollArea>
-                        </div>
-                        
-                        {/* Load Summary */}
-                        <Card>
-                          <CardHeader className="py-3">
-                            <CardTitle className="text-sm font-medium">Load Summary</CardTitle>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="border rounded p-4 bg-blue-50">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <Snowflake className="w-5 h-5 text-blue-600" />
-                                  <div>
-                                    <span className="font-medium">Cold Room 1</span>
-                                    <p className="text-xs text-blue-600">5°C (Fresh Storage)</p>
+                          {/* Load Summary */}
+                          <Card>
+                            <CardHeader className="py-3">
+                              <CardTitle className="text-sm font-medium">Load Summary</CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="border rounded p-4 bg-blue-50">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <Snowflake className="w-5 h-5 text-blue-600" />
+                                    <div>
+                                      <span className="font-medium">Cold Room 1</span>
+                                      <p className="text-xs text-blue-600">5°C (Fresh Storage)</p>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm">Box Types:</span>
+                                      <span className="font-medium">
+                                        {coldRoom1BoxTypes}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm">Total Boxes:</span>
+                                      <span className="font-medium">
+                                        {coldRoom1TotalBoxes.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm">Total Weight:</span>
+                                      <span className="font-medium">
+                                        {safeToFixed(coldRoom1TotalWeight)} kg
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-sm">Box Types:</span>
-                                    <span className="font-medium">
-                                      {coldRoom1BoxTypes}
-                                    </span>
+                                
+                                <div className="border rounded p-4 bg-gray-50">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <Snowflake className="w-5 h-5 text-gray-600" />
+                                    <div>
+                                      <span className="font-medium">Cold Room 2</span>
+                                      <p className="text-xs text-gray-600">5°C (Fresh Storage)</p>
+                                    </div>
                                   </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-sm">Total Boxes:</span>
-                                    <span className="font-medium">
-                                      {coldRoom1TotalBoxes.toLocaleString()}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-sm">Total Weight:</span>
-                                    <span className="font-medium">
-                                      {safeToFixed(coldRoom1TotalWeight)} kg
-                                    </span>
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm">Box Types:</span>
+                                      <span className="font-medium">
+                                        {coldRoom2BoxTypes}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm">Total Boxes:</span>
+                                      <span className="font-medium">
+                                        {coldRoom2TotalBoxes.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm">Total Weight:</span>
+                                      <span className="font-medium">
+                                        {safeToFixed(coldRoom2TotalWeight)} kg
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                               
-                              <div className="border rounded p-4 bg-gray-50">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <Snowflake className="w-5 h-5 text-gray-600" />
+                              {/* Overall Summary */}
+                              <div className="mt-4 pt-4 border-t">
+                                <div className="flex justify-between items-center">
                                   <div>
-                                    <span className="font-medium">Cold Room 2</span>
-                                    <p className="text-xs text-gray-600">5°C (Fresh Storage)</p>
+                                    <span className="font-medium">Total to Load:</span>
+                                    <p className="text-sm text-gray-500">
+                                      {selectedBoxesCount} box types, {totalSelectedBoxes.toLocaleString()} boxes
+                                    </p>
                                   </div>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-sm">Box Types:</span>
-                                    <span className="font-medium">
-                                      {coldRoom2BoxTypes}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-sm">Total Boxes:</span>
-                                    <span className="font-medium">
-                                      {coldRoom2TotalBoxes.toLocaleString()}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-sm">Total Weight:</span>
-                                    <span className="font-medium">
-                                      {safeToFixed(coldRoom2TotalWeight)} kg
-                                    </span>
+                                  <div className="text-right">
+                                    <div className="text-lg font-bold">
+                                      {safeToFixed(totalSelectedWeight)} kg total weight
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                      {calculateTotalPallets()} pallets
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                            
-                            {/* Overall Summary */}
-                            <div className="mt-4 pt-4 border-t">
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <span className="font-medium">Total to Load:</span>
-                                  <p className="text-sm text-gray-500">
-                                    {selectedBoxesCount} box types, {totalSelectedBoxes.toLocaleString()} boxes
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-lg font-bold">
-                                    {safeToFixed(totalSelectedWeight)} kg total weight
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    {calculateTotalPallets()} pallets
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        
-                        {/* Load Button */}
-                        <div className="flex gap-3">
-                          <Button
-                            onClick={handleLoadToColdRoom}
-                            className="flex-1"
-                            size="lg"
-                            disabled={selectedBoxesCount === 0}
-                          >
-                            <Upload className="w-4 h-4 mr-2" />
-                            Load Selected Boxes to Cold Room
-                            <span className="ml-2">
-                              ({selectedBoxesCount} types, {totalSelectedBoxes.toLocaleString()} boxes)
-                            </span>
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                            </CardContent>
+                          </Card>
+                          
+                          {/* Load Button */}
+                          <div className="flex gap-3">
+                            <Button
+                              onClick={handleLoadToColdRoom}
+                              className="flex-1"
+                              size="lg"
+                              disabled={selectedBoxesCount === 0}
+                            >
+                              <Upload className="w-4 h-4 mr-2" />
+                              Load Selected Boxes to Cold Room
+                              <span className="ml-2">
+                                ({selectedBoxesCount} types, {totalSelectedBoxes.toLocaleString()} boxes)
+                              </span>
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : boxesLoaded ? (
+                // Show success message after loading
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-green-600">
+                      <Check className="w-5 h-5" />
+                      Boxes Successfully Loaded!
+                    </CardTitle>
+                    <CardDescription>
+                      All selected boxes have been loaded to cold rooms. Check the History tab to view loading records.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Check className="w-8 h-8 text-green-600" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">Loading Complete</h3>
+                      <p className="text-gray-600 mb-6">
+                        The boxes have been successfully transferred to cold room storage.
+                      </p>
+                      <div className="flex gap-3 justify-center">
+                        <Button
+                          onClick={() => {
+                            setBoxesLoaded(false);
+                            fetchCountingRecordsForColdRoom();
+                          }}
+                          variant="outline"
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Load More Boxes
+                        </Button>
+                        <Button
+                          onClick={() => setActiveTab('history')}
+                        >
+                          <History className="w-4 h-4 mr-2" />
+                          View Loading History
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                // Show initial state when no boxes are loaded
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Warehouse className="w-5 h-5" />
+                      Load Boxes to Cold Room
+                      <Badge variant="outline" className="ml-2">
+                        From Counting Records
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Select boxes from counting records and load them into cold rooms
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Package className="w-8 h-8 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">No Boxes Available</h3>
+                      <p className="text-gray-600 mb-6">
+                        Loading records with status 'pending_coldroom' will appear here.
+                      </p>
+                      <div className="flex gap-3 justify-center">
+                        <Button
+                          onClick={() => fetchCountingRecordsForColdRoom()}
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Fetch Counting Records
+                        </Button>
+                        <Button
+                          onClick={() => window.open('/warehouse', '_blank')}
+                          variant="outline"
+                        >
+                          <Warehouse className="w-4 h-4 mr-2" />
+                          Go to Warehouse
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
             
             {/* Live Inventory Tab */}

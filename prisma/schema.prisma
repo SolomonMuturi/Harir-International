@@ -508,11 +508,18 @@ model loading_history {
   loaded_by        String?
   loaded_at        DateTime @default(now())
   notes            String?
-  region           String?  // ADD THIS LINE
+  region           String?
+  variety          String?   // ADD THIS
+  box_type         String?   // ADD THIS
+  size             String?   // ADD THIS
+  grade            String?   // ADD THIS
+  quantity         Int?      // ADD THIS
 
   @@index([pallet_id])
   @@index([box_id])
   @@index([loaded_at])
+  @@index([variety])
+  @@index([box_type])
   @@map("loading_history")
 }
 

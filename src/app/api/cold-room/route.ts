@@ -128,11 +128,11 @@ export async function GET(request: NextRequest) {
             quantity,
             cold_room_id,
             loaded_by,
-            loading_date,
-            created_at,
+            loaded_at,
+            notes,
             counting_record_id
           FROM loading_history 
-          ORDER BY loading_date DESC
+          ORDER BY loaded_at DESC
         `;
         
         console.log('📜 Retrieved loading history:', Array.isArray(history) ? history.length : 0);
@@ -442,9 +442,8 @@ export async function POST(request: NextRequest) {
               quantity,
               cold_room_id,
               loaded_by,
-              loading_date,
-              created_at,
-              counting_record_id
+              loaded_at,
+              notes
             ) VALUES (
               ${historyId},
               ${boxId},
@@ -459,8 +458,7 @@ export async function POST(request: NextRequest) {
               ${boxData.coldRoomId},
               ${loadedBy},
               NOW(),
-              NOW(),
-              ${boxData.countingRecordId || null}
+              ${boxData.notes || ''}
             )
           `;
 
@@ -711,8 +709,8 @@ export async function POST(request: NextRequest) {
             quantity,
             cold_room_id,
             loaded_by,
-            loading_date,
-            created_at
+            loaded_at,
+            notes
           FROM loading_history 
           WHERE 1=1
         `;
@@ -721,12 +719,12 @@ export async function POST(request: NextRequest) {
         
         // Date filtering
         if (data.dateFrom) {
-          query += ` AND DATE(loading_date) >= ?`;
+          query += ` AND DATE(loaded_at) >= ?`;
           params.push(data.dateFrom);
         }
         
         if (data.dateTo) {
-          query += ` AND DATE(loading_date) <= ?`;
+          query += ` AND DATE(loaded_at) <= ?`;
           params.push(data.dateTo);
         }
         
@@ -742,7 +740,7 @@ export async function POST(request: NextRequest) {
           params.push(data.coldRoomId);
         }
         
-        query += ` ORDER BY loading_date DESC`;
+        query += ` ORDER BY loaded_at DESC`;
         
         const history = await prisma.$queryRawUnsafe(query, ...params);
         

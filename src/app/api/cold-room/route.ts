@@ -115,25 +115,24 @@ export async function GET(request: NextRequest) {
     if (action === 'loading-history') {
       try {
         const history = await prisma.$queryRaw`
-          SELECT 
-            id,
-            box_id,
-            supplier_name,
-            pallet_id,
-            region,
-            variety,
-            box_type,
-            size,
-            grade,
-            quantity,
-            cold_room_id,
-            loaded_by,
-            loaded_at,
-            notes,
-            counting_record_id
-          FROM loading_history 
-          ORDER BY loaded_at DESC
-        `;
+      SELECT 
+        id,
+        box_id,
+        supplier_name,
+        pallet_id,
+        region,
+        variety,
+        box_type,
+        size,
+        grade,
+        quantity,
+        cold_room_id,
+        loaded_by,
+        loaded_at,
+        notes
+      FROM loading_history 
+      ORDER BY loaded_at DESC
+    `;
         
         console.log('📜 Retrieved loading history:', Array.isArray(history) ? history.length : 0);
         return NextResponse.json({ 

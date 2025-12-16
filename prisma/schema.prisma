@@ -508,13 +508,13 @@ model loading_history {
   loaded_by        String?
   loaded_at        DateTime @default(now())
   notes            String?
+  region           String?  // ADD THIS LINE
 
   @@index([pallet_id])
   @@index([box_id])
   @@index([loaded_at])
   @@map("loading_history")
 }
-
 
 enum carriers_status {
   Active

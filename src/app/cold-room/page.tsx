@@ -1147,309 +1147,226 @@ const processWarehouseHistory = (history: WarehouseHistoryRecord[]) => {
   // ===========================================
   
   // Fetch ALL counting records from database
-  const fetchCountingRecordsForColdRoom = async () => {
-    setIsLoading(prev => ({ ...prev, countingRecords: true }));
-    try {
-      console.log('📦 Fetching ALL counting records from database...');
+// Replace the existing fetchCountingRecordsForColdRoom function with this:
+
+// Fetch counting records that haven't been loaded yet
+const fetchCountingRecordsForColdRoom = async () => {
+  setIsLoading(prev => ({ ...prev, countingRecords: true }));
+  try {
+    console.log('📦 Fetching counting records not yet loaded...');
+    
+    // First, get all counting records
+    const countingResponse = await fetch('/api/counting?action=coldroom');
+    const countingResult = await countingResponse.json();
+    
+    if (!countingResult.success) {
+      throw new Error(countingResult.error || 'Failed to fetch counting records');
+    }
+    
+    console.log(`✅ Found ${countingResult.data?.length || 0} counting records from database`);
+    
+    // Then, get loading history to compare
+    const loadingResponse = await fetch('/api/cold-room?action=loading-history');
+    const loadingResult = await loadingResponse.json();
+    
+    const loadedCountingRecordIds = new Set<string>();
+    if (loadingResult.success && Array.isArray(loadingResult.data)) {
+      // Extract unique countingRecordIds from loading history
+      loadingResult.data.forEach((record: any) => {
+        if (record.counting_record_id) {
+          loadedCountingRecordIds.add(record.counting_record_id);
+        }
+      });
+      console.log(`📊 Found ${loadedCountingRecordIds.size} already loaded counting records`);
+    }
+    
+    if (Array.isArray(countingResult.data) && countingResult.data.length > 0) {
+      const boxes: any[] = [];
+      const filteredRecords = [];
       
-      const response = await fetch('/api/counting?action=coldroom');
-      const result = await response.json();
-      
-      if (result.success) {
-        console.log(`✅ Found ${result.data?.length || 0} counting records from database`);
+      // Filter counting records - only include those NOT in loading history
+      for (const record of countingResult.data) {
+        const isAlreadyLoaded = loadedCountingRecordIds.has(record.id);
         
-        if (Array.isArray(result.data) && result.data.length > 0) {
-          const boxes: any[] = [];
+        if (!isAlreadyLoaded) {
+          filteredRecords.push(record);
           
-          result.data.forEach((record: any) => {
-            const supplierName = record.supplier_name || 'Unknown Supplier';
-            const palletId = record.pallet_id || `CR-${record.id}`;
-            const region = record.region || '';
-            const status = record.status || 'unknown';
-            const forColdroom = record.for_coldroom || false;
+          const supplierName = record.supplier_name || 'Unknown Supplier';
+          const palletId = record.pallet_id || `CR-${record.id}`;
+          const region = record.region || '';
+          const status = record.status || 'unknown';
+          const forColdroom = record.for_coldroom || false;
+          
+          console.log(`📝 Processing unloaded record: ${supplierName}, status: ${status}`);
+          
+          const countingData = record.counting_data || {};
+          const totals = record.totals || {};
+          
+          let extractedCount = 0;
+          Object.keys(countingData).forEach(key => {
+            if (!key) return;
             
-            console.log(`📝 Processing record: ${supplierName}, status: ${status}, for_coldroom: ${forColdroom}`);
-            
-            const countingData = record.counting_data || {};
-            const totals = record.totals || {};
-            
-            let extractedCount = 0;
-            Object.keys(countingData).forEach(key => {
-              if (!key) return;
+            if ((key.includes('fuerte_') || key.includes('hass_')) && 
+                (key.includes('_4kg_') || key.includes('_10kg_')) &&
+                (key.includes('_class1_') || key.includes('_class2_'))) {
               
-              if ((key.includes('fuerte_') || key.includes('hass_')) && 
-                  (key.includes('_4kg_') || key.includes('_10kg_')) &&
-                  (key.includes('_class1_') || key.includes('_class2_'))) {
+              const parts = key.split('_');
+              if (parts.length >= 4) {
+                const variety = parts[0] as 'fuerte' | 'hass';
+                const boxType = parts[1] as '4kg' | '10kg';
+                const grade = parts[2] as 'class1' | 'class2';
+                const size = parts.slice(3).join('_').replace(/_/g, '');
+                const quantity = Number(countingData[key]) || 0;
                 
-                const parts = key.split('_');
-                if (parts.length >= 4) {
-                  const variety = parts[0] as 'fuerte' | 'hass';
-                  const boxType = parts[1] as '4kg' | '10kg';
-                  const grade = parts[2] as 'class1' | 'class2';
-                  const size = parts.slice(3).join('_').replace(/_/g, '');
-                  const quantity = Number(countingData[key]) || 0;
+                if (quantity > 0 && size) {
+                  const cleanSize = size.startsWith('size') ? size : `size${size}`;
+                  const boxWeight = boxType === '4kg' ? 4 : 10;
                   
-                  if (quantity > 0 && size) {
-                    const cleanSize = size.startsWith('size') ? size : `size${size}`;
-                    const boxWeight = boxType === '4kg' ? 4 : 10;
-                    
-                    boxes.push({
-                      variety,
-                      boxType,
-                      size: cleanSize,
-                      grade,
-                      quantity,
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight,
-                      totalWeight: quantity * boxWeight
-                    });
-                    extractedCount++;
-                  }
+                  boxes.push({
+                    variety,
+                    boxType,
+                    size: cleanSize,
+                    grade,
+                    quantity,
+                    supplierName,
+                    palletId,
+                    region,
+                    status,
+                    forColdroom,
+                    countingRecordId: record.id,
+                    selected: true,
+                    coldRoomId: 'coldroom1',
+                    boxWeight,
+                    totalWeight: quantity * boxWeight
+                  });
+                  extractedCount++;
                 }
-              }
-            });
-            
-            if (extractedCount === 0 && totals) {
-              console.log(`📊 Using totals for ${supplierName}:`, totals);
-              const sizes = ['size12', 'size14', 'size16', 'size18', 'size20', 'size22', 'size24', 'size26'];
-              
-              if (totals.fuerte_4kg_total > 0) {
-                const totalBoxes = totals.fuerte_4kg_total;
-                const boxesPerSize = Math.max(1, Math.floor(totalBoxes / sizes.length));
-                
-                sizes.forEach(size => {
-                  if (boxesPerSize > 0) {
-                    boxes.push({
-                      variety: 'fuerte',
-                      boxType: '4kg',
-                      size,
-                      grade: 'class1',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 4,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.7)) * 4
-                    });
-                    
-                    boxes.push({
-                      variety: 'fuerte',
-                      boxType: '4kg',
-                      size,
-                      grade: 'class2',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 4,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.3)) * 4
-                    });
-                  }
-                });
-              }
-              
-              if (totals.fuerte_10kg_total > 0) {
-                const totalBoxes = totals.fuerte_10kg_total;
-                const boxesPerSize = Math.max(1, Math.floor(totalBoxes / sizes.length));
-                
-                sizes.forEach(size => {
-                  if (boxesPerSize > 0) {
-                    boxes.push({
-                      variety: 'fuerte',
-                      boxType: '10kg',
-                      size,
-                      grade: 'class1',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 10,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.7)) * 10
-                    });
-                    
-                    boxes.push({
-                      variety: 'fuerte',
-                      boxType: '10kg',
-                      size,
-                      grade: 'class2',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 10,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.3)) * 10
-                    });
-                  }
-                });
-              }
-              
-              if (totals.hass_4kg_total > 0) {
-                const totalBoxes = totals.hass_4kg_total;
-                const boxesPerSize = Math.max(1, Math.floor(totalBoxes / sizes.length));
-                
-                sizes.forEach(size => {
-                  if (boxesPerSize > 0) {
-                    boxes.push({
-                      variety: 'hass',
-                      boxType: '4kg',
-                      size,
-                      grade: 'class1',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 4,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.7)) * 4
-                    });
-                    
-                    boxes.push({
-                      variety: 'hass',
-                      boxType: '4kg',
-                      size,
-                      grade: 'class2',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 4,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.3)) * 4
-                    });
-                  }
-                });
-              }
-              
-              if (totals.hass_10kg_total > 0) {
-                const totalBoxes = totals.hass_10kg_total;
-                const boxesPerSize = Math.max(1, Math.floor(totalBoxes / sizes.length));
-                
-                sizes.forEach(size => {
-                  if (boxesPerSize > 0) {
-                    boxes.push({
-                      variety: 'hass',
-                      boxType: '10kg',
-                      size,
-                      grade: 'class1',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 10,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.7)) * 10
-                    });
-                    
-                    boxes.push({
-                      variety: 'hass',
-                      boxType: '10kg',
-                      size,
-                      grade: 'class2',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
-                      supplierName,
-                      palletId,
-                      region,
-                      status,
-                      forColdroom,
-                      countingRecordId: record.id,
-                      selected: true,
-                      coldRoomId: 'coldroom1',
-                      boxWeight: 10,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.3)) * 10
-                    });
-                  }
-                });
               }
             }
           });
           
-          console.log(`📦 Created ${boxes.length} box items from ${result.data.length} counting records`);
-          
-          const boxesWithStatus = boxes.map(box => ({
-            ...box,
-            statusBadge: box.status === 'pending_coldroom' ? 'Ready for Cold Room' : 
-                        box.status === 'pending' ? 'Waiting for Variance' :
-                        box.status === 'completed' ? 'Processed' : box.status
-          }));
-          
-          setCountingBoxes(boxesWithStatus);
-          setBoxesLoaded(false);
-          
-          toast({
-            title: "📦 All Counting Records Loaded",
-            description: (
-              <div>
-                <p>Loaded {boxes.length} box types from {result.data.length} counting records</p>
-                <div className="mt-1 text-sm text-gray-600">
-                  Total boxes: {boxes.reduce((sum, box) => sum + box.quantity, 0).toLocaleString()}
-                </div>
-              </div>
-            ),
-          });
-          
+          // Fallback to totals if no specific counting data
+          if (extractedCount === 0 && totals) {
+            console.log(`📊 Using totals for ${supplierName}:`, totals);
+            const sizes = ['size12', 'size14', 'size16', 'size18', 'size20', 'size22', 'size24', 'size26'];
+            
+            // Helper function to create boxes from totals
+            const createBoxesFromTotal = (
+              variety: 'fuerte' | 'hass', 
+              boxType: '4kg' | '10kg', 
+              total: number
+            ) => {
+              if (total > 0) {
+                const boxesPerSize = Math.max(1, Math.floor(total / sizes.length));
+                
+                sizes.forEach(size => {
+                  if (boxesPerSize > 0) {
+                    // Class 1 boxes
+                    boxes.push({
+                      variety,
+                      boxType,
+                      size,
+                      grade: 'class1',
+                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
+                      supplierName,
+                      palletId,
+                      region,
+                      status,
+                      forColdroom,
+                      countingRecordId: record.id,
+                      selected: true,
+                      coldRoomId: 'coldroom1',
+                      boxWeight: boxType === '4kg' ? 4 : 10,
+                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.7)) * (boxType === '4kg' ? 4 : 10)
+                    });
+                    
+                    // Class 2 boxes
+                    boxes.push({
+                      variety,
+                      boxType,
+                      size,
+                      grade: 'class2',
+                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
+                      supplierName,
+                      palletId,
+                      region,
+                      status,
+                      forColdroom,
+                      countingRecordId: record.id,
+                      selected: true,
+                      coldRoomId: 'coldroom1',
+                      boxWeight: boxType === '4kg' ? 4 : 10,
+                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.3)) * (boxType === '4kg' ? 4 : 10)
+                    });
+                  }
+                });
+              }
+            };
+            
+            // Process each variety and box type
+            createBoxesFromTotal('fuerte', '4kg', totals.fuerte_4kg_total || 0);
+            createBoxesFromTotal('fuerte', '10kg', totals.fuerte_10kg_total || 0);
+            createBoxesFromTotal('hass', '4kg', totals.hass_4kg_total || 0);
+            createBoxesFromTotal('hass', '10kg', totals.hass_10kg_total || 0);
+          }
         } else {
-          setCountingBoxes([]);
-          toast({
-            title: "No counting records found",
-            description: "Database table 'counting_records' is empty",
-            variant: "destructive",
-          });
+          console.log(`⚠️ Skipping already loaded record: ${record.supplier_name} (ID: ${record.id})`);
         }
-      } else {
-        throw new Error(result.error || 'Failed to fetch counting records');
       }
-    } catch (error: any) {
-      console.error('❌ Error fetching counting records:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load counting records from database",
-        variant: "destructive",
-      });
+      
+      console.log(`📦 Created ${boxes.length} box items from ${filteredRecords.length} unloaded counting records`);
+      console.log(`📊 Skipped ${countingResult.data.length - filteredRecords.length} already loaded records`);
+      
+      const boxesWithStatus = boxes.map(box => ({
+        ...box,
+        statusBadge: box.status === 'pending_coldroom' ? 'Ready for Cold Room' : 
+                    box.status === 'pending' ? 'Waiting for Variance' :
+                    box.status === 'completed' ? 'Already Processed' : box.status
+      }));
+      
+      setCountingBoxes(boxesWithStatus);
+      setBoxesLoaded(false);
+      
+      if (boxes.length > 0) {
+        toast({
+          title: "📦 Unloaded Counting Records Found",
+          description: (
+            <div>
+              <p>Loaded {boxes.length} box types from {filteredRecords.length} unloaded counting records</p>
+              <div className="mt-1 text-sm text-gray-600">
+                Skipped {countingResult.data.length - filteredRecords.length} already loaded records
+              </div>
+            </div>
+          ),
+        });
+      } else {
+        toast({
+          title: "No new counting records",
+          description: "All counting records have already been loaded to cold rooms",
+          variant: "default",
+        });
+      }
+      
+    } else {
       setCountingBoxes([]);
-    } finally {
-      setIsLoading(prev => ({ ...prev, countingRecords: false }));
+      toast({
+        title: "No counting records found",
+        description: "No counting records available to load",
+        variant: "default",
+      });
     }
-  };
-
+  } catch (error: any) {
+    console.error('❌ Error fetching counting records:', error);
+    toast({
+      title: "Error",
+      description: error.message || "Failed to load counting records from database",
+      variant: "destructive",
+    });
+    setCountingBoxes([]);
+  } finally {
+    setIsLoading(prev => ({ ...prev, countingRecords: false }));
+  }
+};
   
   // Fetch all data
   const fetchAllData = async () => {
@@ -1578,27 +1495,30 @@ const processWarehouseHistory = (history: WarehouseHistoryRecord[]) => {
       const result = await response.json();
       
       if (result.success) {
-        toast({
-          title: '✅ Boxes Loaded Successfully!',
-          description: (
-            <div className="space-y-2">
-              <p>Loaded {boxesToLoad.length} box types ({totalSelectedBoxes.toLocaleString()} boxes)</p>
-              <div className="text-sm text-gray-600">
-                Cold Room 1: {coldRoom1TotalBoxes.toLocaleString()} boxes<br/>
-                Cold Room 2: {coldRoom2TotalBoxes.toLocaleString()} boxes
-              </div>
-              <p className="text-xs text-green-600 mt-1">
-                {countingRecordIds.length > 0 ? 
-                  `Updated ${countingRecordIds.length} counting record(s) to 'completed'` : 
-                  'No counting records to update'}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">
-                ✅ Saved to loading history
-              </p>
-            </div>
-          ),
-        });
-        
+        // In the handleLoadToColdRoom function, update the toast message to show which records were loaded:
+toast({
+  title: '✅ Boxes Loaded Successfully!',
+  description: (
+    <div className="space-y-2">
+      <p>Loaded {boxesToLoad.length} box types ({totalSelectedBoxes.toLocaleString()} boxes)</p>
+      <div className="text-sm text-gray-600">
+        Cold Room 1: {coldRoom1TotalBoxes.toLocaleString()} boxes<br/>
+        Cold Room 2: {coldRoom2TotalBoxes.toLocaleString()} boxes
+      </div>
+      <p className="text-xs text-green-600 mt-1">
+        Updated {countingRecordIds.length} counting record(s)
+      </p>
+      <p className="text-xs text-blue-600 mt-1">
+        ✅ Saved to loading history
+      </p>
+      {boxesToLoad.length > 0 && boxesToLoad[0].countingRecordId && (
+        <p className="text-xs text-gray-500 mt-1">
+          These boxes won't appear again for loading
+        </p>
+      )}
+    </div>
+  ),
+});        
         setCountingBoxes([]);
         setBoxesLoaded(true);
         
@@ -2845,80 +2765,251 @@ const processWarehouseHistory = (history: WarehouseHistoryRecord[]) => {
                     )}
                   </CardContent>
                 </Card>
-                
-                {/* Pallets Table */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Truck className="w-5 h-5" />
-                      Pallets in Cold Room
-                    </CardTitle>
-                    <CardDescription>
-                      Complete pallets in {selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {isLoading.pallets ? (
-                      <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                        <p className="text-muted-foreground">Loading pallets...</p>
-                      </div>
-                    ) : safeArray(coldRoomPallets).filter(pallet => pallet.cold_room_id === selectedColdRoom).length === 0 ? (
-                      <div className="text-center py-8 border rounded">
-                        <Truck className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                        <p className="text-gray-500 font-medium">No pallets in cold room</p>
-                        <p className="text-sm text-gray-400 mt-1">
-                          Boxes will convert to pallets when thresholds are met
-                        </p>
-                      </div>
-                    ) : (
-                      <ScrollArea className="h-[400px]">
-                        <Table>
-                          <TableHeader>
+                          
+          {/* Pallets Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Truck className="w-5 h-5" />
+                Pallet Conversion Summary
+              </CardTitle>
+              <CardDescription>
+                Converted pallets from boxes in {selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading.boxes ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                  <p className="text-muted-foreground">Loading boxes data...</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Variety</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Size</TableHead>
+                        <TableHead>Grade</TableHead>
+                        <TableHead className="text-right">Box Count</TableHead>
+                        <TableHead className="text-right">Pallet Count</TableHead>
+                        <TableHead className="text-right">Remaining</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(() => {
+                        const boxesInRoom = safeArray(coldRoomBoxes)
+                          .filter(box => box.cold_room_id === selectedColdRoom);
+                        
+                        if (boxesInRoom.length === 0) {
+                          return (
                             <TableRow>
-                              <TableHead>Pallet ID</TableHead>
-                              <TableHead>Variety</TableHead>
-                              <TableHead>Type</TableHead>
-                              <TableHead>Size</TableHead>
-                              <TableHead>Grade</TableHead>
-                              <TableHead className="text-right">Count</TableHead>
-                              <TableHead className="text-right">Last Updated</TableHead>
+                              <TableCell colSpan={7} className="text-center py-8">
+                                <div className="flex flex-col items-center">
+                                  <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                                  <p className="text-gray-500 font-medium">No boxes in cold room</p>
+                                  <p className="text-sm text-gray-400 mt-1">
+                                    Load boxes from counting records to get started
+                                  </p>
+                                </div>
+                              </TableCell>
                             </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {safeArray(coldRoomPallets)
-                              .filter(pallet => pallet.cold_room_id === selectedColdRoom)
-                              .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                              .map((pallet) => (
-                                <TableRow key={pallet.id}>
-                                  <TableCell className="font-mono text-xs" title={pallet.id}>
-                                    {pallet.id.substring(0, 10)}...
-                                  </TableCell>
-                                  <TableCell className="capitalize">
-                                    {pallet.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                                  </TableCell>
-                                  <TableCell>{pallet.box_type}</TableCell>
-                                  <TableCell>{formatSize(pallet.size)}</TableCell>
-                                  <TableCell>
-                                    <Badge variant={pallet.grade === 'class1' ? 'default' : 'secondary'}>
-                                      {pallet.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {pallet.pallet_count} pallets
-                                  </TableCell>
-                                  <TableCell className="text-right text-sm">
-                                    {formatDate(pallet.last_updated)}
+                          );
+                        }
+                        
+                        // Group boxes
+                        const groupedBoxes: Record<string, {
+                          variety: string;
+                          box_type: string;
+                          size: string;
+                          grade: string;
+                          totalBoxes: number;
+                        }> = {};
+                        
+                        boxesInRoom.forEach(box => {
+                          const key = `${box.variety}-${box.box_type}-${box.size}-${box.grade}`;
+                          
+                          if (!groupedBoxes[key]) {
+                            groupedBoxes[key] = {
+                              variety: box.variety,
+                              box_type: box.box_type,
+                              size: box.size,
+                              grade: box.grade,
+                              totalBoxes: 0
+                            };
+                          }
+                          groupedBoxes[key].totalBoxes += box.quantity;
+                        });
+                        
+                        // Convert to array and calculate pallets
+                        const palletData = Object.values(groupedBoxes).map(data => {
+                          const boxesPerPallet = data.size === '4kg' ? 288 : 120;
+                          const palletCount = Math.floor(data.totalBoxes / boxesPerPallet);
+                          const remainingBoxes = data.totalBoxes % boxesPerPallet;
+                          
+                          return {
+                            ...data,
+                            palletCount,
+                            remainingBoxes,
+                            boxesPerPallet
+                          };
+                        }).filter(item => item.palletCount > 0); // Only show if there are complete pallets
+                        
+                        // Also show items with boxes but no complete pallets
+                        const noPalletData = Object.values(groupedBoxes).filter(data => {
+                          const boxesPerPallet = data.size === '4kg' ? 288 : 120;
+                          return Math.floor(data.totalBoxes / boxesPerPallet) === 0;
+                        });
+                        
+                        if (palletData.length === 0 && noPalletData.length === 0) {
+                          return (
+                            <TableRow>
+                              <TableCell colSpan={7} className="text-center py-8">
+                                <div className="flex flex-col items-center">
+                                  <Package className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                                  <p className="text-sm text-gray-500">No boxes found</p>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        }
+                        
+                        if (palletData.length === 0 && noPalletData.length > 0) {
+                          return (
+                            <>
+                              <TableRow>
+                                <TableCell colSpan={7} className="text-center py-4 bg-muted/30">
+                                  <div className="flex flex-col items-center">
+                                    <Package className="w-6 h-6 mx-auto text-gray-400 mb-1" />
+                                    <p className="text-sm text-gray-500">No complete pallets yet</p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                      Boxes are accumulating but thresholds not met
+                                    </p>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                              {noPalletData.map((item, index) => {
+                                const boxesPerPallet = item.size === '4kg' ? 288 : 120;
+                                
+                                return (
+                                  <TableRow key={`no-pallet-${index}`} className="opacity-70">
+                                    <TableCell className="capitalize">
+                                      {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                    </TableCell>
+                                    <TableCell>{item.box_type}</TableCell>
+                                    <TableCell>{formatSize(item.size)}</TableCell>
+                                    <TableCell>
+                                      <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
+                                        {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right font-medium">
+                                      {item.totalBoxes.toLocaleString()}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <span className="text-muted-foreground">0</span>
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm text-muted-foreground">
+                                      {item.totalBoxes} boxes
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </>
+                          );
+                        }
+                        
+                        // Show complete pallets first
+                        return (
+                          <>
+                            {palletData.map((item, index) => (
+                              <TableRow key={`pallet-${index}`}>
+                                <TableCell className="capitalize">
+                                  {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                </TableCell>
+                                <TableCell>{item.box_type}</TableCell>
+                                <TableCell>{formatSize(item.size)}</TableCell>
+                                <TableCell>
+                                  <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
+                                    {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {item.totalBoxes.toLocaleString()}
+                                </TableCell>
+                                <TableCell className="text-right font-bold">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Truck className="w-4 h-4 text-primary" />
+                                    <span className="text-primary">{item.palletCount}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-muted-foreground">
+                                  {item.remainingBoxes} boxes
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            
+                            {/* Show items with no complete pallets */}
+                            {noPalletData.length > 0 && (
+                              <>
+                                <TableRow className="border-t">
+                                  <TableCell colSpan={7} className="py-2 bg-muted/20">
+                                    <p className="text-xs text-center text-muted-foreground">
+                                      Items accumulating boxes (no complete pallets yet)
+                                    </p>
                                   </TableCell>
                                 </TableRow>
-                              ))}
-                          </TableBody>
-                        </Table>
-                      </ScrollArea>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+                                {noPalletData.map((item, index) => {
+                                  const boxesPerPallet = item.size === '4kg' ? 288 : 120;
+                                  const progress = (item.totalBoxes / boxesPerPallet) * 100;
+                                  
+                                  return (
+                                    <TableRow key={`accumulating-${index}`} className="opacity-70">
+                                      <TableCell className="capitalize">
+                                        {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                      </TableCell>
+                                      <TableCell>{item.box_type}</TableCell>
+                                      <TableCell>{formatSize(item.size)}</TableCell>
+                                      <TableCell>
+                                        <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
+                                          {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right font-medium">
+                                        {item.totalBoxes.toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <span className="text-muted-foreground">0</span>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="flex flex-col items-end">
+                                          <span className="text-sm text-muted-foreground">
+                                            {item.totalBoxes}/{boxesPerPallet} boxes
+                                          </span>
+                                          <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden mt-1">
+                                            <div 
+                                              className="h-full bg-primary/50" 
+                                              style={{ width: `${Math.min(progress, 100)}%` }}
+                                            />
+                                          </div>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+            </div>
             </TabsContent>
             
             {/* Temperature Control Tab */}

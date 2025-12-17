@@ -15,42 +15,39 @@ import { Header } from '@/components/layout/header';
 import { ColdRoomInventory } from '@/components/dashboard/cold-room-inventory';
 import { PackagingMaterialStock } from '@/components/dashboard/packaging-material-stock';
 import { Button } from '@/components/ui/button';
-import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
-import { InventorySummaryCard } from '@/components/dashboard/inventory-summary-card';
-import { PackagingSummaryCard } from '@/components/dashboard/packaging-summary-card';
+import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, ShoppingCart, TrendingUp, AlertTriangle, Archive, Truck, Calendar, Users, BarChart, Warehouse } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
-import { Weight, Boxes, TrendingUp, Archive } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CreatePackagingForm, type PackagingFormValues } from '@/components/dashboard/create-packaging-form';
 import { useToast } from '@/hooks/use-toast';
-import type { ColdRoomInventory as ColdRoomInventoryType, PackagingMaterial } from '@/lib/data';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Avocado Inventory Types
-interface AvocadoInventoryAPI {
+interface ColdRoomBox {
   id: string;
-  product: string;
-  variety: 'Fuerte' | 'Hass';
+  variety: 'fuerte' | 'hass';
+  box_type: '4kg' | '10kg';
   size: string;
-  boxType: '4kg' | '10kg';
-  class: 'Class 1' | 'Class 2';
+  grade: 'class1' | 'class2';
   quantity: number;
-  unit: 'boxes' | 'crates' | 'pallets';
-  location: string;
-  temperature: number;
-  humidity: number;
-  entryDate: string;
-  expiryDate: string;
-  status: 'fresh' | 'aging' | 'expiring';
-  supplier: string;
-  palletId: string;
+  cold_room_id: string;
+  created_at: string;
+  supplier_name?: string;
+  pallet_id?: string;
+  region?: string;
 }
 
-interface PackagingMaterialAPI {
+interface PackagingMaterial {
   id: string;
   name: string;
   category: string;
-  unit: string;
+  unit: 'pieces' | 'rolls' | 'units' | 'kg' | 'sheets' | 'meters';
   currentStock: number;
   reorderLevel: number;
   dimensions?: string;
@@ -59,116 +56,69 @@ interface PackagingMaterialAPI {
 }
 
 interface InventoryKPIs {
-  totalValue: number;
-  itemsBelowReorder: number;
-  inventoryTurnover: number;
   totalAvocadoBoxes: number;
   fuerteBoxes: number;
   hassBoxes: number;
+  totalPackagingItems: number;
+  itemsBelowReorder: number;
+  fastMovingItems: number;
+  totalValue: number;
+  packagingCategories: Record<string, number>;
+  avocadoDistribution: {
+    fuerte: number;
+    hass: number;
+    class1: number;
+    class2: number;
+    '4kg': number;
+    '10kg': number;
+  };
 }
 
 export default function InventoryPage() {
   const [stockTakeMode, setStockTakeMode] = useState(false);
-  const [coldRoomInventory, setColdRoomInventory] = useState<ColdRoomInventoryType[]>([]);
+  const [coldRoomInventory, setColdRoomInventory] = useState<ColdRoomBox[]>([]);
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterial[]>([]);
   const [inventoryKPIs, setInventoryKPIs] = useState<InventoryKPIs | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isProcessingStockTake, setIsProcessingStockTake] = useState(false);
+  const [bulkUpdateQuantity, setBulkUpdateQuantity] = useState<number>(0);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   
   const router = useRouter();
   const { toast } = useToast();
 
-  // Sample avocado inventory data for fallback
-  const sampleAvocadoInventory: ColdRoomInventoryType[] = [
-    {
-      id: '1',
-      product: 'Avocado Fuerte',
-      quantity: 50,
-      unit: 'boxes',
-      location: 'A1',
-      temperature: 4,
-      humidity: 85,
-      entryDate: '2024-01-15',
-      expiryDate: '2024-02-15',
-      status: 'fresh',
-      supplier: 'Green Valley Farms',
-    },
-    {
-      id: '2',
-      product: 'Avocado Hass',
-      quantity: 30,
-      unit: 'crates',
-      location: 'A2',
-      temperature: 4,
-      humidity: 85,
-      entryDate: '2024-01-14',
-      expiryDate: '2024-02-14',
-      status: 'fresh',
-      supplier: 'Sunshine Orchards',
-    },
-    {
-      id: '3',
-      product: 'Avocado Fuerte',
-      quantity: 45,
-      unit: 'boxes',
-      location: 'B1',
-      temperature: 4,
-      humidity: 85,
-      entryDate: '2024-01-10',
-      expiryDate: '2024-02-10',
-      status: 'aging',
-      supplier: 'Mountain View Farms',
-    },
-    {
-      id: '4',
-      product: 'Avocado Hass',
-      quantity: 25,
-      unit: 'crates',
-      location: 'B2',
-      temperature: 4,
-      humidity: 85,
-      entryDate: '2024-01-05',
-      expiryDate: '2024-02-05',
-      status: 'expiring',
-      supplier: 'Tropical Fruits Ltd',
-    }
-  ];
-
-  // Transform API data to match ColdRoomInventoryType
-  const transformAvocadoInventory = (data: AvocadoInventoryAPI[]): ColdRoomInventoryType[] => {
-    return data.map(item => ({
-      id: item.id,
-      product: `${item.variety} Avocado - Size ${item.size} - ${item.boxType} - ${item.class}`,
-      quantity: item.quantity,
-      unit: item.boxType === '4kg' ? 'boxes' : 'crates',
-      location: item.location,
-      temperature: item.temperature,
-      humidity: item.humidity,
-      entryDate: item.entryDate,
-      expiryDate: item.expiryDate,
-      status: item.status,
-      supplier: item.supplier,
-    }));
+  // Format size for display
+  const formatSize = (size: string) => {
+    return size.replace('size', 'Size ');
   };
 
-  // Fetch avocado inventory from database
+  // Calculate pallets
+  const calculatePallets = (quantity: number, boxType: string) => {
+    const boxesPerPallet = boxType === '4kg' ? 288 : 120;
+    return Math.floor(quantity / boxesPerPallet);
+  };
+
+  // Fetch cold room boxes from database
   const fetchColdRoomInventory = async () => {
     try {
-      const response = await fetch('/api/inventory/avocado');
+      const response = await fetch('/api/cold-room?action=boxes');
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch avocado inventory: ${response.statusText}`);
+        throw new Error(`Failed to fetch cold room boxes: ${response.statusText}`);
       }
       
-      const data: AvocadoInventoryAPI[] = await response.json();
-      const transformedInventory = transformAvocadoInventory(data);
-      setColdRoomInventory(transformedInventory);
+      const result = await response.json();
+      
+      if (result.success && Array.isArray(result.data)) {
+        setColdRoomInventory(result.data);
+      } else {
+        setColdRoomInventory([]);
+      }
     } catch (error: any) {
-      console.error('Error fetching avocado inventory:', error);
+      console.error('Error fetching cold room boxes:', error);
       setError(error.message || 'Failed to load avocado inventory');
-      // Use sample data as fallback
-      setColdRoomInventory(sampleAvocadoInventory);
+      setColdRoomInventory([]);
     }
   };
 
@@ -181,65 +131,61 @@ export default function InventoryPage() {
         throw new Error(`Failed to fetch packaging materials: ${response.statusText}`);
       }
       
-      const data: PackagingMaterialAPI[] = await response.json();
-      
-      // Transform to match PackagingMaterial type
-      const transformedMaterials: PackagingMaterial[] = data.map(item => ({
-        id: item.id,
-        name: item.name,
-        category: item.category,
-        unit: item.unit,
-        currentStock: item.currentStock || 0,
-        reorderLevel: item.reorderLevel || 0,
-        dimensions: item.dimensions,
-        lastUsedDate: item.lastUsedDate,
-        consumptionRate: item.consumptionRate || 'medium',
-      }));
-      
-      setPackagingMaterials(transformedMaterials);
+      const data: PackagingMaterial[] = await response.json();
+      setPackagingMaterials(data);
     } catch (error: any) {
       console.error('Error fetching packaging materials:', error);
       setError(error.message || 'Failed to load packaging materials');
-      // Use empty array as fallback
       setPackagingMaterials([]);
     }
   };
 
-  // Fetch inventory KPIs
-  const fetchInventoryKPIs = async () => {
-    try {
-      const response = await fetch('/api/inventory/kpi');
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch inventory KPIs: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      setInventoryKPIs({
-        totalValue: data.totalValue || 0,
-        itemsBelowReorder: data.itemsBelowReorder || 0,
-        inventoryTurnover: data.inventoryTurnover || 0,
-        totalAvocadoBoxes: data.totalAvocadoBoxes || coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0),
-        fuerteBoxes: data.fuerteBoxes || coldRoomInventory.filter(item => item.product.includes('Fuerte')).reduce((sum, item) => sum + item.quantity, 0),
-        hassBoxes: data.hassBoxes || coldRoomInventory.filter(item => item.product.includes('Hass')).reduce((sum, item) => sum + item.quantity, 0),
-      });
-    } catch (error: any) {
-      console.error('Error fetching inventory KPIs:', error);
-      // Calculate from current inventory
-      const totalAvocadoBoxes = coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0);
-      const fuerteBoxes = coldRoomInventory.filter(item => item.product.includes('Fuerte')).reduce((sum, item) => sum + item.quantity, 0);
-      const hassBoxes = coldRoomInventory.filter(item => item.product.includes('Hass')).reduce((sum, item) => sum + item.quantity, 0);
-      
-      setInventoryKPIs({
-        totalValue: 25400000,
-        itemsBelowReorder: 3,
-        inventoryTurnover: 5.2,
-        totalAvocadoBoxes,
-        fuerteBoxes,
-        hassBoxes,
-      });
-    }
+  // Calculate inventory KPIs
+  const calculateKPIs = () => {
+    // Calculate avocado statistics
+    const totalAvocadoBoxes = coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0);
+    const fuerteBoxes = coldRoomInventory
+      .filter(item => item.variety === 'fuerte')
+      .reduce((sum, item) => sum + item.quantity, 0);
+    const hassBoxes = coldRoomInventory
+      .filter(item => item.variety === 'hass')
+      .reduce((sum, item) => sum + item.quantity, 0);
+    
+    // Calculate packaging statistics
+    const totalPackagingItems = packagingMaterials.reduce((sum, item) => sum + item.currentStock, 0);
+    const itemsBelowReorder = packagingMaterials.filter(item => item.currentStock <= item.reorderLevel).length;
+    const fastMovingItems = packagingMaterials.filter(item => item.consumptionRate === 'high').length;
+    
+    // Calculate avocado distribution
+    const avocadoDistribution = {
+      fuerte: fuerteBoxes,
+      hass: hassBoxes,
+      class1: coldRoomInventory.filter(item => item.grade === 'class1').reduce((sum, item) => sum + item.quantity, 0),
+      class2: coldRoomInventory.filter(item => item.grade === 'class2').reduce((sum, item) => sum + item.quantity, 0),
+      '4kg': coldRoomInventory.filter(item => item.box_type === '4kg').reduce((sum, item) => sum + item.quantity, 0),
+      '10kg': coldRoomInventory.filter(item => item.box_type === '10kg').reduce((sum, item) => sum + item.quantity, 0),
+    };
+    
+    // Calculate packaging categories
+    const packagingCategories: Record<string, number> = {};
+    packagingMaterials.forEach(item => {
+      packagingCategories[item.category] = (packagingCategories[item.category] || 0) + item.currentStock;
+    });
+    
+    // Calculate estimated value (simple estimation)
+    const totalValue = (totalAvocadoBoxes * 500) + (totalPackagingItems * 50); // Sample calculation
+    
+    return {
+      totalAvocadoBoxes,
+      fuerteBoxes,
+      hassBoxes,
+      totalPackagingItems,
+      itemsBelowReorder,
+      fastMovingItems,
+      totalValue,
+      packagingCategories,
+      avocadoDistribution,
+    };
   };
 
   // Load all data
@@ -250,8 +196,11 @@ export default function InventoryPage() {
       await Promise.all([
         fetchColdRoomInventory(),
         fetchPackagingMaterials(),
-        fetchInventoryKPIs(),
       ]);
+      
+      // Calculate KPIs after data is loaded
+      const kpis = calculateKPIs();
+      setInventoryKPIs(kpis);
     } catch (error: any) {
       setError(error.message || 'Failed to load inventory data');
     } finally {
@@ -263,78 +212,69 @@ export default function InventoryPage() {
     loadData();
   }, []);
 
-  const handleRowClick = (item: ColdRoomInventoryType) => {
-    router.push(`/cold-room?palletId=${item.location}`);
-  };
-  
-  // Handle complete stock take
-  const handleCompleteStockTake = async (counts: Record<string, number>) => {
-    setIsProcessingStockTake(true);
-    
-    try {
-      // Prepare data for API
-      const stockTakeItems = Object.entries(counts).map(([id, counted]) => {
-        const item = coldRoomInventory.find(i => i.id === id);
-        return {
-          id,
-          product: item?.product || 'Unknown',
-          expected: item?.quantity || 0,
-          counted,
-          variance: counted - (item?.quantity || 0),
-          location: item?.location || 'Unknown',
-        };
+  // Handle bulk update of packaging material quantity
+  const handleBulkUpdate = async (action: 'add' | 'subtract') => {
+    if (!selectedMaterialId || bulkUpdateQuantity <= 0) {
+      toast({
+        title: 'Invalid input',
+        description: 'Please select a material and enter a valid quantity',
+        variant: 'destructive',
       });
-      
-      const response = await fetch('/api/inventory/stock-take', {
-        method: 'POST',
+      return;
+    }
+
+    const material = packagingMaterials.find(m => m.id === selectedMaterialId);
+    if (!material) return;
+
+    try {
+      const newQuantity = action === 'add' 
+        ? material.currentStock + bulkUpdateQuantity
+        : Math.max(0, material.currentStock - bulkUpdateQuantity);
+
+      const response = await fetch(`/api/inventory/packaging/${selectedMaterialId}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          counts: stockTakeItems,
-          userId: 'user-123', // Replace with actual user ID
-          timestamp: new Date().toISOString(),
+          currentStock: newQuantity,
         }),
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to save stock take results');
+
+      if (response.ok) {
+        setPackagingMaterials(prev => 
+          prev.map(m => 
+            m.id === selectedMaterialId 
+              ? { ...m, currentStock: newQuantity, lastUsedDate: new Date().toISOString() }
+              : m
+          )
+        );
+
+        toast({
+          title: 'Stock Updated',
+          description: `${material.name} stock updated to ${newQuantity} ${material.unit}`,
+        });
+
+        // Reset form
+        setBulkUpdateQuantity(0);
+        setSelectedMaterialId('');
+        
+        // Recalculate KPIs
+        const kpis = calculateKPIs();
+        setInventoryKPIs(kpis);
+      } else {
+        throw new Error('Failed to update stock');
       }
-      
-      const result = await response.json();
-      
-      toast({
-        title: 'Stock Take Completed Successfully',
-        description: `${result.summary.totalItems} items processed. ${result.summary.exactMatches} exact matches, ${result.summary.variances} variances found.`,
-      });
-      
-      // Exit stock take mode
-      setStockTakeMode(false);
-      
-      // Refresh inventory data to reflect any updates
-      await fetchColdRoomInventory();
-      
     } catch (error: any) {
-      console.error('Error completing stock take:', error);
       toast({
-        title: 'Stock Take Failed',
-        description: error.message || 'Could not save stock take results',
+        title: 'Update Failed',
+        description: error.message || 'Failed to update stock',
         variant: 'destructive',
       });
-    } finally {
-      setIsProcessingStockTake(false);
     }
   };
-  
-  // Handle cancel stock take
-  const handleCancelStockTake = () => {
-    setStockTakeMode(false);
-    toast({
-      title: 'Stock Take Cancelled',
-      description: 'No changes were saved',
-    });
-  };
-  
+
+  // Handle add packaging material
   const handleAddPackaging = async (values: PackagingFormValues) => {
     try {
       const response = await fetch('/api/inventory/packaging', {
@@ -346,7 +286,7 @@ export default function InventoryPage() {
           name: values.name,
           category: values.category,
           unit: values.unit,
-          currentStock: 0,
+          currentStock: values.initialStock || 0,
           reorderLevel: values.reorderLevel,
           dimensions: values.dimensions,
           lastUsedDate: new Date().toISOString(),
@@ -355,8 +295,7 @@ export default function InventoryPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to add packaging material');
+        throw new Error('Failed to add packaging material');
       }
 
       const newMaterial: PackagingMaterial = await response.json();
@@ -366,70 +305,98 @@ export default function InventoryPage() {
         title: 'Packaging Material Added',
         description: `${values.name} has been added to your inventory.`,
       });
+
+      // Recalculate KPIs
+      const kpis = calculateKPIs();
+      setInventoryKPIs(kpis);
       
     } catch (error: any) {
-      console.error('Error adding packaging material:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to add packaging material',
         variant: 'destructive',
       });
-      
-      // Fallback: add to local state
-      const fallbackMaterial: PackagingMaterial = {
-        id: `pkg-${Date.now()}`,
-        name: values.name,
-        category: values.category,
-        unit: values.unit,
-        currentStock: 0,
-        reorderLevel: values.reorderLevel,
-        dimensions: values.dimensions,
-        lastUsedDate: new Date().toISOString(),
-        consumptionRate: 'medium',
-      };
-      setPackagingMaterials(prev => [fallbackMaterial, ...prev]);
     }
   };
 
+  // Prepare KPI data for OverviewCards
   const inventoryKpis = {
-    totalValue: {
-      title: 'Total Inventory Value',
-      value: inventoryKPIs ? `KES ${(inventoryKPIs.totalValue / 1000000).toFixed(1)}M` : 'KES 0M',
-      change: 'estimated value on hand',
-      changeType: 'increase' as const,
-    },
     totalAvocadoBoxes: {
-      title: 'Avocado Boxes',
+      title: 'Total Avocado Boxes',
       value: inventoryKPIs ? inventoryKPIs.totalAvocadoBoxes.toString() : '0',
       change: 'in cold storage',
       changeType: 'increase' as const,
+      icon: Boxes,
     },
-    itemsLow: {
-      title: 'Items Below Reorder',
+    totalPackagingItems: {
+      title: 'Packaging Items',
+      value: inventoryKPIs ? inventoryKPIs.totalPackagingItems.toString() : '0',
+      change: 'total units in stock',
+      changeType: 'increase' as const,
+      icon: PackageIcon,
+    },
+    itemsBelowReorder: {
+      title: 'Low Stock Items',
       value: inventoryKPIs ? inventoryKPIs.itemsBelowReorder.toString() : '0',
-      change: 'produce & packaging',
+      change: 'need reordering',
       changeType: inventoryKPIs?.itemsBelowReorder > 0 ? 'increase' as const : 'decrease' as const,
+      icon: AlertTriangle,
     },
     fuerteBoxes: {
       title: 'Fuerte Boxes',
       value: inventoryKPIs ? inventoryKPIs.fuerteBoxes.toString() : '0',
-      change: '4kg & 10kg',
+      change: '4kg & 10kg boxes',
       changeType: 'increase' as const,
+      icon: Boxes,
     },
     hassBoxes: {
       title: 'Hass Boxes',
       value: inventoryKPIs ? inventoryKPIs.hassBoxes.toString() : '0',
-      change: '4kg & 10kg',
+      change: '4kg & 10kg boxes',
       changeType: 'increase' as const,
+      icon: Boxes,
     },
-    inventoryTurnover: {
-      title: 'Inventory Turnover Rate',
-      value: inventoryKPIs ? inventoryKPIs.inventoryTurnover.toFixed(1) : '0.0',
-      change: 'per month',
+    fastMovingItems: {
+      title: 'Fast-Moving Items',
+      value: inventoryKPIs ? inventoryKPIs.fastMovingItems.toString() : '0',
+      change: 'high consumption rate',
       changeType: 'increase' as const,
-    }
+      icon: TrendingUp,
+    },
   };
 
+  // Calculate avocado totals for display
+  const avocadoTotals = {
+    totalBoxes: coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0),
+    totalPallets: coldRoomInventory.reduce((sum, item) => sum + calculatePallets(item.quantity, item.box_type), 0),
+    byVariety: {
+      fuerte: coldRoomInventory
+        .filter(item => item.variety === 'fuerte')
+        .reduce((sum, item) => sum + item.quantity, 0),
+      hass: coldRoomInventory
+        .filter(item => item.variety === 'hass')
+        .reduce((sum, item) => sum + item.quantity, 0),
+    },
+    byGrade: {
+      class1: coldRoomInventory
+        .filter(item => item.grade === 'class1')
+        .reduce((sum, item) => sum + item.quantity, 0),
+      class2: coldRoomInventory
+        .filter(item => item.grade === 'class2')
+        .reduce((sum, item) => sum + item.quantity, 0),
+    },
+    byBoxType: {
+      '4kg': coldRoomInventory
+        .filter(item => item.box_type === '4kg')
+        .reduce((sum, item) => sum + item.quantity, 0),
+      '10kg': coldRoomInventory
+        .filter(item => item.box_type === '10kg')
+        .reduce((sum, item) => sum + item.quantity, 0),
+    },
+  };
+
+  // Get low stock packaging materials
+  const lowStockMaterials = packagingMaterials.filter(m => m.currentStock <= m.reorderLevel);
   const fastMovingPackaging = packagingMaterials.filter(m => m.consumptionRate === 'high');
   const deadStockPackaging = packagingMaterials.filter(m => m.consumptionRate === 'low');
 
@@ -493,13 +460,13 @@ export default function InventoryPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Button onClick={() => loadData()} variant="outline" size="sm" disabled={isLoading || isProcessingStockTake}>
+              <Button onClick={() => loadData()} variant="outline" size="sm" disabled={isLoading}>
                 <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
               <Button 
                 onClick={() => setStockTakeMode(!stockTakeMode)} 
-                disabled={isLoading || isProcessingStockTake}
+                disabled={isLoading}
                 variant={stockTakeMode ? "destructive" : "default"}
               >
                 {stockTakeMode ? (
@@ -524,36 +491,20 @@ export default function InventoryPage() {
                 <div>
                   <p className="text-sm font-medium text-amber-800">{error}</p>
                   <p className="text-xs text-amber-700 mt-1">
-                    Using cached or mock data. Check your API configuration.
+                    Some data may not be available. Check your API configuration.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {stockTakeMode && (
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <ListTodo className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-blue-800">Stock Take Mode Active</p>
-                  <p className="text-xs text-blue-700">
-                    Enter actual counts for each inventory item. Click "Exit Stock Take" to cancel or complete counts.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-            <OverviewCard data={inventoryKpis.totalValue} icon={Weight} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
             <OverviewCard data={inventoryKpis.totalAvocadoBoxes} icon={Boxes} />
-            <OverviewCard data={inventoryKpis.itemsLow} icon={PackageIcon} />
+            <OverviewCard data={inventoryKpis.totalPackagingItems} icon={PackageIcon} />
+            <OverviewCard data={inventoryKpis.itemsBelowReorder} icon={AlertTriangle} />
             <OverviewCard data={inventoryKpis.fuerteBoxes} icon={Boxes} />
             <OverviewCard data={inventoryKpis.hassBoxes} icon={Boxes} />
-            <OverviewCard data={inventoryKpis.inventoryTurnover} icon={TrendingUp} />
+            <OverviewCard data={inventoryKpis.fastMovingItems} icon={TrendingUp} />
           </div>
 
           <Tabs defaultValue="produce">
@@ -561,45 +512,154 @@ export default function InventoryPage() {
               <TabsTrigger value="produce">Avocado Inventory</TabsTrigger>
               <TabsTrigger value="packaging">Packaging Materials</TabsTrigger>
             </TabsList>
+            
+            {/* Avocado Inventory Tab */}
             <TabsContent value="produce" className="mt-6">
               <div className="grid gap-6 md:gap-8 grid-cols-1 lg:grid-cols-3">
                 <div className="lg:col-span-2">
-                  <ColdRoomInventory 
-                    inventory={coldRoomInventory} 
-                    stockTakeMode={stockTakeMode} 
-                    onRowClick={handleRowClick}
-                    onCompleteStockTake={handleCompleteStockTake}
-                    onCancelStockTake={handleCancelStockTake}
-                  />
-                </div>
-                <div className="space-y-6">
-                  <InventorySummaryCard inventory={coldRoomInventory} />
                   <Card>
                     <CardHeader>
-                      <CardTitle>Avocado Breakdown</CardTitle>
+                      <CardTitle className="flex items-center gap-2">
+                        <Warehouse className="w-5 h-5" />
+                        Avocado Boxes in Cold Storage
+                      </CardTitle>
+                      <CardDescription>
+                        Real-time inventory from cold room database
+                      </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-3">
-                        <div>
-                          <div className="text-sm text-gray-500 mb-1">Fuerte Avocados</div>
-                          <div className="flex justify-between items-center">
-                            <div className="text-lg font-bold text-blue-600">
-                              {coldRoomInventory
-                                .filter(item => item.product.includes('Fuerte'))
-                                .reduce((sum, item) => sum + item.quantity, 0)}
-                            </div>
-                            <div className="text-sm text-gray-500">boxes</div>
+                      {coldRoomInventory.length === 0 ? (
+                        <div className="text-center py-8">
+                          <PackageIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                          <p className="text-gray-500 font-medium">No avocado boxes in cold storage</p>
+                          <p className="text-sm text-gray-400 mt-1">
+                            Load boxes from the Cold Room Management page
+                          </p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-[500px]">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Variety</TableHead>
+                                <TableHead>Box Type</TableHead>
+                                <TableHead>Size</TableHead>
+                                <TableHead>Grade</TableHead>
+                                <TableHead className="text-right">Quantity</TableHead>
+                                <TableHead className="text-right">Pallets</TableHead>
+                                <TableHead>Cold Room</TableHead>
+                                <TableHead>Supplier</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {coldRoomInventory.map((item) => (
+                                <TableRow key={item.id}>
+                                  <TableCell className="font-medium capitalize">
+                                    {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                  </TableCell>
+                                  <TableCell>{item.box_type}</TableCell>
+                                  <TableCell>{formatSize(item.size)}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
+                                      {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    {item.quantity.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {calculatePallets(item.quantity, item.box_type)}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className="text-xs">
+                                      {item.cold_room_id === 'coldroom1' ? 'CR1' : 'CR2'}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {item.supplier_name || 'N/A'}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </ScrollArea>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+                
+                {/* Avocado Summary Sidebar */}
+                <div className="space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Avocado Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="border rounded-lg p-3">
+                          <div className="text-sm text-gray-500 mb-1">Total Boxes</div>
+                          <div className="text-2xl font-bold text-blue-600">
+                            {avocadoTotals.totalBoxes.toLocaleString()}
                           </div>
                         </div>
-                        <div>
-                          <div className="text-sm text-gray-500 mb-1">Hass Avocados</div>
+                        <div className="border rounded-lg p-3">
+                          <div className="text-sm text-gray-500 mb-1">Total Pallets</div>
+                          <div className="text-2xl font-bold text-green-600">
+                            {avocadoTotals.totalPallets}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-sm font-medium mb-2">By Variety</div>
+                        <div className="space-y-2">
                           <div className="flex justify-between items-center">
-                            <div className="text-lg font-bold text-green-600">
-                              {coldRoomInventory
-                                .filter(item => item.product.includes('Hass'))
-                                .reduce((sum, item) => sum + item.quantity, 0)}
-                            </div>
-                            <div className="text-sm text-gray-500">boxes</div>
+                            <span className="text-sm">Fuerte</span>
+                            <Badge variant="outline">
+                              {avocadoTotals.byVariety.fuerte.toLocaleString()} boxes
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Hass</span>
+                            <Badge variant="outline">
+                              {avocadoTotals.byVariety.hass.toLocaleString()} boxes
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-sm font-medium mb-2">By Grade</div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Class 1</span>
+                            <Badge variant="default" className="text-xs">
+                              {avocadoTotals.byGrade.class1.toLocaleString()} boxes
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Class 2</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {avocadoTotals.byGrade.class2.toLocaleString()} boxes
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-sm font-medium mb-2">By Box Type</div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">4kg Boxes</span>
+                            <span className="font-medium">
+                              {avocadoTotals.byBoxType['4kg'].toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">10kg Crates</span>
+                            <span className="font-medium">
+                              {avocadoTotals.byBoxType['10kg'].toLocaleString()}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -608,14 +668,180 @@ export default function InventoryPage() {
                 </div>
               </div>
             </TabsContent>
+            
+            {/* Packaging Materials Tab */}
             <TabsContent value="packaging" className="mt-6">
               <div className="grid gap-6 md:gap-8 grid-cols-1 lg:grid-cols-3">
                 <div className="lg:col-span-2 space-y-6">
-                  <PackagingMaterialStock 
-                    materials={packagingMaterials} 
-                    stockTakeMode={stockTakeMode} 
-                    setMaterials={setPackagingMaterials} 
-                  />
+                  {/* Bulk Update Section */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Truck className="w-5 h-5" />
+                        Bulk Stock Update
+                      </CardTitle>
+                      <CardDescription>
+                        Quickly add or subtract large quantities from packaging materials
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="material-select">Select Material</Label>
+                            <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId}>
+                              <SelectTrigger id="material-select">
+                                <SelectValue placeholder="Choose a material" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {packagingMaterials.map(material => (
+                                  <SelectItem key={material.id} value={material.id}>
+                                    <div className="flex items-center justify-between">
+                                      <span>{material.name}</span>
+                                      <span className="text-sm text-muted-foreground">
+                                        {material.currentStock} {material.unit}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="bulk-quantity">Quantity</Label>
+                            <Input
+                              id="bulk-quantity"
+                              type="number"
+                              min="0"
+                              value={bulkUpdateQuantity}
+                              onChange={(e) => setBulkUpdateQuantity(parseInt(e.target.value) || 0)}
+                              placeholder="Enter quantity"
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                          <Button
+                            onClick={() => handleBulkUpdate('add')}
+                            className="flex-1"
+                            disabled={!selectedMaterialId || bulkUpdateQuantity <= 0}
+                          >
+                            <PlusCircle className="w-4 h-4 mr-2" />
+                            Add Stock
+                          </Button>
+                          <Button
+                            onClick={() => handleBulkUpdate('subtract')}
+                            className="flex-1"
+                            variant="outline"
+                            disabled={!selectedMaterialId || bulkUpdateQuantity <= 0}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="w-4 h-4 mr-2"
+                            >
+                              <path d="M5 12h14" />
+                            </svg>
+                            Subtract Stock
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Packaging Materials Table */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <PackageIcon className="w-5 h-5" />
+                        Packaging Materials Stock
+                      </CardTitle>
+                      <CardDescription>
+                        Current stock levels and consumption rates
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {packagingMaterials.length === 0 ? (
+                        <div className="text-center py-8">
+                          <PackageIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                          <p className="text-gray-500 font-medium">No packaging materials</p>
+                          <p className="text-sm text-gray-400 mt-1">
+                            Add packaging materials to get started
+                          </p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-[400px]">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Category</TableHead>
+                                <TableHead>Unit</TableHead>
+                                <TableHead className="text-right">Current Stock</TableHead>
+                                <TableHead className="text-right">Reorder Level</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Rate</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {packagingMaterials.map((material) => (
+                                <TableRow key={material.id}>
+                                  <TableCell className="font-medium">
+                                    {material.name}
+                                  </TableCell>
+                                  <TableCell>{material.category}</TableCell>
+                                  <TableCell>{material.unit}</TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    {material.currentStock.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {material.reorderLevel.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge 
+                                      variant={
+                                        material.currentStock <= material.reorderLevel 
+                                          ? "destructive" 
+                                          : "outline"
+                                      }
+                                    >
+                                      {material.currentStock <= material.reorderLevel 
+                                        ? "Low Stock" 
+                                        : "In Stock"}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge 
+                                      variant="outline"
+                                      className={
+                                        material.consumptionRate === 'high' 
+                                          ? "bg-green-50 text-green-700 border-green-200" 
+                                          : material.consumptionRate === 'low'
+                                          ? "bg-gray-50 text-gray-700 border-gray-200"
+                                          : "bg-blue-50 text-blue-700 border-blue-200"
+                                      }
+                                    >
+                                      {material.consumptionRate}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </ScrollArea>
+                      )}
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Add New Packaging Material */}
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -623,7 +849,7 @@ export default function InventoryPage() {
                         Add New Packaging Material
                       </CardTitle>
                       <CardDescription>
-                        Add a new type of box, label, or wrap to the inventory system.
+                        Add a new type of box, label, or wrap to the inventory system
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -631,40 +857,143 @@ export default function InventoryPage() {
                     </CardContent>
                   </Card>
                 </div>
+                
+                {/* Packaging Summary Sidebar */}
                 <div className="space-y-6">
-                  <PackagingSummaryCard materials={packagingMaterials} />
+                  {/* Summary Cards */}
                   <Card>
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <TrendingUp/>
-                        Fast-Moving Items
-                      </CardTitle>
+                      <CardTitle>Packaging Summary</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                      {fastMovingPackaging.length > 0 ? (
-                        fastMovingPackaging.map(item => (
-                          <p key={item.id} className="text-sm text-muted-foreground">{item.name}</p>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">No fast-moving items</p>
-                      )}
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="border rounded-lg p-3">
+                          <div className="text-sm text-gray-500 mb-1">Total Items</div>
+                          <div className="text-2xl font-bold text-blue-600">
+                            {packagingMaterials.reduce((sum, m) => sum + m.currentStock, 0).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="border rounded-lg p-3">
+                          <div className="text-sm text-gray-500 mb-1">Unique Types</div>
+                          <div className="text-2xl font-bold text-green-600">
+                            {packagingMaterials.length}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-sm font-medium mb-2">Stock Status</div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">In Stock</span>
+                            <Badge variant="outline">
+                              {packagingMaterials.filter(m => m.currentStock > m.reorderLevel).length} items
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Low Stock</span>
+                            <Badge variant="destructive">
+                              {lowStockMaterials.length} items
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
+                  
+                  {/* Categories Breakdown */}
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Archive/>
-                        Dead Stock / Slow Movers
+                        <BarChart className="w-5 h-5" />
+                        Categories Breakdown
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                      {deadStockPackaging.length > 0 ? (
-                        deadStockPackaging.map(item => (
-                          <p key={item.id} className="text-sm text-muted-foreground">{item.name}</p>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">No dead stock items</p>
-                      )}
+                    <CardContent>
+                      <div className="space-y-3">
+                        {Object.entries(
+                          packagingMaterials.reduce((acc, m) => {
+                            acc[m.category] = (acc[m.category] || 0) + 1;
+                            return acc;
+                          }, {} as Record<string, number>)
+                        ).map(([category, count]) => (
+                          <div key={category} className="flex justify-between items-center">
+                            <span className="text-sm">{category}</span>
+                            <Badge variant="outline">{count} types</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Low Stock Alert */}
+                  {lowStockMaterials.length > 0 && (
+                    <Card className="border-red-200">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-red-600">
+                          <AlertTriangle className="w-5 h-5" />
+                          Low Stock Alert
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="space-y-2">
+                          {lowStockMaterials.slice(0, 3).map(material => (
+                            <div key={material.id} className="text-sm">
+                              <div className="font-medium">{material.name}</div>
+                              <div className="text-red-600">
+                                Only {material.currentStock} {material.unit} left
+                                (Reorder at {material.reorderLevel})
+                              </div>
+                            </div>
+                          ))}
+                          {lowStockMaterials.length > 3 && (
+                            <div className="text-sm text-gray-500">
+                              +{lowStockMaterials.length - 3} more items low
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  {/* Consumption Rate Summary */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5" />
+                        Consumption Rate
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-sm">Fast Moving</span>
+                          </div>
+                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                            {fastMovingPackaging.length} items
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                            <span className="text-sm">Medium</span>
+                          </div>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                            {packagingMaterials.filter(m => m.consumptionRate === 'medium').length} items
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                            <span className="text-sm">Slow Moving</span>
+                          </div>
+                          <Badge variant="outline" className="bg-gray-50 text-gray-700">
+                            {deadStockPackaging.length} items
+                          </Badge>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 </div>

@@ -11,7 +11,7 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
@@ -44,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { toast } from 'sonner';
 
 // Define types based on your database schema
 interface DatabaseShipment {
@@ -194,10 +195,24 @@ interface Assignment {
   loading_sheet_id: string;
   assigned_at: string;
   assigned_by: string;
-  status: 'assigned' | 'completed' | 'cancelled';
+  status: 'assigned' | 'in_transit' | 'completed' | 'cancelled';
   notes?: string | null;
   carrier?: Carrier;
   loading_sheet?: DatabaseLoadingSheet;
+  transit_started_at?: string | null;
+  transit_completed_at?: string | null;
+  transit_days?: number | null;
+}
+
+// Transit History Types
+interface TransitHistory {
+  id: string;
+  assignment_id: string;
+  action: 'start_transit' | 'end_transit' | 'delivered';
+  timestamp: string;
+  notes?: string | null;
+  location?: string | null;
+  assignment?: Assignment;
 }
 
 // Helper function to convert database status to display format
@@ -214,6 +229,25 @@ function convertDbStatusToDisplay(dbStatus: string): string {
   };
   
   return statusMap[dbStatus] || 'Awaiting QC';
+}
+
+// Helper function to format date
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+// Helper function to calculate days between dates
+function calculateDaysBetween(startDate: string, endDate: string): number {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
 // Loading Sheet Component
@@ -1145,7 +1179,7 @@ function CarrierAssignmentForm() {
   const [selectedCarrierId, setSelectedCarrierId] = useState<string | null>(null);
   const [selectedLoadingSheetId, setSelectedLoadingSheetId] = useState<string | null>(null);
   const [assignmentNotes, setAssignmentNotes] = useState('');
-  const [assignmentStatus, setAssignmentStatus] = useState<'assigned' | 'completed'>('assigned');
+  const [assignmentStatus, setAssignmentStatus] = useState<'assigned' | 'in_transit' | 'completed'>('assigned');
   
   // Fetch data from database
   const fetchData = useCallback(async () => {
@@ -1252,9 +1286,11 @@ function CarrierAssignmentForm() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+        return <Badge className="bg-green-100 text-green-800">Delivered</Badge>;
+      case 'in_transit':
+        return <Badge className="bg-blue-100 text-blue-800">In Transit</Badge>;
       case 'assigned':
-        return <Badge className="bg-blue-100 text-blue-800">Assigned</Badge>;
+        return <Badge className="bg-yellow-100 text-yellow-800">Assigned</Badge>;
       case 'cancelled':
         return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>;
       default:
@@ -1399,14 +1435,15 @@ function CarrierAssignmentForm() {
                 <Label htmlFor="assignment-status">Assignment Status</Label>
                 <Select
                   value={assignmentStatus}
-                  onValueChange={(value: 'assigned' | 'completed') => setAssignmentStatus(value)}
+                  onValueChange={(value: 'assigned' | 'in_transit' | 'completed') => setAssignmentStatus(value)}
                 >
                   <SelectTrigger id="assignment-status">
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="assigned">Assigned</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="in_transit">In Transit</SelectItem>
+                    <SelectItem value="completed">Delivered</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1532,6 +1569,633 @@ function CarrierAssignmentForm() {
   );
 }
 
+// Transit Management Component
+function TransitManagement() {
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [transitHistory, setTransitHistory] = useState<TransitHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  
+  // Modal states
+  const [showStartTransitModal, setShowStartTransitModal] = useState(false);
+  const [showEndTransitModal, setShowEndTransitModal] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [transitNotes, setTransitNotes] = useState('');
+  const [transitLocation, setTransitLocation] = useState('');
+
+  // Fetch data
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch assignments
+      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      if (assignmentsResponse.ok) {
+        const assignmentsData = await assignmentsResponse.json();
+        if (assignmentsData.success) {
+          setAssignments(assignmentsData.data || []);
+        }
+      }
+      
+      // Fetch transit history
+      const historyResponse = await fetch('/api/transit-history');
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        if (historyData.success) {
+          setTransitHistory(historyData.data || []);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to fetch data. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleStartTransit = async () => {
+    if (!selectedAssignment) return;
+    
+    try {
+      setActionLoading('start_transit');
+      
+      const response = await fetch('/api/transit-history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          assignmentId: selectedAssignment.id,
+          action: 'start_transit',
+          notes: transitNotes,
+          location: transitLocation
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success('Transit started successfully!');
+        
+        // Update assignment status
+        const updateResponse = await fetch(`/api/carrier-assignments/${selectedAssignment.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'in_transit',
+            transit_started_at: new Date().toISOString()
+          })
+        });
+        
+        if (updateResponse.ok) {
+          await fetchData();
+        }
+        
+        setShowStartTransitModal(false);
+        setSelectedAssignment(null);
+        setTransitNotes('');
+        setTransitLocation('');
+      } else {
+        throw new Error(result.error || 'Failed to start transit');
+      }
+      
+    } catch (error: any) {
+      console.error('Error starting transit:', error);
+      toast.error(`Failed to start transit: ${error.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleEndTransit = async () => {
+    if (!selectedAssignment) return;
+    
+    try {
+      setActionLoading('end_transit');
+      
+      const response = await fetch('/api/transit-history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          assignmentId: selectedAssignment.id,
+          action: 'end_transit',
+          notes: transitNotes,
+          location: transitLocation
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success('Transit completed successfully!');
+        
+        // Update assignment status
+        const updateResponse = await fetch(`/api/carrier-assignments/${selectedAssignment.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'completed',
+            transit_completed_at: new Date().toISOString()
+          })
+        });
+        
+        if (updateResponse.ok) {
+          await fetchData();
+        }
+        
+        setShowEndTransitModal(false);
+        setSelectedAssignment(null);
+        setTransitNotes('');
+        setTransitLocation('');
+      } else {
+        throw new Error(result.error || 'Failed to end transit');
+      }
+      
+    } catch (error: any) {
+      console.error('Error ending transit:', error);
+      toast.error(`Failed to end transit: ${error.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleMarkDelivered = async (assignmentId: string) => {
+    try {
+      setActionLoading(`delivered_${assignmentId}`);
+      
+      const response = await fetch('/api/transit-history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          assignmentId,
+          action: 'delivered',
+          notes: 'Marked as delivered',
+          location: 'Destination'
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success('Marked as delivered successfully!');
+        
+        // Update assignment status if not already completed
+        const assignment = assignments.find(a => a.id === assignmentId);
+        if (assignment && assignment.status !== 'completed') {
+          const updateResponse = await fetch(`/api/carrier-assignments/${assignmentId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              status: 'completed',
+              transit_completed_at: new Date().toISOString()
+            })
+          });
+          
+          if (updateResponse.ok) {
+            await fetchData();
+          }
+        } else {
+          await fetchData();
+        }
+      } else {
+        throw new Error(result.error || 'Failed to mark as delivered');
+      }
+      
+    } catch (error: any) {
+      console.error('Error marking as delivered:', error);
+      toast.error(`Failed to mark as delivered: ${error.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-800">Delivered</Badge>;
+      case 'in_transit':
+        return <Badge className="bg-blue-100 text-blue-800">In Transit</Badge>;
+      case 'assigned':
+        return <Badge className="bg-yellow-100 text-yellow-800">Assigned</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const getTransitDays = (assignment: Assignment) => {
+    if (!assignment.transit_started_at) return '-';
+    
+    const startDate = new Date(assignment.transit_started_at);
+    const endDate = assignment.transit_completed_at 
+      ? new Date(assignment.transit_completed_at)
+      : new Date();
+    
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const formatTransitTime = (assignment: Assignment) => {
+    if (!assignment.transit_started_at) return 'Not started';
+    
+    const startDate = new Date(assignment.transit_started_at);
+    const startStr = startDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    });
+    
+    if (assignment.transit_completed_at) {
+      const endDate = new Date(assignment.transit_completed_at);
+      const endStr = endDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+      return `${startStr} - ${endStr}`;
+    }
+    
+    return `${startStr} - Ongoing`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading transit data...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">
+              {assignments.filter(a => a.status === 'assigned').length}
+            </div>
+            <div className="text-sm text-muted-foreground">Assigned</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">
+              {assignments.filter(a => a.status === 'in_transit').length}
+            </div>
+            <div className="text-sm text-muted-foreground">In Transit</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">
+              {assignments.filter(a => a.status === 'completed').length}
+            </div>
+            <div className="text-sm text-muted-foreground">Delivered</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">
+              {transitHistory.length}
+            </div>
+            <div className="text-sm text-muted-foreground">Transit Events</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Active Assignments */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Truck className="h-6 w-6 text-primary" />
+            Active Assignments
+          </CardTitle>
+          <CardDescription>
+            Manage transit status for carrier assignments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Carrier</TableHead>
+                  <TableHead>Loading Sheet</TableHead>
+                  <TableHead>Container</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Transit Period</TableHead>
+                  <TableHead>Days</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assignments.map((assignment) => (
+                  <TableRow key={assignment.id}>
+                    <TableCell>
+                      <div className="font-medium">{assignment.carrier?.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {assignment.carrier?.vehicle_registration || 'N/A'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{assignment.loading_sheet?.bill_number || 'No Bill'}</div>
+                      <div className="text-sm text-muted-foreground">
+                        Client: {assignment.loading_sheet?.client || 'N/A'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {assignment.loading_sheet?.container || 'N/A'}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(assignment.status)}</TableCell>
+                    <TableCell>
+                      {formatTransitTime(assignment)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{getTransitDays(assignment)}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {assignment.status === 'assigned' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedAssignment(assignment);
+                              setShowStartTransitModal(true);
+                            }}
+                          >
+                            <Play className="h-4 w-4 mr-1" />
+                            Start Transit
+                          </Button>
+                        )}
+                        
+                        {assignment.status === 'in_transit' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedAssignment(assignment);
+                              setShowEndTransitModal(true);
+                            }}
+                          >
+                            <StopCircle className="h-4 w-4 mr-1" />
+                            End Transit
+                          </Button>
+                        )}
+                        
+                        {assignment.status !== 'completed' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleMarkDelivered(assignment.id)}
+                            disabled={actionLoading === `delivered_${assignment.id}`}
+                          >
+                            {actionLoading === `delivered_${assignment.id}` ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Empty State */}
+          {assignments.length === 0 && (
+            <div className="text-center py-8">
+              <Truck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No assignments found</h3>
+              <p className="text-muted-foreground mb-4">
+                Assign carriers to loading sheets first to manage transit
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Transit History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-6 w-6 text-primary" />
+            Transit History
+          </CardTitle>
+          <CardDescription>
+            Complete history of transit events for all assignments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {transitHistory.map((history) => (
+              <div key={history.id} className="flex items-start gap-4 p-4 border rounded-lg">
+                <div className={`p-2 rounded-full ${
+                  history.action === 'start_transit' ? 'bg-blue-100 text-blue-600' :
+                  history.action === 'end_transit' ? 'bg-green-100 text-green-600' :
+                  'bg-purple-100 text-purple-600'
+                }`}>
+                  {history.action === 'start_transit' ? (
+                    <Play className="h-5 w-5" />
+                  ) : history.action === 'end_transit' ? (
+                    <StopCircle className="h-5 w-5" />
+                  ) : (
+                    <CheckCircle className="h-5 w-5" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">
+                        {history.action === 'start_transit' ? 'Transit Started' :
+                         history.action === 'end_transit' ? 'Transit Ended' : 'Delivered'}
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        {formatDate(history.timestamp)}
+                      </p>
+                    </div>
+                    <Badge variant="outline">
+                      {history.assignment?.loading_sheet?.bill_number || 'No Bill'}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Carrier</p>
+                      <p className="text-sm">{history.assignment?.carrier?.name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Location</p>
+                      <p className="text-sm flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {history.location || 'Not specified'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Notes</p>
+                      <p className="text-sm">{history.notes || 'No notes'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Empty State */}
+          {transitHistory.length === 0 && (
+            <div className="text-center py-8">
+              <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No transit history found</h3>
+              <p className="text-muted-foreground mb-4">
+                Transit history will appear here once you start managing transit for assignments
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Modals */}
+      {/* Start Transit Modal */}
+      {showStartTransitModal && selectedAssignment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Start Transit</h3>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="location">Current Location</Label>
+                <Input
+                  id="location"
+                  value={transitLocation}
+                  onChange={(e) => setTransitLocation(e.target.value)}
+                  placeholder="Enter current location"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="notes">Notes</Label>
+                <textarea
+                  id="notes"
+                  value={transitNotes}
+                  onChange={(e) => setTransitNotes(e.target.value)}
+                  placeholder="Enter any notes about transit start"
+                  className="w-full min-h-[80px] p-2 border rounded-md resize-none mt-1"
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowStartTransitModal(false);
+                    setSelectedAssignment(null);
+                    setTransitNotes('');
+                    setTransitLocation('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleStartTransit}
+                  disabled={actionLoading === 'start_transit'}
+                >
+                  {actionLoading === 'start_transit' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Start Transit
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* End Transit Modal */}
+      {showEndTransitModal && selectedAssignment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">End Transit / Mark as Delivered</h3>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="location-end">Delivery Location</Label>
+                <Input
+                  id="location-end"
+                  value={transitLocation}
+                  onChange={(e) => setTransitLocation(e.target.value)}
+                  placeholder="Enter delivery location"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="notes-end">Delivery Notes</Label>
+                <textarea
+                  id="notes-end"
+                  value={transitNotes}
+                  onChange={(e) => setTransitNotes(e.target.value)}
+                  placeholder="Enter any delivery notes or observations"
+                  className="w-full min-h-[80px] p-2 border rounded-md resize-none mt-1"
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowEndTransitModal(false);
+                    setSelectedAssignment(null);
+                    setTransitNotes('');
+                    setTransitLocation('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleEndTransit}
+                  disabled={actionLoading === 'end_transit'}
+                >
+                  {actionLoading === 'end_transit' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Completing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Mark as Delivered
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OutboundPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1559,51 +2223,111 @@ export default function OutboundPage() {
     try {
       setLoading(true);
       
-      // Fetch statistics
-      const statsResponse = await fetch('/api/outbound-stats');
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json();
-        if (statsData.success) {
-          setStats(statsData.data);
-        }
-      }
+      // Fetch loading sheets data
+      const loadingSheetsResponse = await fetch('/api/loading-sheets?limit=100');
+      const loadingSheetsData = loadingSheetsResponse.ok 
+        ? await loadingSheetsResponse.json() 
+        : { success: false, data: [] };
       
-      // Fetch outbound shipments
+      // Fetch carriers data
+      const carriersResponse = await fetch('/api/carriers');
+      const carriersData = carriersResponse.ok 
+        ? await carriersResponse.json() 
+        : { success: false, data: [] };
+      
+      // Fetch assignments data
+      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      const assignmentsData = assignmentsResponse.ok 
+        ? await assignmentsResponse.json() 
+        : { success: false, data: [] };
+      
+      // Fetch shipments data for status distribution
       const shipmentsResponse = await fetch('/api/outbound-shipments');
-      if (shipmentsResponse.ok) {
-        const shipmentsData = await shipmentsResponse.json();
-        if (shipmentsData.success && shipmentsData.data) {
-          const transformedData = shipmentsData.data.map((shipment: DatabaseShipment) => ({
-            id: shipment.id,
-            shipmentId: shipment.shipment_id,
-            customer: shipment.customers?.name || 'Unknown Customer',
-            origin: shipment.origin || 'N/A',
-            destination: shipment.destination || 'N/A',
-            status: convertDbStatusToDisplay(shipment.status),
-            product: shipment.product || 'N/A',
-            weight: `${parseFloat(shipment.weight || '0').toFixed(0)} kg`,
-            temperature: 'N/A',
-            humidity: 'N/A',
-            tags: shipment.tags || 'Not tagged',
-            expectedArrival: shipment.expected_arrival 
-              ? new Date(shipment.expected_arrival).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric'
-                })
-              : 'N/A',
-            driver: 'Not assigned',
-            carrier: shipment.carrier || 'N/A',
-            priority: 'Medium',
-            notes: ''
-          }));
-          setShipments(transformedData);
-        }
+      const shipmentsData = shipmentsResponse.ok 
+        ? await shipmentsResponse.json() 
+        : { success: false, data: [] };
+      
+      // Calculate stats from loaded data
+      const loadingSheets = loadingSheetsData.success ? loadingSheetsData.data : [];
+      const carriers = carriersData.success ? carriersData.data : [];
+      const assignments = assignmentsData.success ? assignmentsData.data : [];
+      const shipments = shipmentsData.success ? shipmentsData.data : [];
+      
+      // Calculate status distribution
+      const statusDistribution: Record<string, number> = {};
+      shipments.forEach((shipment: DatabaseShipment) => {
+        const displayStatus = convertDbStatusToDisplay(shipment.status);
+        statusDistribution[displayStatus] = (statusDistribution[displayStatus] || 0) + 1;
+      });
+      
+      // Calculate pending assignments (loading sheets without assignments)
+      const assignedLoadingSheetIds = new Set(
+        assignments.map((assignment: Assignment) => assignment.loading_sheet_id)
+      );
+      const pendingAssignments = loadingSheets.filter(
+        (sheet: DatabaseLoadingSheet) => !assignedLoadingSheetIds.has(sheet.id)
+      ).length;
+      
+      // Calculate completed assignments
+      const completedAssignments = assignments.filter(
+        (assignment: Assignment) => assignment.status === 'completed'
+      ).length;
+      
+      // Calculate active carriers (carriers with status 'Active')
+      const activeCarriers = carriers.filter(
+        (carrier: Carrier) => carrier.status === 'Active'
+      ).length;
+      
+      // Set stats
+      setStats({
+        totalLoadingSheets: loadingSheets.length,
+        containersLoaded: assignments.length,
+        activeCarriers: activeCarriers,
+        totalAssignments: assignments.length,
+        pendingAssignments: pendingAssignments,
+        completedAssignments: completedAssignments,
+        totalShipments: shipments.length,
+        activeShipments: shipments.filter((s: DatabaseShipment) => 
+          s.status === 'Preparing_for_Dispatch' || s.status === 'Ready_for_Dispatch' || s.status === 'In_Transit'
+        ).length,
+        delayedShipments: shipments.filter((s: DatabaseShipment) => s.status === 'Delayed').length,
+        deliveredShipments: shipments.filter((s: DatabaseShipment) => s.status === 'Delivered').length,
+        uniqueCustomers: Array.from(new Set(shipments.map((s: DatabaseShipment) => s.customers?.id).filter(Boolean))).length,
+        statusDistribution: statusDistribution
+      });
+      
+      // Transform and set shipment data
+      if (shipmentsData.success && shipmentsData.data) {
+        const transformedData = shipmentsData.data.map((shipment: DatabaseShipment) => ({
+          id: shipment.id,
+          shipmentId: shipment.shipment_id,
+          customer: shipment.customers?.name || 'Unknown Customer',
+          origin: shipment.origin || 'N/A',
+          destination: shipment.destination || 'N/A',
+          status: convertDbStatusToDisplay(shipment.status),
+          product: shipment.product || 'N/A',
+          weight: `${parseFloat(shipment.weight || '0').toFixed(0)} kg`,
+          temperature: 'N/A',
+          humidity: 'N/A',
+          tags: shipment.tags || 'Not tagged',
+          expectedArrival: shipment.expected_arrival 
+            ? new Date(shipment.expected_arrival).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+              })
+            : 'N/A',
+          driver: 'Not assigned',
+          carrier: shipment.carrier || 'N/A',
+          priority: 'Medium',
+          notes: ''
+        }));
+        setShipments(transformedData);
       }
       
     } catch (error) {
       console.error('Error fetching data:', error);
-      alert('Failed to fetch data. Please check your connection.');
+      toast.error('Failed to fetch data. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -1628,6 +2352,11 @@ export default function OutboundPage() {
     console.log('🔄 Refreshing outbound data...');
     fetchAllStats();
   };
+
+  // Calculate completion rate
+  const completionRate = stats.totalAssignments > 0 
+    ? Math.round((stats.completedAssignments / stats.totalAssignments) * 100) 
+    : 0;
 
   if (loading) {
     return (
@@ -1685,7 +2414,7 @@ export default function OutboundPage() {
                 Outbound Operations Dashboard
               </h2>
               <p className="text-muted-foreground">
-                Manage loading sheets, carrier assignments, and outgoing shipments
+                Manage loading sheets, carrier assignments, transit, and outgoing shipments
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 Last updated: {new Date().toLocaleTimeString()}
@@ -1699,7 +2428,7 @@ export default function OutboundPage() {
 
           {/* Tabs Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-flex">
+            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-flex">
               <TabsTrigger value="dashboard">
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Dashboard
@@ -1711,6 +2440,10 @@ export default function OutboundPage() {
               <TabsTrigger value="carrier-assignment">
                 <ArrowRight className="h-4 w-4 mr-2" />
                 Carrier Assignment
+              </TabsTrigger>
+              <TabsTrigger value="transit-management">
+                <Truck className="h-4 w-4 mr-2" />
+                Transit Management
               </TabsTrigger>
               <TabsTrigger value="shipments">
                 <PackageCheck className="h-4 w-4 mr-2" />
@@ -1754,7 +2487,7 @@ export default function OutboundPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{stats.containersLoaded}</div>
-                    <p className="text-xs text-muted-foreground">Total containers processed</p>
+                    <p className="text-xs text-muted-foreground">Total containers assigned</p>
                     <div className="mt-2">
                       <div className="flex items-center text-sm">
                         <div className="w-full bg-gray-200 rounded-full h-2">
@@ -1798,7 +2531,7 @@ export default function OutboundPage() {
                     <div className="text-2xl font-bold">{stats.totalAssignments}</div>
                     <p className="text-xs text-muted-foreground">Carrier-sheet assignments</p>
                     <div className="mt-2 text-sm">
-                      <span className="text-blue-600">{stats.completedAssignments} completed</span>
+                      <span className="text-blue-600">{stats.completedAssignments} delivered</span>
                       <span className="text-amber-600 ml-2">• {stats.pendingAssignments} pending</span>
                     </div>
                   </CardContent>
@@ -1813,7 +2546,7 @@ export default function OutboundPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{stats.pendingAssignments}</div>
-                    <p className="text-xs text-muted-foreground">Awaiting processing</p>
+                    <p className="text-xs text-muted-foreground">Sheets without carrier</p>
                     <div className="mt-2">
                       <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
                         <Clock className="mr-1 h-3 w-3" />
@@ -1832,21 +2565,15 @@ export default function OutboundPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {stats.totalAssignments > 0 
-                        ? Math.round((stats.completedAssignments / stats.totalAssignments) * 100) 
-                        : 0}%
+                      {completionRate}%
                     </div>
-                    <p className="text-xs text-muted-foreground">Assignment success rate</p>
+                    <p className="text-xs text-muted-foreground">Delivery success rate</p>
                     <div className="mt-2">
                       <div className="flex items-center text-sm">
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-green-600 h-2 rounded-full" 
-                            style={{ 
-                              width: `${stats.totalAssignments > 0 
-                                ? (stats.completedAssignments / stats.totalAssignments) * 100 
-                                : 0}%` 
-                            }}
+                            style={{ width: `${completionRate}%` }}
                           ></div>
                         </div>
                       </div>
@@ -1945,6 +2672,11 @@ export default function OutboundPage() {
             {/* Carrier Assignment Tab */}
             <TabsContent value="carrier-assignment">
               <CarrierAssignmentForm />
+            </TabsContent>
+
+            {/* Transit Management Tab */}
+            <TabsContent value="transit-management">
+              <TransitManagement />
             </TabsContent>
 
             {/* Shipments Tab */}

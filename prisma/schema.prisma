@@ -578,21 +578,42 @@ model loading_pallets {
 }
 
 model carrier_assignments {
-  id               String   @id @default(cuid()) @db.VarChar(255)
-  carrier_id       String   @db.VarChar(20)
-  loading_sheet_id String   @db.VarChar(255) // Changed from 20 to match loading_sheets
-  assigned_at      DateTime @default(now()) @db.DateTime(0)
-  assigned_by      String   @db.VarChar(100)
-  status           String   @default("assigned") @db.VarChar(50)
-  notes            String?  @db.Text
+  id                   String   @id @default(cuid()) @db.VarChar(255)
+  carrier_id           String   @db.VarChar(20)
+  loading_sheet_id     String   @db.VarChar(255)
+  assigned_at          DateTime @default(now()) @db.DateTime(0)
+  assigned_by          String   @db.VarChar(100)
+  status               String   @default("assigned") @db.VarChar(50)
+  notes                String?  @db.Text
+  transit_started_at   DateTime? @db.DateTime(0)
+  transit_completed_at DateTime? @db.DateTime(0)
+  transit_days         Int?     @default(0)
 
   carrier       carriers       @relation(fields: [carrier_id], references: [id], onDelete: Cascade)
   loading_sheet loading_sheets @relation(fields: [loading_sheet_id], references: [id], onDelete: Cascade)
+  transit_history transit_history[]
 
   created_at DateTime @default(now()) @db.DateTime(0)
 
   @@unique([carrier_id, loading_sheet_id])
   @@map("carrier_assignments")
+}
+
+model transit_history {
+  id            String   @id @default(cuid()) @db.VarChar(255)
+  assignment_id String   @db.VarChar(255)
+  action        String   @db.VarChar(50) // 'start_transit', 'end_transit', 'delivered'
+  timestamp     DateTime @default(now()) @db.DateTime(0)
+  notes         String?  @db.Text
+  location      String?  @db.VarChar(255)
+  created_at    DateTime @default(now()) @db.DateTime(0)
+
+  assignment carrier_assignments @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+
+  @@index([assignment_id])
+  @@index([action])
+  @@index([timestamp])
+  @@map("transit_history")
 }
 
 enum carriers_status {

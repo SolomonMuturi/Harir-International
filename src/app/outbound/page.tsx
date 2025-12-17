@@ -2076,7 +2076,7 @@ function TransitManagement() {
       {/* Start Transit Modal */}
       {showStartTransitModal && selectedAssignment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-black rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-semibold mb-4">Start Transit</h3>
             <div className="space-y-4">
               <div>
@@ -2096,7 +2096,7 @@ function TransitManagement() {
                   value={transitNotes}
                   onChange={(e) => setTransitNotes(e.target.value)}
                   placeholder="Enter any notes about transit start"
-                  className="w-full min-h-[80px] p-2 border rounded-md resize-none mt-1"
+                  className="w-full bg-black min-h-[80px] p-2 border rounded-md resize-none mt-1"
                 />
               </div>
               <div className="flex gap-2 justify-end pt-4">
@@ -2136,7 +2136,7 @@ function TransitManagement() {
       {/* End Transit Modal */}
       {showEndTransitModal && selectedAssignment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-black rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-semibold mb-4">End Transit / Mark as Delivered</h3>
             <div className="space-y-4">
               <div>
@@ -2156,7 +2156,7 @@ function TransitManagement() {
                   value={transitNotes}
                   onChange={(e) => setTransitNotes(e.target.value)}
                   placeholder="Enter any delivery notes or observations"
-                  className="w-full min-h-[80px] p-2 border rounded-md resize-none mt-1"
+                  className="w-full bg-black min-h-[80px] p-2 border rounded-md resize-none mt-1"
                 />
               </div>
               <div className="flex gap-2 justify-end pt-4">
@@ -2445,10 +2445,6 @@ export default function OutboundPage() {
                 <Truck className="h-4 w-4 mr-2" />
                 Transit Management
               </TabsTrigger>
-              <TabsTrigger value="shipments">
-                <PackageCheck className="h-4 w-4 mr-2" />
-                Shipments ({shipmentsForOutbound.length})
-              </TabsTrigger>
             </TabsList>
 
             {/* Dashboard Tab */}
@@ -2677,63 +2673,6 @@ export default function OutboundPage() {
             {/* Transit Management Tab */}
             <TabsContent value="transit-management">
               <TransitManagement />
-            </TabsContent>
-
-            {/* Shipments Tab */}
-            <TabsContent value="shipments" className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Shipments Ready for Processing</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {shipmentsForOutbound.length} shipments ready for dispatch
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={handleRefresh}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-              
-              {shipmentsForOutbound.length > 0 ? (
-                <ShipmentDataTable 
-                  shipments={shipmentsForOutbound} 
-                  onRecordWeight={handleRecordWeight}
-                  onManageTags={handleManageTags}
-                  onViewDetails={handleViewDetails}
-                  onViewNote={handleViewNote}
-                  onViewManifest={handleViewManifest}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <PackageCheck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No shipments ready for outbound processing</h3>
-                    <p className="text-muted-foreground mb-4">
-                      All shipments are either in transit, delivered, or in other statuses
-                    </p>
-                    <div className="flex gap-2 justify-center">
-                      <Button 
-                        variant="outline"
-                        onClick={handleRefresh}
-                      >
-                        Refresh Data
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        onClick={() => router.push('/shipments')}
-                      >
-                        View All Shipments
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
             </TabsContent>
           </Tabs>
         </main>

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+
+// Helper: Generate short ID for transit history
+function generateShortId(prefix: string = 'th'): string {
+  const timestamp = Date.now().toString(36).slice(-6);
+  const random = Math.random().toString(36).substr(2, 3);
+  return `${prefix}${timestamp}${random}`;
+}
 
 // GET: Fetch specific assignment
 export async function GET(
@@ -9,13 +14,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    console.log(`📡 GET /api/carrier-assignments/${params.id}`);
 
     const assignment = await prisma.carrier_assignments.findUnique({
       where: { id: params.id },
@@ -56,6 +55,8 @@ export async function GET(
       transitDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     }
 
+    console.log(`✅ Found assignment: ${assignment.id}`);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -64,8 +65,8 @@ export async function GET(
       },
     });
 
-  } catch (error) {
-    console.error('Error fetching assignment:', error);
+  } catch (error: any) {
+    console.error('❌ Error fetching assignment:', error.message);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch assignment' },
       { status: 500 }
@@ -79,15 +80,11 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    console.log(`✏️ PATCH /api/carrier-assignments/${params.id}`);
 
     const body = await request.json();
+    console.log('📦 Update body:', body);
+
     const { 
       status, 
       notes, 
@@ -170,52 +167,70 @@ export async function PATCH(
       );
     }
 
-    // Update assignment
-    const updatedAssignment = await prisma.carrier_assignments.update({
-      where: { id: params.id },
-      data: updateData,
-      include: {
-        carrier: true,
-        loading_sheet: {
-          include: {
-            loading_pallets: true,
+    // Start transaction for update
+    const result = await prisma.$transaction(async (tx) => {
+      // Update assignment
+      const updatedAssignment = await tx.carrier_assignments.update({
+        where: { id: params.id },
+        data: updateData,
+        include: {
+          carrier: true,
+          loading_sheet: {
+            include: {
+              loading_pallets: true,
+            },
           },
         },
-      },
-    });
-
-    // If status changed to completed, create a transit history record
-    if (status === 'completed' && existingAssignment.status !== 'completed') {
-      await prisma.transit_history.create({
-        data: {
-          assignment_id: params.id,
-          action: 'delivered',
-          notes: 'Marked as delivered via assignment update',
-          timestamp: new Date(),
-        },
       });
-    }
+
+      // If status changed to completed, create a transit history record
+      if (status === 'completed' && existingAssignment.status !== 'completed') {
+        await tx.transit_history.create({
+          data: {
+            id: generateShortId(),
+            assignment_id: params.id,
+            action: 'delivered',
+            notes: 'Marked as delivered via assignment update',
+            timestamp: new Date(),
+          },
+        });
+        console.log('📝 Created transit history record for delivery');
+      }
+
+      return updatedAssignment;
+    });
 
     // Calculate transit days for response
     let calculatedTransitDays = null;
-    if (updatedAssignment.transit_started_at && updatedAssignment.transit_completed_at) {
-      const start = new Date(updatedAssignment.transit_started_at);
-      const end = new Date(updatedAssignment.transit_completed_at);
+    if (result.transit_started_at && result.transit_completed_at) {
+      const start = new Date(result.transit_started_at);
+      const end = new Date(result.transit_completed_at);
       const diffTime = Math.abs(end.getTime() - start.getTime());
       calculatedTransitDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     }
 
+    console.log(`✅ Updated assignment: ${result.id}`);
+
     return NextResponse.json({
       success: true,
       data: {
-        ...updatedAssignment,
-        transit_days: calculatedTransitDays || updatedAssignment.transit_days,
+        ...result,
+        transit_days: calculatedTransitDays || result.transit_days,
       },
       message: 'Assignment updated successfully',
     });
 
-  } catch (error) {
-    console.error('Error updating assignment:', error);
+  } catch (error: any) {
+    console.error('❌ Error updating assignment:', error.message);
+    
+    // Handle specific Prisma errors
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { success: false, error: 'Assignment not found' },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: 'Failed to update assignment' },
       { status: 500 }
@@ -229,13 +244,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    console.log(`🗑️ DELETE /api/carrier-assignments/${params.id}`);
 
     // Check if assignment exists
     const assignment = await prisma.carrier_assignments.findUnique({
@@ -254,13 +263,23 @@ export async function DELETE(
       where: { id: params.id },
     });
 
+    console.log(`✅ Deleted assignment: ${params.id}`);
+
     return NextResponse.json({
       success: true,
       message: 'Assignment deleted successfully',
     });
 
-  } catch (error) {
-    console.error('Error deleting assignment:', error);
+  } catch (error: any) {
+    console.error('❌ Error deleting assignment:', error.message);
+    
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { success: false, error: 'Assignment not found' },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: 'Failed to delete assignment' },
       { status: 500 }

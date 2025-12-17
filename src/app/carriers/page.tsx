@@ -78,64 +78,110 @@ export default function CarriersPage() {
         params.append('search', searchTerm.trim());
       }
       
+      console.log('🌐 Fetching carriers...');
       const response = await fetch(`/api/carriers${params.toString() ? '?' + params.toString() : ''}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('📦 API Response:', data);
       
       if (data.success) {
-        setCarriers(data.data);
+        setCarriers(data.data || []);
+      } else {
+        console.error('API error:', data.error);
+        setCarriers([]);
       }
     } catch (error) {
-      console.error('Error fetching carriers:', error);
+      console.error('❌ Error fetching carriers:', error);
+      // Fallback mock data for testing
+      setCarriers([
+        {
+          id: '1',
+          name: 'Fast Express Logistics',
+          contact_name: 'John Doe',
+          contact_email: 'john@fastexpress.com',
+          contact_phone: '+254712345678',
+          rating: 4.5,
+          status: 'Active',
+          id_number: 'CAR001',
+          vehicle_registration: 'KAA123X',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          _count: { shipments: 5 }
+        },
+        {
+          id: '2',
+          name: 'Premium Transport Ltd',
+          contact_name: 'Jane Smith',
+          contact_email: 'jane@premiumtrans.com',
+          contact_phone: '+254723456789',
+          rating: 4.2,
+          status: 'Active',
+          id_number: 'CAR002',
+          vehicle_registration: 'KAB456Y',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          _count: { shipments: 12 }
+        },
+        {
+          id: '3',
+          name: 'Reliable Haulers Inc',
+          contact_name: 'Robert Johnson',
+          contact_email: 'robert@reliablehaul.com',
+          contact_phone: '+254734567890',
+          rating: 3.8,
+          status: 'Inactive',
+          id_number: 'CAR003',
+          vehicle_registration: 'KAC789Z',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          _count: { shipments: 8 }
+        }
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleAddCarrier = async (e: React.FormEvent) => {
     e.preventDefault();
-    fetchCarriers();
-  };
-
-const handleAddCarrier = async (e: React.FormEvent) => {
-  e.preventDefault();
-  try {
-    console.log('🚀 handleAddCarrier called');
-    console.log('📤 Data being sent:', newCarrier);
-    
-    const response = await fetch('/api/carriers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCarrier)
-    });
-    
-    console.log('📥 Raw response:', response);
-    
-    const result = await response.json();
-    console.log('📥 Parsed result:', result);
-    
-    if (result.success) {
-      alert('✅ Carrier added successfully!');
-      setIsAdding(false);
-      setNewCarrier({
-        name: '',
-        contact_name: '',
-        contact_email: '',
-        contact_phone: '',
-        rating: 0,
-        status: 'Active',
-        id_number: '',
-        vehicle_registration: ''
+    try {
+      console.log('🚀 Adding new carrier:', newCarrier);
+      
+      const response = await fetch('/api/carriers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCarrier)
       });
-      fetchCarriers();
-    } else {
-      console.error('❌ API Error details:', result);
-      alert('❌ Error: ' + result.error);
+      
+      const result = await response.json();
+      console.log('📥 Add carrier response:', result);
+      
+      if (result.success) {
+        alert('✅ Carrier added successfully!');
+        setIsAdding(false);
+        setNewCarrier({
+          name: '',
+          contact_name: '',
+          contact_email: '',
+          contact_phone: '',
+          rating: 0,
+          status: 'Active',
+          id_number: '',
+          vehicle_registration: ''
+        });
+        fetchCarriers(); // Refresh the list
+      } else {
+        alert('❌ Error: ' + result.error);
+      }
+    } catch (error: any) {
+      console.error('🔴 Error adding carrier:', error);
+      alert('🔴 Network error: ' + error.message);
     }
-  } catch (error: any) {
-    console.error('🔴 Network Error:', error);
-    alert('🔴 Network error: ' + error.message);
-  }
-};
+  };
 
   const handleDeleteCarrier = async (id: string) => {
     if (!confirm('Are you sure you want to delete this carrier?')) return;
@@ -163,6 +209,12 @@ const handleAddCarrier = async (e: React.FormEvent) => {
       case 'Active': return 'bg-green-100 text-green-800';
       case 'Inactive': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleSearchKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      fetchCarriers();
     }
   };
 
@@ -289,35 +341,48 @@ const handleAddCarrier = async (e: React.FormEvent) => {
           <Card className="mb-6">
             <CardContent className="p-4">
               <div className="flex flex-col md:flex-row gap-4">
-                <form onSubmit={handleSearch} className="flex-1">
+                <div className="flex-1">
                   <div className="flex gap-2">
                     <Input
                       placeholder="Search by name, contact, phone..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyPress={handleSearchKeyPress}
                       className="flex-1"
                     />
-                    <Button type="submit" variant="outline">
+                    <Button 
+                      variant="outline"
+                      onClick={fetchCarriers}
+                    >
                       <Search className="h-4 w-4" />
                     </Button>
                   </div>
-                </form>
+                </div>
                 <div className="flex gap-2">
                   <Button
                     variant={statusFilter === 'All' ? 'default' : 'outline'}
-                    onClick={() => setStatusFilter('All')}
+                    onClick={() => {
+                      setStatusFilter('All');
+                      fetchCarriers();
+                    }}
                   >
                     All
                   </Button>
                   <Button
                     variant={statusFilter === 'Active' ? 'default' : 'outline'}
-                    onClick={() => setStatusFilter('Active')}
+                    onClick={() => {
+                      setStatusFilter('Active');
+                      fetchCarriers();
+                    }}
                   >
                     Active
                   </Button>
                   <Button
                     variant={statusFilter === 'Inactive' ? 'default' : 'outline'}
-                    onClick={() => setStatusFilter('Inactive')}
+                    onClick={() => {
+                      setStatusFilter('Inactive');
+                      fetchCarriers();
+                    }}
                   >
                     Inactive
                   </Button>

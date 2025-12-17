@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-// SIMPLE WORKING VERSION - No Prisma create issues
+// Generate shorter, database-friendly ID
+function generateCarrierId() {
+  // Format: c + timestamp (last 9 digits) + random (4 digits)
+  // Total: 1 + 9 + 4 = 14 characters (safe for VARCHAR(20))
+  const timestamp = Date.now().toString().slice(-9);
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `c${timestamp}${random}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    console.log('🚀 POST /api/carriers - SIMPLE VERSION');
+    console.log('🚀 POST /api/carriers');
     
     const body = await request.json();
     console.log('📦 Received data:', body);
     
-    // Validate
+    // Validate required fields
     if (!body.name || !body.name.trim()) {
       return NextResponse.json({
         success: false,
@@ -17,24 +25,38 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Generate unique ID
-    const id = `carrier-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    // Generate SHORT ID (14 characters max)
+    let id = generateCarrierId();
+    console.log('🆔 Generated ID:', id, 'Length:', id.length);
     
-    console.log('🆔 Generated ID:', id);
+    // Check if ID already exists (unlikely but possible)
+    let existingId = await prisma.$queryRaw`
+      SELECT id FROM carriers WHERE id = ${id}
+    `;
     
-    // 1. First, check if carrier already exists
-    const existing = await prisma.$queryRaw`
+    // Regenerate if collision occurs (max 3 attempts)
+    let attempts = 0;
+    while (Array.isArray(existingId) && existingId.length > 0 && attempts < 3) {
+      id = generateCarrierId();
+      existingId = await prisma.$queryRaw`
+        SELECT id FROM carriers WHERE id = ${id}
+      `;
+      attempts++;
+    }
+    
+    // Check if carrier name already exists
+    const existingCarrier = await prisma.$queryRaw`
       SELECT id FROM carriers WHERE name = ${body.name.trim()}
     `;
     
-    if (Array.isArray(existing) && existing.length > 0) {
+    if (Array.isArray(existingCarrier) && existingCarrier.length > 0) {
       return NextResponse.json({
         success: false,
         error: 'A carrier with this name already exists'
       }, { status: 400 });
     }
     
-    // 2. Insert using raw SQL (100% reliable)
+    // Insert using raw SQL
     await prisma.$executeRaw`
       INSERT INTO carriers (
         id, name, contact_name, contact_email, contact_phone,
@@ -57,16 +79,21 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ SQL insert successful');
     
-    // 3. Fetch the created carrier
+    // Fetch the created carrier with shipment count
     const newCarrier = await prisma.$queryRaw`
-      SELECT * FROM carriers WHERE id = ${id}
+      SELECT 
+        c.*,
+        COALESCE(COUNT(s.id), 0) as shipment_count
+      FROM carriers c
+      LEFT JOIN shipments s ON c.id = s.carrier_id
+      WHERE c.id = ${id}
+      GROUP BY c.id
     `;
     
     console.log('🔍 Retrieved carrier:', newCarrier);
     
     if (!Array.isArray(newCarrier) || newCarrier.length === 0) {
-      // If we can't retrieve it, return a mock response
-      console.log('⚠️ Could not retrieve, returning mock data');
+      // Return a fallback response
       return NextResponse.json({
         success: true,
         data: {
@@ -80,23 +107,49 @@ export async function POST(request: NextRequest) {
           id_number: body.id_number?.trim() || null,
           vehicle_registration: body.vehicle_registration?.trim() || null,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          _count: { shipments: 0 }
         },
         message: 'Carrier created successfully'
       }, { status: 201 });
     }
     
-    // Return the actual carrier
+    // Format the carrier data
+    const carrier = newCarrier[0];
+    const formattedCarrier = {
+      id: carrier.id,
+      name: carrier.name,
+      contact_name: carrier.contact_name,
+      contact_email: carrier.contact_email,
+      contact_phone: carrier.contact_phone,
+      rating: Number(carrier.rating) || 0,
+      status: carrier.status,
+      id_number: carrier.id_number,
+      vehicle_registration: carrier.vehicle_registration,
+      created_at: carrier.created_at,
+      updated_at: carrier.updated_at,
+      _count: {
+        shipments: Number(carrier.shipment_count) || 0
+      }
+    };
+    
     return NextResponse.json({
       success: true,
-      data: newCarrier[0],
+      data: formattedCarrier,
       message: 'Carrier created successfully'
     }, { status: 201 });
     
   } catch (error: any) {
-    console.error('❌ SIMPLE API Error:', error.message);
+    console.error('❌ POST Error:', error.message);
     
-    // Check for duplicate entry error
+    // Handle specific errors
+    if (error.message.includes('Data too long for column')) {
+      return NextResponse.json({
+        success: false,
+        error: 'Database field length exceeded. Please use shorter values.'
+      }, { status: 400 });
+    }
+    
     if (error.message.includes('Duplicate entry') || error.message.includes('ER_DUP_ENTRY')) {
       return NextResponse.json({
         success: false,
@@ -104,52 +157,32 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Emergency fallback: Always return success
-    try {
-      const body = await request.clone().json();
-      const id = `fallback-${Date.now()}`;
-      
-      return NextResponse.json({
-        success: true,
-        data: {
-          id,
-          name: body.name || 'Unknown',
-          contact_name: body.contact_name,
-          contact_email: body.contact_email,
-          contact_phone: body.contact_phone,
-          rating: body.rating || 0,
-          status: body.status || 'Active',
-          id_number: body.id_number,
-          vehicle_registration: body.vehicle_registration,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        message: 'Carrier created (fallback mode)'
-      }, { status: 201 });
-      
-    } catch (fallbackError) {
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to create carrier: ' + error.message
-      }, { status: 500 });
-    }
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to create carrier: ' + error.message
+    }, { status: 500 });
   }
 }
 
-// GET method remains similar but simpler
 export async function GET(request: NextRequest) {
   try {
-    console.log('📡 GET /api/carriers - SIMPLE');
+    console.log('📡 GET /api/carriers');
     
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const search = searchParams.get('search');
-    const id = searchParams.get('id'); // Add this line
+    const id = searchParams.get('id');
     
     // Handle single carrier request by ID
     if (id) {
       const carrier = await prisma.$queryRaw`
-        SELECT * FROM carriers WHERE id = ${id}
+        SELECT 
+          c.*,
+          COALESCE(COUNT(s.id), 0) as shipment_count
+        FROM carriers c
+        LEFT JOIN shipments s ON c.id = s.carrier_id
+        WHERE c.id = ${id}
+        GROUP BY c.id
       `;
       
       if (!Array.isArray(carrier) || carrier.length === 0) {
@@ -159,25 +192,50 @@ export async function GET(request: NextRequest) {
         }, { status: 404 });
       }
       
+      const carrierData = carrier[0];
+      const formattedCarrier = {
+        id: carrierData.id,
+        name: carrierData.name,
+        contact_name: carrierData.contact_name,
+        contact_email: carrierData.contact_email,
+        contact_phone: carrierData.contact_phone,
+        rating: Number(carrierData.rating) || 0,
+        status: carrierData.status,
+        id_number: carrierData.id_number,
+        vehicle_registration: carrierData.vehicle_registration,
+        created_at: carrierData.created_at,
+        updated_at: carrierData.updated_at,
+        _count: {
+          shipments: Number(carrierData.shipment_count) || 0
+        }
+      };
+      
       return NextResponse.json({
         success: true,
-        data: carrier[0]
+        data: formattedCarrier
       });
     }
     
-    // Original logic for multiple carriers
-    let sql = 'SELECT * FROM carriers';
+    // Handle multiple carriers request
+    let sql = `
+      SELECT 
+        c.*,
+        COALESCE(COUNT(s.id), 0) as shipment_count
+      FROM carriers c
+      LEFT JOIN shipments s ON c.id = s.carrier_id
+    `;
+    
     const conditions = [];
     const params = [];
     
     if (status && status !== 'All') {
-      conditions.push('status = ?');
+      conditions.push('c.status = ?');
       params.push(status);
     }
     
-    if (search) {
-      conditions.push('(name LIKE ? OR contact_name LIKE ? OR contact_phone LIKE ? OR id_number LIKE ?)');
-      const likeTerm = `%${search}%`;
+    if (search && search.trim()) {
+      conditions.push('(c.name LIKE ? OR c.contact_name LIKE ? OR c.contact_phone LIKE ? OR c.id_number LIKE ?)');
+      const likeTerm = `%${search.trim()}%`;
       params.push(likeTerm, likeTerm, likeTerm, likeTerm);
     }
     
@@ -185,16 +243,34 @@ export async function GET(request: NextRequest) {
       sql += ' WHERE ' + conditions.join(' AND ');
     }
     
-    sql += ' ORDER BY created_at DESC';
+    sql += ' GROUP BY c.id ORDER BY c.created_at DESC';
     
     const carriers = await prisma.$queryRawUnsafe(sql, ...params);
     
-    console.log(`✅ Found ${Array.isArray(carriers) ? carriers.length : 0} carriers`);
+    // Format the response
+    const formattedCarriers = Array.isArray(carriers) ? carriers.map(carrier => ({
+      id: carrier.id,
+      name: carrier.name,
+      contact_name: carrier.contact_name,
+      contact_email: carrier.contact_email,
+      contact_phone: carrier.contact_phone,
+      rating: Number(carrier.rating) || 0,
+      status: carrier.status,
+      id_number: carrier.id_number,
+      vehicle_registration: carrier.vehicle_registration,
+      created_at: carrier.created_at,
+      updated_at: carrier.updated_at,
+      _count: {
+        shipments: Number(carrier.shipment_count) || 0
+      }
+    })) : [];
+    
+    console.log(`✅ Found ${formattedCarriers.length} carriers`);
     
     return NextResponse.json({
       success: true,
-      data: Array.isArray(carriers) ? carriers : [],
-      count: Array.isArray(carriers) ? carriers.length : 0
+      data: formattedCarriers,
+      count: formattedCarriers.length
     });
     
   } catch (error: any) {
@@ -205,7 +281,6 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-// Add this to your existing route.ts file
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -233,6 +308,22 @@ export async function DELETE(request: NextRequest) {
       }, { status: 404 });
     }
     
+    // First, check if carrier has shipments
+    const shipmentCount = await prisma.$queryRaw`
+      SELECT COUNT(*) as count FROM shipments WHERE carrier_id = ${id}
+    `;
+    
+    const hasShipments = Array.isArray(shipmentCount) && 
+                       shipmentCount.length > 0 && 
+                       Number(shipmentCount[0].count) > 0;
+    
+    if (hasShipments) {
+      return NextResponse.json({
+        success: false,
+        error: 'Cannot delete carrier with existing shipments. Remove shipments first.'
+      }, { status: 400 });
+    }
+    
     // Delete carrier
     await prisma.$executeRaw`
       DELETE FROM carriers WHERE id = ${id}
@@ -245,9 +336,152 @@ export async function DELETE(request: NextRequest) {
     
   } catch (error: any) {
     console.error('❌ DELETE Error:', error.message);
+    
+    if (error.message.includes('foreign key constraint')) {
+      return NextResponse.json({
+        success: false,
+        error: 'Cannot delete carrier with existing shipments'
+      }, { status: 400 });
+    }
+    
     return NextResponse.json({
       success: false,
       error: 'Failed to delete carrier'
+    }, { status: 500 });
+  }
+}
+
+// Optional: Add a PATCH method for updating carriers
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, ...updateData } = body;
+    
+    if (!id) {
+      return NextResponse.json({
+        success: false,
+        error: 'Carrier ID is required'
+      }, { status: 400 });
+    }
+    
+    console.log(`✏️ PATCH /api/carriers - Updating carrier ${id}`);
+    
+    // Check if carrier exists
+    const existing = await prisma.$queryRaw`
+      SELECT id FROM carriers WHERE id = ${id}
+    `;
+    
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'Carrier not found'
+      }, { status: 404 });
+    }
+    
+    // Build update query dynamically
+    const updateFields = [];
+    const params = [];
+    
+    if (updateData.name !== undefined) {
+      updateFields.push('name = ?');
+      params.push(updateData.name.trim());
+    }
+    
+    if (updateData.contact_name !== undefined) {
+      updateFields.push('contact_name = ?');
+      params.push(updateData.contact_name?.trim() || null);
+    }
+    
+    if (updateData.contact_email !== undefined) {
+      updateFields.push('contact_email = ?');
+      params.push(updateData.contact_email?.trim() || null);
+    }
+    
+    if (updateData.contact_phone !== undefined) {
+      updateFields.push('contact_phone = ?');
+      params.push(updateData.contact_phone?.trim() || null);
+    }
+    
+    if (updateData.rating !== undefined) {
+      updateFields.push('rating = ?');
+      params.push(updateData.rating);
+    }
+    
+    if (updateData.status !== undefined) {
+      updateFields.push('status = ?');
+      params.push(updateData.status);
+    }
+    
+    if (updateData.id_number !== undefined) {
+      updateFields.push('id_number = ?');
+      params.push(updateData.id_number?.trim() || null);
+    }
+    
+    if (updateData.vehicle_registration !== undefined) {
+      updateFields.push('vehicle_registration = ?');
+      params.push(updateData.vehicle_registration?.trim() || null);
+    }
+    
+    // Always update updated_at
+    updateFields.push('updated_at = NOW()');
+    
+    if (updateFields.length === 1) { // Only updated_at was added
+      return NextResponse.json({
+        success: false,
+        error: 'No fields to update'
+      }, { status: 400 });
+    }
+    
+    params.push(id);
+    
+    const sql = `
+      UPDATE carriers 
+      SET ${updateFields.join(', ')}
+      WHERE id = ?
+    `;
+    
+    await prisma.$executeRawUnsafe(sql, ...params);
+    
+    // Fetch updated carrier
+    const updatedCarrier = await prisma.$queryRaw`
+      SELECT 
+        c.*,
+        COALESCE(COUNT(s.id), 0) as shipment_count
+      FROM carriers c
+      LEFT JOIN shipments s ON c.id = s.carrier_id
+      WHERE c.id = ${id}
+      GROUP BY c.id
+    `;
+    
+    const carrierData = updatedCarrier[0];
+    const formattedCarrier = {
+      id: carrierData.id,
+      name: carrierData.name,
+      contact_name: carrierData.contact_name,
+      contact_email: carrierData.contact_email,
+      contact_phone: carrierData.contact_phone,
+      rating: Number(carrierData.rating) || 0,
+      status: carrierData.status,
+      id_number: carrierData.id_number,
+      vehicle_registration: carrierData.vehicle_registration,
+      created_at: carrierData.created_at,
+      updated_at: carrierData.updated_at,
+      _count: {
+        shipments: Number(carrierData.shipment_count) || 0
+      }
+    };
+    
+    return NextResponse.json({
+      success: true,
+      data: formattedCarrier,
+      message: 'Carrier updated successfully'
+    });
+    
+  } catch (error: any) {
+    console.error('❌ PATCH Error:', error.message);
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to update carrier: ' + error.message
     }, { status: 500 });
   }
 }

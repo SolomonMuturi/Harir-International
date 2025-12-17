@@ -1141,21 +1141,15 @@ const processWarehouseHistory = (history: WarehouseHistoryRecord[]) => {
     return false;
   }
 };
-  
-  // ===========================================
-  // NEW FUNCTIONS FOR LOADING BOXES FROM COUNTING RECORDS
-  // ===========================================
-  
-  // Fetch ALL counting records from database
+
 // Replace the existing fetchCountingRecordsForColdRoom function with this:
 
-// Fetch counting records that haven't been loaded yet
 const fetchCountingRecordsForColdRoom = async () => {
   setIsLoading(prev => ({ ...prev, countingRecords: true }));
   try {
-    console.log('📦 Fetching counting records not yet loaded...');
+    console.log('📦 Fetching counting records not yet loaded to cold rooms...');
     
-    // First, get all counting records
+    // 1. Get all counting records
     const countingResponse = await fetch('/api/counting?action=coldroom');
     const countingResult = await countingResponse.json();
     
@@ -1165,61 +1159,72 @@ const fetchCountingRecordsForColdRoom = async () => {
     
     console.log(`✅ Found ${countingResult.data?.length || 0} counting records from database`);
     
-    // Then, get loading history to compare
-    const loadingResponse = await fetch('/api/cold-room?action=loading-history');
-    const loadingResult = await loadingResponse.json();
+    // 2. Get boxes already in cold rooms
+    const coldRoomResponse = await fetch('/api/cold-room?action=boxes');
+    const coldRoomResult = await coldRoomResponse.json();
     
-    const loadedCountingRecordIds = new Set<string>();
-    if (loadingResult.success && Array.isArray(loadingResult.data)) {
-      // Extract unique countingRecordIds from loading history
-      loadingResult.data.forEach((record: any) => {
-        if (record.counting_record_id) {
-          loadedCountingRecordIds.add(record.counting_record_id);
-        }
-      });
-      console.log(`📊 Found ${loadedCountingRecordIds.size} already loaded counting records`);
-    }
+    const coldRoomBoxes = coldRoomResult.success ? coldRoomResult.data : [];
+    console.log(`📊 Found ${coldRoomBoxes.length} boxes already in cold rooms`);
+    
+    // 3. Create a set of already-loaded box identifiers for fast lookup
+    const alreadyLoadedBoxes = new Set<string>();
+    
+    // Create unique identifiers for boxes already in cold rooms
+    coldRoomBoxes.forEach((box: any) => {
+      const key = `${box.variety}_${box.boxType || box.box_type}_${box.size}_${box.grade}_${box.supplier_name || 'unknown'}_${box.pallet_id || 'unknown'}`;
+      alreadyLoadedBoxes.add(key.toLowerCase());
+    });
+    
+    console.log(`📊 Created ${alreadyLoadedBoxes.size} unique identifiers for already loaded boxes`);
     
     if (Array.isArray(countingResult.data) && countingResult.data.length > 0) {
       const boxes: any[] = [];
       const filteredRecords = [];
       
-      // Filter counting records - only include those NOT in loading history
+      // 4. Filter counting records - only include those NOT already in cold rooms
       for (const record of countingResult.data) {
-        const isAlreadyLoaded = loadedCountingRecordIds.has(record.id);
+        const supplierName = record.supplier_name || 'Unknown Supplier';
+        const palletId = record.pallet_id || `CR-${record.id}`;
+        const region = record.region || '';
+        const status = record.status || 'unknown';
+        const forColdroom = record.for_coldroom || false;
         
-        if (!isAlreadyLoaded) {
-          filteredRecords.push(record);
+        // Skip records that are already processed
+        if (status === 'completed' || status === 'loaded') {
+          console.log(`⚠️ Skipping already processed record: ${supplierName}, status: ${status}`);
+          continue;
+        }
+        
+        const countingData = record.counting_data || {};
+        const totals = record.totals || {};
+        
+        let extractedCount = 0;
+        let hasUnloadedBoxes = false;
+        
+        // Check each box type in the counting record
+        Object.keys(countingData).forEach(key => {
+          if (!key) return;
           
-          const supplierName = record.supplier_name || 'Unknown Supplier';
-          const palletId = record.pallet_id || `CR-${record.id}`;
-          const region = record.region || '';
-          const status = record.status || 'unknown';
-          const forColdroom = record.for_coldroom || false;
-          
-          console.log(`📝 Processing unloaded record: ${supplierName}, status: ${status}`);
-          
-          const countingData = record.counting_data || {};
-          const totals = record.totals || {};
-          
-          let extractedCount = 0;
-          Object.keys(countingData).forEach(key => {
-            if (!key) return;
+          if ((key.includes('fuerte_') || key.includes('hass_')) && 
+              (key.includes('_4kg_') || key.includes('_10kg_')) &&
+              (key.includes('_class1_') || key.includes('_class2_'))) {
             
-            if ((key.includes('fuerte_') || key.includes('hass_')) && 
-                (key.includes('_4kg_') || key.includes('_10kg_')) &&
-                (key.includes('_class1_') || key.includes('_class2_'))) {
+            const parts = key.split('_');
+            if (parts.length >= 4) {
+              const variety = parts[0] as 'fuerte' | 'hass';
+              const boxType = parts[1] as '4kg' | '10kg';
+              const grade = parts[2] as 'class1' | 'class2';
+              const size = parts.slice(3).join('_').replace(/_/g, '');
+              const quantity = Number(countingData[key]) || 0;
               
-              const parts = key.split('_');
-              if (parts.length >= 4) {
-                const variety = parts[0] as 'fuerte' | 'hass';
-                const boxType = parts[1] as '4kg' | '10kg';
-                const grade = parts[2] as 'class1' | 'class2';
-                const size = parts.slice(3).join('_').replace(/_/g, '');
-                const quantity = Number(countingData[key]) || 0;
+              if (quantity > 0 && size) {
+                const cleanSize = size.startsWith('size') ? size : `size${size}`;
                 
-                if (quantity > 0 && size) {
-                  const cleanSize = size.startsWith('size') ? size : `size${size}`;
+                // Create identifier for this box
+                const boxIdentifier = `${variety}_${boxType}_${cleanSize}_${grade}_${supplierName}_${palletId}`.toLowerCase();
+                
+                // Check if this box is already in cold rooms
+                if (!alreadyLoadedBoxes.has(boxIdentifier)) {
                   const boxWeight = boxType === '4kg' ? 4 : 10;
                   
                   boxes.push({
@@ -1237,37 +1242,47 @@ const fetchCountingRecordsForColdRoom = async () => {
                     selected: true,
                     coldRoomId: 'coldroom1',
                     boxWeight,
-                    totalWeight: quantity * boxWeight
+                    totalWeight: quantity * boxWeight,
+                    alreadyLoaded: false // Mark as not loaded yet
                   });
                   extractedCount++;
+                  hasUnloadedBoxes = true;
+                } else {
+                  console.log(`🔁 Skipping already loaded box: ${variety} ${boxType} ${cleanSize} ${grade} from ${supplierName}`);
                 }
               }
             }
-          });
+          }
+        });
+        
+        // Fallback to totals if no specific counting data
+        if (!hasUnloadedBoxes && totals && Object.keys(totals).length > 0) {
+          console.log(`📊 Checking totals for ${supplierName}:`, totals);
+          const sizes = ['size12', 'size14', 'size16', 'size18', 'size20', 'size22', 'size24', 'size26'];
           
-          // Fallback to totals if no specific counting data
-          if (extractedCount === 0 && totals) {
-            console.log(`📊 Using totals for ${supplierName}:`, totals);
-            const sizes = ['size12', 'size14', 'size16', 'size18', 'size20', 'size22', 'size24', 'size26'];
-            
-            // Helper function to create boxes from totals
-            const createBoxesFromTotal = (
-              variety: 'fuerte' | 'hass', 
-              boxType: '4kg' | '10kg', 
-              total: number
-            ) => {
-              if (total > 0) {
-                const boxesPerSize = Math.max(1, Math.floor(total / sizes.length));
-                
-                sizes.forEach(size => {
-                  if (boxesPerSize > 0) {
-                    // Class 1 boxes
+          // Helper function to create boxes from totals
+          const createBoxesFromTotal = (
+            variety: 'fuerte' | 'hass', 
+            boxType: '4kg' | '10kg', 
+            total: number
+          ) => {
+            if (total > 0) {
+              const boxesPerSize = Math.max(1, Math.floor(total / sizes.length));
+              
+              sizes.forEach(size => {
+                if (boxesPerSize > 0) {
+                  const class1Quantity = Math.max(1, Math.floor(boxesPerSize * 0.7));
+                  const class2Quantity = Math.max(1, Math.floor(boxesPerSize * 0.3));
+                  
+                  // Check if Class 1 boxes are already loaded
+                  const class1Identifier = `${variety}_${boxType}_${size}_class1_${supplierName}_${palletId}`.toLowerCase();
+                  if (!alreadyLoadedBoxes.has(class1Identifier)) {
                     boxes.push({
                       variety,
                       boxType,
                       size,
                       grade: 'class1',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
+                      quantity: class1Quantity,
                       supplierName,
                       palletId,
                       region,
@@ -1277,16 +1292,21 @@ const fetchCountingRecordsForColdRoom = async () => {
                       selected: true,
                       coldRoomId: 'coldroom1',
                       boxWeight: boxType === '4kg' ? 4 : 10,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.7)) * (boxType === '4kg' ? 4 : 10)
+                      totalWeight: class1Quantity * (boxType === '4kg' ? 4 : 10),
+                      alreadyLoaded: false
                     });
-                    
-                    // Class 2 boxes
+                    hasUnloadedBoxes = true;
+                  }
+                  
+                  // Check if Class 2 boxes are already loaded
+                  const class2Identifier = `${variety}_${boxType}_${size}_class2_${supplierName}_${palletId}`.toLowerCase();
+                  if (!alreadyLoadedBoxes.has(class2Identifier)) {
                     boxes.push({
                       variety,
                       boxType,
                       size,
                       grade: 'class2',
-                      quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
+                      quantity: class2Quantity,
                       supplierName,
                       palletId,
                       region,
@@ -1296,32 +1316,40 @@ const fetchCountingRecordsForColdRoom = async () => {
                       selected: true,
                       coldRoomId: 'coldroom1',
                       boxWeight: boxType === '4kg' ? 4 : 10,
-                      totalWeight: Math.max(1, Math.floor(boxesPerSize * 0.3)) * (boxType === '4kg' ? 4 : 10)
+                      totalWeight: class2Quantity * (boxType === '4kg' ? 4 : 10),
+                      alreadyLoaded: false
                     });
+                    hasUnloadedBoxes = true;
                   }
-                });
-              }
-            };
-            
-            // Process each variety and box type
-            createBoxesFromTotal('fuerte', '4kg', totals.fuerte_4kg_total || 0);
-            createBoxesFromTotal('fuerte', '10kg', totals.fuerte_10kg_total || 0);
-            createBoxesFromTotal('hass', '4kg', totals.hass_4kg_total || 0);
-            createBoxesFromTotal('hass', '10kg', totals.hass_10kg_total || 0);
-          }
+                }
+              });
+            }
+          };
+          
+          // Process each variety and box type
+          createBoxesFromTotal('fuerte', '4kg', totals.fuerte_4kg_total || 0);
+          createBoxesFromTotal('fuerte', '10kg', totals.fuerte_10kg_total || 0);
+          createBoxesFromTotal('hass', '4kg', totals.hass_4kg_total || 0);
+          createBoxesFromTotal('hass', '10kg', totals.hass_10kg_total || 0);
+        }
+        
+        if (hasUnloadedBoxes) {
+          filteredRecords.push(record);
+          console.log(`✅ Added ${supplierName} (has unloaded boxes)`);
         } else {
-          console.log(`⚠️ Skipping already loaded record: ${record.supplier_name} (ID: ${record.id})`);
+          console.log(`⏭️ Skipping ${supplierName} (all boxes already loaded or no data)`);
         }
       }
       
-      console.log(`📦 Created ${boxes.length} box items from ${filteredRecords.length} unloaded counting records`);
+      console.log(`📦 Created ${boxes.length} unloaded box items from ${filteredRecords.length} counting records`);
       console.log(`📊 Skipped ${countingResult.data.length - filteredRecords.length} already loaded records`);
       
       const boxesWithStatus = boxes.map(box => ({
         ...box,
         statusBadge: box.status === 'pending_coldroom' ? 'Ready for Cold Room' : 
                     box.status === 'pending' ? 'Waiting for Variance' :
-                    box.status === 'completed' ? 'Already Processed' : box.status
+                    box.status === 'completed' ? 'Already Processed' : box.status,
+        isNew: true // Mark as new/unloaded
       }));
       
       setCountingBoxes(boxesWithStatus);
@@ -1329,10 +1357,10 @@ const fetchCountingRecordsForColdRoom = async () => {
       
       if (boxes.length > 0) {
         toast({
-          title: "📦 Unloaded Counting Records Found",
+          title: "📦 New Counting Records Found",
           description: (
             <div>
-              <p>Loaded {boxes.length} box types from {filteredRecords.length} unloaded counting records</p>
+              <p>Loaded {boxes.length} unloaded box types from {filteredRecords.length} counting records</p>
               <div className="mt-1 text-sm text-gray-600">
                 Skipped {countingResult.data.length - filteredRecords.length} already loaded records
               </div>
@@ -1341,7 +1369,7 @@ const fetchCountingRecordsForColdRoom = async () => {
         });
       } else {
         toast({
-          title: "No new counting records",
+          title: "✅ All boxes loaded",
           description: "All counting records have already been loaded to cold rooms",
           variant: "default",
         });
@@ -1367,7 +1395,7 @@ const fetchCountingRecordsForColdRoom = async () => {
     setIsLoading(prev => ({ ...prev, countingRecords: false }));
   }
 };
-  
+
   // Fetch all data
   const fetchAllData = async () => {
     try {
@@ -2454,7 +2482,7 @@ toast({
                             </CardHeader>
                             <CardContent className="pt-0">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="border rounded p-4 bg-blue-50">
+                                <div className="border rounded p-4 bg-black-50">
                                   <div className="flex items-center gap-2 mb-3">
                                     <Snowflake className="w-5 h-5 text-blue-600" />
                                     <div>
@@ -2484,7 +2512,7 @@ toast({
                                   </div>
                                 </div>
                                 
-                                <div className="border rounded p-4 bg-gray-50">
+                                <div className="border rounded p-4 bg-black-50">
                                   <div className="flex items-center gap-2 mb-3">
                                     <Snowflake className="w-5 h-5 text-gray-600" />
                                     <div>

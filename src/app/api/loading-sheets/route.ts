@@ -20,9 +20,9 @@ function parseDate(dateString: string | null): Date | null {
 
 // Generate a short unique ID (max 20 chars)
 function generateShortId(prefix: string = 'ls'): string {
-  const timestamp = Date.now().toString(36); // Base36 for shorter timestamp
-  const random = Math.random().toString(36).substr(2, 4); // 4 random chars
-  return `${prefix}-${timestamp}-${random}`; // Example: "ls-abc123-defg"
+  const timestamp = Date.now().toString(36).slice(-6); // Last 6 chars
+  const random = Math.random().toString(36).substr(2, 3); // 3 random chars
+  return `${prefix}${timestamp}${random}`; // Should be < 20 chars
 }
 
 // GET: Fetch loading sheets
@@ -147,18 +147,18 @@ export async function POST(request: NextRequest) {
 
     // Create loading sheet with pallets in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Generate short IDs
+      // Generate short ID (less than 20 characters)
       const loadingSheetId = generateShortId('ls');
-      console.log('Generated loading sheet ID:', loadingSheetId);
+      console.log('Generated loading sheet ID:', loadingSheetId, 'Length:', loadingSheetId.length);
       
-      // Create the loading sheet - LET PRISMA GENERATE THE ID AUTOMATICALLY
+      // Create the loading sheet
       const loadingSheet = await tx.loading_sheets.create({
         data: {
-          // Don't specify id - let Prisma use @default(cuid())
+          id: loadingSheetId, // Use our generated short ID
           exporter: body.exporter,
           client: body.client || '',
           shipping_line: body.shippingLine || '',
-          bill_number: body.billNumber || `BILL-${Date.now().toString(36)}`,
+          bill_number: body.billNumber || `B${Date.now().toString(36).slice(-8)}`, // Short bill number
           container: body.container || '',
           seal1: body.seal1 || '',
           seal2: body.seal2 || '',
@@ -181,24 +181,28 @@ export async function POST(request: NextRequest) {
 
       // Create pallet records if provided
       if (body.pallets && Array.isArray(body.pallets) && body.pallets.length > 0) {
-        const palletData = body.pallets.map((pallet: any, index: number) => ({
-          // Don't specify id - let Prisma use @default(cuid())
-          loading_sheet_id: loadingSheet.id,
-          pallet_no: pallet.palletNo || index + 1,
-          temp: pallet.temp?.toString() || '',
-          trace_code: pallet.traceCode?.toString() || '',
-          size12: Number(pallet.sizes?.size12) || 0,
-          size14: Number(pallet.sizes?.size14) || 0,
-          size16: Number(pallet.sizes?.size16) || 0,
-          size18: Number(pallet.sizes?.size18) || 0,
-          size20: Number(pallet.sizes?.size20) || 0,
-          size22: Number(pallet.sizes?.size22) || 0,
-          size24: Number(pallet.sizes?.size24) || 0,
-          size26: Number(pallet.sizes?.size26) || 0,
-          size28: Number(pallet.sizes?.size28) || 0,
-          size30: Number(pallet.sizes?.size30) || 0,
-          total: Number(pallet.total) || 0
-        }));
+        const palletData = body.pallets.map((pallet: any, index: number) => {
+          // Generate short pallet ID
+          const palletId = generateShortId('pl');
+          return {
+            id: palletId,
+            loading_sheet_id: loadingSheet.id,
+            pallet_no: pallet.palletNo || index + 1,
+            temp: pallet.temp?.toString() || '',
+            trace_code: pallet.traceCode?.toString() || '',
+            size12: Number(pallet.sizes?.size12) || 0,
+            size14: Number(pallet.sizes?.size14) || 0,
+            size16: Number(pallet.sizes?.size16) || 0,
+            size18: Number(pallet.sizes?.size18) || 0,
+            size20: Number(pallet.sizes?.size20) || 0,
+            size22: Number(pallet.sizes?.size22) || 0,
+            size24: Number(pallet.sizes?.size24) || 0,
+            size26: Number(pallet.sizes?.size26) || 0,
+            size28: Number(pallet.sizes?.size28) || 0,
+            size30: Number(pallet.sizes?.size30) || 0,
+            total: Number(pallet.total) || 0
+          };
+        });
 
         await tx.loading_pallets.createMany({
           data: palletData
@@ -232,9 +236,11 @@ export async function POST(request: NextRequest) {
     // Check for specific database errors
     let errorMessage = error.message;
     if (error.code === 'P2000') {
-      errorMessage = 'Database field length error. Please check your data.';
+      errorMessage = `Database field length error. ID or field value too long. Max length is 20 characters.`;
     } else if (error.message?.includes('table') && error.message?.includes('does not exist')) {
       errorMessage = 'Database tables not set up. Please run migrations: npx prisma migrate dev';
+    } else if (error.code === 'P2003') {
+      errorMessage = 'Foreign key constraint failed. Please check your data.';
     }
     
     return NextResponse.json(
@@ -242,7 +248,8 @@ export async function POST(request: NextRequest) {
         success: false,
         error: 'Failed to save loading sheet', 
         details: errorMessage,
-        code: error.code
+        code: error.code,
+        suggestion: error.code === 'P2000' ? 'Try saving with shorter field values.' : undefined
       },
       { status: 500 }
     );
@@ -304,24 +311,28 @@ export async function PUT(request: NextRequest) {
 
         // Create new pallets
         if (body.pallets.length > 0) {
-          const palletData = body.pallets.map((pallet: any, index: number) => ({
-            // Don't specify id - let Prisma use @default(cuid())
-            loading_sheet_id: id,
-            pallet_no: pallet.palletNo || index + 1,
-            temp: pallet.temp?.toString() || '',
-            trace_code: pallet.traceCode?.toString() || '',
-            size12: Number(pallet.sizes?.size12) || 0,
-            size14: Number(pallet.sizes?.size14) || 0,
-            size16: Number(pallet.sizes?.size16) || 0,
-            size18: Number(pallet.sizes?.size18) || 0,
-            size20: Number(pallet.sizes?.size20) || 0,
-            size22: Number(pallet.sizes?.size22) || 0,
-            size24: Number(pallet.sizes?.size24) || 0,
-            size26: Number(pallet.sizes?.size26) || 0,
-            size28: Number(pallet.sizes?.size28) || 0,
-            size30: Number(pallet.sizes?.size30) || 0,
-            total: Number(pallet.total) || 0
-          }));
+          const palletData = body.pallets.map((pallet: any, index: number) => {
+            // Generate short pallet ID
+            const palletId = generateShortId('pl');
+            return {
+              id: palletId,
+              loading_sheet_id: id,
+              pallet_no: pallet.palletNo || index + 1,
+              temp: pallet.temp?.toString() || '',
+              trace_code: pallet.traceCode?.toString() || '',
+              size12: Number(pallet.sizes?.size12) || 0,
+              size14: Number(pallet.sizes?.size14) || 0,
+              size16: Number(pallet.sizes?.size16) || 0,
+              size18: Number(pallet.sizes?.size18) || 0,
+              size20: Number(pallet.sizes?.size20) || 0,
+              size22: Number(pallet.sizes?.size22) || 0,
+              size24: Number(pallet.sizes?.size24) || 0,
+              size26: Number(pallet.sizes?.size26) || 0,
+              size28: Number(pallet.sizes?.size28) || 0,
+              size30: Number(pallet.sizes?.size30) || 0,
+              total: Number(pallet.total) || 0
+            };
+          });
 
           await tx.loading_pallets.createMany({
             data: palletData

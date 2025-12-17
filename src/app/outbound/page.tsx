@@ -11,13 +11,11 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { employeeData } from '@/lib/data';
 import { OverviewCard } from '@/components/dashboard/overview-card';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +29,32 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 // Define API response type
 interface DatabaseShipment {
@@ -151,6 +175,37 @@ interface DatabaseLoadingSheet {
     size30: number;
     total: number;
   }[];
+  assigned_carrier_id?: string | null;
+}
+
+// Carrier Types
+interface Carrier {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  rating: number;
+  status: string;
+  id_number: string | null;
+  vehicle_registration: string | null;
+  created_at: string;
+  _count?: {
+    shipments: number;
+  };
+}
+
+// Assignment History Types
+interface Assignment {
+  id: string;
+  carrier_id: string;
+  loading_sheet_id: string;
+  assigned_at: string;
+  assigned_by: string;
+  status: 'assigned' | 'completed' | 'cancelled';
+  notes?: string;
+  carrier?: Carrier;
+  loading_sheet?: DatabaseLoadingSheet;
 }
 
 // Helper function to convert database status to display format
@@ -1094,6 +1149,443 @@ function LoadingSheet() {
   );
 }
 
+// Carrier Assignment Form Component
+function CarrierAssignmentForm() {
+  const [carriers, setCarriers] = useState<Carrier[]>([]);
+  const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [assigning, setAssigning] = useState(false);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Form state
+  const [selectedCarrierId, setSelectedCarrierId] = useState('');
+  const [selectedLoadingSheetId, setSelectedLoadingSheetId] = useState('');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [assignmentStatus, setAssignmentStatus] = useState<'assigned' | 'completed'>('assigned');
+  
+  // Fetch data
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch carriers
+      const carriersResponse = await fetch('/api/carriers');
+      if (carriersResponse.ok) {
+        const carriersData = await carriersResponse.json();
+        if (carriersData.success) {
+          setCarriers(carriersData.data || []);
+        }
+      }
+      
+      // Fetch loading sheets
+      const sheetsResponse = await fetch('/api/loading-sheets?limit=50');
+      if (sheetsResponse.ok) {
+        const sheetsData = await sheetsResponse.json();
+        if (sheetsData.success) {
+          setLoadingSheets(sheetsData.data || []);
+        }
+      }
+      
+      // Fetch existing assignments (simulated for now)
+      const mockAssignments: Assignment[] = [
+        {
+          id: '1',
+          carrier_id: 'carrier1',
+          loading_sheet_id: 'sheet1',
+          assigned_at: '2024-01-15T10:30:00Z',
+          assigned_by: 'John Doe',
+          status: 'completed',
+          notes: 'On-time delivery',
+          carrier: {
+            id: 'carrier1',
+            name: 'Fast Express Logistics',
+            contact_name: 'John Doe',
+            contact_email: 'john@fastexpress.com',
+            contact_phone: '+254712345678',
+            rating: 4.5,
+            status: 'Active',
+            id_number: 'CAR001',
+            vehicle_registration: 'KAA123X',
+            created_at: '2024-01-01T00:00:00Z',
+            _count: { shipments: 5 }
+          },
+          loading_sheet: {
+            id: 'sheet1',
+            exporter: 'HARIR INTERNATIONAL LTD',
+            client: 'Nakumatt Supermarket',
+            shipping_line: 'Maersk Line',
+            bill_number: 'BL123456',
+            container: 'MSKU1234567',
+            seal1: 'SEAL001',
+            seal2: 'SEAL002',
+            truck: 'KAA123X',
+            vessel: 'MAERSK ALABAMA',
+            eta_msa: '2024-01-16T08:00:00Z',
+            etd_msa: '2024-01-15T16:00:00Z',
+            port: 'Mombasa',
+            eta_port: '2024-01-20T10:00:00Z',
+            temp_rec1: '2°C',
+            temp_rec2: '3°C',
+            loading_date: '2024-01-15T00:00:00Z',
+            loaded_by: 'Loader 1',
+            checked_by: 'Supervisor A',
+            remarks: 'Special handling required',
+            created_at: '2024-01-15T00:00:00Z',
+            loading_pallets: []
+          }
+        }
+      ];
+      
+      setAssignments(mockAssignments);
+      
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleAssignCarrier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedCarrierId || !selectedLoadingSheetId) {
+      alert('Please select both a carrier and a loading sheet');
+      return;
+    }
+    
+    try {
+      setAssigning(true);
+      
+      // Find selected carrier and loading sheet
+      const selectedCarrier = carriers.find(c => c.id === selectedCarrierId);
+      const selectedLoadingSheet = loadingSheets.find(ls => ls.id === selectedLoadingSheetId);
+      
+      if (!selectedCarrier || !selectedLoadingSheet) {
+        throw new Error('Selected carrier or loading sheet not found');
+      }
+
+      // Create new assignment
+      const newAssignment: Assignment = {
+        id: `assignment-${Date.now()}`,
+        carrier_id: selectedCarrierId,
+        loading_sheet_id: selectedLoadingSheetId,
+        assigned_at: new Date().toISOString(),
+        assigned_by: 'Current User', // In real app, get from auth
+        status: assignmentStatus,
+        notes: assignmentNotes,
+        carrier: selectedCarrier,
+        loading_sheet: selectedLoadingSheet
+      };
+      
+      // Add to assignments list
+      setAssignments(prev => [newAssignment, ...prev]);
+      
+      // Show success message
+      alert(`✅ Successfully assigned carrier "${selectedCarrier.name}" to loading sheet "${selectedLoadingSheet.bill_number || selectedLoadingSheet.id}"`);
+      
+      // Reset form
+      setSelectedCarrierId('');
+      setSelectedLoadingSheetId('');
+      setAssignmentNotes('');
+      setAssignmentStatus('assigned');
+      
+    } catch (error: any) {
+      console.error('Error assigning carrier:', error);
+      alert(`❌ Failed to assign carrier: ${error.message}`);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+      case 'assigned':
+        return <Badge className="bg-blue-100 text-blue-800">Assigned</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  // Filter loading sheets based on search
+  const filteredLoadingSheets = loadingSheets.filter(sheet =>
+    sheet.bill_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sheet.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sheet.container?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sheet.id.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">{carriers.length}</div>
+            <div className="text-sm text-muted-foreground">Available Carriers</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">{loadingSheets.length}</div>
+            <div className="text-sm text-muted-foreground">Saved Loading Sheets</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">{assignments.length}</div>
+            <div className="text-sm text-muted-foreground">Total Assignments</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Assignment Form */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ArrowRight className="h-6 w-6 text-primary" />
+            Assign Carrier to Loading Sheet
+          </CardTitle>
+          <CardDescription>
+            Select a carrier and assign it to a saved loading sheet
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleAssignCarrier} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Carrier Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="carrier-select">Select Carrier *</Label>
+                <Select
+                  value={selectedCarrierId}
+                  onValueChange={setSelectedCarrierId}
+                  required
+                >
+                  <SelectTrigger id="carrier-select">
+                    <SelectValue placeholder="Choose a carrier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Select carrier...</SelectItem>
+                    {carriers.map(carrier => (
+                      <SelectItem key={carrier.id} value={carrier.id}>
+                        <div className="flex items-center justify-between">
+                          <span>{carrier.name}</span>
+                          <Badge 
+                            variant={carrier.status === 'Active' ? 'default' : 'secondary'}
+                            className="ml-2"
+                          >
+                            {carrier.status}
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedCarrierId && (
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Selected: {carriers.find(c => c.id === selectedCarrierId)?.name}
+                  </div>
+                )}
+              </div>
+
+              {/* Loading Sheet Selection */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="loading-sheet-select">Select Loading Sheet *</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      placeholder="Search loading sheets..."
+                      className="pl-8 w-full"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Select
+                  value={selectedLoadingSheetId}
+                  onValueChange={setSelectedLoadingSheetId}
+                  required
+                >
+                  <SelectTrigger id="loading-sheet-select">
+                    <SelectValue placeholder="Choose a loading sheet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Select loading sheet...</SelectItem>
+                    {filteredLoadingSheets.map(sheet => (
+                      <SelectItem key={sheet.id} value={sheet.id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{sheet.bill_number || 'No Bill Number'}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Client: {sheet.client || 'N/A'} • Container: {sheet.container || 'N/A'}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedLoadingSheetId && (
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Selected: {loadingSheets.find(ls => ls.id === selectedLoadingSheetId)?.bill_number || 'No Bill'}
+                  </div>
+                )}
+              </div>
+
+              {/* Assignment Status */}
+              <div className="space-y-2">
+                <Label htmlFor="assignment-status">Assignment Status</Label>
+                <Select
+                  value={assignmentStatus}
+                  onValueChange={(value: 'assigned' | 'completed') => setAssignmentStatus(value)}
+                >
+                  <SelectTrigger id="assignment-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="assigned">Assigned</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Assignment Notes */}
+              <div className="space-y-2">
+                <Label htmlFor="assignment-notes">Assignment Notes</Label>
+                <textarea
+                  id="assignment-notes"
+                  value={assignmentNotes}
+                  onChange={(e) => setAssignmentNotes(e.target.value)}
+                  className="w-full min-h-[80px] p-2 border rounded-md resize-none"
+                  placeholder="Enter any notes about this assignment..."
+                />
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="flex gap-2 pt-2">
+              <Button 
+                type="submit" 
+                disabled={assigning || !selectedCarrierId || !selectedLoadingSheetId}
+              >
+                {assigning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="h-4 w-4 mr-2" />
+                    Assign Carrier to Loading Sheet
+                  </>
+                )}
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => {
+                  setSelectedCarrierId('');
+                  setSelectedLoadingSheetId('');
+                  setAssignmentNotes('');
+                  setAssignmentStatus('assigned');
+                }}
+              >
+                Clear Form
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Assignment History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-6 w-6 text-primary" />
+            Assignment History
+          </CardTitle>
+          <CardDescription>
+            Recent carrier assignments to loading sheets
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Carrier</TableHead>
+                  <TableHead>Loading Sheet</TableHead>
+                  <TableHead>Container</TableHead>
+                  <TableHead>Assigned By</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assignments.map((assignment) => (
+                  <TableRow key={assignment.id}>
+                    <TableCell>
+                      {new Date(assignment.assigned_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{assignment.carrier?.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {assignment.carrier?.id_number}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{assignment.loading_sheet?.bill_number || assignment.loading_sheet_id}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {assignment.loading_sheet?.client || 'N/A'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {assignment.loading_sheet?.container || 'N/A'}
+                    </TableCell>
+                    <TableCell>{assignment.assigned_by}</TableCell>
+                    <TableCell>{getStatusBadge(assignment.status)}</TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {assignment.notes || 'No notes'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Empty State */}
+          {assignments.length === 0 && (
+            <div className="text-center py-8">
+              <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No assignment history found</h3>
+              <p className="text-muted-foreground mb-4">
+                Assignment history will appear here once you start assigning carriers to loading sheets
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function OutboundPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1276,16 +1768,20 @@ export default function OutboundPage() {
             </Button>
           </div>
 
-          {/* Tabs Navigation */}
+          {/* Tabs Navigation - Updated */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-flex">
+            <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-flex">
               <TabsTrigger value="dashboard">
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Dashboard
               </TabsTrigger>
               <TabsTrigger value="loading-sheet">
-                <Grid className="h-4 w-4 mr-2" />
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Loading Sheet
+              </TabsTrigger>
+              <TabsTrigger value="carrier-assignment">
+                <ArrowRight className="h-4 w-4 mr-2" />
+                Carrier Assignment
               </TabsTrigger>
               <TabsTrigger value="shipments">
                 <PackageCheck className="h-4 w-4 mr-2" />
@@ -1465,6 +1961,11 @@ export default function OutboundPage() {
             {/* Loading Sheet Tab */}
             <TabsContent value="loading-sheet">
               <LoadingSheet />
+            </TabsContent>
+
+            {/* Carrier Assignment Tab */}
+            <TabsContent value="carrier-assignment">
+              <CarrierAssignmentForm />
             </TabsContent>
 
             {/* Shipments Tab */}

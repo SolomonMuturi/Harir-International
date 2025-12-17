@@ -573,6 +573,23 @@ model loading_pallets {
   @@map("loading_pallets")
 }
 
+model carrier_assignments {
+  id               String         @id @default(cuid())
+  carrier_id       String
+  loading_sheet_id String
+  assigned_at      DateTime       @default(now())
+  assigned_by      String
+  status           String         @default("assigned") // assigned, completed, cancelled
+  notes            String?
+  
+  carrier          carriers       @relation(fields: [carrier_id], references: [id], onDelete: Cascade)
+  loading_sheet    loading_sheets @relation(fields: [loading_sheet_id], references: [id], onDelete: Cascade)
+  
+  created_at       DateTime       @default(now())
+  
+  @@unique([carrier_id, loading_sheet_id])
+}
+
 enum carriers_status {
   Active
   Inactive

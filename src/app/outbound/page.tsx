@@ -11,7 +11,6 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { OverviewCard } from '@/components/dashboard/overview-card';
 import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
@@ -38,16 +37,6 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Table,
   TableBody,
   TableCell,
@@ -56,7 +45,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-// Define API response type
+// Define types based on your database schema
 interface DatabaseShipment {
   id: string;
   shipment_id: string;
@@ -77,7 +66,6 @@ interface DatabaseShipment {
   } | null;
 }
 
-// Define Shipment type for frontend
 interface Shipment {
   id: string;
   shipmentId: string;
@@ -99,6 +87,7 @@ interface Shipment {
 
 // Loading Sheet Types
 interface LoadingSheetData {
+  id?: string;
   exporter: string;
   client: string;
   shippingLine: string;
@@ -115,6 +104,9 @@ interface LoadingSheetData {
   tempRec1: string;
   tempRec2: string;
   loadingDate: string;
+  loadedBy?: string;
+  checkedBy?: string;
+  remarks?: string;
   pallets: {
     palletNo: number;
     temp: string;
@@ -191,11 +183,11 @@ interface Carrier {
   vehicle_registration: string | null;
   created_at: string;
   _count?: {
-    shipments: number;
+    carrier_assignments: number;
   };
 }
 
-// Assignment History Types
+// Assignment Types
 interface Assignment {
   id: string;
   carrier_id: string;
@@ -203,7 +195,7 @@ interface Assignment {
   assigned_at: string;
   assigned_by: string;
   status: 'assigned' | 'completed' | 'cancelled';
-  notes?: string;
+  notes?: string | null;
   carrier?: Carrier;
   loading_sheet?: DatabaseLoadingSheet;
 }
@@ -265,122 +257,33 @@ function LoadingSheet() {
 
   const [sheetData, setSheetData] = useState<LoadingSheetData>(defaultData);
   const [saving, setSaving] = useState(false);
-  const [currentSheetId, setCurrentSheetId] = useState<string | null>(null);
   const [existingSheets, setExistingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [loadingSheets, setLoadingSheets] = useState(true);
 
-  // Mock data for loading sheets
-  const mockLoadingSheets: DatabaseLoadingSheet[] = [
-    {
-      id: 'ls123456789',
-      exporter: 'HARIR INTERNATIONAL LTD',
-      client: 'Nakumatt Supermarket',
-      shipping_line: 'Maersk Line',
-      bill_number: 'BL123456',
-      container: 'MSKU1234567',
-      seal1: 'SEAL001',
-      seal2: 'SEAL002',
-      truck: 'KAA123X',
-      vessel: 'MAERSK ALABAMA',
-      eta_msa: '2024-01-16T08:00:00Z',
-      etd_msa: '2024-01-15T16:00:00Z',
-      port: 'Mombasa',
-      eta_port: '2024-01-20T10:00:00Z',
-      temp_rec1: '2°C',
-      temp_rec2: '3°C',
-      loading_date: '2024-01-15T00:00:00Z',
-      loaded_by: 'Loader 1',
-      checked_by: 'Supervisor A',
-      remarks: 'Special handling required',
-      created_at: '2024-01-15T00:00:00Z',
-      loading_pallets: Array.from({ length: 10 }, (_, i) => ({
-        id: `pallet-${i}`,
-        pallet_no: i + 1,
-        temp: '2°C',
-        trace_code: `TRACE-${String(i + 1).padStart(3, '0')}`,
-        size12: 10,
-        size14: 12,
-        size16: 8,
-        size18: 6,
-        size20: 4,
-        size22: 3,
-        size24: 2,
-        size26: 1,
-        size28: 1,
-        size30: 0,
-        total: 47
-      }))
-    },
-    {
-      id: 'ls987654321',
-      exporter: 'HARIR INTERNATIONAL LTD',
-      client: 'Tuskys Supermarket',
-      shipping_line: 'CMA CGM',
-      bill_number: 'BL789012',
-      container: 'CMAU7890123',
-      seal1: 'SEAL003',
-      seal2: 'SEAL004',
-      truck: 'KAB456Y',
-      vessel: 'CMA CGM MARCO POLO',
-      eta_msa: '2024-01-17T09:00:00Z',
-      etd_msa: '2024-01-16T17:00:00Z',
-      port: 'Mombasa',
-      eta_port: '2024-01-21T11:00:00Z',
-      temp_rec1: '1.5°C',
-      temp_rec2: '2.5°C',
-      loading_date: '2024-01-16T00:00:00Z',
-      loaded_by: 'Loader 2',
-      checked_by: 'Supervisor B',
-      remarks: 'Rush shipment',
-      created_at: '2024-01-16T00:00:00Z',
-      loading_pallets: Array.from({ length: 15 }, (_, i) => ({
-        id: `pallet-${i + 10}`,
-        pallet_no: i + 1,
-        temp: '1.5°C',
-        trace_code: `TRACE-${String(i + 11).padStart(3, '0')}`,
-        size12: 8,
-        size14: 10,
-        size16: 9,
-        size18: 7,
-        size20: 5,
-        size22: 4,
-        size24: 3,
-        size26: 2,
-        size28: 1,
-        size30: 1,
-        total: 50
-      }))
-    }
-  ];
-
-  // Fetch existing loading sheets
+  // Fetch existing loading sheets from database
   const fetchLoadingSheets = useCallback(async () => {
     try {
       setLoadingSheets(true);
       
-      // Try to fetch from API
-      try {
-        const response = await fetch('/api/loading-sheets?limit=50');
-        
-        if (response.ok) {
-          const result = await response.json();
-          
-          if (result.success && result.data) {
-            setExistingSheets(result.data);
-            console.log('📋 Loaded', result.data.length, 'existing loading sheets');
-            return;
-          }
-        }
-      } catch (apiError) {
-        console.log('API not available, using mock data');
-      }
+      const response = await fetch('/api/loading-sheets?limit=50');
       
-      // Fallback to mock data
-      setExistingSheets(mockLoadingSheets);
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+          setExistingSheets(result.data);
+          console.log('📋 Loaded', result.data.length, 'loading sheets from database');
+        } else {
+          console.error('Error loading sheets:', result.error);
+          alert(`Failed to load loading sheets: ${result.error}`);
+        }
+      } else {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
     } catch (error) {
       console.error('Error fetching loading sheets:', error);
-      setExistingSheets(mockLoadingSheets);
+      alert('Failed to fetch loading sheets. Please check your connection.');
     } finally {
       setLoadingSheets(false);
     }
@@ -443,22 +346,27 @@ function LoadingSheet() {
         }))
       };
 
-      console.log('📤 Saving loading sheet...', saveData);
+      console.log('📤 Saving loading sheet to database...', saveData);
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch('/api/loading-sheets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(saveData)
+      });
 
-      // Generate new ID if creating
-      if (!currentSheetId) {
-        const newId = `ls${Date.now().toString().slice(-9)}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-        setCurrentSheetId(newId);
+      const result = await response.json();
+
+      if (result.success) {
+        alert(`✅ Loading sheet saved successfully!\nBill Number: ${sheetData.billNumber || 'Not specified'}`);
+        // Refresh the list of existing sheets
+        await fetchLoadingSheets();
+        // Clear form for new entry
+        handleNewSheet();
+      } else {
+        throw new Error(result.error || 'Failed to save loading sheet');
       }
-      
-      // Show success message
-      alert(`✅ Loading sheet saved successfully!\nBill Number: ${sheetData.billNumber || 'Not specified'}`);
-      
-      // Refresh the list of existing sheets
-      await fetchLoadingSheets();
 
     } catch (error: any) {
       console.error('❌ Error saving loading sheet:', error);
@@ -473,6 +381,7 @@ function LoadingSheet() {
     if (selectedSheet) {
       // Convert database format to component format
       const convertedSheet: LoadingSheetData = {
+        id: selectedSheet.id,
         exporter: selectedSheet.exporter,
         client: selectedSheet.client,
         shippingLine: selectedSheet.shipping_line || '',
@@ -491,6 +400,9 @@ function LoadingSheet() {
         loadingDate: selectedSheet.loading_date ? 
           new Date(selectedSheet.loading_date).toISOString().split('T')[0] : 
           new Date().toISOString().split('T')[0],
+        loadedBy: selectedSheet.loaded_by || '',
+        checkedBy: selectedSheet.checked_by || '',
+        remarks: selectedSheet.remarks || '',
         pallets: selectedSheet.loading_pallets?.map(pallet => ({
           palletNo: pallet.pallet_no,
           temp: pallet.temp || '',
@@ -512,33 +424,26 @@ function LoadingSheet() {
       };
       
       setSheetData(convertedSheet);
-      setCurrentSheetId(selectedSheet.id);
       
-      // Fill in the signature fields if they exist in the sheet
+      // Fill in the signature fields
       setTimeout(() => {
-        if (selectedSheet.loaded_by) {
-          const loadedByInput = document.querySelector('input[placeholder="Loader\'s name & signature"]') as HTMLInputElement;
-          if (loadedByInput) loadedByInput.value = selectedSheet.loaded_by;
-        }
-        if (selectedSheet.checked_by) {
-          const checkedByInput = document.querySelector('input[placeholder="Supervisor\'s name & signature"]') as HTMLInputElement;
-          if (checkedByInput) checkedByInput.value = selectedSheet.checked_by;
-        }
-        if (selectedSheet.remarks) {
-          const remarksInput = document.querySelector('textarea[placeholder="Special instructions or notes"]') as HTMLTextAreaElement;
-          if (remarksInput) remarksInput.value = selectedSheet.remarks;
-        }
+        const loadedByInput = document.querySelector('input[placeholder="Loader\'s name & signature"]') as HTMLInputElement;
+        const checkedByInput = document.querySelector('input[placeholder="Supervisor\'s name & signature"]') as HTMLInputElement;
+        const remarksInput = document.querySelector('textarea[placeholder="Special instructions or notes"]') as HTMLTextAreaElement;
+        
+        if (loadedByInput) loadedByInput.value = selectedSheet.loaded_by || '';
+        if (checkedByInput) checkedByInput.value = selectedSheet.checked_by || '';
+        if (remarksInput) remarksInput.value = selectedSheet.remarks || '';
       }, 100);
     }
   };
 
   const handleNewSheet = () => {
-    if (!currentSheetId || window.confirm('Create a new loading sheet? Current unsaved changes will be lost.')) {
+    if (!sheetData.id || window.confirm('Create a new loading sheet? Current unsaved changes will be lost.')) {
       setSheetData({
         ...defaultData,
         loadingDate: new Date().toISOString().split('T')[0],
       });
-      setCurrentSheetId(null);
       
       // Clear signature fields
       setTimeout(() => {
@@ -736,9 +641,9 @@ function LoadingSheet() {
             <CardTitle className="flex items-center gap-2 text-2xl">
               <Grid className="h-6 w-6 text-primary" />
               Loading Sheet Generator
-              {currentSheetId && (
+              {sheetData.id && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
-                  (Editing: {currentSheetId.substring(0, 8)}...)
+                  (Editing: {sheetData.id.substring(0, 8)}...)
                 </span>
               )}
             </CardTitle>
@@ -816,12 +721,12 @@ function LoadingSheet() {
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {currentSheetId ? 'Updating...' : 'Saving...'}
+                  Saving...
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  {currentSheetId ? 'Update' : 'Save'}
+                  Save
                 </>
               )}
             </Button>
@@ -1191,6 +1096,7 @@ function LoadingSheet() {
                 <div>
                   <div className="font-medium mb-1">Loaded by:</div>
                   <Input 
+                    defaultValue={sheetData.loadedBy || ''}
                     className="border-0 p-2 focus-visible:ring-0 focus-visible:ring-offset-0 border-b print:border-0" 
                     placeholder="Loader's name & signature" 
                   />
@@ -1198,6 +1104,7 @@ function LoadingSheet() {
                 <div>
                   <div className="font-medium mb-1">Checked by:</div>
                   <Input 
+                    defaultValue={sheetData.checkedBy || ''}
                     className="border-0 p-2 focus-visible:ring-0 focus-visible:ring-offset-0 border-b print:border-0" 
                     placeholder="Supervisor's name & signature" 
                   />
@@ -1205,6 +1112,7 @@ function LoadingSheet() {
                 <div>
                   <div className="font-medium mb-1">Remarks:</div>
                   <textarea 
+                    defaultValue={sheetData.remarks || ''}
                     className="w-full border border-black p-2 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm resize-none bg-white text-black placeholder:text-gray-500 print:border-black" 
                     rows={2}
                     placeholder="Special instructions or notes"
@@ -1216,7 +1124,7 @@ function LoadingSheet() {
           
           {/* Footer */}
           <div className="mt-6 pt-3 border-t text-center text-xs text-gray-500 print:mt-4">
-            <p>Generated by FreshTrace Logistics System • Document ID: {currentSheetId || `LS-${new Date().getTime().toString().slice(-6)}`}</p>
+            <p>Generated by FreshTrace Logistics System • Document ID: {sheetData.id || `NEW-LS-${new Date().getTime().toString().slice(-6)}`}</p>
           </div>
         </div>
       </CardContent>
@@ -1228,9 +1136,9 @@ function LoadingSheet() {
 function CarrierAssignmentForm() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Form state
@@ -1239,169 +1147,41 @@ function CarrierAssignmentForm() {
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [assignmentStatus, setAssignmentStatus] = useState<'assigned' | 'completed'>('assigned');
   
-  // Mock data
-  const mockCarriers: Carrier[] = [
-    {
-      id: 'c123456789012',
-      name: 'Fast Express Logistics',
-      contact_name: 'John Doe',
-      contact_email: 'john@fastexpress.com',
-      contact_phone: '+254712345678',
-      rating: 4.5,
-      status: 'Active',
-      id_number: 'CAR001',
-      vehicle_registration: 'KAA123X',
-      created_at: '2024-01-01T00:00:00Z',
-      _count: { shipments: 5 }
-    },
-    {
-      id: 'c234567890123',
-      name: 'Premium Transport Ltd',
-      contact_name: 'Jane Smith',
-      contact_email: 'jane@premiumtrans.com',
-      contact_phone: '+254723456789',
-      rating: 4.2,
-      status: 'Active',
-      id_number: 'CAR002',
-      vehicle_registration: 'KAB456Y',
-      created_at: '2024-01-02T00:00:00Z',
-      _count: { shipments: 12 }
-    },
-    {
-      id: 'c345678901234',
-      name: 'Reliable Haulers Inc',
-      contact_name: 'Robert Johnson',
-      contact_email: 'robert@reliablehaul.com',
-      contact_phone: '+254734567890',
-      rating: 3.8,
-      status: 'Inactive',
-      id_number: 'CAR003',
-      vehicle_registration: 'KAC789Z',
-      created_at: '2024-01-03T00:00:00Z',
-      _count: { shipments: 8 }
-    }
-  ];
-
-  const mockLoadingSheets: DatabaseLoadingSheet[] = [
-    {
-      id: 'ls123456789',
-      exporter: 'HARIR INTERNATIONAL LTD',
-      client: 'Nakumatt Supermarket',
-      shipping_line: 'Maersk Line',
-      bill_number: 'BL123456',
-      container: 'MSKU1234567',
-      seal1: 'SEAL001',
-      seal2: 'SEAL002',
-      truck: 'KAA123X',
-      vessel: 'MAERSK ALABAMA',
-      eta_msa: '2024-01-16T08:00:00Z',
-      etd_msa: '2024-01-15T16:00:00Z',
-      port: 'Mombasa',
-      eta_port: '2024-01-20T10:00:00Z',
-      temp_rec1: '2°C',
-      temp_rec2: '3°C',
-      loading_date: '2024-01-15T00:00:00Z',
-      loaded_by: 'Loader 1',
-      checked_by: 'Supervisor A',
-      remarks: 'Special handling required',
-      created_at: '2024-01-15T00:00:00Z',
-      loading_pallets: []
-    },
-    {
-      id: 'ls987654321',
-      exporter: 'HARIR INTERNATIONAL LTD',
-      client: 'Tuskys Supermarket',
-      shipping_line: 'CMA CGM',
-      bill_number: 'BL789012',
-      container: 'CMAU7890123',
-      seal1: 'SEAL003',
-      seal2: 'SEAL004',
-      truck: 'KAB456Y',
-      vessel: 'CMA CGM MARCO POLO',
-      eta_msa: '2024-01-17T09:00:00Z',
-      etd_msa: '2024-01-16T17:00:00Z',
-      port: 'Mombasa',
-      eta_port: '2024-01-21T11:00:00Z',
-      temp_rec1: '1.5°C',
-      temp_rec2: '2.5°C',
-      loading_date: '2024-01-16T00:00:00Z',
-      loaded_by: 'Loader 2',
-      checked_by: 'Supervisor B',
-      remarks: 'Rush shipment',
-      created_at: '2024-01-16T00:00:00Z',
-      loading_pallets: []
-    }
-  ];
-
-  // Mock assignments
-  const mockAssignments: Assignment[] = [
-    {
-      id: '1',
-      carrier_id: 'c123456789012',
-      loading_sheet_id: 'ls123456789',
-      assigned_at: '2024-01-15T10:30:00Z',
-      assigned_by: 'John Doe',
-      status: 'completed',
-      notes: 'On-time delivery',
-      carrier: mockCarriers[0],
-      loading_sheet: mockLoadingSheets[0]
-    }
-  ];
-
-  // Fetch data
+  // Fetch data from database
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Try to fetch carriers from API
-      try {
-        const carriersResponse = await fetch('/api/carriers');
-        if (carriersResponse.ok) {
-          const carriersData = await carriersResponse.json();
-          if (carriersData.success) {
-            setCarriers(carriersData.data || []);
-          } else {
-            console.log('Using mock carriers data');
-            setCarriers(mockCarriers);
-          }
-        } else {
-          console.log('API not available, using mock carriers');
-          setCarriers(mockCarriers);
+      // Fetch carriers
+      const carriersResponse = await fetch('/api/carriers');
+      if (carriersResponse.ok) {
+        const carriersData = await carriersResponse.json();
+        if (carriersData.success) {
+          setCarriers(carriersData.data || []);
         }
-      } catch (carrierError) {
-        console.log('Error fetching carriers, using mock data');
-        setCarriers(mockCarriers);
       }
       
-      // Try to fetch loading sheets from API
-      try {
-        const sheetsResponse = await fetch('/api/loading-sheets?limit=50');
-        if (sheetsResponse.ok) {
-          const sheetsData = await sheetsResponse.json();
-          if (sheetsData.success) {
-            setLoadingSheets(sheetsData.data || []);
-          } else {
-            console.log('Using mock loading sheets data');
-            setLoadingSheets(mockLoadingSheets);
-          }
-        } else {
-          console.log('API not available, using mock loading sheets');
-          setLoadingSheets(mockLoadingSheets);
+      // Fetch loading sheets
+      const sheetsResponse = await fetch('/api/loading-sheets?limit=50');
+      if (sheetsResponse.ok) {
+        const sheetsData = await sheetsResponse.json();
+        if (sheetsData.success) {
+          setLoadingSheets(sheetsData.data || []);
         }
-      } catch (sheetError) {
-        console.log('Error fetching loading sheets, using mock data');
-        setLoadingSheets(mockLoadingSheets);
       }
       
-      // Use mock assignments
-      setAssignments(mockAssignments);
+      // Fetch assignments
+      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      if (assignmentsResponse.ok) {
+        const assignmentsData = await assignmentsResponse.json();
+        if (assignmentsData.success) {
+          setAssignments(assignmentsData.data || []);
+        }
+      }
       
     } catch (error) {
       console.error('Error fetching data:', error);
-      // Set mock data on error
-      setCarriers(mockCarriers);
-      setLoadingSheets(mockLoadingSheets);
-      setAssignments(mockAssignments);
+      alert('Failed to fetch data. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -1430,33 +1210,36 @@ function CarrierAssignmentForm() {
         throw new Error('Selected carrier or loading sheet not found');
       }
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Save to database
+      const response = await fetch('/api/carrier-assignments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          carrierId: selectedCarrierId,
+          loadingSheetId: selectedLoadingSheetId,
+          status: assignmentStatus,
+          notes: assignmentNotes
+        })
+      });
 
-      // Create new assignment
-      const newAssignment: Assignment = {
-        id: `assignment-${Date.now()}`,
-        carrier_id: selectedCarrierId,
-        loading_sheet_id: selectedLoadingSheetId,
-        assigned_at: new Date().toISOString(),
-        assigned_by: 'Current User',
-        status: assignmentStatus,
-        notes: assignmentNotes,
-        carrier: selectedCarrier,
-        loading_sheet: selectedLoadingSheet
-      };
-      
-      // Add to assignments list
-      setAssignments(prev => [newAssignment, ...prev]);
-      
-      // Show success message
-      alert(`✅ Successfully assigned carrier "${selectedCarrier.name}" to loading sheet "${selectedLoadingSheet.bill_number || selectedLoadingSheet.id}"`);
-      
-      // Reset form
-      setSelectedCarrierId(null);
-      setSelectedLoadingSheetId(null);
-      setAssignmentNotes('');
-      setAssignmentStatus('assigned');
+      const result = await response.json();
+
+      if (result.success) {
+        alert(`✅ Successfully assigned carrier "${selectedCarrier.name}" to loading sheet "${selectedLoadingSheet.bill_number || selectedLoadingSheet.id}"`);
+        
+        // Refresh assignments
+        await fetchData();
+        
+        // Reset form
+        setSelectedCarrierId(null);
+        setSelectedLoadingSheetId(null);
+        setAssignmentNotes('');
+        setAssignmentStatus('assigned');
+      } else {
+        throw new Error(result.error || 'Failed to assign carrier');
+      }
       
     } catch (error: any) {
       console.error('Error assigning carrier:', error);
@@ -1748,6 +1531,7 @@ function CarrierAssignmentForm() {
     </div>
   );
 }
+
 export default function OutboundPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1761,78 +1545,35 @@ export default function OutboundPage() {
     activeCarriers: 0,
     totalAssignments: 0,
     pendingAssignments: 0,
-    completedAssignments: 0
+    completedAssignments: 0,
+    totalShipments: 0,
+    activeShipments: 0,
+    delayedShipments: 0,
+    deliveredShipments: 0,
+    uniqueCustomers: 0,
+    statusDistribution: {} as Record<string, number>
   });
-
-  // Mock shipments data for testing
-  const mockShipments: Shipment[] = [
-    {
-      id: '1',
-      shipmentId: 'SHIP-001',
-      customer: 'Nakumatt Supermarket',
-      origin: 'Nairobi',
-      destination: 'Mombasa',
-      status: 'Ready for Dispatch',
-      product: 'Fresh Avocados',
-      weight: '500 kg',
-      temperature: '2-4°C',
-      humidity: '85%',
-      tags: 'Organic, Premium',
-      expectedArrival: 'Jan 20, 2024',
-      driver: 'Not assigned',
-      carrier: 'Fast Express Logistics',
-      priority: 'High',
-      notes: ''
-    },
-    {
-      id: '2',
-      shipmentId: 'SHIP-002',
-      customer: 'Tuskys Supermarket',
-      origin: 'Nairobi',
-      destination: 'Kisumu',
-      status: 'Preparing for Dispatch',
-      product: 'Fresh Mangoes',
-      weight: '750 kg',
-      temperature: '8-10°C',
-      humidity: '80%',
-      tags: 'Export Quality',
-      expectedArrival: 'Jan 22, 2024',
-      driver: 'Not assigned',
-      carrier: 'Premium Transport Ltd',
-      priority: 'Medium',
-      notes: ''
-    },
-    {
-      id: '3',
-      shipmentId: 'SHIP-003',
-      customer: 'Carrefour Kenya',
-      origin: 'Nairobi',
-      destination: 'Eldoret',
-      status: 'Ready for Dispatch',
-      product: 'Fresh Pineapples',
-      weight: '300 kg',
-      temperature: '12-14°C',
-      humidity: '75%',
-      tags: 'Sweet Variety',
-      expectedArrival: 'Jan 18, 2024',
-      driver: 'Not assigned',
-      carrier: 'Reliable Haulers Inc',
-      priority: 'Medium',
-      notes: ''
-    }
-  ];
 
   // Fetch all data
   const fetchAllStats = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Try to fetch shipments from API
-      try {
-        const shipmentsResponse = await fetch('/api/shipments');
-        if (shipmentsResponse.ok) {
-          const data = await shipmentsResponse.json();
-          const transformedData = data.map((shipment: DatabaseShipment) => ({
+      // Fetch statistics
+      const statsResponse = await fetch('/api/outbound-stats');
+      if (statsResponse.ok) {
+        const statsData = await statsResponse.json();
+        if (statsData.success) {
+          setStats(statsData.data);
+        }
+      }
+      
+      // Fetch outbound shipments
+      const shipmentsResponse = await fetch('/api/outbound-shipments');
+      if (shipmentsResponse.ok) {
+        const shipmentsData = await shipmentsResponse.json();
+        if (shipmentsData.success && shipmentsData.data) {
+          const transformedData = shipmentsData.data.map((shipment: DatabaseShipment) => ({
             id: shipment.id,
             shipmentId: shipment.shipment_id,
             customer: shipment.customers?.name || 'Unknown Customer',
@@ -1857,68 +1598,12 @@ export default function OutboundPage() {
             notes: ''
           }));
           setShipments(transformedData);
-        } else {
-          console.log('Using mock shipments data');
-          setShipments(mockShipments);
         }
-      } catch (shipmentsError) {
-        console.log('Error fetching shipments, using mock data');
-        setShipments(mockShipments);
-      }
-      
-      // Try to fetch outbound statistics
-      try {
-        const statsResponse = await fetch('/api/outbound-stats');
-        if (statsResponse.ok) {
-          const statsData = await statsResponse.json();
-          if (statsData.success) {
-            setStats(statsData.data);
-          } else {
-            console.log('Using mock statistics');
-            setStats({
-              totalLoadingSheets: 24,
-              containersLoaded: 18,
-              activeCarriers: 8,
-              totalAssignments: 45,
-              pendingAssignments: 12,
-              completedAssignments: 33
-            });
-          }
-        } else {
-          console.log('Stats API not available, using mock data');
-          setStats({
-            totalLoadingSheets: 24,
-            containersLoaded: 18,
-            activeCarriers: 8,
-            totalAssignments: 45,
-            pendingAssignments: 12,
-            completedAssignments: 33
-          });
-        }
-      } catch (statsError) {
-        console.log('Error fetching stats, using mock data');
-        setStats({
-          totalLoadingSheets: 24,
-          containersLoaded: 18,
-          activeCarriers: 8,
-          totalAssignments: 45,
-          pendingAssignments: 12,
-          completedAssignments: 33
-        });
       }
       
     } catch (error) {
       console.error('Error fetching data:', error);
-      // Use mock data as fallback
-      setShipments(mockShipments);
-      setStats({
-        totalLoadingSheets: 24,
-        containersLoaded: 18,
-        activeCarriers: 8,
-        totalAssignments: 45,
-        pendingAssignments: 12,
-        completedAssignments: 33
-      });
+      alert('Failed to fetch data. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -1928,26 +1613,6 @@ export default function OutboundPage() {
     fetchAllStats();
   }, [fetchAllStats]);
 
-  // Statistics Calculations
-  const totalShipments = shipments.length;
-  const activeShipments = shipments.filter(s => 
-    ['Preparing for Dispatch', 'Ready for Dispatch', 'In-Transit'].includes(s.status)
-  ).length;
-  const delayedShipments = shipments.filter(s => s.status === 'Delayed').length;
-  const deliveredShipments = shipments.filter(s => s.status === 'Delivered').length;
-  
-  // Customer statistics
-  const uniqueCustomers = new Set(shipments.map(s => s.customer)).size;
-  
-  // Status distribution
-  const statusDistribution = {
-    'Preparing': shipments.filter(s => s.status === 'Preparing for Dispatch').length,
-    'Ready': shipments.filter(s => s.status === 'Ready for Dispatch').length,
-    'In Transit': shipments.filter(s => s.status === 'In-Transit').length,
-    'Delayed': shipments.filter(s => s.status === 'Delayed').length,
-    'Delivered': shipments.filter(s => s.status === 'Delivered').length,
-  };
-  
   // Filter shipments for outbound processing
   const shipmentsForOutbound = shipments.filter(
     s => s.status === 'Preparing for Dispatch' || s.status === 'Ready for Dispatch'
@@ -1960,7 +1625,7 @@ export default function OutboundPage() {
   const handleViewManifest = (shipmentId: string) => router.push(`/outbound/manifest/${shipmentId}`);
 
   const handleRefresh = () => {
-    console.log('🔄 Refreshing outbound shipments...');
+    console.log('🔄 Refreshing outbound data...');
     fetchAllStats();
   };
 
@@ -2198,13 +1863,13 @@ export default function OutboundPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {Object.entries(statusDistribution).map(([status, count]) => (
+                    {Object.entries(stats.statusDistribution || {}).map(([status, count]) => (
                       <div key={status} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className={`w-3 h-3 rounded-full ${
-                            status === 'Preparing' ? 'bg-yellow-500' :
-                            status === 'Ready' ? 'bg-green-500' :
-                            status === 'In Transit' ? 'bg-blue-500' :
+                            status === 'Preparing for Dispatch' ? 'bg-yellow-500' :
+                            status === 'Ready for Dispatch' ? 'bg-green-500' :
+                            status === 'In-Transit' ? 'bg-blue-500' :
                             status === 'Delayed' ? 'bg-red-500' :
                             'bg-gray-500'
                           }`}></div>
@@ -2215,17 +1880,17 @@ export default function OutboundPage() {
                           <div className="w-48 bg-gray-200 rounded-full h-2">
                             <div 
                               className={`h-2 rounded-full ${
-                                status === 'Preparing' ? 'bg-yellow-500' :
-                                status === 'Ready' ? 'bg-green-500' :
-                                status === 'In Transit' ? 'bg-blue-500' :
+                                status === 'Preparing for Dispatch' ? 'bg-yellow-500' :
+                                status === 'Ready for Dispatch' ? 'bg-green-500' :
+                                status === 'In-Transit' ? 'bg-blue-500' :
                                 status === 'Delayed' ? 'bg-red-500' :
                                 'bg-gray-500'
                               }`}
-                              style={{ width: `${(count / Math.max(totalShipments, 1)) * 100}%` }}
+                              style={{ width: `${(count / Math.max(stats.totalShipments, 1)) * 100}%` }}
                             ></div>
                           </div>
                           <span className="text-sm text-muted-foreground w-12 text-right">
-                            {totalShipments > 0 ? Math.round((count / totalShipments) * 100) : 0}%
+                            {stats.totalShipments > 0 ? Math.round((count / stats.totalShipments) * 100) : 0}%
                           </span>
                         </div>
                       </div>

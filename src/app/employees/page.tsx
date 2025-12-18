@@ -27,10 +27,10 @@ import {
 import { CreateEmployeeForm } from '@/components/dashboard/create-employee-form';
 import {
   PlusCircle, Users, CheckCircle, LogOut, TrendingUp, Printer, LogIn,
-  Settings, XCircle, Clock, ChevronDown, ChevronUp, Calendar,
+  Settings, XCircle, Clock, ChevronDown, ChevronUp, Calendar as CalendarIcon,
   AlertCircle, Search, RefreshCw, Eye, Edit, Trash2, User, Briefcase,
   Phone, Mail, Building, BadgeCheck, Award, DollarSign, CalendarDays,
-  Shield, FileText, Download, Filter, MoreVertical
+  Shield, FileText, Download, Filter, MoreVertical, UserPlus
 } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { useToast } from '@/hooks/use-toast';
@@ -47,7 +47,7 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { format, parseISO, isToday, isAfter, isBefore, differenceInHours } from 'date-fns';
+import { format, parseISO, addDays, differenceInHours } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
@@ -64,8 +64,14 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@/components/ui/alert';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 
 // Types
+type EmployeeContract = 'Full-time' | 'Part-time' | 'Contract';
+type AttendanceStatus = 'Present' | 'Absent' | 'Late' | 'On Leave' | 'Early Departure';
+type Designation = 'dipping' | 'intake' | 'qualityControl' | 'qualityAssurance' | 'packing' | 'loading' | 'palletizing' | 'porter';
+
 interface Employee {
   id: string;
   name: string;
@@ -74,7 +80,7 @@ interface Employee {
   status: string;
   performance?: string;
   rating?: number;
-  contract: 'Full-time' | 'Part-time' | 'Contract';
+  contract: EmployeeContract;
   salary?: string;
   image?: string;
   id_number?: string;
@@ -84,16 +90,17 @@ interface Employee {
   company?: string;
   created_at: string;
   updated_at: string;
+  employeeId?: string;
 }
 
 interface Attendance {
   id: string;
   employeeId: string;
   date: string;
-  status: 'Present' | 'Absent' | 'Late' | 'On Leave' | 'Early Departure';
+  status: AttendanceStatus;
   clockInTime?: string;
   clockOutTime?: string;
-  designation?: string;
+  designation?: Designation;
   createdAt: string;
   updatedAt: string;
   employee?: Employee;
@@ -103,7 +110,7 @@ interface EmployeeFormValues {
   name: string;
   email: string;
   role: string;
-  contract: 'Full-time' | 'Part-time' | 'Contract';
+  contract: EmployeeContract;
   idNumber: string;
   phone: string;
   status: string;
@@ -136,7 +143,7 @@ const statusInfo = {
   },
   'On Leave': { 
     color: 'bg-blue-100 text-blue-800 border-blue-300', 
-    icon: Calendar,
+    icon: CalendarIcon,
     variant: 'secondary' as const
   },
   'Early Departure': { 
@@ -146,15 +153,33 @@ const statusInfo = {
   },
 };
 
-// Shift data - only Day and Night shifts
-const shiftData = [
-  { id: 'day-shift', name: 'Day Shift', timeRange: '06:00 - 18:00', startHour: 6, endHour: 18 },
-  { id: 'night-shift', name: 'Night Shift', timeRange: '18:00 - 06:00', startHour: 18, endHour: 6 }
-];
+const designationLabels: Record<Designation, string> = {
+  dipping: 'Dipping',
+  intake: 'Intake',
+  qualityControl: 'Quality Control',
+  qualityAssurance: 'Quality Assurance',
+  packing: 'Packing',
+  loading: 'Loading',
+  palletizing: 'Palletizing',
+  porter: 'Porter'
+};
+
+const designationColors: Record<Designation, string> = {
+  dipping: 'bg-blue-50 text-blue-700 border-blue-200',
+  intake: 'bg-green-50 text-green-700 border-green-200',
+  qualityControl: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+  qualityAssurance: 'bg-purple-50 text-purple-700 border-purple-200',
+  packing: 'bg-pink-50 text-pink-700 border-pink-200',
+  loading: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  palletizing: 'bg-orange-50 text-orange-700 border-orange-200',
+  porter: 'bg-cyan-50 text-cyan-700 border-cyan-200'
+};
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [filteredAttendance, setFilteredAttendance] = useState<Attendance[]>([]);
+  
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -166,18 +191,43 @@ export default function EmployeesPage() {
 
   // Roll Call state
   const [activeTab, setActiveTab] = useState('overview');
-  const [expandedShifts, setExpandedShifts] = useState<Record<string, boolean>>({
-    'day-shift': true,
-    'night-shift': true
-  });
-  
-  const [selectedForBatch, setSelectedForBatch] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [today, setToday] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [isClient, setIsClient] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Check In/Out state
+  const [checkInOutEmployeeId, setCheckInOutEmployeeId] = useState('');
+  const [designation, setDesignation] = useState<Designation>('dipping');
+
+  // Attendance History state
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+    to: new Date()
+  });
+  const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
+  const [attendanceEmployeeFilter, setAttendanceEmployeeFilter] = useState<string>('all');
+  const [attendanceTypeFilter, setAttendanceTypeFilter] = useState<string>('all');
+
+  // New Employee form state
+  const [newEmployee, setNewEmployee] = useState<EmployeeFormValues>({
+    name: '',
+    email: '',
+    role: 'Employee',
+    contract: 'Full-time',
+    idNumber: '',
+    phone: '',
+    status: 'active',
+    performance: 'Meets_Expectations',
+    rating: 3,
+    salary: '',
+    image: '',
+    issueDate: '',
+    expiryDate: '',
+    company: 'FreshTrace'
+  });
 
   // Update current time every minute
   useEffect(() => {
@@ -193,8 +243,6 @@ export default function EmployeesPage() {
     try {
       setIsLoading(true);
       setFetchError(null);
-      
-      console.log('🔄 Fetching employees...');
       
       // Fetch employees
       const employeesResponse = await fetch('/api/employees');
@@ -212,12 +260,9 @@ export default function EmployeesPage() {
         setSelectedEmployee(employeesData[0]);
       }
       
-      // Fetch today's attendance
-      const todayDate = format(new Date(), 'yyyy-MM-dd');
-      console.log('🔄 Fetching attendance for:', todayDate);
-      
+      // Fetch attendance (all records for history)
       try {
-        const attendanceResponse = await fetch(`/api/attendance?date=${todayDate}`);
+        const attendanceResponse = await fetch('/api/attendance');
         
         if (attendanceResponse.ok) {
           const attendanceData = await attendanceResponse.json();
@@ -228,7 +273,7 @@ export default function EmployeesPage() {
         }
       } catch (attendanceError) {
         console.warn('⚠️ Attendance fetch failed:', attendanceError);
-        // Continue without attendance data
+        setAttendance([]);
       }
       
     } catch (error: any) {
@@ -243,7 +288,6 @@ export default function EmployeesPage() {
         variant: 'destructive',
       });
       
-      // Set empty arrays to prevent further errors
       setEmployees([]);
       setAttendance([]);
     } finally {
@@ -273,122 +317,86 @@ export default function EmployeesPage() {
     }
   };
 
-  // Organize employees by shift
-  const shiftEmployees = useMemo(() => {
-    const dayShift: Employee[] = [];
-    const nightShift: Employee[] = [];
-    
-    employees.forEach(employee => {
-      // Simple assignment: Full-time = Day shift, Part-time/Contract = Night shift
-      if (employee.contract === 'Full-time') {
-        dayShift.push(employee);
-      } else {
-        nightShift.push(employee);
+  // Filter attendance for history
+  useEffect(() => {
+    if (!attendance.length) {
+      setFilteredAttendance([]);
+      return;
+    }
+
+    const filtered = attendance.filter(record => {
+      const recordDate = parseISO(record.date);
+      const withinDateRange = recordDate >= dateRange.from && recordDate <= dateRange.to;
+      
+      if (!withinDateRange) return false;
+      
+      // Filter by employee name/search term
+      if (attendanceSearchTerm) {
+        const employee = employees.find(emp => emp.id === record.employeeId);
+        const matchesSearch = employee?.name.toLowerCase().includes(attendanceSearchTerm.toLowerCase()) ||
+                             (employee?.employeeId && employee.employeeId.includes(attendanceSearchTerm));
+        if (!matchesSearch) return false;
       }
-    });
-    
-    return {
-      'day-shift': dayShift,
-      'night-shift': nightShift
-    };
-  }, [employees]);
-
-  // Calculate shift statistics
-  const shiftStats = useMemo(() => {
-    const dayShiftAttendance = shiftEmployees['day-shift'].map(emp => {
-      const att = attendance.find(a => a.employeeId === emp.id && a.date === today);
-      return {
-        employee: emp,
-        attendance: att,
-        isPresent: att?.status === 'Present',
-        isCheckedOut: !!att?.clockOutTime,
-        isLate: att?.status === 'Late',
-        isAbsent: att?.status === 'Absent',
-        isOnLeave: att?.status === 'On Leave'
-      };
-    });
-    
-    const nightShiftAttendance = shiftEmployees['night-shift'].map(emp => {
-      const att = attendance.find(a => a.employeeId === emp.id && a.date === today);
-      return {
-        employee: emp,
-        attendance: att,
-        isPresent: att?.status === 'Present',
-        isCheckedOut: !!att?.clockOutTime,
-        isLate: att?.status === 'Late',
-        isAbsent: att?.status === 'Absent',
-        isOnLeave: att?.status === 'On Leave'
-      };
-    });
-
-    return {
-      dayShift: {
-        total: dayShiftAttendance.length,
-        present: dayShiftAttendance.filter(e => e.isPresent && !e.isCheckedOut).length,
-        checkedOut: dayShiftAttendance.filter(e => e.isCheckedOut).length,
-        absent: dayShiftAttendance.filter(e => e.isAbsent).length,
-        late: dayShiftAttendance.filter(e => e.isLate).length,
-        onLeave: dayShiftAttendance.filter(e => e.isOnLeave).length
-      },
-      nightShift: {
-        total: nightShiftAttendance.length,
-        present: nightShiftAttendance.filter(e => e.isPresent && !e.isCheckedOut).length,
-        checkedOut: nightShiftAttendance.filter(e => e.isCheckedOut).length,
-        absent: nightShiftAttendance.filter(e => e.isAbsent).length,
-        late: nightShiftAttendance.filter(e => e.isLate).length,
-        onLeave: nightShiftAttendance.filter(e => e.isOnLeave).length
-      },
-      overall: {
-        totalEmployees: employees.length,
-        presentToday: attendance.filter(a => a.status === 'Present' && !a.clockOutTime).length,
-        checkedOutToday: attendance.filter(a => a.clockOutTime).length,
-        absentToday: attendance.filter(a => a.status === 'Absent').length,
-        onLeave: attendance.filter(a => a.status === 'On Leave').length,
-        lateToday: attendance.filter(a => a.status === 'Late').length
+      
+      // Filter by employee type
+      if (attendanceEmployeeFilter !== 'all') {
+        const employee = employees.find(emp => emp.id === record.employeeId);
+        if (!employee || employee.contract !== attendanceEmployeeFilter) return false;
       }
-    };
-  }, [shiftEmployees, attendance, employees, today]);
+      
+      // Filter by status
+      if (attendanceTypeFilter !== 'all') {
+        if (record.status !== attendanceTypeFilter) return false;
+      }
+      
+      return true;
+    });
+    
+    setFilteredAttendance(filtered);
+  }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees]);
 
-  // Calculate KPI data
-  const kpiData = useMemo(() => {
-    if (!isClient || isLoading) return null;
+  // Get today's attendance
+  const todaysAttendance = useMemo(() => {
+    return attendance.filter(record => record.date === today);
+  }, [attendance, today]);
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    const fullTimeEmployees = employees.filter(emp => emp.contract === 'Full-time');
+    const partTimeEmployees = employees.filter(emp => emp.contract === 'Part-time');
+    const contractEmployees = employees.filter(emp => emp.contract === 'Contract');
+    
+    const presentToday = todaysAttendance.filter(record => record.status === 'Present').length;
+    const lateToday = todaysAttendance.filter(record => record.status === 'Late').length;
+    const absentToday = todaysAttendance.filter(record => record.status === 'Absent').length;
+    const onLeaveToday = todaysAttendance.filter(record => record.status === 'On Leave').length;
+    const checkedOutToday = todaysAttendance.filter(record => record.clockOutTime).length;
+    const checkedInToday = todaysAttendance.filter(record => record.clockInTime && !record.clockOutTime).length;
     
     const attendanceRate = employees.length > 0 
-      ? Math.round((shiftStats.overall.presentToday / employees.length) * 100)
+      ? Math.round((presentToday / employees.length) * 100)
       : 0;
     
     return {
-      totalEmployees: {
-        title: 'Total Employees',
-        value: String(employees.length),
-        change: `${shiftStats.overall.presentToday} present today`,
-        changeType: 'increase' as const,
-      },
-      presentToday: {
-        title: 'Present Today',
-        value: String(shiftStats.overall.presentToday),
-        change: `as of ${format(currentTime, 'HH:mm')}`,
-        changeType: 'increase' as const,
-      },
-      onLeave: {
-        title: 'On Leave',
-        value: String(shiftStats.overall.onLeave),
-        change: 'scheduled today',
-        changeType: 'decrease' as const,
-      },
-      attendanceRate: {
-        title: 'Attendance Rate',
-        value: `${attendanceRate}%`,
-        change: 'Today',
-        changeType: attendanceRate > 85 ? 'increase' : 'decrease' as const,
-      },
+      totalEmployees: employees.length,
+      fullTimeCount: fullTimeEmployees.length,
+      partTimeCount: partTimeEmployees.length,
+      contractCount: contractEmployees.length,
+      presentToday,
+      lateToday,
+      absentToday,
+      onLeaveToday,
+      checkedOutToday,
+      checkedInToday,
+      attendanceRate,
+      pendingCheckIn: employees.length - (presentToday + absentToday + onLeaveToday)
     };
-  }, [isClient, isLoading, employees, shiftStats, currentTime]);
+  }, [employees, todaysAttendance]);
 
-  // Handle check-in (persists to database)
+  // Handle check in
   const handleCheckIn = async (employeeId: string, isLate: boolean = false) => {
     try {
-      const employee = employees.find(e => e.id === employeeId);
+      const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) {
         toast({
           title: 'Error',
@@ -399,84 +407,80 @@ export default function EmployeesPage() {
       }
 
       const checkInTime = new Date().toISOString();
-      const status = isLate ? 'Late' : 'Present';
+      const status: AttendanceStatus = isLate ? 'Late' : 'Present';
       
-      console.log('🔄 Checking in employee:', {
-        employeeId,
-        employeeName: employee.name,
-        date: today,
-        status,
-        checkInTime
-      });
+      // For contract employees, use the selected designation
+      const designationForRecord = employee.contract === 'Contract' ? designation : undefined;
       
-      // Save to database via API
-      const response = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          employeeId,
-          date: today,
-          status,
-          clockInTime: checkInTime
-        }),
-      });
-
-      const responseData = await response.json();
+      // Check if attendance record already exists for today
+      const existingRecord = todaysAttendance.find(record => record.employeeId === employeeId);
       
-      if (!response.ok) {
-        console.error('❌ API Error:', responseData);
-        let errorMessage = 'Failed to save check-in';
-        if (responseData.error) {
-          errorMessage = responseData.error;
-          if (responseData.details) {
-            errorMessage += `: ${responseData.details}`;
-          }
-        }
-        throw new Error(errorMessage);
+      let response;
+      if (existingRecord) {
+        // Update existing record
+        response = await fetch(`/api/attendance?id=${existingRecord.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status,
+            clockInTime: checkInTime,
+            designation: designationForRecord
+          }),
+        });
+      } else {
+        // Create new record
+        response = await fetch('/api/attendance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            employeeId,
+            date: today,
+            status,
+            clockInTime: checkInTime,
+            designation: designationForRecord
+          }),
+        });
       }
 
-      console.log('✅ Check-in successful:', responseData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save check-in');
+      }
+
+      const data = await response.json();
       
-      // Update local state immediately
-      const newAttendance: Attendance = {
-        id: responseData.id,
-        employeeId,
-        date: today,
-        status,
-        clockInTime: checkInTime,
-        createdAt: responseData.createdAt || new Date().toISOString(),
-        updatedAt: responseData.updatedAt || new Date().toISOString(),
-        employee
-      };
-      
-      // Update attendance state
+      // Update local state
       setAttendance(prev => {
-        // Remove any existing attendance for this employee today
-        const filtered = prev.filter(a => !(a.employeeId === employeeId && a.date === today));
-        return [...filtered, newAttendance];
+        // Remove existing record for this employee today
+        const filtered = prev.filter(record => !(record.employeeId === employeeId && record.date === today));
+        return [...filtered, data];
       });
 
       toast({
         title: '✅ Checked In',
-        description: `${employee.name} has been checked in${isLate ? ' (Late)' : ''} at ${format(new Date(), 'HH:mm')}.`,
+        description: `${employee.name} has been checked in${isLate ? ' (Late)' : ''} at ${format(new Date(), 'HH:mm')}`,
       });
       
+      setCheckInOutEmployeeId('');
+      setDesignation('dipping');
+      
     } catch (error: any) {
-      console.error('❌ Error checking in:', error);
       toast({
         title: 'Check-in Failed',
-        description: error.message || 'Failed to save check-in. Please try again.',
+        description: error.message || 'Failed to check in',
         variant: 'destructive',
       });
     }
   };
 
-  // Handle check-out (persists to database)
+  // Handle check out
   const handleCheckOut = async (employeeId: string) => {
     try {
-      const employee = employees.find(e => e.id === employeeId);
+      const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) {
         toast({
           title: 'Error',
@@ -489,75 +493,54 @@ export default function EmployeesPage() {
       const checkOutTime = new Date().toISOString();
       
       // Find existing attendance record
-      const existingAttendance = attendance.find(a => 
-        a.employeeId === employeeId && a.date === today
+      const existingRecord = todaysAttendance.find(record => 
+        record.employeeId === employeeId && record.date === today
       );
       
-      if (!existingAttendance) {
+      if (!existingRecord) {
         toast({
           title: 'Error',
-          description: 'No check-in record found for today. Please check in first.',
+          description: 'No check-in record found for today',
           variant: 'destructive',
         });
         return;
       }
       
-      console.log('🔄 Checking out employee:', {
-        employeeId,
-        employeeName: employee.name,
-        attendanceId: existingAttendance.id,
-        checkOutTime
-      });
-      
-      // Update in database using PUT with attendance ID
-      const response = await fetch(`/api/attendance?id=${existingAttendance.id}`, {
+      const response = await fetch(`/api/attendance?id=${existingRecord.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          status: existingAttendance.status,
-          clockOutTime: checkOutTime
+          status: existingRecord.status,
+          clockOutTime: checkOutTime,
+          designation: existingRecord.designation
         }),
       });
 
-      const responseData = await response.json();
-      
       if (!response.ok) {
-        console.error('❌ API Error:', responseData);
-        let errorMessage = 'Failed to save check-out';
-        if (responseData.error) {
-          errorMessage = responseData.error;
-          if (responseData.details) {
-            errorMessage += `: ${responseData.details}`;
-          }
-        }
-        throw new Error(errorMessage);
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save check-out');
       }
 
-      console.log('✅ Check-out successful:', responseData);
+      const data = await response.json();
       
       // Update local state
-      setAttendance(prev => prev.map(a => 
-        a.id === existingAttendance.id 
-          ? { 
-              ...a, 
-              clockOutTime: checkOutTime, 
-              updatedAt: responseData.updatedAt || new Date().toISOString() 
-            } 
-          : a
+      setAttendance(prev => prev.map(record => 
+        record.id === existingRecord.id ? data : record
       ));
 
       toast({
         title: '✅ Checked Out',
-        description: `${employee.name} has been checked out at ${format(new Date(), 'HH:mm')}.`,
+        description: `${employee.name} has been checked out at ${format(new Date(), 'HH:mm')}`,
       });
       
+      setCheckInOutEmployeeId('');
+      
     } catch (error: any) {
-      console.error('❌ Error checking out:', error);
       toast({
         title: 'Check-out Failed',
-        description: error.message || 'Failed to save check-out. Please try again.',
+        description: error.message || 'Failed to check out',
         variant: 'destructive',
       });
     }
@@ -566,7 +549,7 @@ export default function EmployeesPage() {
   // Handle mark as absent
   const handleMarkAbsent = async (employeeId: string) => {
     try {
-      const employee = employees.find(e => e.id === employeeId);
+      const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) {
         toast({
           title: 'Error',
@@ -575,57 +558,59 @@ export default function EmployeesPage() {
         });
         return;
       }
-      
-      // Save absent record to database
-      const response = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          employeeId,
-          date: today,
-          status: 'Absent'
-        }),
-      });
 
-      const responseData = await response.json();
+      // Check if attendance record already exists for today
+      const existingRecord = todaysAttendance.find(record => record.employeeId === employeeId);
       
-      if (!response.ok) {
-        console.error('❌ API Error:', responseData);
-        let errorMessage = 'Failed to mark as absent';
-        if (responseData.error) {
-          errorMessage = responseData.error;
-        }
-        throw new Error(errorMessage);
+      let response;
+      if (existingRecord) {
+        // Update existing record
+        response = await fetch(`/api/attendance?id=${existingRecord.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'Absent',
+            clockInTime: null,
+            clockOutTime: null
+          }),
+        });
+      } else {
+        // Create new record
+        response = await fetch('/api/attendance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            employeeId,
+            date: today,
+            status: 'Absent'
+          }),
+        });
       }
 
-      console.log('✅ Marked absent:', responseData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to mark as absent');
+      }
+
+      const data = await response.json();
       
       // Update local state
-      const newAttendance: Attendance = {
-        id: responseData.id,
-        employeeId,
-        date: today,
-        status: 'Absent',
-        createdAt: responseData.createdAt || new Date().toISOString(),
-        updatedAt: responseData.updatedAt || new Date().toISOString(),
-        employee
-      };
-      
       setAttendance(prev => {
-        const filtered = prev.filter(a => !(a.employeeId === employeeId && a.date === today));
-        return [...filtered, newAttendance];
+        // Remove existing record for this employee today
+        const filtered = prev.filter(record => !(record.employeeId === employeeId && record.date === today));
+        return [...filtered, data];
       });
 
       toast({
         title: 'Marked Absent',
-        description: `${employee.name} has been marked as absent.`,
-        variant: 'destructive',
+        description: `${employee.name} has been marked as absent`,
       });
       
     } catch (error: any) {
-      console.error('❌ Error marking absent:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to mark as absent',
@@ -637,128 +622,71 @@ export default function EmployeesPage() {
   // Handle mark as on leave
   const handleMarkOnLeave = async (employeeId: string) => {
     try {
-      const employee = employees.find(e => e.id === employeeId);
-      if (!employee) return;
-      
-      // Save on leave record to database
-      const response = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          employeeId,
-          date: today,
-          status: 'On Leave'
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to mark as on leave');
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) {
+        toast({
+          title: 'Error',
+          description: 'Employee not found',
+          variant: 'destructive',
+        });
+        return;
       }
 
-      const responseData = await response.json();
+      // Check if attendance record already exists for today
+      const existingRecord = todaysAttendance.find(record => record.employeeId === employeeId);
+      
+      let response;
+      if (existingRecord) {
+        // Update existing record
+        response = await fetch(`/api/attendance?id=${existingRecord.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'On Leave',
+            clockInTime: null,
+            clockOutTime: null
+          }),
+        });
+      } else {
+        // Create new record
+        response = await fetch('/api/attendance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            employeeId,
+            date: today,
+            status: 'On Leave'
+          }),
+        });
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to mark as on leave');
+      }
+
+      const data = await response.json();
       
       // Update local state
-      const newAttendance: Attendance = {
-        id: responseData.id,
-        employeeId,
-        date: today,
-        status: 'On Leave',
-        createdAt: responseData.createdAt || new Date().toISOString(),
-        updatedAt: responseData.updatedAt || new Date().toISOString(),
-        employee
-      };
-      
       setAttendance(prev => {
-        const filtered = prev.filter(a => !(a.employeeId === employeeId && a.date === today));
-        return [...filtered, newAttendance];
+        // Remove existing record for this employee today
+        const filtered = prev.filter(record => !(record.employeeId === employeeId && record.date === today));
+        return [...filtered, data];
       });
 
       toast({
         title: 'Marked On Leave',
-        description: `${employee.name} has been marked as on leave.`,
+        description: `${employee.name} has been marked as on leave`,
       });
       
     } catch (error: any) {
-      console.error('❌ Error marking on leave:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to mark as on leave',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Handle check-in all for shift
-  const handleCheckInAll = async (shiftId: string) => {
-    try {
-      const shiftEmployeesList = shiftEmployees[shiftId as keyof typeof shiftEmployees];
-      const employeesToCheckIn = shiftEmployeesList.filter(emp => {
-        const att = attendance.find(a => a.employeeId === emp.id && a.date === today);
-        return !att || (att.status !== 'Present' && att.status !== 'Late');
-      });
-
-      let successCount = 0;
-      let failedCount = 0;
-      
-      for (const employee of employeesToCheckIn) {
-        try {
-          await handleCheckIn(employee.id);
-          successCount++;
-        } catch (error) {
-          console.error(`Failed to check in ${employee.name}:`, error);
-          failedCount++;
-        }
-      }
-
-      toast({
-        title: 'Bulk Check-in Complete',
-        description: `Successfully checked in ${successCount} out of ${employeesToCheckIn.length} employees.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`,
-        variant: failedCount > 0 ? 'destructive' : 'default',
-      });
-    } catch (error: any) {
-      console.error('❌ Error in bulk check-in:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to check in all employees',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Handle check-out all for shift
-  const handleCheckOutAll = async (shiftId: string) => {
-    try {
-      const shiftEmployeesList = shiftEmployees[shiftId as keyof typeof shiftEmployees];
-      const employeesToCheckOut = shiftEmployeesList.filter(emp => {
-        const att = attendance.find(a => a.employeeId === emp.id && a.date === today);
-        return att?.status === 'Present' && !att.clockOutTime;
-      });
-
-      let successCount = 0;
-      let failedCount = 0;
-      
-      for (const employee of employeesToCheckOut) {
-        try {
-          await handleCheckOut(employee.id);
-          successCount++;
-        } catch (error) {
-          console.error(`Failed to check out ${employee.name}:`, error);
-          failedCount++;
-        }
-      }
-
-      toast({
-        title: 'Bulk Check-out Complete',
-        description: `Successfully checked out ${successCount} out of ${employeesToCheckOut.length} employees.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`,
-        variant: failedCount > 0 ? 'destructive' : 'default',
-      });
-    } catch (error: any) {
-      console.error('❌ Error in bulk check-out:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to check out all employees',
         variant: 'destructive',
       });
     }
@@ -865,14 +793,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // Toggle shift expansion
-  const toggleShiftExpansion = (shiftId: string) => {
-    setExpandedShifts(prev => ({
-      ...prev,
-      [shiftId]: !prev[shiftId]
-    }));
-  };
-
   // Filter employees based on search and contract type
   const filteredEmployees = useMemo(() => {
     return employees.filter(employee => {
@@ -897,6 +817,151 @@ export default function EmployeesPage() {
       return true;
     });
   }, [employees, activeFilter, searchQuery]);
+
+  // Calculate KPI data
+  const kpiData = useMemo(() => {
+    if (!isClient || isLoading) return null;
+    
+    return {
+      totalEmployees: {
+        title: 'Total Employees',
+        value: String(stats.totalEmployees),
+        change: `${stats.presentToday} present today`,
+        changeType: 'increase' as const,
+      },
+      presentToday: {
+        title: 'Present Today',
+        value: String(stats.presentToday),
+        change: `as of ${format(currentTime, 'HH:mm')}`,
+        changeType: 'increase' as const,
+      },
+      onLeave: {
+        title: 'On Leave',
+        value: String(stats.onLeaveToday),
+        change: 'scheduled today',
+        changeType: 'decrease' as const,
+      },
+      attendanceRate: {
+        title: 'Attendance Rate',
+        value: `${stats.attendanceRate}%`,
+        change: 'Today',
+        changeType: stats.attendanceRate > 85 ? 'increase' : 'decrease' as const,
+      },
+    };
+  }, [isClient, isLoading, stats, currentTime]);
+
+  // Export attendance to CSV
+  const exportToCSV = () => {
+    const headers = ['Date', 'Employee Name', 'Employee ID', 'Contract Type', 'Check In', 'Check Out', 'Status', 'Designation', 'Hours Worked'];
+    
+    const csvData = filteredAttendance.map(record => {
+      const employee = employees.find(emp => emp.id === record.employeeId);
+      let hoursWorked = 'N/A';
+      
+      if (record.clockInTime && record.clockOutTime) {
+        const inTime = parseISO(record.clockInTime);
+        const outTime = parseISO(record.clockOutTime);
+        const hours = differenceInHours(outTime, inTime);
+        hoursWorked = `${hours} hours`;
+      }
+      
+      return [
+        record.date,
+        employee?.name || 'Unknown',
+        employee?.employeeId || record.employeeId,
+        employee?.contract || 'Unknown',
+        record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : '',
+        record.clockOutTime ? format(parseISO(record.clockOutTime), 'HH:mm') : '',
+        record.status,
+        record.designation ? designationLabels[record.designation] : '',
+        hoursWorked
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.csv`;
+    a.click();
+  };
+
+  // Handle check-in all employees
+  const handleCheckInAll = async () => {
+    try {
+      const employeesToCheckIn = employees.filter(emp => {
+        const att = todaysAttendance.find(a => a.employeeId === emp.id);
+        return !att || (att.status !== 'Present' && att.status !== 'Late');
+      });
+
+      let successCount = 0;
+      let failedCount = 0;
+      
+      for (const employee of employeesToCheckIn) {
+        try {
+          await handleCheckIn(employee.id);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to check in ${employee.name}:`, error);
+          failedCount++;
+        }
+      }
+
+      toast({
+        title: 'Bulk Check-in Complete',
+        description: `Successfully checked in ${successCount} out of ${employeesToCheckIn.length} employees.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`,
+        variant: failedCount > 0 ? 'destructive' : 'default',
+      });
+    } catch (error: any) {
+      console.error('❌ Error in bulk check-in:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to check in all employees',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle check-out all present employees
+  const handleCheckOutAll = async () => {
+    try {
+      const employeesToCheckOut = employees.filter(emp => {
+        const att = todaysAttendance.find(a => a.employeeId === emp.id);
+        return att?.status === 'Present' && !att.clockOutTime;
+      });
+
+      let successCount = 0;
+      let failedCount = 0;
+      
+      for (const employee of employeesToCheckOut) {
+        try {
+          await handleCheckOut(employee.id);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to check out ${employee.name}:`, error);
+          failedCount++;
+        }
+      }
+
+      toast({
+        title: 'Bulk Check-out Complete',
+        description: `Successfully checked out ${successCount} out of ${employeesToCheckOut.length} employees.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`,
+        variant: failedCount > 0 ? 'destructive' : 'default',
+      });
+    } catch (error: any) {
+      console.error('❌ Error in bulk check-out:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to check out all employees',
+        variant: 'destructive',
+      });
+    }
+  };
 
   if (!isClient || isLoading) {
     return (
@@ -1014,7 +1079,7 @@ export default function EmployeesPage() {
                   <>
                     <OverviewCard data={kpiData.totalEmployees} icon={Users} />
                     <OverviewCard data={kpiData.presentToday} icon={CheckCircle} />
-                    <OverviewCard data={kpiData.onLeave} icon={Calendar} />
+                    <OverviewCard data={kpiData.onLeave} icon={CalendarIcon} />
                     <OverviewCard data={kpiData.attendanceRate} icon={TrendingUp} />
                   </>
                 ) : (
@@ -1027,357 +1092,131 @@ export default function EmployeesPage() {
                 )}
               </div>
 
-              {/* Quick Employee Stats */}
+              {/* Employee Stats */}
               <Card>
                 <CardHeader>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <CardTitle>Employee Directory</CardTitle>
-                      <CardDescription>
-                        Browse and manage all employees
-                      </CardDescription>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search employees..."
-                          className="pl-8 w-full md:w-[250px]"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                      </div>
-                      <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
-                        <SelectTrigger className="w-[150px]">
-                          <SelectValue placeholder="Filter by contract" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="All">All Contracts</SelectItem>
-                          <SelectItem value="Full-time">Full-time</SelectItem>
-                          <SelectItem value="Part-time">Part-time</SelectItem>
-                          <SelectItem value="Contract">Contract</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  <CardTitle>Employee Distribution</CardTitle>
+                  <CardDescription>
+                    Breakdown by contract type and status
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Employee</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead>Contract</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Today's Attendance</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredEmployees.slice(0, 10).map((employee) => {
-                          const empAttendance = attendance.find(a => a.employeeId === employee.id && a.date === today);
-                          const StatusIcon = statusInfo[empAttendance?.status as keyof typeof statusInfo]?.icon || XCircle;
-                          
-                          return (
-                            <TableRow 
-                              key={employee.id} 
-                              className={cn(
-                                'cursor-pointer hover:bg-muted/50',
-                                selectedEmployee?.id === employee.id && 'bg-muted'
-                              )}
-                              onClick={() => setSelectedEmployee(employee)}
-                            >
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar>
-                                    <AvatarImage src={employee.image} />
-                                    <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <p className="font-medium">{employee.name}</p>
-                                    <p className="text-sm text-muted-foreground">{employee.email}</p>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>{employee.role}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{employee.contract}</Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={employee.status === 'active' ? 'default' : 'secondary'}>
-                                  {employee.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {empAttendance ? (
-                                  <div className="flex items-center gap-2">
-                                    <StatusIcon className="w-4 h-4" />
-                                    <span>{empAttendance.status}</span>
-                                    {empAttendance.clockInTime && (
-                                      <span className="text-xs text-muted-foreground">
-                                        ({format(parseISO(empAttendance.clockInTime), 'HH:mm')})
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-muted-foreground">No record</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedEmployee(employee);
-                                    }}
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingEmployee(employee);
-                                      setIsEditDialogOpen(true);
-                                    }}
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                      <h4 className="font-medium mb-4">By Contract Type</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Full-time</span>
+                          <Badge variant="default">{stats.fullTimeCount}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Part-time</span>
+                          <Badge variant="secondary">{stats.partTimeCount}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Contract</span>
+                          <Badge variant="outline">{stats.contractCount}</Badge>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium mb-4">Today's Attendance</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-green-600">Present</span>
+                          <Badge variant="default">{stats.presentToday}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-red-600">Absent</span>
+                          <Badge variant="destructive">{stats.absentToday}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-amber-600">Late</span>
+                          <Badge variant="secondary">{stats.lateToday}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-blue-600">On Leave</span>
+                          <Badge variant="secondary">{stats.onLeaveToday}</Badge>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium mb-4">Check In/Out Status</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Checked In</span>
+                          <Badge variant="default">{stats.checkedInToday}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Checked Out</span>
+                          <Badge variant="outline">{stats.checkedOutToday}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Pending Check-in</span>
+                          <Badge variant="secondary">{stats.pendingCheckIn}</Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
-              {/* Employee Detail Card */}
-              {selectedEmployee && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Employee Details</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-16 w-16">
-                            <AvatarImage src={selectedEmployee.image} />
-                            <AvatarFallback className="text-lg">
-                              {getInitials(selectedEmployee.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <h3 className="text-lg font-semibold">{selectedEmployee.name}</h3>
-                            <p className="text-sm text-muted-foreground">{selectedEmployee.role}</p>
-                            <Badge variant="outline">{selectedEmployee.contract}</Badge>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Mail className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm">{selectedEmployee.email}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm">{selectedEmployee.phone || 'No phone'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Building className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm">{selectedEmployee.company || 'FreshTrace'}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-medium mb-2">Performance</h4>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">
-                              {selectedEmployee.performance || 'Meets Expectations'}
-                            </Badge>
-                            <div className="flex items-center">
-                              {[...Array(5)].map((_, i) => (
-                                <Award
-                                  key={i}
-                                  className={cn(
-                                    'w-4 h-4',
-                                    i < (selectedEmployee.rating || 0) 
-                                      ? 'text-amber-500 fill-amber-500' 
-                                      : 'text-muted-foreground'
-                                  )}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <h4 className="font-medium mb-2">Status</h4>
-                          <Badge variant={selectedEmployee.status === 'active' ? 'default' : 'secondary'}>
-                            {selectedEmployee.status}
-                          </Badge>
-                        </div>
-                        
-                        <div>
-                          <h4 className="font-medium mb-2">Salary</h4>
-                          <p className="text-lg font-semibold">
-                            {selectedEmployee.salary ? `KES ${parseInt(selectedEmployee.salary).toLocaleString()}` : 'Not set'}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-medium mb-2">Today's Attendance</h4>
-                          {(() => {
-                            const todayAttendance = attendance.find(a => 
-                              a.employeeId === selectedEmployee.id && a.date === today
-                            );
-                            
-                            if (!todayAttendance) {
-                              return (
-                                <div className="flex items-center gap-2">
-                                  <Clock className="w-4 h-4 text-muted-foreground" />
-                                  <span className="text-sm text-muted-foreground">No attendance record</span>
-                                </div>
-                              );
-                            }
-                            
-                            const StatusIcon = statusInfo[todayAttendance.status as keyof typeof statusInfo]?.icon;
-                            
-                            return (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  {StatusIcon && <StatusIcon className="w-4 h-4" />}
-                                  <Badge variant={statusInfo[todayAttendance.status as keyof typeof statusInfo]?.variant}>
-                                    {todayAttendance.status}
-                                  </Badge>
-                                </div>
-                                
-                                {todayAttendance.clockInTime && (
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <Clock className="w-4 h-4 text-muted-foreground" />
-                                    <span>In: {format(parseISO(todayAttendance.clockInTime), 'HH:mm')}</span>
-                                  </div>
-                                )}
-                                
-                                {todayAttendance.clockOutTime && (
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <LogOut className="w-4 h-4 text-muted-foreground" />
-                                    <span>Out: {format(parseISO(todayAttendance.clockOutTime), 'HH:mm')}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              const todayAttendance = attendance.find(a => 
-                                a.employeeId === selectedEmployee.id && a.date === today
-                              );
-                              
-                              if (!todayAttendance || todayAttendance.status !== 'Present') {
-                                handleCheckIn(selectedEmployee.id);
-                              } else if (!todayAttendance.clockOutTime) {
-                                handleCheckOut(selectedEmployee.id);
-                              }
-                            }}
-                            disabled={(() => {
-                              const todayAttendance = attendance.find(a => 
-                                a.employeeId === selectedEmployee.id && a.date === today
-                              );
-                              return todayAttendance?.status === 'Absent' || todayAttendance?.status === 'On Leave';
-                            })()}
-                          >
-                            {(() => {
-                              const todayAttendance = attendance.find(a => 
-                                a.employeeId === selectedEmployee.id && a.date === today
-                              );
-                              
-                              if (!todayAttendance || todayAttendance.status !== 'Present') {
-                                return (
-                                  <>
-                                    <LogIn className="mr-2 w-4 h-4" />
-                                    Check In
-                                  </>
-                                );
-                              } else if (!todayAttendance.clockOutTime) {
-                                return (
-                                  <>
-                                    <LogOut className="mr-2 w-4 h-4" />
-                                    Check Out
-                                  </>
-                                );
-                              } else {
-                                return 'Completed';
-                              }
-                            })()}
-                          </Button>
-                          
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleMarkAbsent(selectedEmployee.id)}
-                          >
-                            <XCircle className="mr-2 w-4 h-4" />
-                            Mark Absent
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-between">
-                    <Button
-                      variant="outline"
-                      onClick={() => setSelectedEmployee(null)}
+              {/* Quick Employee Actions */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Employee Actions</CardTitle>
+                  <CardDescription>
+                    Manage today's attendance quickly
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Button 
+                      onClick={handleCheckInAll}
+                      className="bg-green-600 hover:bg-green-700"
                     >
-                      Close Details
+                      <LogIn className="mr-2 w-4 h-4" />
+                      Check In All Employees
                     </Button>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setEditingEmployee(selectedEmployee);
-                          setIsEditDialogOpen(true);
-                        }}
-                      >
-                        <Edit className="mr-2 w-4 h-4" />
-                        Edit Employee
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleDeleteEmployee(selectedEmployee.id)}
-                      >
-                        <Trash2 className="mr-2 w-4 h-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </CardFooter>
-                </Card>
-              )}
+                    
+                    <Button 
+                      onClick={handleCheckOutAll}
+                      variant="outline"
+                      className="border-amber-600 text-amber-600 hover:bg-amber-50"
+                    >
+                      <LogOut className="mr-2 w-4 h-4" />
+                      Check Out All Present
+                    </Button>
+                    
+                    <Button 
+                      onClick={() => {
+                        employees.forEach(emp => {
+                          const todayRecord = todaysAttendance.find(r => r.employeeId === emp.id);
+                          if (!todayRecord) {
+                            handleMarkAbsent(emp.id);
+                          }
+                        });
+                      }}
+                      variant="outline"
+                      className="border-red-600 text-red-600 hover:bg-red-50"
+                    >
+                      <XCircle className="mr-2 w-4 h-4" />
+                      Mark All Absent
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Roll Call Tab */}
             <TabsContent value="roll-call" className="mt-6 space-y-6">
-              {/* Quick Stats Bar */}
               <Card>
-                <CardHeader className="pb-3">
+                <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Calendar className="w-5 h-5" />
+                      <CalendarIcon className="w-5 h-5" />
                       <span>Today's Roll Call - {format(new Date(), 'EEEE, MMMM d, yyyy')}</span>
                     </div>
                     <div className="text-sm text-muted-foreground">
@@ -1385,292 +1224,317 @@ export default function EmployeesPage() {
                     </div>
                   </div>
                   <CardDescription>
-                    Manage check-in and check-out for all employees by shift
+                    Manage check-in and check-out for all employees
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Total Employees</div>
-                      <div className="text-2xl font-bold">{shiftStats.overall.totalEmployees}</div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Present Today</div>
-                      <div className="text-2xl font-bold text-green-600">{shiftStats.overall.presentToday}</div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Checked Out</div>
-                      <div className="text-2xl font-bold text-amber-600">{shiftStats.overall.checkedOutToday}</div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">On Leave</div>
-                      <div className="text-2xl font-bold text-blue-600">{shiftStats.overall.onLeave}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-2">
-                    <Button 
-                      variant="default" 
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={async () => {
-                        // Check in all not checked in
-                        const employeesToCheckIn = employees.filter(emp => {
-                          const att = attendance.find(a => a.employeeId === emp.id && a.date === today);
-                          return !att || (att.status !== 'Present' && att.status !== 'Late');
-                        });
-                        
-                        for (const employee of employeesToCheckIn) {
-                          await handleCheckIn(employee.id);
-                        }
-                      }}
-                    >
-                      <LogIn className="mr-2" />
-                      Check-in All Employees
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      className="border-amber-600 text-amber-600 hover:bg-amber-50"
-                      onClick={async () => {
-                        // Check out all present
-                        const employeesToCheckOut = attendance
-                          .filter(a => a.status === 'Present' && !a.clockOutTime && a.date === today)
-                          .map(a => a.employeeId);
-                        
-                        for (const employeeId of employeesToCheckOut) {
-                          await handleCheckOut(employeeId);
-                        }
-                      }}
-                    >
-                      <LogOut className="mr-2" />
-                      Check-out All Present
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Shift Cards */}
-              <div className="space-y-6">
-                {shiftData.map((shift) => {
-                  const shiftEmployeesList = shiftEmployees[shift.id as keyof typeof shiftEmployees];
-                  const shiftStat = shiftStats[shift.id === 'day-shift' ? 'dayShift' : 'nightShift'];
-                  
-                  return (
-                    <Card key={shift.id} className="overflow-hidden">
-                      <CardHeader className="bg-muted/50 pb-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="p-1 h-8 w-8"
-                              onClick={() => toggleShiftExpansion(shift.id)}
-                            >
-                              {expandedShifts[shift.id] ? (
-                                <ChevronUp className="h-4 w-4" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <div>
-                              <CardTitle className="text-lg flex items-center gap-2">
-                                {shift.name}
-                                <Badge variant="outline" className={
-                                  shift.id === 'day-shift' 
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                                    : 'bg-purple-50 text-purple-700 border-purple-200'
-                                }>
-                                  {shift.timeRange}
-                                </Badge>
-                              </CardTitle>
-                              <CardDescription className="flex items-center gap-4 mt-1">
-                                <span className="flex items-center gap-1">
-                                  <Users className="w-3 h-3" />
-                                  {shiftEmployeesList.length} employees
-                                </span>
-                                <span className="flex items-center gap-1 text-green-600">
-                                  <CheckCircle className="w-3 h-3" />
-                                  {shiftStat.present} present
-                                </span>
-                                <span className="flex items-center gap-1 text-amber-600">
-                                  <LogOut className="w-3 h-3" />
-                                  {shiftStat.checkedOut} checked out
-                                </span>
-                                {shiftStat.late > 0 && (
-                                  <span className="flex items-center gap-1 text-amber-600">
-                                    <AlertCircle className="w-3 h-3" />
-                                    {shiftStat.late} late
-                                  </span>
-                                )}
-                                <span className="flex items-center gap-1 text-red-600">
-                                  <XCircle className="w-3 h-3" />
-                                  {shiftStat.absent} absent
-                                </span>
-                              </CardDescription>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-green-600 text-green-600 hover:bg-green-50"
-                              onClick={() => handleCheckInAll(shift.id)}
-                            >
-                              <LogIn className="mr-2 w-3 h-3" />
-                              Check-in All
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-amber-600 text-amber-600 hover:bg-amber-50"
-                              onClick={() => handleCheckOutAll(shift.id)}
-                              disabled={shiftStat.present === 0}
-                            >
-                              <LogOut className="mr-2 w-3 h-3" />
-                              Check-out All
-                            </Button>
-                          </div>
-                        </div>
-                        
-                        {/* Progress Bar */}
-                        <div className="mt-3 space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span>Attendance Progress</span>
-                            <span>{shiftStat.present + shiftStat.checkedOut}/{shiftStat.total} ({shiftStat.total > 0 ? Math.round(((shiftStat.present + shiftStat.checkedOut) / shiftStat.total) * 100) : 0}%)</span>
-                          </div>
-                          <Progress 
-                            value={shiftStat.total > 0 ? ((shiftStat.present + shiftStat.checkedOut) / shiftStat.total) * 100 : 0} 
-                            className="h-2"
-                          />
-                        </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    {/* Check In Card */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-green-600">
+                          <LogIn className="w-5 h-5" />
+                          Check In
+                        </CardTitle>
                       </CardHeader>
-                      
-                      {expandedShifts[shift.id] && (
-                        <CardContent className="pt-6">
-                          {shiftEmployeesList.length === 0 ? (
-                            <div className="text-center py-8 text-muted-foreground">
-                              <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                              <p>No employees assigned to this shift.</p>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                              {shiftEmployeesList.map((employee) => {
-                                const empAttendance = attendance.find(a => a.employeeId === employee.id && a.date === today);
-                                const isPresent = empAttendance?.status === 'Present';
-                                const isCheckedOut = !!empAttendance?.clockOutTime;
-                                const isLate = empAttendance?.status === 'Late';
-                                const isAbsent = empAttendance?.status === 'Absent';
-                                const isOnLeave = empAttendance?.status === 'On Leave';
-                                
-                                return (
-                                  <Card key={employee.id} className={cn(
-                                    'overflow-hidden transition-all hover:shadow-md',
-                                    isPresent && !isCheckedOut && 'border-green-300 bg-green-50/30',
-                                    isCheckedOut && 'border-gray-300 bg-gray-50/30',
-                                    isAbsent && 'border-red-100 bg-red-50/20',
-                                    isLate && 'border-amber-300 bg-amber-50/30',
-                                    isOnLeave && 'border-blue-100 bg-blue-50/20'
-                                  )}>
-                                    <CardHeader className="p-4 flex flex-row items-start gap-3">
-                                      <Avatar className={cn(
-                                        'ring-2',
-                                        isPresent && !isCheckedOut && 'ring-green-500',
-                                        isCheckedOut && 'ring-gray-400',
-                                        isAbsent && 'ring-red-300',
-                                        isLate && 'ring-amber-500',
-                                        isOnLeave && 'ring-blue-300'
-                                      )}>
-                                        <AvatarImage src={employee.image} />
-                                        <AvatarFallback className={cn(
-                                          isPresent && !isCheckedOut && 'bg-green-100 text-green-800',
-                                          isCheckedOut && 'bg-gray-100 text-gray-800',
-                                          isAbsent && 'bg-red-100 text-red-800',
-                                          isLate && 'bg-amber-100 text-amber-800',
-                                          isOnLeave && 'bg-blue-100 text-blue-800'
-                                        )}>
-                                          {getInitials(employee.name)}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div className="flex-1 min-w-0">
-                                        <p className="font-semibold text-sm truncate">{employee.name}</p>
-                                        <p className="text-xs text-muted-foreground truncate">{employee.role}</p>
-                                        <Badge variant="outline" className="mt-1 text-xs px-2 py-0.5">
-                                          {employee.contract}
-                                        </Badge>
-                                        {empAttendance?.clockInTime && (
-                                          <p className="text-xs text-muted-foreground mt-1">
-                                            In: {format(parseISO(empAttendance.clockInTime), 'HH:mm')}
-                                          </p>
-                                        )}
-                                        {empAttendance?.clockOutTime && (
-                                          <p className="text-xs text-muted-foreground">
-                                            Out: {format(parseISO(empAttendance.clockOutTime), 'HH:mm')}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="checkInEmployee">Select Employee</Label>
+                          <Select 
+                            value={checkInOutEmployeeId} 
+                            onValueChange={(value) => {
+                              setCheckInOutEmployeeId(value);
+                              const employee = employees.find(emp => emp.id === value);
+                              if (employee?.contract === 'Contract') {
+                                setDesignation('dipping');
+                              }
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select employee to check in" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <ScrollArea className="h-60">
+                                {employees
+                                  .filter(emp => {
+                                    const todayRecord = todaysAttendance.find(r => r.employeeId === emp.id);
+                                    return !todayRecord || todayRecord.status === 'Absent' || todayRecord.status === 'On Leave';
+                                  })
+                                  .map(emp => {
+                                    const todayRecord = todaysAttendance.find(r => r.employeeId === emp.id);
+                                    const isLate = todayRecord?.status === 'Late';
+                                    const isAbsent = todayRecord?.status === 'Absent';
+                                    const isOnLeave = todayRecord?.status === 'On Leave';
                                     
-                                    <CardFooter className="p-3 bg-muted/20 flex flex-col gap-2">
-                                      {!empAttendance || isAbsent || isOnLeave ? (
-                                        <div className="grid grid-cols-2 gap-2 w-full">
-                                          <Button 
-                                            size="sm" 
-                                            variant="default" 
-                                            className="bg-green-600 hover:bg-green-700 text-white h-8"
+                                    return (
+                                      <SelectItem key={emp.id} value={emp.id}>
+                                        <div className="flex items-center justify-between">
+                                          <span>{emp.name}</span>
+                                          <Badge variant="outline" className="ml-2">
+                                            {emp.contract}
+                                          </Badge>
+                                          {(isLate || isAbsent || isOnLeave) && (
+                                            <Badge variant="secondary" className="ml-2">
+                                              {isLate ? 'Late' : isAbsent ? 'Absent' : 'On Leave'}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </SelectItem>
+                                    );
+                                  })}
+                              </ScrollArea>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {checkInOutEmployeeId && employees.find(emp => 
+                          emp.id === checkInOutEmployeeId && emp.contract === 'Contract'
+                        ) && (
+                          <div className="space-y-2">
+                            <Label>Designation (Contract Employees)</Label>
+                            <Select value={designation} onValueChange={(value: Designation) => setDesignation(value)}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select designation" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(designationLabels).map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>
+                                    {label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button 
+                            onClick={() => handleCheckIn(checkInOutEmployeeId, false)}
+                            disabled={!checkInOutEmployeeId}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <LogIn className="w-4 h-4 mr-2" />
+                            Check In
+                          </Button>
+                          <Button 
+                            onClick={() => handleCheckIn(checkInOutEmployeeId, true)}
+                            disabled={!checkInOutEmployeeId}
+                            variant="outline"
+                            className="border-amber-500 text-amber-600 hover:bg-amber-50"
+                          >
+                            <AlertCircle className="w-4 h-4 mr-2" />
+                            Check In Late
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Check Out Card */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-red-600">
+                          <LogOut className="w-5 h-5" />
+                          Check Out
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="checkOutEmployee">Select Employee</Label>
+                          <Select value={checkInOutEmployeeId} onValueChange={setCheckInOutEmployeeId}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select employee to check out" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <ScrollArea className="h-60">
+                                {employees
+                                  .filter(emp => {
+                                    const todayRecord = todaysAttendance.find(r => r.employeeId === emp.id);
+                                    return todayRecord?.status === 'Present' && !todayRecord.clockOutTime;
+                                  })
+                                  .map(emp => (
+                                    <SelectItem key={emp.id} value={emp.id}>
+                                      <div className="flex items-center justify-between">
+                                        <span>{emp.name}</span>
+                                        <Badge variant="outline" className="ml-2">
+                                          {emp.contract}
+                                        </Badge>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                              </ScrollArea>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <Button 
+                          onClick={() => handleCheckOut(checkInOutEmployeeId)}
+                          disabled={!checkInOutEmployeeId}
+                          variant="destructive"
+                        >
+                          <LogOut className="w-4 h-4 mr-2" />
+                          Check Out
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    {/* Today's Summary */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Today's Summary</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="text-center p-4 bg-green-50 rounded-lg">
+                              <div className="text-2xl font-bold text-green-600">
+                                {stats.checkedInToday}
+                              </div>
+                              <div className="text-sm text-green-800">Checked In</div>
+                            </div>
+                            <div className="text-center p-4 bg-red-50 rounded-lg">
+                              <div className="text-2xl font-bold text-red-600">
+                                {stats.pendingCheckIn}
+                              </div>
+                              <div className="text-sm text-red-800">Not Checked In</div>
+                            </div>
+                            <div className="text-center p-4 bg-blue-50 rounded-lg">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {stats.checkedOutToday}
+                              </div>
+                              <div className="text-sm text-blue-800">Checked Out</div>
+                            </div>
+                            <div className="text-center p-4 bg-amber-50 rounded-lg">
+                              <div className="text-2xl font-bold text-amber-600">
+                                {stats.lateToday}
+                              </div>
+                              <div className="text-sm text-amber-800">Late</div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Today's Attendance Table */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Today's Attendance</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[400px]">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Employee</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Check In</TableHead>
+                              <TableHead>Check Out</TableHead>
+                              <TableHead>Designation</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {employees.map(employee => {
+                              const todayRecord = todaysAttendance.find(r => r.employeeId === employee.id);
+                              const StatusIcon = statusInfo[todayRecord?.status as keyof typeof statusInfo]?.icon || Clock;
+                              const statusColor = statusInfo[todayRecord?.status as keyof typeof statusInfo]?.color || 'bg-gray-100 text-gray-800';
+                              
+                              return (
+                                <TableRow key={employee.id}>
+                                  <TableCell>
+                                    <div className="flex items-center gap-3">
+                                      <Avatar>
+                                        <AvatarImage src={employee.image} />
+                                        <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
+                                      </Avatar>
+                                      <div>
+                                        <div className="font-medium">{employee.name}</div>
+                                        <div className="text-sm text-muted-foreground">{employee.role}</div>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">{employee.contract}</Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    {todayRecord?.clockInTime ? (
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle className="w-4 h-4 text-green-600" />
+                                        {format(parseISO(todayRecord.clockInTime), 'HH:mm')}
+                                      </div>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {todayRecord?.clockOutTime ? (
+                                      <div className="flex items-center gap-2">
+                                        <LogOut className="w-4 h-4 text-red-600" />
+                                        {format(parseISO(todayRecord.clockOutTime), 'HH:mm')}
+                                      </div>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {todayRecord?.designation ? (
+                                      <Badge className={designationColors[todayRecord.designation]}>
+                                        {designationLabels[todayRecord.designation]}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge className={statusColor}>
+                                      <StatusIcon className="w-3 h-3 mr-1" />
+                                      {todayRecord?.status || 'No Record'}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex gap-2">
+                                      {(!todayRecord || todayRecord.status === 'Absent' || todayRecord.status === 'On Leave') ? (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
                                             onClick={() => handleCheckIn(employee.id)}
-                                            disabled={isOnLeave}
                                           >
-                                            <LogIn className="mr-1 w-3 h-3" /> 
-                                            In
+                                            <LogIn className="w-3 h-3 mr-1" />
+                                            Check In
                                           </Button>
-                                          <Button 
-                                            size="sm" 
-                                            variant="destructive" 
-                                            className="h-8"
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
                                             onClick={() => handleMarkAbsent(employee.id)}
-                                            disabled={isOnLeave}
                                           >
-                                            <XCircle className="mr-1 w-3 h-3" /> 
+                                            <XCircle className="w-3 h-3 mr-1" />
                                             Absent
                                           </Button>
-                                        </div>
-                                      ) : isCheckedOut ? (
-                                        <div className="w-full">
-                                          <Badge variant="secondary" className="w-full justify-center py-2">
-                                            <CheckCircle className="mr-2 w-3 h-3" />
-                                            Checked Out
-                                          </Badge>
-                                        </div>
-                                      ) : (
-                                        <div className="w-full space-y-2">
-                                          <div className="flex items-center justify-between">
-                                            <Badge variant="default" className="flex items-center gap-1">
-                                              <CheckCircle className="w-3 h-3" />
-                                              {isLate ? 'Late' : 'Present'}
-                                            </Badge>
-                                          </div>
-                                          <Button 
-                                            size="sm" 
-                                            variant="outline" 
-                                            className="text-amber-600 border-amber-600 hover:bg-amber-50 h-8 w-full"
-                                            onClick={() => handleCheckOut(employee.id)}
-                                          >
-                                            <LogOut className="mr-1 w-3 h-3" />
-                                            Check Out
-                                          </Button>
-                                        </div>
-                                      )}
-                                    </CardFooter>
-                                  </Card>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </CardContent>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
+                                        </>
+                                      ) : todayRecord.status === 'Present' && !todayRecord.clockOutTime ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleCheckOut(employee.id)}
+                                        >
+                                          <LogOut className="w-3 h-3 mr-1" />
+                                          Check Out
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Employees Tab */}
@@ -1681,7 +1545,7 @@ export default function EmployeesPage() {
                     <div>
                       <CardTitle>All Employees</CardTitle>
                       <CardDescription>
-                        Manage your employee directory
+                        Manage your employee directory. Total: {employees.length} employees
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1710,11 +1574,103 @@ export default function EmployeesPage() {
                 </CardHeader>
                 <CardContent>
                   {employees.length > 0 ? (
-                    <EmployeeDataTable 
-                      employees={filteredEmployees} 
-                      onSelectEmployee={setSelectedEmployee} 
-                      selectedEmployeeId={selectedEmployee?.id} 
-                    />
+                    <ScrollArea className="h-[500px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Employee ID</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Phone</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredEmployees.map((employee) => (
+                            <TableRow key={employee.id}>
+                              <TableCell className="font-medium">
+                                {employee.employeeId || 'N/A'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarImage src={employee.image} />
+                                    <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
+                                  </Avatar>
+                                  <span>{employee.name}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>{employee.email}</TableCell>
+                              <TableCell>
+                                <Badge variant={
+                                  employee.contract === 'Full-time' ? 'default' :
+                                  employee.contract === 'Part-time' ? 'secondary' : 'outline'
+                                }>
+                                  {employee.contract}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{employee.role}</TableCell>
+                              <TableCell>
+                                <Badge variant={employee.status === 'active' ? 'default' : 'secondary'}>
+                                  {employee.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{employee.phone || '-'}</TableCell>
+                              <TableCell>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedEmployee(employee);
+                                      setActiveTab('overview');
+                                    }}
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingEmployee(employee);
+                                      setNewEmployee({
+                                        name: employee.name,
+                                        email: employee.email,
+                                        role: employee.role,
+                                        contract: employee.contract,
+                                        idNumber: employee.id_number || '',
+                                        phone: employee.phone || '',
+                                        status: employee.status,
+                                        performance: employee.performance,
+                                        rating: employee.rating,
+                                        salary: employee.salary || '',
+                                        image: employee.image || '',
+                                        issueDate: employee.issue_date || '',
+                                        expiryDate: employee.expiry_date || '',
+                                        company: employee.company || 'FreshTrace'
+                                      });
+                                      setIsEditDialogOpen(true);
+                                    }}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handleDeleteEmployee(employee.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
                   ) : (
                     <div className="text-center py-12">
                       <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
@@ -1730,93 +1686,195 @@ export default function EmployeesPage() {
               </Card>
             </TabsContent>
 
-            {/* Attendance Log Tab */}
+            {/* Attendance History Tab */}
             <TabsContent value="attendance" className="mt-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Attendance Log</CardTitle>
+                  <CardTitle>Attendance History</CardTitle>
                   <CardDescription>
-                    View historical attendance records
+                    View and filter attendance records. Download reports as CSV.
                   </CardDescription>
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !dateRange.from && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {dateRange.from ? (
+                              dateRange.to ? (
+                                <>
+                                  {format(dateRange.from, "LLL dd, y")} -{" "}
+                                  {format(dateRange.to, "LLL dd, y")}
+                                </>
+                              ) : (
+                                format(dateRange.from, "LLL dd, y")
+                              )
+                            ) : (
+                              <span>Pick a date range</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            initialFocus
+                            mode="range"
+                            defaultMonth={dateRange.from}
+                            selected={{
+                              from: dateRange.from,
+                              to: dateRange.to,
+                            }}
+                            onSelect={(range) => {
+                              if (range?.from) {
+                                setDateRange({
+                                  from: range.from,
+                                  to: range.to || range.from,
+                                });
+                              }
+                            }}
+                            numberOfMonths={2}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search by name..."
+                          value={attendanceSearchTerm}
+                          onChange={(e) => setAttendanceSearchTerm(e.target.value)}
+                          className="pl-8 w-full md:w-[200px]"
+                        />
+                      </div>
+                      
+                      <Select value={attendanceEmployeeFilter} onValueChange={setAttendanceEmployeeFilter}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue placeholder="Employee Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="Full-time">Full-time</SelectItem>
+                          <SelectItem value="Part-time">Part-time</SelectItem>
+                          <SelectItem value="Contract">Contract</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <Select value={attendanceTypeFilter} onValueChange={setAttendanceTypeFilter}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="Present">Present</SelectItem>
+                          <SelectItem value="Absent">Absent</SelectItem>
+                          <SelectItem value="Late">Late</SelectItem>
+                          <SelectItem value="On Leave">On Leave</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <Button onClick={exportToCSV}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Export CSV
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  {attendance.length > 0 ? (
-                    <ScrollArea className="h-[600px]">
+                  {filteredAttendance.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">No attendance records</h3>
+                      <p className="text-muted-foreground">Attendance records will appear here after check-ins</p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[500px]">
                       <Table>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
                             <TableHead>Employee</TableHead>
-                            <TableHead>Shift</TableHead>
+                            <TableHead>Type</TableHead>
                             <TableHead>Check In</TableHead>
                             <TableHead>Check Out</TableHead>
-                            <TableHead>Hours</TableHead>
+                            <TableHead>Designation</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead>Hours</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {attendance.map((record) => {
-                            const employee = employees.find(e => e.id === record.employeeId);
-                            // Determine shift based on check-in time
-                            let shift = 'Unknown';
-                            if (record.clockInTime) {
-                              const hour = parseISO(record.clockInTime).getHours();
-                              shift = hour >= 6 && hour < 18 ? 'Day Shift' : 'Night Shift';
-                            }
-                            
-                            // Calculate hours worked
+                          {filteredAttendance.map((record) => {
+                            const employee = employees.find(emp => emp.id === record.employeeId);
                             let hoursWorked = 'N/A';
+                            
                             if (record.clockInTime && record.clockOutTime) {
                               const inTime = parseISO(record.clockInTime);
                               const outTime = parseISO(record.clockOutTime);
-                              const hours = (outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60);
-                              hoursWorked = hours.toFixed(1) + ' hrs';
+                              const hours = differenceInHours(outTime, inTime);
+                              hoursWorked = `${hours} hours`;
                             }
                             
-                            const StatusIcon = statusInfo[record.status as keyof typeof statusInfo]?.icon || XCircle;
+                            const StatusIcon = statusInfo[record.status as keyof typeof statusInfo]?.icon || Clock;
+                            const statusColor = statusInfo[record.status as keyof typeof statusInfo]?.color || 'bg-gray-100 text-gray-800';
                             
                             return (
                               <TableRow key={record.id}>
                                 <TableCell className="font-medium">
-                                  {format(parseISO(record.date), 'PP')}
+                                  {format(parseISO(record.date), 'MMM dd, yyyy')}
                                 </TableCell>
                                 <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="h-6 w-6">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-8 w-8">
                                       <AvatarImage src={employee?.image} />
-                                      <AvatarFallback className="text-xs">
-                                        {getInitials(employee?.name || '')}
-                                      </AvatarFallback>
+                                      <AvatarFallback>{getInitials(employee?.name || '')}</AvatarFallback>
                                     </Avatar>
-                                    <span>{employee?.name || 'Unknown'}</span>
+                                    <div>
+                                      <div className="font-medium">{employee?.name || 'Unknown'}</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {employee?.employeeId || record.employeeId}
+                                      </div>
+                                    </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>{shift}</TableCell>
                                 <TableCell>
-                                  {record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : 'N/A'}
+                                  <Badge variant="outline">
+                                    {employee?.contract || 'Unknown'}
+                                  </Badge>
                                 </TableCell>
                                 <TableCell>
-                                  {record.clockOutTime ? format(parseISO(record.clockOutTime), 'HH:mm') : 'N/A'}
+                                  {record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : '-'}
                                 </TableCell>
-                                <TableCell>{hoursWorked}</TableCell>
                                 <TableCell>
-                                  <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                                    <StatusIcon className="w-3 h-3" />
+                                  {record.clockOutTime ? format(parseISO(record.clockOutTime), 'HH:mm') : '-'}
+                                </TableCell>
+                                <TableCell>
+                                  {record.designation ? (
+                                    <Badge className={designationColors[record.designation]}>
+                                      {designationLabels[record.designation]}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge className={statusColor}>
+                                    <StatusIcon className="w-3 h-3 mr-1" />
                                     {record.status}
                                   </Badge>
                                 </TableCell>
+                                <TableCell>{hoursWorked}</TableCell>
                               </TableRow>
                             );
                           })}
                         </TableBody>
                       </Table>
                     </ScrollArea>
-                  ) : (
-                    <div className="text-center py-12">
-                      <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">No attendance records</h3>
-                      <p className="text-muted-foreground">Attendance records will appear here after check-ins</p>
-                    </div>
                   )}
                 </CardContent>
               </Card>

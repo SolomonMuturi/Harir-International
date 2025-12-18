@@ -12,10 +12,8 @@ import {
 import { FreshViewLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { ColdRoomInventory } from '@/components/dashboard/cold-room-inventory';
-import { PackagingMaterialStock } from '@/components/dashboard/packaging-material-stock';
 import { Button } from '@/components/ui/button';
-import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, ShoppingCart, TrendingUp, AlertTriangle, Archive, Truck, Calendar, Users, BarChart, Warehouse } from 'lucide-react';
+import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, ShoppingCart, TrendingUp, AlertTriangle, Archive, Truck, Calendar, Users, BarChart, Warehouse, Snowflake, Thermometer, Package, Minus, Plus } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,12 +55,13 @@ interface PackagingMaterial {
 
 interface InventoryKPIs {
   totalAvocadoBoxes: number;
+  total4kgBoxes: number;
+  total10kgBoxes: number;
   fuerteBoxes: number;
   hassBoxes: number;
   totalPackagingItems: number;
   itemsBelowReorder: number;
   fastMovingItems: number;
-  totalValue: number;
   packagingCategories: Record<string, number>;
   avocadoDistribution: {
     fuerte: number;
@@ -81,7 +80,6 @@ export default function InventoryPage() {
   const [inventoryKPIs, setInventoryKPIs] = useState<InventoryKPIs | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isProcessingStockTake, setIsProcessingStockTake] = useState(false);
   const [bulkUpdateQuantity, setBulkUpdateQuantity] = useState<number>(0);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   
@@ -144,6 +142,12 @@ export default function InventoryPage() {
   const calculateKPIs = () => {
     // Calculate avocado statistics
     const totalAvocadoBoxes = coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0);
+    const total4kgBoxes = coldRoomInventory
+      .filter(item => item.box_type === '4kg')
+      .reduce((sum, item) => sum + item.quantity, 0);
+    const total10kgBoxes = coldRoomInventory
+      .filter(item => item.box_type === '10kg')
+      .reduce((sum, item) => sum + item.quantity, 0);
     const fuerteBoxes = coldRoomInventory
       .filter(item => item.variety === 'fuerte')
       .reduce((sum, item) => sum + item.quantity, 0);
@@ -162,8 +166,8 @@ export default function InventoryPage() {
       hass: hassBoxes,
       class1: coldRoomInventory.filter(item => item.grade === 'class1').reduce((sum, item) => sum + item.quantity, 0),
       class2: coldRoomInventory.filter(item => item.grade === 'class2').reduce((sum, item) => sum + item.quantity, 0),
-      '4kg': coldRoomInventory.filter(item => item.box_type === '4kg').reduce((sum, item) => sum + item.quantity, 0),
-      '10kg': coldRoomInventory.filter(item => item.box_type === '10kg').reduce((sum, item) => sum + item.quantity, 0),
+      '4kg': total4kgBoxes,
+      '10kg': total10kgBoxes,
     };
     
     // Calculate packaging categories
@@ -172,17 +176,15 @@ export default function InventoryPage() {
       packagingCategories[item.category] = (packagingCategories[item.category] || 0) + item.currentStock;
     });
     
-    // Calculate estimated value (simple estimation)
-    const totalValue = (totalAvocadoBoxes * 500) + (totalPackagingItems * 50); // Sample calculation
-    
     return {
       totalAvocadoBoxes,
+      total4kgBoxes,
+      total10kgBoxes,
       fuerteBoxes,
       hassBoxes,
       totalPackagingItems,
       itemsBelowReorder,
       fastMovingItems,
-      totalValue,
       packagingCategories,
       avocadoDistribution,
     };
@@ -213,7 +215,7 @@ export default function InventoryPage() {
   }, []);
 
   // Handle bulk update of packaging material quantity
-  const handleBulkUpdate = async (action: 'add' | 'subtract') => {
+  const handleBulkUpdate = (action: 'add' | 'subtract') => {
     if (!selectedMaterialId || bulkUpdateQuantity <= 0) {
       toast({
         title: 'Invalid input',
@@ -226,52 +228,38 @@ export default function InventoryPage() {
     const material = packagingMaterials.find(m => m.id === selectedMaterialId);
     if (!material) return;
 
-    try {
-      const newQuantity = action === 'add' 
-        ? material.currentStock + bulkUpdateQuantity
-        : Math.max(0, material.currentStock - bulkUpdateQuantity);
+    const newQuantity = action === 'add' 
+      ? material.currentStock + bulkUpdateQuantity
+      : Math.max(0, material.currentStock - bulkUpdateQuantity);
 
-      const response = await fetch(`/api/inventory/packaging/${selectedMaterialId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          currentStock: newQuantity,
-        }),
-      });
+    // Update local state immediately (optimistic update)
+    setPackagingMaterials(prev => 
+      prev.map(m => 
+        m.id === selectedMaterialId 
+          ? { 
+              ...m, 
+              currentStock: newQuantity, 
+              lastUsedDate: new Date().toISOString(),
+              // Update consumption rate based on quantity change
+              consumptionRate: action === 'add' ? m.consumptionRate : 
+                bulkUpdateQuantity > 100 ? 'high' : bulkUpdateQuantity > 50 ? 'medium' : 'low'
+            }
+          : m
+      )
+    );
 
-      if (response.ok) {
-        setPackagingMaterials(prev => 
-          prev.map(m => 
-            m.id === selectedMaterialId 
-              ? { ...m, currentStock: newQuantity, lastUsedDate: new Date().toISOString() }
-              : m
-          )
-        );
+    toast({
+      title: 'Stock Updated',
+      description: `${material.name} stock updated to ${newQuantity} ${material.unit}`,
+    });
 
-        toast({
-          title: 'Stock Updated',
-          description: `${material.name} stock updated to ${newQuantity} ${material.unit}`,
-        });
-
-        // Reset form
-        setBulkUpdateQuantity(0);
-        setSelectedMaterialId('');
-        
-        // Recalculate KPIs
-        const kpis = calculateKPIs();
-        setInventoryKPIs(kpis);
-      } else {
-        throw new Error('Failed to update stock');
-      }
-    } catch (error: any) {
-      toast({
-        title: 'Update Failed',
-        description: error.message || 'Failed to update stock',
-        variant: 'destructive',
-      });
-    }
+    // Reset form
+    setBulkUpdateQuantity(0);
+    setSelectedMaterialId('');
+    
+    // Recalculate KPIs
+    const kpis = calculateKPIs();
+    setInventoryKPIs(kpis);
   };
 
   // Handle add packaging material
@@ -328,6 +316,20 @@ export default function InventoryPage() {
       changeType: 'increase' as const,
       icon: Boxes,
     },
+    total4kgBoxes: {
+      title: '4kg Boxes',
+      value: inventoryKPIs ? inventoryKPIs.total4kgBoxes.toString() : '0',
+      change: 'standard boxes',
+      changeType: 'increase' as const,
+      icon: Package,
+    },
+    total10kgBoxes: {
+      title: '10kg Boxes',
+      value: inventoryKPIs ? inventoryKPIs.total10kgBoxes.toString() : '0',
+      change: 'large crates',
+      changeType: 'increase' as const,
+      icon: Package,
+    },
     totalPackagingItems: {
       title: 'Packaging Items',
       value: inventoryKPIs ? inventoryKPIs.totalPackagingItems.toString() : '0',
@@ -341,20 +343,6 @@ export default function InventoryPage() {
       change: 'need reordering',
       changeType: inventoryKPIs?.itemsBelowReorder > 0 ? 'increase' as const : 'decrease' as const,
       icon: AlertTriangle,
-    },
-    fuerteBoxes: {
-      title: 'Fuerte Boxes',
-      value: inventoryKPIs ? inventoryKPIs.fuerteBoxes.toString() : '0',
-      change: '4kg & 10kg boxes',
-      changeType: 'increase' as const,
-      icon: Boxes,
-    },
-    hassBoxes: {
-      title: 'Hass Boxes',
-      value: inventoryKPIs ? inventoryKPIs.hassBoxes.toString() : '0',
-      change: '4kg & 10kg boxes',
-      changeType: 'increase' as const,
-      icon: Boxes,
     },
     fastMovingItems: {
       title: 'Fast-Moving Items',
@@ -500,10 +488,10 @@ export default function InventoryPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
             <OverviewCard data={inventoryKpis.totalAvocadoBoxes} icon={Boxes} />
+            <OverviewCard data={inventoryKpis.total4kgBoxes} icon={Package} />
+            <OverviewCard data={inventoryKpis.total10kgBoxes} icon={Package} />
             <OverviewCard data={inventoryKpis.totalPackagingItems} icon={PackageIcon} />
             <OverviewCard data={inventoryKpis.itemsBelowReorder} icon={AlertTriangle} />
-            <OverviewCard data={inventoryKpis.fuerteBoxes} icon={Boxes} />
-            <OverviewCard data={inventoryKpis.hassBoxes} icon={Boxes} />
             <OverviewCard data={inventoryKpis.fastMovingItems} icon={TrendingUp} />
           </div>
 
@@ -665,6 +653,36 @@ export default function InventoryPage() {
                       </div>
                     </CardContent>
                   </Card>
+                  
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Snowflake className="w-5 h-5" />
+                        Cold Room Distribution
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {['coldroom1', 'coldroom2'].map(roomId => {
+                          const boxesInRoom = coldRoomInventory.filter(item => item.cold_room_id === roomId);
+                          const totalBoxes = boxesInRoom.reduce((sum, item) => sum + item.quantity, 0);
+                          const roomName = roomId === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+                          
+                          return (
+                            <div key={roomId} className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <Snowflake className="w-4 h-4 text-blue-500" />
+                                <span className="text-sm">{roomName}</span>
+                              </div>
+                              <Badge variant="outline">
+                                {totalBoxes.toLocaleString()} boxes
+                              </Badge>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
             </TabsContent>
@@ -697,8 +715,8 @@ export default function InventoryPage() {
                                 {packagingMaterials.map(material => (
                                   <SelectItem key={material.id} value={material.id}>
                                     <div className="flex items-center justify-between">
-                                      <span>{material.name}</span>
-                                      <span className="text-sm text-muted-foreground">
+                                      <span className="truncate">{material.name}</span>
+                                      <span className="text-sm text-muted-foreground ml-2">
                                         {material.currentStock} {material.unit}
                                       </span>
                                     </div>
@@ -727,7 +745,7 @@ export default function InventoryPage() {
                             className="flex-1"
                             disabled={!selectedMaterialId || bulkUpdateQuantity <= 0}
                           >
-                            <PlusCircle className="w-4 h-4 mr-2" />
+                            <Plus className="w-4 h-4 mr-2" />
                             Add Stock
                           </Button>
                           <Button
@@ -736,20 +754,7 @@ export default function InventoryPage() {
                             variant="outline"
                             disabled={!selectedMaterialId || bulkUpdateQuantity <= 0}
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="w-4 h-4 mr-2"
-                            >
-                              <path d="M5 12h14" />
-                            </svg>
+                            <Minus className="w-4 h-4 mr-2" />
                             Subtract Stock
                           </Button>
                         </div>
@@ -797,7 +802,11 @@ export default function InventoryPage() {
                                   <TableCell className="font-medium">
                                     {material.name}
                                   </TableCell>
-                                  <TableCell>{material.category}</TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className="text-xs">
+                                      {material.category}
+                                    </Badge>
+                                  </TableCell>
                                   <TableCell>{material.unit}</TableCell>
                                   <TableCell className="text-right font-medium">
                                     {material.currentStock.toLocaleString()}

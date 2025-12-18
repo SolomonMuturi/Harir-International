@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   SidebarProvider,
   Sidebar,
@@ -13,7 +12,7 @@ import { FreshViewLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
-import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, ShoppingCart, TrendingUp, AlertTriangle, Archive, Truck, Calendar, Users, BarChart, Warehouse, Snowflake, Thermometer, Package, Minus, Plus } from 'lucide-react';
+import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, TrendingUp, AlertTriangle, Truck, Warehouse, Snowflake, Package, Minus, Plus, BarChart } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -83,7 +82,6 @@ export default function InventoryPage() {
   const [bulkUpdateQuantity, setBulkUpdateQuantity] = useState<number>(0);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   
-  const router = useRouter();
   const { toast } = useToast();
 
   // Format size for display
@@ -215,7 +213,7 @@ export default function InventoryPage() {
   }, []);
 
   // Handle bulk update of packaging material quantity
-  const handleBulkUpdate = (action: 'add' | 'subtract') => {
+  const handleBulkUpdate = async (action: 'add' | 'subtract') => {
     if (!selectedMaterialId || bulkUpdateQuantity <= 0) {
       toast({
         title: 'Invalid input',
@@ -232,34 +230,50 @@ export default function InventoryPage() {
       ? material.currentStock + bulkUpdateQuantity
       : Math.max(0, material.currentStock - bulkUpdateQuantity);
 
-    // Update local state immediately (optimistic update)
-    setPackagingMaterials(prev => 
-      prev.map(m => 
-        m.id === selectedMaterialId 
-          ? { 
-              ...m, 
-              currentStock: newQuantity, 
-              lastUsedDate: new Date().toISOString(),
-              // Update consumption rate based on quantity change
-              consumptionRate: action === 'add' ? m.consumptionRate : 
-                bulkUpdateQuantity > 100 ? 'high' : bulkUpdateQuantity > 50 ? 'medium' : 'low'
-            }
-          : m
-      )
-    );
+    try {
+      // Update in database
+      const response = await fetch(`/api/inventory/packaging/${selectedMaterialId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentStock: newQuantity,
+        }),
+      });
 
-    toast({
-      title: 'Stock Updated',
-      description: `${material.name} stock updated to ${newQuantity} ${material.unit}`,
-    });
+      if (!response.ok) {
+        throw new Error('Failed to update stock in database');
+      }
 
-    // Reset form
-    setBulkUpdateQuantity(0);
-    setSelectedMaterialId('');
-    
-    // Recalculate KPIs
-    const kpis = calculateKPIs();
-    setInventoryKPIs(kpis);
+      const updatedMaterial = await response.json();
+      
+      // Update local state
+      setPackagingMaterials(prev => 
+        prev.map(m => 
+          m.id === selectedMaterialId ? updatedMaterial : m
+        )
+      );
+
+      toast({
+        title: 'Stock Updated',
+        description: `${material.name} stock updated to ${newQuantity} ${material.unit}`,
+      });
+
+      // Reset form
+      setBulkUpdateQuantity(0);
+      setSelectedMaterialId('');
+      
+      // Recalculate KPIs
+      const kpis = calculateKPIs();
+      setInventoryKPIs(kpis);
+    } catch (error: any) {
+      toast({
+        title: 'Update Failed',
+        description: error.message || 'Failed to update stock',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Handle add packaging material
@@ -283,7 +297,8 @@ export default function InventoryPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to add packaging material');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add packaging material');
       }
 
       const newMaterial: PackagingMaterial = await response.json();

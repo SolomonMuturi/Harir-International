@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -44,7 +43,9 @@ import {
   FileSpreadsheet,
   Zap,
   Droplet,
-  Factory
+  Factory,
+  UserCheck,
+  Clock // New icon for attendance
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -124,8 +125,9 @@ const pdfReportTypes = [
 ];
 
 const csvReportTypes = [
+  { id: 'supplierReport', label: 'Supplier Report', icon: UserCheck },
+  { id: 'employeeAttendanceLog', label: 'Full Employee Attendance Log', icon: Clock }, // Updated with icon
   { id: 'visitorEntryLog', label: 'Visitor & Vehicle Entry Log' },
-  { id: 'fullAttendanceLog', label: 'Full Employee Attendance Log' },
   { id: 'shipmentData', label: 'Complete Shipment Data' },
   { id: 'inventoryData', label: 'Full Inventory Data' },
   { id: 'packagingData', label: 'Packaging Stock Data' },
@@ -152,21 +154,97 @@ const escapeCsvField = (field: any): string => {
 const convertToCsv = (data: any[], headers: string[]): string => {
     const headerRow = headers.map(escapeCsvField).join(',');
     const dataRows = data.map(row => 
-        headers.map(header => escapeCsvField(row[header.toLowerCase() as keyof typeof row] ?? (row as any)[header] ?? '')).join(',')
+        headers.map(header => {
+            // Handle nested object properties
+            const headerKey = header.toLowerCase().replace(/\s+/g, '_');
+            return escapeCsvField(
+                row[headerKey as keyof typeof row] ?? 
+                (row as any)[header] ?? 
+                (row as any)[header.toLowerCase()] ?? 
+                ''
+            );
+        }).join(',')
     );
     return [headerRow, ...dataRows].join('\n');
 };
 
+// Supplier data type
+interface Supplier {
+  id: string;
+  name: string;
+  location: string;
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+  supplier_code: string;
+  status: string;
+  kra_pin: string;
+  bank_name: string;
+  bank_account_number: string;
+  mpesa_paybill: string;
+  mpesa_account_number: string;
+  created_at: string;
+}
+
+// Employee Attendance data type
+interface EmployeeAttendance {
+  id: string;
+  employeeId: string;
+  employee_name: string;
+  id_number: string;
+  phone: string;
+  designation: string;
+  date: string;
+  status: string;
+  clock_in_time: string;
+  clock_out_time: string;
+}
 
 export default function ReportsPage() {
   const router = useRouter();
   const { toast } = useToast();
   const printRef = useRef<HTMLDivElement>(null);
   const [selectedPdfReport, setSelectedPdfReport] = useState<string>('');
-  const [selectedCsvReport, setSelectedCsvReport] = useState<string>('visitorEntryLog');
+  const [selectedCsvReport, setSelectedCsvReport] = useState<string>('supplierReport');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [supplierData, setSupplierData] = useState<Supplier[]>([]);
+  const [employeeAttendanceData, setEmployeeAttendanceData] = useState<EmployeeAttendance[]>([]);
+
+  // Fetch supplier data on component mount
+  React.useEffect(() => {
+    fetchSupplierData();
+    fetchEmployeeAttendanceData();
+  }, []);
+
+  const fetchSupplierData = async () => {
+    try {
+      const response = await fetch('/api/suppliers');
+      if (response.ok) {
+        const data = await response.json();
+        setSupplierData(data);
+      } else {
+        console.error('Failed to fetch supplier data');
+      }
+    } catch (error) {
+      console.error('Error fetching supplier data:', error);
+    }
+  };
+
+  const fetchEmployeeAttendanceData = async () => {
+    try {
+      const response = await fetch('/api/attendance?format=csv');
+      if (response.ok) {
+        const data = await response.json();
+        setEmployeeAttendanceData(data);
+      } else {
+        console.error('Failed to fetch employee attendance data');
+      }
+    } catch (error) {
+      console.error('Error fetching employee attendance data:', error);
+    }
+  };
 
   const handleDateSelect = (range: DateRange | undefined) => {
     setDateRange(range);
@@ -214,98 +292,302 @@ export default function ReportsPage() {
     setIsGenerating(false);
   };
 
-  const handleGenerateCsv = () => {
+  const handleGenerateCsv = async () => {
     const report = csvReportTypes.find(r => r.id === selectedCsvReport);
     if (!report) return;
 
-    let csvContent = '';
-    let headers: string[] = [];
-    let data: any[] = [];
-    
-    switch (report.id) {
-      case 'visitorEntryLog':
-        headers = ['ID', 'Name', 'Company', 'VehiclePlate', 'Status', 'CheckInTime', 'CheckOutTime'];
-        data = visitorData.map(v => ({...v, CheckInTime: v.checkInTime ? format(new Date(v.checkInTime), 'Pp') : '', CheckOutTime: v.checkOutTime ? format(new Date(v.checkOutTime), 'Pp') : ''}));
-        break;
-      case 'fullAttendanceLog':
-        headers = ['EmployeeID', 'EmployeeName', 'Date', 'Status', 'ClockInTime', 'ClockOutTime'];
-        data = timeAttendanceData.map(att => {
-            const emp = employeeData.find(e => e.id === att.employeeId);
-            return {
-                EmployeeID: att.employeeId,
-                EmployeeName: emp?.name,
-                Date: att.date,
-                Status: att.status,
-                ClockInTime: att.clockInTime ? format(new Date(att.clockInTime), 'p') : '',
-                ClockOutTime: att.clockOutTime ? format(new Date(att.clockOutTime), 'p') : '',
-            }
-        });
-        break;
-      case 'shipmentData':
-        headers = ['ShipmentID', 'Customer', 'Origin', 'Destination', 'Status', 'Product', 'Weight', 'ExpectedArrival'];
-        data = shipmentData.map(s => ({...s, ExpectedArrival: s.expectedArrival ? format(new Date(s.expectedArrival), 'Pp') : ''}));
-        break;
-      case 'inventoryData':
-        headers = ['ID', 'Product', 'Category', 'Quantity', 'Unit', 'Location', 'EntryDate'];
-        data = coldRoomInventoryData.map(i => ({...i, EntryDate: format(new Date(i.entryDate), 'Pp')}));
-        break;
-      case 'packagingData':
-        headers = ['ID', 'Name', 'CurrentStock', 'Unit', 'ReorderLevel', 'Dimensions'];
-        data = packagingMaterialData;
-        break;
-      case 'energyData':
-        headers = ['Time', 'Usage (kWh)'];
-        data = energyConsumptionData.map(d => ({Time: d.hour, 'Usage (kWh)': d.usage}));
-        break;
-      case 'waterData':
-        headers = ['Date', 'Consumption (m³)', 'pH', 'Turbidity (NTU)', 'Conductivity (µS/cm)', 'Status'];
-        // Combining water consumption and quality data for a comprehensive export
-        const combinedWaterData = waterConsumptionData.map((cons, index) => {
-            const quality = waterQualityData[index] || {};
-            return {
-                Date: cons.date,
-                'Consumption (m³)': cons.consumption,
-                pH: quality.pH,
-                'Turbidity (NTU)': quality.turbidity,
-                'Conductivity (µS/cm)': quality.conductivity,
-                Status: quality.status,
-            };
-        });
-        data = combinedWaterData;
-        break;
-      case 'invoiceLog':
-        headers = ['ID', 'Customer', 'InvoiceID', 'Amount', 'DueDate', 'AgingStatus'];
-        data = accountsReceivableData;
-        break;
-      case 'generalLedger':
-        headers = ['ID', 'Date', 'Account', 'Debit', 'Credit', 'Description'];
-        data = generalLedgerData;
-        break;
-      case 'pettyCashTransactions':
-        headers = ['ID', 'Type', 'Amount', 'Description', 'Timestamp', 'Recipient', 'Phone'];
-        data = pettyCashData;
-        break;
-      default:
-        csvContent = 'Header1,Header2\nValue1,Value2';
-    }
-
-    if (data.length > 0) {
-      csvContent = convertToCsv(data, headers);
-    }
-
-    toast({
-      title: 'CSV Export Started',
-      description: `Your data export for "${report.label}" will be downloaded shortly.`,
+    setIsGenerating(true);
+    toast({ 
+      title: 'Generating CSV Report...', 
+      description: `Please wait while we generate the ${report.label} report.` 
     });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      let csvContent = '';
+      let headers: string[] = [];
+      let data: any[] = [];
+      let filename = '';
+      
+      switch (report.id) {
+        case 'supplierReport':
+          if (!dateRange?.from || !dateRange?.to) {
+            toast({
+              variant: 'destructive',
+              title: 'Date Range Required',
+              description: 'Please select a date range to generate the Supplier Report.',
+            });
+            setIsGenerating(false);
+            return;
+          }
+
+          const startDateStr = format(dateRange.from, 'yyyy-MM-dd');
+          const endDateStr = format(dateRange.to, 'yyyy-MM-dd');
+          
+          try {
+            const response = await fetch(`/api/suppliers?startDate=${startDateStr}&endDate=${endDateStr}&format=csv`);
+            
+            if (!response.ok) {
+              throw new Error(`Failed to fetch supplier data: ${response.statusText}`);
+            }
+
+            // Directly use the CSV content from the API
+            csvContent = await response.text();
+            
+            // Extract filename from Content-Disposition header or create one
+            const contentDisposition = response.headers.get('Content-Disposition');
+            if (contentDisposition) {
+              const match = contentDisposition.match(/filename="(.+)"/);
+              if (match) {
+                filename = match[1];
+              }
+            }
+            
+            if (!filename) {
+              filename = `suppliers_${startDateStr}_to_${endDateStr}.csv`;
+            }
+
+            // Download the CSV file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast({
+              title: 'CSV Export Complete',
+              description: `Supplier report for ${startDateStr} to ${endDateStr} has been downloaded.`,
+            });
+            setIsGenerating(false);
+            return;
+            
+          } catch (error) {
+            console.error('Error generating supplier CSV:', error);
+            toast({
+              variant: 'destructive',
+              title: 'Export Failed',
+              description: 'Failed to generate supplier report. Please try again.',
+            });
+            setIsGenerating(false);
+            return;
+          }
+          
+        case 'employeeAttendanceLog':
+          if (!dateRange?.from || !dateRange?.to) {
+            toast({
+              variant: 'destructive',
+              title: 'Date Range Required',
+              description: 'Please select a date range to generate the Employee Attendance Log.',
+            });
+            setIsGenerating(false);
+            return;
+          }
+
+          const attendanceStartDateStr = format(dateRange.from, 'yyyy-MM-dd');
+          const attendanceEndDateStr = format(dateRange.to, 'yyyy-MM-dd');
+          
+          try {
+            const response = await fetch(`/api/attendance?startDate=${attendanceStartDateStr}&endDate=${attendanceEndDateStr}&format=csv`);
+            
+            if (!response.ok) {
+              throw new Error(`Failed to fetch attendance data: ${response.statusText}`);
+            }
+
+            // Directly use the CSV content from the API
+            csvContent = await response.text();
+            
+            // Extract filename from Content-Disposition header or create one
+            const contentDisposition = response.headers.get('Content-Disposition');
+            if (contentDisposition) {
+              const match = contentDisposition.match(/filename="(.+)"/);
+              if (match) {
+                filename = match[1];
+              }
+            }
+            
+            if (!filename) {
+              filename = `employee_attendance_${attendanceStartDateStr}_to_${attendanceEndDateStr}.csv`;
+            }
+
+            // Download the CSV file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast({
+              title: 'CSV Export Complete',
+              description: `Employee attendance report for ${attendanceStartDateStr} to ${attendanceEndDateStr} has been downloaded.`,
+            });
+            setIsGenerating(false);
+            return;
+            
+          } catch (error) {
+            console.error('Error generating attendance CSV:', error);
+            // Fallback to using local data
+            console.log('Falling back to local data...');
+            
+            // Use the locally fetched attendance data
+            const filteredData = employeeAttendanceData.filter(item => {
+              if (!dateRange?.from || !dateRange?.to) return true;
+              const itemDate = parseISO(item.date);
+              return isWithinInterval(itemDate, { 
+                start: dateRange.from, 
+                end: dateRange.to 
+              });
+            });
+
+            if (filteredData.length === 0) {
+              toast({
+                variant: 'destructive',
+                title: 'No Data Found',
+                description: 'No attendance records found for the selected date range.',
+              });
+              setIsGenerating(false);
+              return;
+            }
+
+            // Use specific headers for attendance data
+            headers = ['Employee ID', 'Employee Name', 'ID Number', 'Phone', 'Designation', 'Date', 'Status', 'Check In Time', 'Check Out Time'];
+            
+            data = filteredData.map(item => ({
+              'Employee ID': item.employeeId,
+              'Employee Name': item.employee_name,
+              'ID Number': item.id_number,
+              'Phone': item.phone,
+              'Designation': item.designation,
+              'Date': format(parseISO(item.date), 'yyyy-MM-dd'),
+              'Status': item.status,
+              'Check In Time': item.clock_in_time ? format(parseISO(item.clock_in_time), 'HH:mm:ss') : '',
+              'Check Out Time': item.clock_out_time ? format(parseISO(item.clock_out_time), 'HH:mm:ss') : ''
+            }));
+
+            filename = `employee_attendance_${attendanceStartDateStr}_to_${attendanceEndDateStr}.csv`;
+            
+            // Continue with CSV generation below
+            csvContent = convertToCsv(data, headers);
+          }
+          break;
+          
+        case 'visitorEntryLog':
+          headers = ['ID', 'Name', 'Company', 'VehiclePlate', 'Status', 'CheckInTime', 'CheckOutTime'];
+          data = visitorData.map(v => ({
+            ...v, 
+            CheckInTime: v.checkInTime ? format(new Date(v.checkInTime), 'Pp') : '', 
+            CheckOutTime: v.checkOutTime ? format(new Date(v.checkOutTime), 'Pp') : ''
+          }));
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'shipmentData':
+          headers = ['ShipmentID', 'Customer', 'Origin', 'Destination', 'Status', 'Product', 'Weight', 'ExpectedArrival'];
+          data = shipmentData.map(s => ({
+            ...s, 
+            ExpectedArrival: s.expectedArrival ? format(new Date(s.expectedArrival), 'Pp') : ''
+          }));
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'inventoryData':
+          headers = ['ID', 'Product', 'Category', 'Quantity', 'Unit', 'Location', 'EntryDate'];
+          data = coldRoomInventoryData.map(i => ({
+            ...i, 
+            EntryDate: format(new Date(i.entryDate), 'Pp')
+          }));
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'packagingData':
+          headers = ['ID', 'Name', 'CurrentStock', 'Unit', 'ReorderLevel', 'Dimensions'];
+          data = packagingMaterialData;
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'energyData':
+          headers = ['Time', 'Usage (kWh)'];
+          data = energyConsumptionData.map(d => ({
+            Time: d.hour, 
+            'Usage (kWh)': d.usage
+          }));
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'waterData':
+          headers = ['Date', 'Consumption (m³)', 'pH', 'Turbidity (NTU)', 'Conductivity (µS/cm)', 'Status'];
+          // Combining water consumption and quality data for a comprehensive export
+          const combinedWaterData = waterConsumptionData.map((cons, index) => {
+              const quality = waterQualityData[index] || {};
+              return {
+                  Date: cons.date,
+                  'Consumption (m³)': cons.consumption,
+                  pH: quality.pH,
+                  'Turbidity (NTU)': quality.turbidity,
+                  'Conductivity (µS/cm)': quality.conductivity,
+                  Status: quality.status,
+              };
+          });
+          data = combinedWaterData;
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'invoiceLog':
+          headers = ['ID', 'Customer', 'InvoiceID', 'Amount', 'DueDate', 'AgingStatus'];
+          data = accountsReceivableData;
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'generalLedger':
+          headers = ['ID', 'Date', 'Account', 'Debit', 'Credit', 'Description'];
+          data = generalLedgerData;
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        case 'pettyCashTransactions':
+          headers = ['ID', 'Type', 'Amount', 'Description', 'Timestamp', 'Recipient', 'Phone'];
+          data = pettyCashData;
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+          break;
+          
+        default:
+          csvContent = 'Header1,Header2\nValue1,Value2';
+          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      }
+
+      // Generate CSV for non-API-based reports
+      if (data.length > 0 && !['supplierReport', 'employeeAttendanceLog'].includes(report.id)) {
+        csvContent = convertToCsv(data, headers);
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        toast({
+          title: 'CSV Export Complete',
+          description: `Your data export for "${report.label}" has been downloaded.`,
+        });
+      }
+
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Failed to generate CSV report. Please try again.',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const filterByDateRange = (items: any[], dateKey: string) => {
@@ -389,7 +671,9 @@ export default function ReportsPage() {
                       />
                   </PopoverContent>
                 </Popover>
-                <p className="text-sm text-muted-foreground">Applies to all generated reports and exports.</p>
+                <p className="text-sm text-muted-foreground">
+                  Applies to all generated reports and exports. Required for Supplier and Employee Attendance reports.
+                </p>
             </div>
 
 
@@ -457,15 +741,30 @@ export default function ReportsPage() {
                           onCheckedChange={() => setSelectedCsvReport(report.id)}
                         />
                         <Label htmlFor={`csv-${report.id}`} className="font-normal">
+                          {report.icon && <report.icon className="w-4 h-4 mr-2 inline" />}
                           {report.label}
                         </Label>
                       </div>
                     ))}
                   </div>
-                  <Button className="w-full mt-4" onClick={handleGenerateCsv}>
-                    <Download className="mr-2" />
-                    Generate & Download CSV
+                  <Button 
+                    className="w-full mt-4" 
+                    onClick={handleGenerateCsv} 
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Download className="mr-2" />}
+                    {isGenerating ? 'Generating...' : 'Generate & Download CSV'}
                   </Button>
+                  {selectedCsvReport === 'employeeAttendanceLog' && dateRange?.from && dateRange?.to && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Generating employee attendance report for: {format(dateRange.from, 'MMM dd, yyyy')} to {format(dateRange.to, 'MMM dd, yyyy')}
+                    </p>
+                  )}
+                  {selectedCsvReport === 'supplierReport' && dateRange?.from && dateRange?.to && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Generating supplier report for: {format(dateRange.from, 'MMM dd, yyyy')} to {format(dateRange.to, 'MMM dd, yyyy')}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>

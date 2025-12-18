@@ -13,13 +13,19 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { WeightCapture } from '@/components/dashboard/weight-capture';
 import { FinalTagDialog } from '@/components/dashboard/final-tag-dialog';
-import { Scale, Boxes, GitCompareArrows, Loader2, RefreshCw, AlertCircle, Truck, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck } from 'lucide-react';
+import { Scale, Boxes, GitCompareArrows, Loader2, RefreshCw, AlertCircle, Truck, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Filter } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 // Define types based on your schema
 interface WeightEntry {
@@ -134,6 +140,18 @@ interface CheckedInSupplier {
   status?: 'pending' | 'weighed';
 }
 
+interface CSVRow {
+  date: string;
+  supplier_name: string;
+  phone_number: string;
+  vehicle_plate_number: string;
+  fuerte_weight: number;
+  hass_weight: number;
+  fuerte_crates_in: number;
+  hass_crates_in: number;
+  region: string;
+}
+
 const getChangeIcon = (changeType: 'increase' | 'decrease' | 'neutral') => {
   switch (changeType) {
     case 'increase':
@@ -157,6 +175,13 @@ export default function WeightCapturePage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [processedSuppliers, setProcessedSuppliers] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<CheckedInSupplier | null>(null);
+  
+  // History tab states
+  const [historyDate, setHistoryDate] = useState<Date | undefined>(new Date());
+  const [historyWeights, setHistoryWeights] = useState<WeightEntry[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const { toast } = useToast();
 
   // Fetch weight entries from database
@@ -238,6 +263,65 @@ export default function WeightCapturePage() {
     } catch (error: any) {
       console.error('Error fetching checked-in suppliers:', error);
       setCheckedInSuppliers([]);
+    }
+  };
+
+  // Fetch history weights by date
+  const fetchHistoryWeights = async (date: Date) => {
+    if (!date) return;
+    
+    setIsHistoryLoading(true);
+    try {
+      const formattedDate = format(date, 'yyyy-MM-dd');
+      const response = await fetch(`/api/weights/history?date=${formattedDate}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch history data');
+      }
+      
+      const data: WeightEntryAPI[] = await response.json();
+      
+      // Transform to match WeightEntry type
+      const transformedWeights: WeightEntry[] = data.map(entry => ({
+        id: entry.id,
+        pallet_id: entry.pallet_id,
+        product: entry.product,
+        weight: entry.weight,
+        unit: entry.unit,
+        timestamp: entry.timestamp,
+        supplier: entry.supplier,
+        supplier_id: entry.supplier_id,
+        supplier_phone: entry.supplier_phone,
+        fruit_variety: entry.fruit_variety || [],
+        number_of_crates: entry.number_of_crates,
+        region: entry.region,
+        image_url: entry.image_url,
+        driver_name: entry.driver_name,
+        driver_phone: entry.driver_phone,
+        driver_id_number: entry.driver_id_number,
+        vehicle_plate: entry.vehicle_plate,
+        truck_id: entry.truck_id,
+        driver_id: entry.driver_id,
+        gross_weight: entry.gross_weight,
+        tare_weight: entry.tare_weight,
+        net_weight: entry.net_weight,
+        declared_weight: entry.declared_weight,
+        rejected_weight: entry.rejected_weight,
+        notes: entry.notes,
+        created_at: entry.created_at,
+      }));
+      
+      setHistoryWeights(transformedWeights);
+    } catch (error: any) {
+      console.error('Error fetching history:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load history data',
+        variant: 'destructive',
+      });
+      setHistoryWeights([]);
+    } finally {
+      setIsHistoryLoading(false);
     }
   };
 
@@ -368,6 +452,13 @@ export default function WeightCapturePage() {
       fetchKpiData();
     }
   }, [weights]);
+
+  // Fetch history when date changes
+  useEffect(() => {
+    if (activeTab === 'history' && historyDate) {
+      fetchHistoryWeights(historyDate);
+    }
+  }, [historyDate, activeTab]);
 
   // Function to refresh all data
   const refreshAllData = async () => {
@@ -610,6 +701,154 @@ export default function WeightCapturePage() {
     });
   };
 
+  // Function to generate CSV data
+  const generateCSVData = (weights: WeightEntry[]): CSVRow[] => {
+    // Group weights by supplier and date
+    const supplierMap = new Map<string, CSVRow>();
+    
+    weights.forEach(entry => {
+      const date = new Date(entry.created_at).toISOString().split('T')[0];
+      const key = `${date}_${entry.supplier_id || entry.supplier}`;
+      
+      if (!supplierMap.has(key)) {
+        supplierMap.set(key, {
+          date,
+          supplier_name: entry.supplier || '',
+          phone_number: entry.supplier_phone || entry.driver_phone || '',
+          vehicle_plate_number: entry.vehicle_plate || '',
+          fuerte_weight: 0,
+          hass_weight: 0,
+          fuerte_crates_in: 0,
+          hass_crates_in: 0,
+          region: entry.region || ''
+        });
+      }
+      
+      const row = supplierMap.get(key)!;
+      const fruitVarieties = Array.isArray(entry.fruit_variety) 
+        ? entry.fruit_variety 
+        : entry.fruit_variety 
+          ? [entry.fruit_variety.toString()]
+          : [];
+      
+      // Check for Fuerte and Hass varieties (case insensitive)
+      const hasFuerte = fruitVarieties.some(v => 
+        v.toLowerCase().includes('fuerte') || v.toLowerCase().includes('fuert')
+      );
+      const hasHass = fruitVarieties.some(v => 
+        v.toLowerCase().includes('hass')
+      );
+      
+      const weight = entry.net_weight || entry.netWeight || 0;
+      const crates = entry.number_of_crates || 0;
+      
+      if (hasFuerte) {
+        row.fuerte_weight += weight;
+        row.fuerte_crates_in += crates;
+      }
+      
+      if (hasHass) {
+        row.hass_weight += weight;
+        row.hass_crates_in += crates;
+      }
+      
+      // If no specific variety detected, distribute evenly or assign based on product name
+      if (!hasFuerte && !hasHass) {
+        if (entry.product?.toLowerCase().includes('fuerte')) {
+          row.fuerte_weight += weight;
+          row.fuerte_crates_in += crates;
+        } else if (entry.product?.toLowerCase().includes('hass')) {
+          row.hass_weight += weight;
+          row.hass_crates_in += crates;
+        } else {
+          // Default distribution if no specific variety
+          row.fuerte_weight += weight / 2;
+          row.hass_weight += weight / 2;
+          row.fuerte_crates_in += Math.floor(crates / 2);
+          row.hass_crates_in += Math.ceil(crates / 2);
+        }
+      }
+    });
+    
+    return Array.from(supplierMap.values());
+  };
+
+  // Function to download CSV
+  const downloadCSV = (weights: WeightEntry[], date: Date) => {
+    const csvData = generateCSVData(weights);
+    
+    if (csvData.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No data available to download for the selected date.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Create CSV content
+    const headers = [
+      'Date',
+      'Supplier Name',
+      'Phone Number',
+      'Vehicle Plate Number',
+      'Fuerte Weight (kg)',
+      'Hass Weight (kg)',
+      'Fuerte Crates In',
+      'Hass Crates In',
+      'Region'
+    ];
+    
+    const rows = csvData.map(row => [
+      row.date,
+      `"${row.supplier_name}"`,
+      `"${row.phone_number}"`,
+      `"${row.vehicle_plate_number}"`,
+      row.fuerte_weight.toFixed(2),
+      row.hass_weight.toFixed(2),
+      row.fuerte_crates_in,
+      row.hass_crates_in,
+      `"${row.region}"`
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `weight_data_${format(date, 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: 'CSV Downloaded',
+      description: `Weight data for ${format(date, 'MMMM d, yyyy')} has been downloaded.`,
+    });
+  };
+
+  // Filter history weights based on search query
+  const filteredHistoryWeights = historyWeights.filter(entry => {
+    if (!searchQuery) return true;
+    
+    const query = searchQuery.toLowerCase();
+    return (
+      (entry.supplier?.toLowerCase().includes(query)) ||
+      (entry.driver_name?.toLowerCase().includes(query)) ||
+      (entry.vehicle_plate?.toLowerCase().includes(query)) ||
+      (entry.region?.toLowerCase().includes(query)) ||
+      (Array.isArray(entry.fruit_variety) && 
+        entry.fruit_variety.some(v => v.toLowerCase().includes(query))) ||
+      (entry.pallet_id?.toLowerCase().includes(query))
+    );
+  });
+
   // Default KPI data while loading
   const defaultKpiData: KPIData = {
     palletsWeighed: {
@@ -781,7 +1020,7 @@ export default function WeightCapturePage() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-2 w-full">
+            <TabsList className="grid grid-cols-3 w-full">
               <TabsTrigger value="overview" className="flex items-center gap-2">
                 <Boxes className="h-4 w-4" />
                 Dashboard Overview
@@ -789,6 +1028,10 @@ export default function WeightCapturePage() {
               <TabsTrigger value="capture" className="flex items-center gap-2">
                 <Scale className="h-4 w-4" />
                 Weight Capture
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                History & Export
               </TabsTrigger>
             </TabsList>
 
@@ -976,6 +1219,259 @@ export default function WeightCapturePage() {
                       onClearSelectedSupplier={() => setSelectedSupplier(null)}
                     />
                   )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* History Tab Content */}
+            <TabsContent value="history" className="space-y-6 mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="w-5 h-5" />
+                      Weight History & Export
+                    </div>
+                    <Button
+                      onClick={() => historyDate && downloadCSV(filteredHistoryWeights, historyDate)}
+                      disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
+                      className="gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download CSV
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>
+                    View weight history by date and export data in CSV format
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Date Selection and Search */}
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="space-y-2 flex-1">
+                        <Label htmlFor="history-date">Select Date</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !historyDate && "text-muted-foreground"
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {historyDate ? format(historyDate, "PPP") : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <CalendarComponent
+                              mode="single"
+                              selected={historyDate}
+                              onSelect={setHistoryDate}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div className="space-y-2 flex-1">
+                        <Label htmlFor="search-history">Search Entries</Label>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            id="search-history"
+                            placeholder="Search by supplier, driver, vehicle plate..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CSV Preview Header */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileSpreadsheet className="w-5 h-5 text-green-600" />
+                        <span className="font-medium">CSV Format Preview</span>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        <p>Your download will include the following columns:</p>
+                        <div className="grid grid-cols-9 gap-1 mt-2 text-xs font-mono bg-white p-2 rounded border">
+                          <span className="font-semibold">Date</span>
+                          <span className="font-semibold">Supplier Name</span>
+                          <span className="font-semibold">Phone Number</span>
+                          <span className="font-semibold">Vehicle Plate</span>
+                          <span className="font-semibold">Fuerte Weight</span>
+                          <span className="font-semibold">Hass Weight</span>
+                          <span className="font-semibold">Fuerte Crates</span>
+                          <span className="font-semibold">Hass Crates</span>
+                          <span className="font-semibold">Region</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* History Table */}
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-3 border-b">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            <span className="font-medium">
+                              {historyDate ? `Entries for ${format(historyDate, 'MMMM d, yyyy')}` : 'Select a date'}
+                            </span>
+                            <Badge variant="outline" className="ml-2">
+                              {filteredHistoryWeights.length} entries
+                            </Badge>
+                          </div>
+                          {filteredHistoryWeights.length > 0 && (
+                            <div className="text-sm text-gray-500">
+                              Total Weight: {(filteredHistoryWeights.reduce((sum, w) => sum + (w.net_weight || 0), 0) / 1000).toFixed(1)} t
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {isHistoryLoading ? (
+                        <div className="h-64 flex items-center justify-center">
+                          <div className="text-center">
+                            <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+                            <p className="mt-2 text-gray-600">Loading history data...</p>
+                          </div>
+                        </div>
+                      ) : filteredHistoryWeights.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="bg-gray-50 border-b">
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Time</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Supplier</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Driver</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Vehicle</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Varieties</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Net Weight</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Crates</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Region</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredHistoryWeights.map((entry) => {
+                                const fruitVarieties = Array.isArray(entry.fruit_variety) 
+                                  ? entry.fruit_variety 
+                                  : entry.fruit_variety 
+                                    ? [entry.fruit_variety.toString()]
+                                    : [];
+                                
+                                return (
+                                  <tr key={entry.id} className="border-b hover:bg-gray-50">
+                                    <td className="p-3">
+                                      {new Date(entry.created_at).toLocaleTimeString([], { 
+                                        hour: '2-digit', 
+                                        minute: '2-digit' 
+                                      })}
+                                    </td>
+                                    <td className="p-3 font-medium">{entry.supplier || '-'}</td>
+                                    <td className="p-3">{entry.driver_name || '-'}</td>
+                                    <td className="p-3">
+                                      <Badge variant="outline" className="text-xs">
+                                        {entry.vehicle_plate || '-'}
+                                      </Badge>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex flex-wrap gap-1">
+                                        {fruitVarieties.slice(0, 2).map((variety, idx) => (
+                                          <span 
+                                            key={idx} 
+                                            className={`text-xs px-2 py-1 rounded ${
+                                              variety.toLowerCase().includes('fuerte') 
+                                                ? 'bg-blue-100 text-blue-800' 
+                                                : variety.toLowerCase().includes('hass')
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-gray-100 text-gray-800'
+                                            }`}
+                                          >
+                                            {variety}
+                                          </span>
+                                        ))}
+                                        {fruitVarieties.length > 2 && (
+                                          <span className="text-xs text-gray-500">
+                                            +{fruitVarieties.length - 2}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-3 font-semibold">
+                                      {(entry.net_weight || 0).toFixed(1)} {entry.unit}
+                                    </td>
+                                    <td className="p-3">
+                                      {entry.number_of_crates || 0}
+                                    </td>
+                                    <td className="p-3">
+                                      <Badge variant="secondary" className="text-xs">
+                                        {entry.region || '-'}
+                                      </Badge>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="h-64 flex flex-col items-center justify-center p-6">
+                          <div className="text-center">
+                            <FileSpreadsheet className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                              {historyDate ? 'No entries found' : 'Select a date'}
+                            </h3>
+                            <p className="text-gray-500 max-w-md mx-auto">
+                              {historyDate 
+                                ? `No weight entries found for ${format(historyDate, 'MMMM d, yyyy')}. Try selecting a different date.`
+                                : 'Choose a date to view weight history and export options.'
+                              }
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* CSV Summary */}
+                    {filteredHistoryWeights.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm">CSV Export Summary</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {generateCSVData(filteredHistoryWeights).length}
+                              </div>
+                              <div className="text-sm text-gray-600">Total Suppliers</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {(generateCSVData(filteredHistoryWeights).reduce((sum, row) => sum + row.fuerte_weight, 0) / 1000).toFixed(1)} t
+                              </div>
+                              <div className="text-sm text-gray-600">Total Fuerte Weight</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-green-600">
+                                {(generateCSVData(filteredHistoryWeights).reduce((sum, row) => sum + row.hass_weight, 0) / 1000).toFixed(1)} t
+                              </div>
+                              <div className="text-sm text-gray-600">Total Hass Weight</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-purple-600">
+                                {new Set(generateCSVData(filteredHistoryWeights).map(row => row.region)).size}
+                              </div>
+                              <div className="text-sm text-gray-600">Unique Regions</div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

@@ -22,11 +22,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { CreateSupplierGateForm, type SupplierFormValues } from '@/components/dashboard/create-supplier-gate-form';
-import { Truck, QrCode, Printer, DoorOpen, Loader2, RefreshCw, CheckCircle, Clock, Calendar, CheckCheck, Package, Fuel, Gauge, AlertCircle } from 'lucide-react';
+import { Truck, QrCode, Printer, DoorOpen, Loader2, RefreshCw, CheckCircle, Clock, Calendar, CheckCheck, Package, Fuel, Gauge, AlertCircle, Download } from 'lucide-react';
 import { GatePassDialog } from '@/components/dashboard/gate-pass-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { RegistrationSuccess } from '@/components/dashboard/registration-success';
-import { format } from 'date-fns';
+import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -35,9 +35,9 @@ import jsPDF from 'jspdf';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { PrintableVehicleReport } from '@/components/dashboard/printable-vehicle-report';
-import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Supplier Vehicle type definition
 interface SupplierVehicle {
@@ -61,6 +61,11 @@ interface SupplierVehicle {
   department: string;
 }
 
+type DateRange = {
+  from: Date;
+  to: Date;
+};
+
 export default function VehicleManagementPage() {
   const [vehicles, setVehicles] = useState<SupplierVehicle[]>([]);
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
@@ -71,6 +76,12 @@ export default function VehicleManagementPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [apiError, setApiError] = useState<string | null>(null);
+  const [historyDateRange, setHistoryDateRange] = useState<DateRange>({
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+    to: new Date()
+  });
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [isExportingCSV, setIsExportingCSV] = useState(false);
   const { toast } = useToast();
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -454,6 +465,18 @@ export default function VehicleManagementPage() {
     }
   };
 
+  // Calculate filtered completed vehicles based on date range
+  const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
+  
+  const filteredCompletedVehicles = checkedOutVehicles.filter(vehicle => {
+    if (!vehicle.checkOutTime) return false;
+    const checkOutDate = parseISO(vehicle.checkOutTime);
+    return isWithinInterval(checkOutDate, {
+      start: startOfDay(historyDateRange.from),
+      end: endOfDay(historyDateRange.to)
+    });
+  });
+
   // Calculate statistics
   const vehiclesOnSite = vehicles.filter(v => 
     v.status === 'Checked-in' || v.status === 'Pending Exit'
@@ -461,7 +484,186 @@ export default function VehicleManagementPage() {
 
   const pendingExitVehicles = vehicles.filter(v => v.status === 'Pending Exit');
   const preRegisteredVehicles = vehicles.filter(v => v.status === 'Pre-registered');
-  const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
+
+  // Helper function to escape CSV fields
+  const escapeCsvField = (field: any): string => {
+    if (field === null || field === undefined) {
+      return '';
+    }
+    const stringField = String(field);
+    if (/[",\n]/.test(stringField)) {
+      return `"${stringField.replace(/"/g, '""')}"`;
+    }
+    return stringField;
+  };
+
+  // Convert to CSV
+  const convertToCsv = (data: any[], headers: string[]): string => {
+    const headerRow = headers.map(escapeCsvField).join(',');
+    const dataRows = data.map(row => 
+      headers.map(header => {
+        const headerKey = header.toLowerCase().replace(/\s+/g, '_');
+        return escapeCsvField(
+          row[headerKey as keyof typeof row] ?? 
+          (row as any)[header] ?? 
+          (row as any)[header.toLowerCase()] ?? 
+          ''
+        );
+      }).join(',')
+    );
+    return [headerRow, ...dataRows].join('\n');
+  };
+
+  // Export filtered completed vehicles to CSV
+  const exportCompletedToCSV = async () => {
+    if (filteredCompletedVehicles.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No completed deliveries found for the selected date range.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsExportingCSV(true);
+    try {
+      // Prepare data for CSV
+      const headers = [
+        'Vehicle Code',
+        'Driver Name',
+        'ID Number',
+        'Company',
+        'Phone',
+        'Vehicle Plate',
+        'Vehicle Type',
+        'Cargo Description',
+        'Check-in Time',
+        'Check-out Time',
+        'Status',
+        'Expected Check-in Time',
+        'Department'
+      ];
+      
+      const data = filteredCompletedVehicles.map(vehicle => ({
+        'Vehicle Code': vehicle.vehicleCode,
+        'Driver Name': vehicle.driverName,
+        'ID Number': vehicle.idNumber,
+        'Company': vehicle.company,
+        'Phone': vehicle.phone,
+        'Vehicle Plate': vehicle.vehiclePlate || 'None',
+        'Vehicle Type': vehicle.vehicleType,
+        'Cargo Description': vehicle.cargoDescription || '',
+        'Check-in Time': vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        'Check-out Time': vehicle.checkOutTime ? format(parseISO(vehicle.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        'Status': vehicle.status,
+        'Expected Check-in Time': vehicle.expectedCheckInTime ? format(parseISO(vehicle.expectedCheckInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        'Department': vehicle.department || ''
+      }));
+
+      const csvContent = convertToCsv(data, headers);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      
+      const filename = `supplier_vehicles_completed_${format(historyDateRange.from, 'yyyy-MM-dd')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}.csv`;
+      
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast({
+        title: 'CSV Export Complete',
+        description: `Completed supplier vehicles (${filteredCompletedVehicles.length} records) has been downloaded.`,
+      });
+      
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Failed to generate CSV file. Please try again.',
+      });
+    } finally {
+      setIsExportingCSV(false);
+    }
+  };
+
+  // Export all supplier vehicles to CSV
+  const exportAllVehiclesToCSV = async () => {
+    if (vehicles.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No supplier vehicles found to export.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsExportingCSV(true);
+    try {
+      const headers = [
+        'Vehicle Code',
+        'Driver Name',
+        'ID Number',
+        'Company',
+        'Phone',
+        'Vehicle Plate',
+        'Vehicle Type',
+        'Cargo Description',
+        'Status',
+        'Check-in Time',
+        'Check-out Time',
+        'Expected Check-in Time',
+        'Department'
+      ];
+      
+      const data = vehicles.map(vehicle => ({
+        'Vehicle Code': vehicle.vehicleCode,
+        'Driver Name': vehicle.driverName,
+        'ID Number': vehicle.idNumber,
+        'Company': vehicle.company,
+        'Phone': vehicle.phone,
+        'Vehicle Plate': vehicle.vehiclePlate || 'None',
+        'Vehicle Type': vehicle.vehicleType,
+        'Cargo Description': vehicle.cargoDescription || '',
+        'Status': vehicle.status,
+        'Check-in Time': vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        'Check-out Time': vehicle.checkOutTime ? format(parseISO(vehicle.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        'Expected Check-in Time': vehicle.expectedCheckInTime ? format(parseISO(vehicle.expectedCheckInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        'Department': vehicle.department || ''
+      }));
+
+      const csvContent = convertToCsv(data, headers);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      
+      const filename = `all_supplier_vehicles_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast({
+        title: 'CSV Export Complete',
+        description: `All supplier vehicles (${vehicles.length} records) have been downloaded.`,
+      });
+      
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Failed to generate CSV file. Please try again.',
+      });
+    } finally {
+      setIsExportingCSV(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -571,7 +773,20 @@ export default function VehicleManagementPage() {
                   className="gap-2"
                 >
                   <Printer className="h-4 w-4" />
-                  Download Report
+                  Download PDF Report
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={exportAllVehiclesToCSV}
+                  disabled={vehicles.length === 0 || isExportingCSV}
+                  className="gap-2"
+                >
+                  {isExportingCSV ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Export All CSV
                 </Button>
                 <Button 
                   variant="default"
@@ -727,11 +942,11 @@ export default function VehicleManagementPage() {
               <Card className="border-l-4 border-l-gray-500 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex flex-col">
-                    <p className="text-sm font-medium text-gray-500">Checked Out</p>
-                    <h3 className="text-2xl font-bold mt-1 text-white-900">{checkedOutVehicles.length}</h3>
+                    <p className="text-sm font-medium text-gray-500">Completed</p>
+                    <h3 className="text-2xl font-bold mt-1 text-white-900">{filteredCompletedVehicles.length}</h3>
                     <div className="flex items-center mt-1 text-sm text-gray-500">
-                      <Clock className="h-4 w-4 mr-1 text-gray-500" />
-                      <span>Completed</span>
+                      <CheckCircle className="h-4 w-4 mr-1 text-gray-500" />
+                      <span>Filtered</span>
                     </div>
                   </div>
                 </CardContent>
@@ -777,9 +992,9 @@ export default function VehicleManagementPage() {
                     <TabsTrigger value="completed" className="flex items-center gap-2">
                       <CheckCircle className="h-4 w-4" />
                       Completed
-                      {checkedOutVehicles.length > 0 && (
+                      {filteredCompletedVehicles.length > 0 && (
                         <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                          {checkedOutVehicles.length}
+                          {filteredCompletedVehicles.length}
                         </Badge>
                       )}
                     </TabsTrigger>
@@ -907,28 +1122,198 @@ export default function VehicleManagementPage() {
                             Supplier vehicles that have completed their deliveries and checked out
                           </p>
                         </div>
-                        <Badge variant="outline">
-                          {checkedOutVehicles.length} Completed
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">
+                            {filteredCompletedVehicles.length} Completed
+                          </Badge>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={exportCompletedToCSV}
+                            disabled={filteredCompletedVehicles.length === 0 || isExportingCSV}
+                            className="gap-2"
+                          >
+                            {isExportingCSV ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                            Export CSV
+                          </Button>
+                        </div>
                       </div>
-                      {checkedOutVehicles.length === 0 ? (
+
+                      {/* Date Range Picker for Completed Vehicles */}
+                      <Card className="border">
+                        <CardContent className="p-4">
+                          <div className="flex flex-col md:flex-row md:items-center gap-4">
+                            <div className="flex-1">
+                              <Label htmlFor="date-range" className="text-sm font-medium mb-2 block">
+                                Filter by Check-out Date
+                              </Label>
+                              <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    id="date-range"
+                                    variant="outline"
+                                    className="w-full justify-start text-left font-normal"
+                                  >
+                                    <Calendar className="mr-2 h-4 w-4" />
+                                    {historyDateRange.from ? (
+                                      historyDateRange.to ? (
+                                        <>
+                                          {format(historyDateRange.from, "LLL dd, y")} -{" "}
+                                          {format(historyDateRange.to, "LLL dd, y")}
+                                        </>
+                                      ) : (
+                                        format(historyDateRange.from, "LLL dd, y")
+                                      )
+                                    ) : (
+                                      <span>Select date range</span>
+                                    )}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <CalendarComponent
+                                    initialFocus
+                                    mode="range"
+                                    defaultMonth={historyDateRange.from}
+                                    selected={{
+                                      from: historyDateRange.from,
+                                      to: historyDateRange.to,
+                                    }}
+                                    onSelect={(range) => {
+                                      if (range?.from && range?.to) {
+                                        setHistoryDateRange({
+                                          from: range.from,
+                                          to: range.to,
+                                        });
+                                        setIsDatePickerOpen(false);
+                                      }
+                                    }}
+                                    numberOfMonths={2}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <p className="text-xs text-gray-500 mt-2">
+                                Showing vehicles that checked out between {format(historyDateRange.from, 'MMM dd, yyyy')} and {format(historyDateRange.to, 'MMM dd, yyyy')}
+                              </p>
+                            </div>
+                            <div className="flex items-end gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  const today = new Date();
+                                  setHistoryDateRange({
+                                    from: new Date(today.getFullYear(), today.getMonth(), 1),
+                                    to: today
+                                  });
+                                }}
+                              >
+                                This Month
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  const today = new Date();
+                                  setHistoryDateRange({
+                                    from: new Date(today.setDate(today.getDate() - 7)),
+                                    to: new Date()
+                                  });
+                                }}
+                              >
+                                Last 7 Days
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  const today = new Date();
+                                  setHistoryDateRange({
+                                    from: today,
+                                    to: today
+                                  });
+                                }}
+                              >
+                                Today
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {filteredCompletedVehicles.length === 0 ? (
                         <Card>
                           <CardContent className="p-8 text-center">
                             <CheckCircle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                             <h3 className="text-lg font-semibold mb-2">No Completed Deliveries</h3>
                             <p className="text-gray-500 mb-4">
-                              No supplier vehicles have completed deliveries yet.
+                              No completed deliveries found for the selected date range.
                             </p>
+                            <Button 
+                              variant="outline" 
+                              onClick={() => {
+                                const today = new Date();
+                                setHistoryDateRange({
+                                  from: new Date(today.getFullYear(), 0, 1),
+                                  to: today
+                                });
+                              }}
+                            >
+                              Show All Completed Deliveries
+                            </Button>
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={checkedOutVehicles}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <Card className="bg-blue-50 border-blue-100">
+                              <CardContent className="p-4">
+                                <p className="text-sm text-blue-700 font-medium">Total Records</p>
+                                <p className="text-2xl font-bold text-blue-900">{filteredCompletedVehicles.length}</p>
+                              </CardContent>
+                            </Card>
+                            <Card className="bg-green-50 border-green-100">
+                              <CardContent className="p-4">
+                                <p className="text-sm text-green-700 font-medium">Date Range</p>
+                                <p className="text-lg font-bold text-green-900">
+                                  {format(historyDateRange.from, 'MMM dd')} - {format(historyDateRange.to, 'MMM dd')}
+                                </p>
+                              </CardContent>
+                            </Card>
+                            <Card className="bg-amber-50 border-amber-100">
+                              <CardContent className="p-4">
+                                <p className="text-sm text-amber-700 font-medium">Earliest Check-out</p>
+                                <p className="text-lg font-bold text-amber-900">
+                                  {filteredCompletedVehicles.length > 0 
+                                    ? format(parseISO(filteredCompletedVehicles[filteredCompletedVehicles.length - 1].checkOutTime || ''), 'MMM dd')
+                                    : 'N/A'
+                                  }
+                                </p>
+                              </CardContent>
+                            </Card>
+                            <Card className="bg-purple-50 border-purple-100">
+                              <CardContent className="p-4">
+                                <p className="text-sm text-purple-700 font-medium">Latest Check-out</p>
+                                <p className="text-lg font-bold text-purple-900">
+                                  {filteredCompletedVehicles.length > 0 
+                                    ? format(parseISO(filteredCompletedVehicles[0].checkOutTime || ''), 'MMM dd')
+                                    : 'N/A'
+                                  }
+                                </p>
+                              </CardContent>
+                            </Card>
+                          </div>
+                          <VehicleDataTable 
+                            vehicles={filteredCompletedVehicles}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                        </div>
                       )}
                     </div>
                   </TabsContent>

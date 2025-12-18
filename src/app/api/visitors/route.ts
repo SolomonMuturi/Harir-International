@@ -1,26 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
-
-// Create MySQL connection
-const getConnection = async () => {
-  return mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '', // leave empty if no password
-    database: 'nextdbase'
-  });
-};
+import { prisma } from '@/lib/db';
 
 export async function GET() {
-  const connection = await getConnection();
   try {
-    const [rows] = await connection.execute('SELECT * FROM visitors ORDER BY created_at DESC');
-    return NextResponse.json(rows);
-  } catch (error) {
-    console.error('MySQL error:', error);
-    return NextResponse.json([]);
-  } finally {
-    await connection.end();
+    const visitors = await prisma.visitors.findMany({
+      orderBy: { created_at: 'desc' }
+    });
+    
+    console.log(`✅ Found ${visitors.length} visitors in database`);
+    return NextResponse.json(visitors);
+  } catch (error: any) {
+    console.error('❌ Database error:', error.message);
+    return NextResponse.json(
+      { error: 'Failed to fetch visitors', details: error.message },
+      { status: 500 }
+    );
   }
 }
 
@@ -29,23 +23,28 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📥 POST received:', body);
     
-    const connection = await getConnection();
-    
+    // Generate visitor code
     const visitorCode = `VIST-${Math.floor(Math.random() * 9000) + 1000}`;
-    const visitorId = `vis-${Date.now()}`;
     
-    // Insert into database
-    await connection.execute(
-      `INSERT INTO visitors (id, visitor_code, name, phone, vehicle_plate, status) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [visitorId, visitorCode, body.name || '', body.phone || '', body.vehicle_plate || '', 'Pre-registered']
-    );
-    
-    // Get the inserted record
-    const [rows] = await connection.execute('SELECT * FROM visitors WHERE id = ?', [visitorId]);
-    const newVisitor = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-    
-    await connection.end();
+    // Create visitor in database using Prisma
+    const newVisitor = await prisma.visitors.create({
+      data: {
+        visitor_code: visitorCode,
+        name: body.name || '',
+        phone: body.phone || '',
+        vehicle_plate: body.vehicle_plate || '',
+        id_number: body.id_number || '',
+        email: body.email || '',
+        company: body.company || '',
+        vehicle_type: body.vehicle_type || '',
+        cargo_description: body.cargo_description || '',
+        visitor_type: body.visitor_type || 'visitor',
+        status: body.status || 'Pre-registered',
+        expected_check_in_time: body.expected_check_in_time ? new Date(body.expected_check_in_time) : new Date(),
+        host_id: body.host_id || '',
+        department: body.department || '',
+      }
+    });
     
     console.log('✅ Created in database:', newVisitor);
     return NextResponse.json(newVisitor, { status: 201 });
@@ -53,18 +52,22 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Database error:', error.message);
     
-    // Fallback to mock if database fails
-    const mockVisitor = {
-      id: `vis-${Date.now()}`,
-      visitor_code: `VIST-${Math.floor(Math.random() * 9000) + 1000}`,
-      name: body?.name || 'Test',
-      phone: body?.phone || '0712345678',
-      vehicle_plate: body?.vehicle_plate || 'TEST-123',
-      status: 'Pre-registered',
-      created_at: new Date().toISOString()
-    };
+    // Return specific error messages
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Visitor with this ID number or visitor code already exists' },
+        { status: 400 }
+      );
+    }
     
-    return NextResponse.json(mockVisitor, { status: 201 });
+    return NextResponse.json(
+      { 
+        error: 'Failed to create visitor', 
+        details: error.message,
+        code: error.code
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -74,25 +77,42 @@ export async function PUT(request: NextRequest) {
     const id = searchParams.get('id');
     const body = await request.json();
     
-    if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json(
+        { error: 'ID required' },
+        { status: 400 }
+      );
+    }
     
-    const connection = await getConnection();
+    // Update visitor in database
+    const updatedVisitor = await prisma.visitors.update({
+      where: { id },
+      data: {
+        status: body.status,
+        check_in_time: body.check_in_time ? new Date(body.check_in_time) : undefined,
+        check_out_time: body.check_out_time ? new Date(body.check_out_time) : undefined,
+        vehicle_plate: body.vehicle_plate,
+        vehicle_type: body.vehicle_type,
+        cargo_description: body.cargo_description
+      }
+    });
     
-    // Update in database
-    await connection.execute(
-      'UPDATE visitors SET status = ? WHERE id = ?',
-      [body.status, id]
-    );
-    
-    // Get updated record
-    const [rows] = await connection.execute('SELECT * FROM visitors WHERE id = ?', [id]);
-    const updatedVisitor = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-    
-    await connection.end();
-    
+    console.log('✅ Updated in database:', updatedVisitor);
     return NextResponse.json(updatedVisitor);
-  } catch (error) {
-    console.error('Update error:', error);
-    return NextResponse.json({ error: 'Update failed' }, { status: 500 });
+    
+  } catch (error: any) {
+    console.error('❌ Update error:', error.message);
+    
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Visitor not found' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: 'Update failed', details: error.message },
+      { status: 500 }
+    );
   }
 }

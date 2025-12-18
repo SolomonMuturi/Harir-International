@@ -31,7 +31,7 @@ import {
   AlertCircle, Search, RefreshCw, Eye, Edit, Trash2, User, Briefcase,
   Phone, Mail, Building, BadgeCheck, Award, DollarSign, CalendarDays,
   Shield, FileText, Download, Filter, MoreVertical, UserPlus,
-  ChevronLeft, ChevronRight, DownloadCloud, UploadCloud
+  ChevronLeft, ChevronRight, DownloadCloud, UploadCloud, BarChart
 } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { useToast } from '@/hooks/use-toast';
@@ -373,6 +373,18 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
       </CardContent>
     </Card>
   );
+};
+
+// Helper function to escape CSV fields
+const escapeCsvField = (field: any): string => {
+  if (field === null || field === undefined) {
+    return '';
+  }
+  const stringField = String(field);
+  if (/[",\n]/.test(stringField)) {
+    return `"${stringField.replace(/"/g, '""')}"`;
+  }
+  return stringField;
 };
 
 export default function EmployeesPage() {
@@ -1191,37 +1203,34 @@ export default function EmployeesPage() {
     setFilteredAttendance(filtered);
   }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees]);
 
-  // Export attendance to CSV
+  // Export attendance to CSV - Only Name, ID Number, Phone Number, Designation
   const exportToCSV = () => {
-    const headers = ['Date', 'Employee Name', 'Employee ID', 'Contract Type', 'Check In', 'Check Out', 'Status', 'Designation', 'Hours Worked'];
+    if (filteredAttendance.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No attendance records found for the selected filter.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Only include the 4 columns specified
+    const headers = ['Name', 'ID Number', 'Phone Number', 'Designation'];
     
     const csvData = filteredAttendance.map(record => {
       const employee = employees.find(emp => emp.id === record.employeeId);
-      let hoursWorked = 'N/A';
-      
-      if (record.clockInTime && record.clockOutTime) {
-        const inTime = parseISO(record.clockInTime);
-        const outTime = parseISO(record.clockOutTime);
-        const hours = differenceInHours(outTime, inTime);
-        hoursWorked = `${hours} hours`;
-      }
       
       return [
-        record.date,
         employee?.name || 'Unknown',
-        employee?.employeeId || record.employeeId,
-        employee?.contract || 'Unknown',
-        record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : '',
-        record.clockOutTime ? format(parseISO(record.clockOutTime), 'HH:mm') : '',
-        record.status,
-        record.designation ? designationLabels[record.designation] : '',
-        hoursWorked
+        employee?.id_number || 'N/A',
+        employee?.phone || 'N/A',
+        record.designation ? designationLabels[record.designation] : 'N/A'
       ];
     });
 
     const csvContent = [
       headers.join(','),
-      ...csvData.map(row => row.join(','))
+      ...csvData.map(row => row.map(cell => escapeCsvField(cell)).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -1230,6 +1239,50 @@ export default function EmployeesPage() {
     a.href = url;
     a.download = `attendance_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.csv`;
     a.click();
+    
+    toast({
+      title: 'CSV Exported',
+      description: 'Attendance data has been downloaded.',
+    });
+  };
+
+  // Export employee list to CSV - Only Name, ID Number, Phone Number, Designation
+  const exportEmployeeCSV = () => {
+    if (employees.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No employees found.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Only include the 4 columns specified
+    const headers = ['Name', 'ID Number', 'Phone Number', 'Designation'];
+    
+    const csvData = employees.map(employee => [
+      employee.name || 'N/A',
+      employee.id_number || 'N/A',
+      employee.phone || 'N/A',
+      employee.role || 'N/A' // Using role as "Designation"
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => row.map(cell => escapeCsvField(cell)).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `employees_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    
+    toast({
+      title: 'CSV Exported',
+      description: 'Employee list has been downloaded.',
+    });
   };
 
   // Handle check-in all employees for today
@@ -1390,7 +1443,7 @@ export default function EmployeesPage() {
             </div>
           </div>
 
-          {/* Main Tabs */}
+          {/* Main Tabs - REMOVED Data Exports tab */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -1489,6 +1542,12 @@ export default function EmployeesPage() {
                     </div>
                   </div>
                 </CardContent>
+                <CardFooter>
+                  <Button onClick={exportEmployeeCSV} variant="outline" size="sm">
+                    <Download className="mr-2 w-4 h-4" />
+                    Export Employee List (CSV)
+                  </Button>
+                </CardFooter>
               </Card>
 
               {/* Quick Employee Actions */}
@@ -2010,6 +2069,10 @@ export default function EmployeesPage() {
                           <SelectItem value="Contract">Contract</SelectItem>
                         </SelectContent>
                       </Select>
+                      <Button onClick={exportEmployeeCSV} variant="outline">
+                        <Download className="mr-2 w-4 h-4" />
+                        Export CSV
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>

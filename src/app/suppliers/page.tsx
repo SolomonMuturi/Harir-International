@@ -41,8 +41,6 @@ import {
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 
 interface DatabaseSupplier {
   id: string;
@@ -87,15 +85,25 @@ export default function SuppliersPage() {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const { toast } = useToast();
 
-  // Fetch suppliers from database
-  useEffect(() => {
-    fetchSuppliers();
-  }, []);
-
-  const fetchSuppliers = async () => {
+  // Fetch suppliers from database with date filtering
+  const fetchSuppliers = async (startDate?: Date, endDate?: Date) => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/suppliers');
+      
+      let url = '/api/suppliers';
+      const params = new URLSearchParams();
+      
+      const fromDate = startDate || dateRange.from;
+      const toDate = endDate || dateRange.to;
+      
+      params.append('startDate', format(fromDate, 'yyyy-MM-dd'));
+      params.append('endDate', format(toDate, 'yyyy-MM-dd'));
+      
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+      
+      const response = await fetch(url);
       if (response.ok) {
         const data: DatabaseSupplier[] = await response.json();
         const convertedSuppliers: Supplier[] = data.map(supplier => ({
@@ -140,22 +148,28 @@ export default function SuppliersPage() {
     }
   };
 
+  // Initial fetch and fetch when date range changes
+  useEffect(() => {
+    fetchSuppliers();
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      fetchSuppliers(dateRange.from, dateRange.to);
+    }
+  }, [dateRange]);
+
   const isEditDialogOpen = !!editingSupplier;
 
   // Get existing supplier codes for sequential generation
   const existingSupplierCodes = suppliers.map(s => s.supplierCode);
 
-  // Filter suppliers by date range
-  const filteredSuppliers = suppliers.filter(supplier => {
-    if (!supplier.createdAt) return true;
-    
-    const supplierDate = new Date(supplier.createdAt);
-    return supplierDate >= dateRange.from && supplierDate <= dateRange.to;
-  });
+  // Filter suppliers by date range (now done by API)
+  const filteredSuppliers = suppliers;
 
-  // Generate CSV report
-  const generateCSV = () => {
-    if (filteredSuppliers.length === 0) {
+  // Handle download report using the unified API
+  const handleDownloadReport = async (formatType: 'csv' | 'pdf') => {
+    if (suppliers.length === 0) {
       toast({
         title: 'No Data',
         description: 'No suppliers found for the selected date range.',
@@ -164,40 +178,91 @@ export default function SuppliersPage() {
       return;
     }
 
+    try {
+      setIsGeneratingReport(true);
+      
+      // Build URL with date range and format
+      const params = new URLSearchParams({
+        startDate: format(dateRange.from, 'yyyy-MM-dd'),
+        endDate: format(dateRange.to, 'yyyy-MM-dd'),
+        format: formatType
+      });
+      
+      const url = `/api/suppliers?${params.toString()}`;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to generate ${formatType.toUpperCase()} report`);
+      }
+      
+      // Get filename from Content-Disposition header or generate one
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `suppliers_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.${formatType}`;
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      // Get blob based on content type
+      let blob;
+      if (formatType === 'pdf') {
+        blob = await response.blob();
+      } else {
+        const text = await response.text();
+        blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+      }
+      
+      // Download the file
+      const urlObj = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = urlObj;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(urlObj);
+      
+      toast({
+        title: 'Report Downloaded',
+        description: `${formatType.toUpperCase()} report has been downloaded successfully.`,
+      });
+    } catch (error: any) {
+      console.error(`Error downloading ${formatType} report:`, error);
+      toast({
+        title: 'Error',
+        description: error.message || `Failed to download ${formatType.toUpperCase()} report`,
+        variant: 'destructive',
+      });
+      
+      // Fallback to client-side CSV generation
+      if (formatType === 'csv' && suppliers.length > 0) {
+        generateClientSideCSV();
+      }
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  // Fallback client-side CSV generation
+  const generateClientSideCSV = () => {
     const headers = [
       'Supplier Code',
-      'Name',
+      'Supplier Name',
       'Location',
-      'Contact Person',
-      'Phone',
-      'Email',
-      'Status',
-      'Produce Types',
-      'KRA PIN',
-      'Bank Name',
-      'Bank Account',
-      'M-PESA Paybill',
-      'M-PESA Account',
-      'Active Contracts',
-      'Registration Date',
+      'Phone Number',
+      'Email Number'
     ];
 
-    const csvData = filteredSuppliers.map(supplier => [
+    const csvData = suppliers.map(supplier => [
       supplier.supplierCode || 'N/A',
       supplier.name || 'N/A',
       supplier.location || 'N/A',
-      supplier.contactName || 'N/A',
       supplier.contactPhone || 'N/A',
-      supplier.contactEmail || 'N/A',
-      supplier.status || 'N/A',
-      Array.isArray(supplier.produceTypes) ? supplier.produceTypes.join(', ') : 'N/A',
-      supplier.kraPin || 'N/A',
-      supplier.bankName || 'N/A',
-      supplier.bankAccountNumber || 'N/A',
-      supplier.mpesaPaybill || 'N/A',
-      supplier.mpesaAccountNumber || 'N/A',
-      supplier.activeContracts?.toString() || '0',
-      supplier.createdAt ? format(new Date(supplier.createdAt), 'yyyy-MM-dd') : 'N/A',
+      supplier.contactEmail || 'N/A'
     ]);
 
     const csvContent = [
@@ -216,154 +281,9 @@ export default function SuppliersPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Generate PDF report
-  const generatePDF = async () => {
-    if (filteredSuppliers.length === 0) {
-      toast({
-        title: 'No Data',
-        description: 'No suppliers found for the selected date range.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      setIsGeneratingReport(true);
-      
-      // Prepare data for PDF generation
-      const reportData = {
-        dateRange: {
-          from: format(dateRange.from, 'yyyy-MM-dd'),
-          to: format(dateRange.to, 'yyyy-MM-dd'),
-        },
-        suppliers: filteredSuppliers,
-        summary: {
-          totalSuppliers: filteredSuppliers.length,
-          activeSuppliers: filteredSuppliers.filter(s => s.status === 'Active').length,
-          totalContracts: filteredSuppliers.reduce((acc, s) => acc + (s.activeContracts || 0), 0),
-        }
-      };
-
-      // Call API to generate PDF
-      const response = await fetch('/api/reports/suppliers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(reportData),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `suppliers_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.pdf`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        toast({
-          title: 'Report Generated',
-          description: 'PDF report downloaded successfully.',
-        });
-      } else {
-        throw new Error('Failed to generate PDF');
-      }
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to generate PDF report. Please try CSV export instead.',
-        variant: 'destructive',
-      });
-      
-      // Fallback to showing data in a new window as HTML
-      const htmlReport = generateHTMLReport();
-      const newWindow = window.open();
-      if (newWindow) {
-        newWindow.document.write(htmlReport);
-        newWindow.document.close();
-      }
-    } finally {
-      setIsGeneratingReport(false);
-    }
-  };
-
-  // Generate HTML report (fallback)
-  const generateHTMLReport = () => {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Supplier Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; }
-          h1 { color: #333; }
-          .summary { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-          .date-range { color: #666; margin-bottom: 20px; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f2f2f2; }
-          tr:nth-child(even) { background-color: #f9f9f9; }
-          .footer { margin-top: 30px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <h1>Supplier Report</h1>
-        <div class="date-range">
-          <strong>Date Range:</strong> ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}
-        </div>
-        <div class="summary">
-          <h3>Summary</h3>
-          <p>Total Suppliers: ${filteredSuppliers.length}</p>
-          <p>Active Suppliers: ${filteredSuppliers.filter(s => s.status === 'Active').length}</p>
-          <p>Total Active Contracts: ${filteredSuppliers.reduce((acc, s) => acc + (s.activeContracts || 0), 0)}</p>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Supplier Code</th>
-              <th>Name</th>
-              <th>Location</th>
-              <th>Contact Person</th>
-              <th>Phone</th>
-              <th>Status</th>
-              <th>Produce Types</th>
-              <th>Registration Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredSuppliers.map(supplier => `
-              <tr>
-                <td>${supplier.supplierCode || 'N/A'}</td>
-                <td>${supplier.name || 'N/A'}</td>
-                <td>${supplier.location || 'N/A'}</td>
-                <td>${supplier.contactName || 'N/A'}</td>
-                <td>${supplier.contactPhone || 'N/A'}</td>
-                <td>${supplier.status || 'N/A'}</td>
-                <td>${Array.isArray(supplier.produceTypes) ? supplier.produceTypes.join(', ') : 'N/A'}</td>
-                <td>${supplier.createdAt ? format(new Date(supplier.createdAt), 'dd/MM/yyyy') : 'N/A'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        <div class="footer">
-          <p>Report generated on ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}</p>
-        </div>
-      </body>
-      </html>
-    `;
-  };
-
-  // Handle download report based on format
-  const handleDownloadReport = (format: 'pdf' | 'csv') => {
-    if (format === 'pdf') {
-      generatePDF();
-    } else {
-      generateCSV();
-    }
+  // Handle date range change
+  const handleDateRangeChange = (range: DateRange) => {
+    setDateRange(range);
   };
 
   // Rest of your existing functions (handleAddSupplier, handleUpdateSupplier, etc.)
@@ -375,7 +295,7 @@ export default function SuppliersPage() {
         name: values.name || '',
         location: values.location || '',
         contact_name: values.contactName || '',
-        contact_email: '',
+        contact_email: values.contactEmail || '',
         contact_phone: values.contactPhone || '',
         produce_types: values.produceTypes || [],
         status: 'Active',
@@ -451,7 +371,7 @@ export default function SuppliersPage() {
         driver_id_number: editingSupplier.driverIdNumber || '',
       };
 
-      const response = await fetch(`/api/suppliers/${editingSupplier.id}`, {
+      const response = await fetch(`/api/suppliers?id=${editingSupplier.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -608,7 +528,7 @@ export default function SuppliersPage() {
                     selected={dateRange}
                     onSelect={(range) => {
                       if (range?.from && range?.to) {
-                        setDateRange({ from: range.from, to: range.to });
+                        handleDateRangeChange({ from: range.from, to: range.to });
                         setIsDatePickerOpen(false);
                       }
                     }}
@@ -620,10 +540,11 @@ export default function SuppliersPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          setDateRange({
+                          const newRange = {
                             from: subDays(new Date(), 7),
                             to: new Date(),
-                          });
+                          };
+                          handleDateRangeChange(newRange);
                           setIsDatePickerOpen(false);
                         }}
                       >
@@ -633,10 +554,11 @@ export default function SuppliersPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          setDateRange({
+                          const newRange = {
                             from: subDays(new Date(), 30),
                             to: new Date(),
-                          });
+                          };
+                          handleDateRangeChange(newRange);
                           setIsDatePickerOpen(false);
                         }}
                       >
@@ -708,15 +630,15 @@ export default function SuppliersPage() {
                   Showing suppliers registered from {format(dateRange.from, 'dd/MM/yyyy')} to {format(dateRange.to, 'dd/MM/yyyy')}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  {filteredSuppliers.length} supplier(s) found
+                  {suppliers.length} supplier(s) found
                 </p>
               </div>
               <div className="text-right">
                 <p className="text-sm">
-                  Active: {filteredSuppliers.filter(s => s.status === 'Active').length}
+                  Active: {suppliers.filter(s => s.status === 'Active').length}
                 </p>
                 <p className="text-sm">
-                  Total Contracts: {filteredSuppliers.reduce((acc, s) => acc + (s.activeContracts || 0), 0)}
+                  Total Contracts: {suppliers.reduce((acc, s) => acc + (s.activeContracts || 0), 0)}
                 </p>
               </div>
             </div>
@@ -728,7 +650,7 @@ export default function SuppliersPage() {
             </Link>
           </div>
 
-          <SupplierDataTable suppliers={filteredSuppliers} onEditSupplier={openEditDialog} />
+          <SupplierDataTable suppliers={suppliers} onEditSupplier={openEditDialog} />
         </main>
       </SidebarInset>
 

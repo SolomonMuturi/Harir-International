@@ -46,13 +46,16 @@ export async function GET(
       );
     }
     
+    // Parse permissions from string to array
+    const roleWithParsedPermissions = {
+      ...role,
+      permissions: JSON.parse(role.permissions || '[]') as string[],
+      userCount: role._count.users,
+    };
+    
     return NextResponse.json({
       success: true,
-      role: {
-        ...role,
-        permissions: role.permissions as string[],
-        userCount: role._count.users,
-      },
+      role: roleWithParsedPermissions,
     });
   } catch (error) {
     console.error('Error fetching role:', error);
@@ -110,12 +113,19 @@ export async function PUT(
       }
     }
     
+    // Prepare update data
+    const updateData: any = {};
+    if (validatedData.name !== undefined) updateData.name = validatedData.name;
+    if (validatedData.description !== undefined) updateData.description = validatedData.description;
+    if (validatedData.permissions !== undefined) updateData.permissions = JSON.stringify(validatedData.permissions);
+    if (validatedData.isDefault !== undefined) updateData.isDefault = validatedData.isDefault;
+    
     // If setting as default, unset other defaults
     if (validatedData.isDefault === true) {
       await prisma.userRole.updateMany({
         where: { 
           isDefault: true,
-          id: { not: params.id }, // Don't unset the current role
+          id: { not: params.id },
         },
         data: { isDefault: false },
       });
@@ -123,20 +133,18 @@ export async function PUT(
     
     const updatedRole = await prisma.userRole.update({
       where: { id: params.id },
-      data: {
-        name: validatedData.name,
-        description: validatedData.description,
-        permissions: validatedData.permissions,
-        isDefault: validatedData.isDefault,
-      },
+      data: updateData,
     });
+    
+    // Parse permissions for response
+    const roleWithParsedPermissions = {
+      ...updatedRole,
+      permissions: JSON.parse(updatedRole.permissions || '[]') as string[],
+    };
     
     return NextResponse.json({
       success: true,
-      role: {
-        ...updatedRole,
-        permissions: updatedRole.permissions as string[],
-      },
+      role: roleWithParsedPermissions,
       message: 'Role updated successfully'
     });
   } catch (error) {
@@ -209,6 +217,13 @@ export async function PATCH(
       }
     }
     
+    // Prepare update data
+    const updateData: any = {};
+    if (validatedData.name !== undefined) updateData.name = validatedData.name;
+    if (validatedData.description !== undefined) updateData.description = validatedData.description;
+    if (validatedData.permissions !== undefined) updateData.permissions = JSON.stringify(validatedData.permissions);
+    if (validatedData.isDefault !== undefined) updateData.isDefault = validatedData.isDefault;
+    
     // If setting as default, unset other defaults
     if (validatedData.isDefault === true) {
       await prisma.userRole.updateMany({
@@ -222,15 +237,18 @@ export async function PATCH(
     
     const updatedRole = await prisma.userRole.update({
       where: { id: params.id },
-      data: validatedData,
+      data: updateData,
     });
+    
+    // Parse permissions for response
+    const roleWithParsedPermissions = {
+      ...updatedRole,
+      permissions: JSON.parse(updatedRole.permissions || '[]') as string[],
+    };
     
     return NextResponse.json({
       success: true,
-      role: {
-        ...updatedRole,
-        permissions: updatedRole.permissions as string[],
-      },
+      role: roleWithParsedPermissions,
       message: 'Role updated successfully'
     });
   } catch (error) {

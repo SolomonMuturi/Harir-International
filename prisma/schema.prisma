@@ -628,11 +628,11 @@ model packaging_materials {
 }
 
 model User {
-  id          String    @id @default(cuid())           // REMOVE @db.VarChar(20) if present
+  id          String    @id @default(cuid())
   email       String    @unique
   name        String?
   password    String?
-  roleId      String?                                  // REMOVE @db.VarChar(20)
+  roleId      String?   @db.VarChar(10)  // Match the length
   role        UserRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -641,7 +641,7 @@ model User {
 }
 
 model UserRole {
-  id          String    @id @default(cuid())           // REMOVE @db.VarChar(20)
+  id          String    @id @default(nanoid(8)) @db.VarChar(10)  // 8-char IDs
   name        String    @unique @db.VarChar(100)
   description String?   @db.Text
   permissions Json      @default("[]")

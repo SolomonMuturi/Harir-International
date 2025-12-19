@@ -247,6 +247,174 @@ const formatDateForInput = (dateString: string) => {
   return date.toISOString().split('T')[0];
 };
 
+// CSV Export utility function
+const exportToCSV = (data: LoadingHistoryRecord[], filename: string = 'coldroom-loading-history') => {
+  if (!data || data.length === 0) {
+    return;
+  }
+
+  // Define CSV headers
+  const headers = [
+    'Loading Date',
+    'Supplier Name',
+    'Pallet ID',
+    'Region',
+    'Variety',
+    'Box Type',
+    'Size',
+    'Grade',
+    'Quantity',
+    'Weight Per Box (kg)',
+    'Total Weight (kg)',
+    'Cold Room',
+    'Loaded By',
+    'Created At'
+  ];
+
+  // Convert data to CSV rows
+  const rows = data.map(record => {
+    const boxWeight = record.box_type === '4kg' ? 4 : 10;
+    const totalWeight = (record.quantity || 0) * boxWeight;
+    const loadingDate = record.loading_date ? new Date(record.loading_date).toLocaleDateString() : '';
+    const createdDate = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
+    
+    return [
+      `"${loadingDate}"`,
+      `"${record.supplier_name || 'Unknown'}"`,
+      `"${record.pallet_id || ''}"`,
+      `"${record.region || ''}"`,
+      `"${record.variety === 'fuerte' ? 'Fuerte' : 'Hass'}"`,
+      `"${record.box_type}"`,
+      `"${formatSize(record.size)}"`,
+      `"${record.grade === 'class1' ? 'Class 1' : 'Class 2'}"`,
+      `"${record.quantity || 0}"`,
+      `"${boxWeight}"`,
+      `"${totalWeight}"`,
+      `"${record.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
+      `"${record.loaded_by || 'Warehouse Staff'}"`,
+      `"${createdDate}"`
+    ].join(',');
+  });
+
+  // Combine headers and rows
+  const csvContent = [
+    headers.join(','),
+    ...rows
+  ].join('\n');
+
+  // Create blob and download link
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+};
+
+// Export filtered data with summary
+const exportFilteredHistoryToCSV = (
+  data: LoadingHistoryRecord[], 
+  filters: any,
+  summary: any,
+  filename: string = 'coldroom-filtered-history'
+) => {
+  if (!data || data.length === 0) {
+    return;
+  }
+
+  // Create summary section
+  const summarySection = [
+    ['COLD ROOM LOADING HISTORY REPORT'],
+    ['Generated on:', new Date().toLocaleString()],
+    [''],
+    ['FILTER CRITERIA:'],
+    [`Date Range: ${filters.dateFrom || 'Any'} to ${filters.dateTo || 'Any'}`],
+    [`Supplier: ${filters.supplierName || 'Any'}`],
+    [`Cold Room: ${filters.coldRoomId === 'all' ? 'All' : filters.coldRoomId === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}`],
+    [''],
+    ['REPORT SUMMARY:'],
+    [`Total Records: ${summary.totalRecords || 0}`],
+    [`Total Boxes Loaded: ${summary.totalBoxesLoaded?.toLocaleString() || 0}`],
+    [`Total Weight: ${safeToFixed(summary.totalWeight || 0)} kg`],
+    [`Unique Suppliers: ${summary.uniqueSuppliers || 0}`],
+    [''],
+    ['DETAILED RECORDS:'],
+    [''] // Empty line before headers
+  ];
+
+  // Define CSV headers
+  const headers = [
+    'Loading Date',
+    'Supplier Name',
+    'Pallet ID',
+    'Region',
+    'Variety',
+    'Box Type',
+    'Size',
+    'Grade',
+    'Quantity',
+    'Weight Per Box (kg)',
+    'Total Weight (kg)',
+    'Cold Room',
+    'Loaded By',
+    'Created At'
+  ];
+
+  // Convert data to CSV rows
+  const rows = data.map(record => {
+    const boxWeight = record.box_type === '4kg' ? 4 : 10;
+    const totalWeight = (record.quantity || 0) * boxWeight;
+    const loadingDate = record.loading_date ? new Date(record.loading_date).toLocaleDateString() : '';
+    const createdDate = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
+    
+    return [
+      `"${loadingDate}"`,
+      `"${record.supplier_name || 'Unknown'}"`,
+      `"${record.pallet_id || ''}"`,
+      `"${record.region || ''}"`,
+      `"${record.variety === 'fuerte' ? 'Fuerte' : 'Hass'}"`,
+      `"${record.box_type}"`,
+      `"${formatSize(record.size)}"`,
+      `"${record.grade === 'class1' ? 'Class 1' : 'Class 2'}"`,
+      `"${record.quantity || 0}"`,
+      `"${boxWeight}"`,
+      `"${totalWeight}"`,
+      `"${record.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
+      `"${record.loaded_by || 'Warehouse Staff'}"`,
+      `"${createdDate}"`
+    ].join(',');
+  });
+
+  // Combine all sections
+  const csvContent = [
+    ...summarySection.map(row => Array.isArray(row) ? row.join(',') : row),
+    headers.join(','),
+    ...rows
+  ].join('\n');
+
+  // Create blob and download link
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+};
+
 export default function ColdRoomPage() {
   const { toast } = useToast();
   
@@ -2161,6 +2329,80 @@ toast({
     );
   };
 
+  // Handle CSV download
+  const handleDownloadCSV = () => {
+    if (loadingHistory.length === 0) {
+      toast({
+        title: 'No data to export',
+        description: 'There is no loading history data to download',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      exportToCSV(loadingHistory, 'coldroom-loading-history');
+      
+      toast({
+        title: 'CSV Export Started',
+        description: `Downloading ${loadingHistory.length} records as CSV file`,
+      });
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'Could not generate CSV file. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle filtered CSV download with summary
+  const handleDownloadFilteredCSV = () => {
+    if (loadingHistory.length === 0) {
+      toast({
+        title: 'No data to export',
+        description: 'There is no loading history data to download',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      const filteredData = [...loadingHistory].sort((a, b) => {
+        const dateA = a.loading_date ? new Date(a.loading_date).getTime() : 0;
+        const dateB = b.loading_date ? new Date(b.loading_date).getTime() : 0;
+        return dateB - dateA;
+      });
+      
+      exportFilteredHistoryToCSV(
+        filteredData, 
+        historySearch, 
+        loadingHistorySummary,
+        `coldroom-history-${historySearch.dateFrom || 'all'}-${historySearch.dateTo || 'all'}`
+      );
+      
+      toast({
+        title: 'CSV Export with Summary',
+        description: (
+          <div>
+            <p>Downloading {filteredData.length} filtered records</p>
+            <div className="text-xs text-gray-600 mt-1">
+              Includes search criteria and report summary
+            </div>
+          </div>
+        ),
+      });
+    } catch (error) {
+      console.error('Error exporting filtered CSV:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'Could not generate CSV file. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <SidebarProvider>
       <Sidebar>
@@ -3713,6 +3955,27 @@ toast({
                       </CardContent>
                     </Card>
                     
+                    {/* Export Buttons */}
+                    <div className="flex justify-end gap-3">
+                      <Button
+                        onClick={handleDownloadCSV}
+                        variant="outline"
+                        disabled={loadingHistory.length === 0}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        Export All to CSV
+                      </Button>
+                      <Button
+                        onClick={handleDownloadFilteredCSV}
+                        disabled={loadingHistory.length === 0}
+                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Export Filtered with Summary
+                      </Button>
+                    </div>
+                    
                     {/* History Table */}
                     <div>
                       <div className="flex items-center justify-between mb-4">
@@ -3723,7 +3986,7 @@ toast({
                             return date ? date.split('T')[0] : '';
                           }).filter(Boolean)).size} days
                         </Badge>
-                        </div>
+                      </div>
                       
                       {isLoading.loadingHistory ? (
                         <div className="text-center py-8">

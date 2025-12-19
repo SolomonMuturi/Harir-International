@@ -17,8 +17,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { PlusCircle, Search, Edit, Trash2, Phone, Mail, Truck, Star, RefreshCw } from 'lucide-react';
+import { PlusCircle, Search, Edit, Trash2, Phone, Mail, Truck, Star, RefreshCw, Download, FileText, Calendar, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Carrier {
   id: string;
@@ -42,11 +43,154 @@ interface Carrier {
   }>;
 }
 
+// CSV Export utility function with date filtering
+const exportCarriersToCSV = (carriers: Carrier[], filters: any, filename: string = 'carriers-list') => {
+  if (!carriers || carriers.length === 0) {
+    return;
+  }
+
+  // Filter carriers by date range if specified
+  let filteredCarriers = [...carriers];
+  
+  if (filters.dateFrom) {
+    const fromDate = new Date(filters.dateFrom);
+    filteredCarriers = filteredCarriers.filter(carrier => {
+      const carrierDate = new Date(carrier.created_at);
+      return carrierDate >= fromDate;
+    });
+  }
+  
+  if (filters.dateTo) {
+    const toDate = new Date(filters.dateTo);
+    toDate.setHours(23, 59, 59, 999); // End of day
+    filteredCarriers = filteredCarriers.filter(carrier => {
+      const carrierDate = new Date(carrier.created_at);
+      return carrierDate <= toDate;
+    });
+  }
+
+  if (filteredCarriers.length === 0) {
+    alert('No carriers match the selected date range');
+    return;
+  }
+
+  // Create summary section
+  const activeCarriers = filteredCarriers.filter(c => c.status === 'Active').length;
+  const inactiveCarriers = filteredCarriers.filter(c => c.status === 'Inactive').length;
+  const totalShipments = filteredCarriers.reduce((sum, c) => sum + (c._count?.shipments || 0), 0);
+  const avgRating = filteredCarriers.length > 0 
+    ? (filteredCarriers.reduce((sum, c) => sum + (c.rating || 0), 0) / filteredCarriers.length).toFixed(1)
+    : '0.0';
+
+  const summarySection = [
+    ['CARRIERS MANAGEMENT REPORT'],
+    ['Generated on:', new Date().toLocaleString()],
+    [''],
+    ['FILTER CRITERIA:'],
+    [`Search Term: ${filters.searchTerm || 'None'}`],
+    [`Status Filter: ${filters.statusFilter}`],
+    [`Date Range: ${filters.dateFrom || 'Any'} to ${filters.dateTo || 'Any'}`],
+    [''],
+    ['REPORT SUMMARY:'],
+    [`Total Carriers: ${filteredCarriers.length}`],
+    [`Active Carriers: ${activeCarriers}`],
+    [`Inactive Carriers: ${inactiveCarriers}`],
+    [`Average Rating: ${avgRating}`],
+    [`Total Shipments: ${totalShipments}`],
+    [''],
+    ['CARRIER DETAILS:'],
+    [''] // Empty line before headers
+  ];
+
+  // Define CSV headers
+  const headers = [
+    'Carrier ID',
+    'Name',
+    'Contact Name',
+    'Contact Email',
+    'Contact Phone',
+    'ID Number',
+    'Vehicle Registration',
+    'Rating',
+    'Status',
+    'Total Shipments',
+    'Created Date',
+    'Created Time',
+    'Last Updated'
+  ];
+
+  // Convert data to CSV rows
+  const rows = filteredCarriers.map((carrier) => {
+    const createdDate = carrier.created_at ? new Date(carrier.created_at) : null;
+    const createdDateStr = createdDate ? createdDate.toLocaleDateString() : '';
+    const createdTimeStr = createdDate ? createdDate.toLocaleTimeString() : '';
+    const updatedDate = carrier.updated_at ? new Date(carrier.updated_at).toLocaleDateString() : '';
+    
+    return [
+      `"${carrier.id || ''}"`,
+      `"${carrier.name || ''}"`,
+      `"${carrier.contact_name || ''}"`,
+      `"${carrier.contact_email || ''}"`,
+      `"${carrier.contact_phone || ''}"`,
+      `"${carrier.id_number || ''}"`,
+      `"${carrier.vehicle_registration || ''}"`,
+      `"${carrier.rating || 0}"`,
+      `"${carrier.status || ''}"`,
+      `"${carrier._count?.shipments || 0}"`,
+      `"${createdDateStr}"`,
+      `"${createdTimeStr}"`,
+      `"${updatedDate}"`
+    ].join(',');
+  });
+
+  // Combine all sections
+  const csvContent = [
+    ...summarySection.map(row => Array.isArray(row) ? row.join(',') : row),
+    headers.join(','),
+    ...rows
+  ].join('\n');
+
+  // Create blob and download link
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  // Generate filename with date range if specified
+  let downloadFilename = filename;
+  if (filters.dateFrom) {
+    downloadFilename += `_from_${filters.dateFrom}`;
+  }
+  if (filters.dateTo) {
+    downloadFilename += `_to_${filters.dateTo}`;
+  }
+  downloadFilename += `_${new Date().toISOString().split('T')[0]}`;
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${downloadFilename}.csv`);
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+  
+  return filteredCarriers.length;
+};
+
+// Helper function to format date for input
+const formatDateForInput = (date: Date) => {
+  return date.toISOString().split('T')[0];
+};
+
 export default function CarriersPage() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [dateRangePreset, setDateRangePreset] = useState('all');
   const [isAdding, setIsAdding] = useState(false);
   const [newCarrier, setNewCarrier] = useState({
     name: '',
@@ -76,6 +220,14 @@ export default function CarriersPage() {
       
       if (searchTerm.trim()) {
         params.append('search', searchTerm.trim());
+      }
+      
+      if (dateFrom) {
+        params.append('dateFrom', dateFrom);
+      }
+      
+      if (dateTo) {
+        params.append('dateTo', dateTo);
       }
       
       console.log('🌐 Fetching carriers...');
@@ -108,8 +260,8 @@ export default function CarriersPage() {
           status: 'Active',
           id_number: 'CAR001',
           vehicle_registration: 'KAA123X',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: new Date('2024-01-15').toISOString(),
+          updated_at: new Date('2024-01-20').toISOString(),
           _count: { shipments: 5 }
         },
         {
@@ -122,8 +274,8 @@ export default function CarriersPage() {
           status: 'Active',
           id_number: 'CAR002',
           vehicle_registration: 'KAB456Y',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: new Date('2024-02-10').toISOString(),
+          updated_at: new Date('2024-02-15').toISOString(),
           _count: { shipments: 12 }
         },
         {
@@ -136,8 +288,8 @@ export default function CarriersPage() {
           status: 'Inactive',
           id_number: 'CAR003',
           vehicle_registration: 'KAC789Z',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: new Date('2024-03-05').toISOString(),
+          updated_at: new Date('2024-03-10').toISOString(),
           _count: { shipments: 8 }
         }
       ]);
@@ -218,6 +370,94 @@ export default function CarriersPage() {
     }
   };
 
+  // Handle CSV download
+  const handleDownloadCSV = () => {
+    if (carriers.length === 0) {
+      alert('No carriers data to export');
+      return;
+    }
+    
+    try {
+      const count = exportCarriersToCSV(carriers, { 
+        searchTerm, 
+        statusFilter,
+        dateFrom,
+        dateTo 
+      }, 'carriers-list');
+      
+      if (count) {
+        alert(`Downloaded ${count} carriers as CSV file`);
+      }
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      alert('Could not generate CSV file. Please try again.');
+    }
+  };
+
+  // Apply date range preset
+  const applyDateRangePreset = (preset: string) => {
+    const today = new Date();
+    let fromDate = '';
+    let toDate = '';
+    
+    switch (preset) {
+      case 'today':
+        fromDate = formatDateForInput(today);
+        toDate = formatDateForInput(today);
+        break;
+      case 'yesterday':
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        fromDate = formatDateForInput(yesterday);
+        toDate = formatDateForInput(yesterday);
+        break;
+      case 'thisWeek':
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        fromDate = formatDateForInput(startOfWeek);
+        toDate = formatDateForInput(today);
+        break;
+      case 'lastWeek':
+        const startOfLastWeek = new Date(today);
+        startOfLastWeek.setDate(today.getDate() - today.getDay() - 7);
+        const endOfLastWeek = new Date(startOfLastWeek);
+        endOfLastWeek.setDate(startOfLastWeek.getDate() + 6);
+        fromDate = formatDateForInput(startOfLastWeek);
+        toDate = formatDateForInput(endOfLastWeek);
+        break;
+      case 'thisMonth':
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        fromDate = formatDateForInput(startOfMonth);
+        toDate = formatDateForInput(today);
+        break;
+      case 'lastMonth':
+        const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+        fromDate = formatDateForInput(startOfLastMonth);
+        toDate = formatDateForInput(endOfLastMonth);
+        break;
+      case 'all':
+        // Clear dates
+        fromDate = '';
+        toDate = '';
+        break;
+    }
+    
+    setDateFrom(fromDate);
+    setDateTo(toDate);
+    setDateRangePreset(preset);
+  };
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('All');
+    setDateFrom('');
+    setDateTo('');
+    setDateRangePreset('all');
+    fetchCarriers();
+  };
+
   if (loading) {
     return (
       <SidebarProvider>
@@ -277,6 +517,15 @@ export default function CarriersPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                onClick={handleDownloadCSV}
+                disabled={carriers.length === 0}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
               <Button variant="outline" onClick={fetchCarriers}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
@@ -339,53 +588,147 @@ export default function CarriersPage() {
 
           {/* Filters and Search */}
           <Card className="mb-6">
-            <CardContent className="p-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Search by name, contact, phone..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      onKeyPress={handleSearchKeyPress}
-                      className="flex-1"
-                    />
-                    <Button 
-                      variant="outline"
-                      onClick={fetchCarriers}
-                    >
-                      <Search className="h-4 w-4" />
-                    </Button>
+            <CardContent className="p-6">
+              <div className="space-y-6">
+                {/* Quick Date Presets */}
+                <div>
+                  <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Quick Date Range
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 'all', label: 'All Time' },
+                      { value: 'today', label: 'Today' },
+                      { value: 'yesterday', label: 'Yesterday' },
+                      { value: 'thisWeek', label: 'This Week' },
+                      { value: 'lastWeek', label: 'Last Week' },
+                      { value: 'thisMonth', label: 'This Month' },
+                      { value: 'lastMonth', label: 'Last Month' }
+                    ].map((preset) => (
+                      <Button
+                        key={preset.value}
+                        variant={dateRangePreset === preset.value ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => applyDateRangePreset(preset.value)}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant={statusFilter === 'All' ? 'default' : 'outline'}
-                    onClick={() => {
-                      setStatusFilter('All');
-                      fetchCarriers();
-                    }}
-                  >
-                    All
-                  </Button>
-                  <Button
-                    variant={statusFilter === 'Active' ? 'default' : 'outline'}
-                    onClick={() => {
-                      setStatusFilter('Active');
-                      fetchCarriers();
-                    }}
-                  >
-                    Active
-                  </Button>
-                  <Button
-                    variant={statusFilter === 'Inactive' ? 'default' : 'outline'}
-                    onClick={() => {
-                      setStatusFilter('Inactive');
-                      fetchCarriers();
-                    }}
-                  >
-                    Inactive
-                  </Button>
+
+                {/* Custom Date Range */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Custom Date Range</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">From Date</label>
+                        <Input
+                          type="date"
+                          value={dateFrom}
+                          onChange={(e) => {
+                            setDateFrom(e.target.value);
+                            setDateRangePreset('custom');
+                          }}
+                          max={dateTo || formatDateForInput(new Date())}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">To Date</label>
+                        <Input
+                          type="date"
+                          value={dateTo}
+                          onChange={(e) => {
+                            setDateTo(e.target.value);
+                            setDateRangePreset('custom');
+                          }}
+                          min={dateFrom}
+                          max={formatDateForInput(new Date())}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Search</label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Search by name, contact, phone..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyPress={handleSearchKeyPress}
+                      />
+                      <Button 
+                        variant="outline"
+                        onClick={fetchCarriers}
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Status Filter</label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={statusFilter === 'All' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setStatusFilter('All');
+                          fetchCarriers();
+                        }}
+                      >
+                        All
+                      </Button>
+                      <Button
+                        variant={statusFilter === 'Active' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setStatusFilter('Active');
+                          fetchCarriers();
+                        }}
+                      >
+                        Active
+                      </Button>
+                      <Button
+                        variant={statusFilter === 'Inactive' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setStatusFilter('Inactive');
+                          fetchCarriers();
+                        }}
+                      >
+                        Inactive
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-between items-center pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {carriers.length} carrier(s)
+                    {(dateFrom || dateTo) && (
+                      <span className="ml-2">
+                        • Date range: {dateFrom || 'Any'} to {dateTo || 'Any'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={clearAllFilters}
+                      size="sm"
+                    >
+                      <Filter className="h-4 w-4 mr-1" />
+                      Clear All Filters
+                    </Button>
+                    <Button
+                      onClick={fetchCarriers}
+                      size="sm"
+                    >
+                      Apply Filters
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -485,13 +828,103 @@ export default function CarriersPage() {
             </Card>
           )}
 
+          {/* Export Options Card */}
+          {carriers.length > 0 && (
+            <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+              <CardContent className="p-6">
+                <div className="flex flex-col md:flex-row justify-between items-center">
+                  <div className="mb-4 md:mb-0">
+                    <h3 className="font-medium text-blue-800 text-lg mb-1">Export Options</h3>
+                    <p className="text-sm text-blue-600">
+                      Download carrier data with filters and date range
+                    </p>
+                    {(dateFrom || dateTo) && (
+                      <p className="text-xs text-blue-500 mt-1">
+                        Current date range: {dateFrom || 'Any'} to {dateTo || 'Any'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      onClick={handleDownloadCSV}
+                      className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Export with Current Filters
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const activeCarriers = carriers.filter(c => c.status === 'Active');
+                        const count = exportCarriersToCSV(
+                          activeCarriers, 
+                          { searchTerm, statusFilter: 'Active', dateFrom, dateTo }, 
+                          'active-carriers'
+                        );
+                        if (count) {
+                          alert(`Downloaded ${count} active carriers`);
+                        }
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Active Only
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        // Export for this month
+                        const startOfMonth = new Date();
+                        startOfMonth.setDate(1);
+                        const endOfMonth = new Date();
+                        
+                        const monthCarriers = carriers.filter(carrier => {
+                          const carrierDate = new Date(carrier.created_at);
+                          return carrierDate >= startOfMonth && carrierDate <= endOfMonth;
+                        });
+                        
+                        const count = exportCarriersToCSV(
+                          monthCarriers,
+                          { 
+                            searchTerm, 
+                            statusFilter,
+                            dateFrom: formatDateForInput(startOfMonth),
+                            dateTo: formatDateForInput(endOfMonth)
+                          },
+                          'carriers-this-month'
+                        );
+                        
+                        if (count) {
+                          alert(`Downloaded ${count} carriers from this month`);
+                        }
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <Calendar className="h-4 w-4" />
+                      This Month
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Carriers List */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">All Carriers ({carriers.length})</h2>
-              <p className="text-sm text-muted-foreground">
-                Showing {carriers.length} carrier(s)
-              </p>
+              <div className="text-sm text-muted-foreground">
+                {carriers.length > 0 && (
+                  <span className="flex items-center gap-2">
+                    <span>Sorted by: Created Date (Newest First)</span>
+                    {dateFrom || dateTo ? (
+                      <Badge variant="outline" className="ml-2">
+                        Filtered by Date
+                      </Badge>
+                    ) : null}
+                  </span>
+                )}
+              </div>
             </div>
 
             {carriers.length === 0 ? (
@@ -500,20 +933,27 @@ export default function CarriersPage() {
                   <Truck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">No carriers found</h3>
                   <p className="text-muted-foreground mb-4">
-                    {searchTerm || statusFilter !== 'All' 
+                    {searchTerm || statusFilter !== 'All' || dateFrom || dateTo
                       ? 'Try changing your search or filter criteria'
                       : 'Get started by adding your first carrier'
                     }
                   </p>
-                  <Button onClick={() => setIsAdding(true)}>
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Add First Carrier
-                  </Button>
+                  <div className="flex gap-3 justify-center">
+                    <Button onClick={() => setIsAdding(true)}>
+                      <PlusCircle className="h-4 w-4 mr-2" />
+                      Add First Carrier
+                    </Button>
+                    <Button variant="outline" onClick={clearAllFilters}>
+                      Clear Filters
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {carriers.map((carrier) => (
+                {[...carriers]
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .map((carrier) => (
                   <Card key={carrier.id} className="hover:shadow-lg transition-shadow">
                     <CardHeader>
                       <div className="flex justify-between items-start">
@@ -522,8 +962,11 @@ export default function CarriersPage() {
                             <Truck className="h-5 w-5 text-primary" />
                             {carrier.name}
                           </CardTitle>
-                          <CardDescription>
-                            ID: {carrier.id_number || 'Not specified'}
+                          <CardDescription className="flex flex-col gap-1">
+                            <span>ID: {carrier.id_number || 'Not specified'}</span>
+                            <span className="text-xs">
+                              Added: {new Date(carrier.created_at).toLocaleDateString()}
+                            </span>
                           </CardDescription>
                         </div>
                         <Badge className={getStatusColor(carrier.status)}>

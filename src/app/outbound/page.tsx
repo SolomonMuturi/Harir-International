@@ -11,7 +11,7 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
@@ -2196,6 +2196,483 @@ function TransitManagement() {
   );
 }
 
+// History Component for downloading lists
+function HistoryDownload() {
+  const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'assigned' | 'in_transit' | 'completed'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Fetch data
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch loading sheets
+      const sheetsResponse = await fetch('/api/loading-sheets?limit=100');
+      if (sheetsResponse.ok) {
+        const sheetsData = await sheetsResponse.json();
+        if (sheetsData.success) {
+          setLoadingSheets(sheetsData.data || []);
+        }
+      }
+      
+      // Fetch assignments
+      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      if (assignmentsResponse.ok) {
+        const assignmentsData = await assignmentsResponse.json();
+        if (assignmentsData.success) {
+          setAssignments(assignmentsData.data || []);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error fetching history data:', error);
+      toast.error('Failed to fetch history data. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Filter loading sheets
+  const filteredLoadingSheets = loadingSheets.filter(sheet => {
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const sheetDate = new Date(sheet.created_at);
+      const now = new Date();
+      const timeDiff = now.getTime() - sheetDate.getTime();
+      
+      switch (dateFilter) {
+        case 'today':
+          const startOfDay = new Date();
+          startOfDay.setHours(0, 0, 0, 0);
+          if (sheetDate < startOfDay) return false;
+          break;
+        case 'week':
+          if (timeDiff > 7 * 24 * 60 * 60 * 1000) return false;
+          break;
+        case 'month':
+          if (timeDiff > 30 * 24 * 60 * 60 * 1000) return false;
+          break;
+      }
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        (sheet.bill_number?.toLowerCase().includes(searchLower) || false) ||
+        sheet.client?.toLowerCase().includes(searchLower) ||
+        sheet.container?.toLowerCase().includes(searchLower) ||
+        sheet.exporter?.toLowerCase().includes(searchLower) ||
+        sheet.shipping_line?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    return true;
+  });
+
+  // Filter assignments
+  const filteredAssignments = assignments.filter(assignment => {
+    // Apply status filter
+    if (statusFilter !== 'all' && assignment.status !== statusFilter) {
+      return false;
+    }
+    
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const assignedDate = new Date(assignment.assigned_at);
+      const now = new Date();
+      const timeDiff = now.getTime() - assignedDate.getTime();
+      
+      switch (dateFilter) {
+        case 'today':
+          const startOfDay = new Date();
+          startOfDay.setHours(0, 0, 0, 0);
+          if (assignedDate < startOfDay) return false;
+          break;
+        case 'week':
+          if (timeDiff > 7 * 24 * 60 * 60 * 1000) return false;
+          break;
+        case 'month':
+          if (timeDiff > 30 * 24 * 60 * 60 * 1000) return false;
+          break;
+      }
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      const carrierName = assignment.carrier?.name?.toLowerCase() || '';
+      const sheetBill = assignment.loading_sheet?.bill_number?.toLowerCase() || '';
+      const sheetClient = assignment.loading_sheet?.client?.toLowerCase() || '';
+      
+      return (
+        carrierName.includes(searchLower) ||
+        sheetBill.includes(searchLower) ||
+        sheetClient.includes(searchLower) ||
+        assignment.assigned_by.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    return true;
+  });
+
+  // Download loading sheets as CSV
+  const downloadLoadingSheetsCSV = () => {
+    const headers = ['ID', 'Created At', 'Exporter', 'Client', 'Shipping Line', 'Bill Number', 'Container', 'Seal 1', 'Seal 2', 'Truck', 'Vessel', 'Port', 'Loading Date', 'Loaded By', 'Checked By', 'Remarks'];
+    
+    const rows = filteredLoadingSheets.map(sheet => [
+      sheet.id,
+      new Date(sheet.created_at).toLocaleDateString(),
+      sheet.exporter,
+      sheet.client,
+      sheet.shipping_line || '',
+      sheet.bill_number || '',
+      sheet.container || '',
+      sheet.seal1 || '',
+      sheet.seal2 || '',
+      sheet.truck || '',
+      sheet.vessel || '',
+      sheet.port || '',
+      new Date(sheet.loading_date).toLocaleDateString(),
+      sheet.loaded_by || '',
+      sheet.checked_by || '',
+      sheet.remarks || ''
+    ]);
+    
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `loading-sheets-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Download assignments as CSV
+  const downloadAssignmentsCSV = () => {
+    const headers = ['ID', 'Assigned At', 'Carrier Name', 'Carrier ID', 'Carrier Vehicle', 'Loading Sheet Bill', 'Client', 'Container', 'Assigned By', 'Status', 'Transit Started', 'Transit Completed', 'Notes'];
+    
+    const rows = filteredAssignments.map(assignment => [
+      assignment.id,
+      new Date(assignment.assigned_at).toLocaleDateString(),
+      assignment.carrier?.name || '',
+      assignment.carrier?.id_number || '',
+      assignment.carrier?.vehicle_registration || '',
+      assignment.loading_sheet?.bill_number || '',
+      assignment.loading_sheet?.client || '',
+      assignment.loading_sheet?.container || '',
+      assignment.assigned_by,
+      assignment.status,
+      assignment.transit_started_at ? new Date(assignment.transit_started_at).toLocaleDateString() : '',
+      assignment.transit_completed_at ? new Date(assignment.transit_completed_at).toLocaleDateString() : '',
+      assignment.notes || ''
+    ]);
+    
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `carrier-assignments-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-800">Delivered</Badge>;
+      case 'in_transit':
+        return <Badge className="bg-blue-100 text-blue-800">In Transit</Badge>;
+      case 'assigned':
+        return <Badge className="bg-yellow-100 text-yellow-800">Assigned</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading history data...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">{loadingSheets.length}</div>
+            <div className="text-sm text-muted-foreground">Total Loading Sheets</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">{assignments.length}</div>
+            <div className="text-sm text-muted-foreground">Total Assignments</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">
+              {loadingSheets.filter(ls => !assignments.some(a => a.loading_sheet_id === ls.id)).length}
+            </div>
+            <div className="text-sm text-muted-foreground">Unassigned Sheets</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters and Download Options */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-6 w-6 text-primary" />
+            Filters & Downloads
+          </CardTitle>
+          <CardDescription>
+            Filter and download loading sheets and carrier assignments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Search and Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="md:col-span-2">
+                <Label htmlFor="search">Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="search"
+                    type="search"
+                    placeholder="Search by bill number, client, carrier..."
+                    className="pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="date-filter">Date Range</Label>
+                <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
+                  <SelectTrigger id="date-filter">
+                    <SelectValue placeholder="Select date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">Last 7 Days</SelectItem>
+                    <SelectItem value="month">Last 30 Days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="status-filter">Assignment Status</Label>
+                <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+                  <SelectTrigger id="status-filter">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="assigned">Assigned</SelectItem>
+                    <SelectItem value="in_transit">In Transit</SelectItem>
+                    <SelectItem value="completed">Delivered</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Download Buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Button onClick={downloadLoadingSheetsCSV} className="w-full">
+                <FileDown className="h-4 w-4 mr-2" />
+                Download Loading Sheets ({filteredLoadingSheets.length})
+              </Button>
+              <Button onClick={downloadAssignmentsCSV} className="w-full">
+                <FileDown className="h-4 w-4 mr-2" />
+                Download Carrier Assignments ({filteredAssignments.length})
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Loading Sheets Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading Sheets</CardTitle>
+          <CardDescription>
+            List of all saved loading sheets ({filteredLoadingSheets.length} found)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Bill Number</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Container</TableHead>
+                  <TableHead>Vessel</TableHead>
+                  <TableHead>Loading Date</TableHead>
+                  <TableHead>Assigned</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredLoadingSheets.slice(0, 10).map((sheet) => {
+                  const isAssigned = assignments.some(a => a.loading_sheet_id === sheet.id);
+                  return (
+                    <TableRow key={sheet.id}>
+                      <TableCell>
+                        {new Date(sheet.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{sheet.bill_number || 'No Bill'}</div>
+                      </TableCell>
+                      <TableCell>{sheet.client || 'N/A'}</TableCell>
+                      <TableCell>{sheet.container || 'N/A'}</TableCell>
+                      <TableCell>{sheet.vessel || 'N/A'}</TableCell>
+                      <TableCell>
+                        {sheet.loading_date ? new Date(sheet.loading_date).toLocaleDateString() : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {isAssigned ? (
+                          <Badge className="bg-green-100 text-green-800">Assigned</Badge>
+                        ) : (
+                          <Badge variant="outline">Unassigned</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" asChild>
+                            <a href={`/api/loading-sheets/${sheet.id}/download`} target="_blank">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          {filteredLoadingSheets.length === 0 && (
+            <div className="text-center py-8">
+              <FileSpreadsheet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No loading sheets found</h3>
+              <p className="text-muted-foreground mb-4">
+                {searchTerm ? 'Try adjusting your search terms' : 'Create loading sheets to see them here'}
+              </p>
+            </div>
+          )}
+          {filteredLoadingSheets.length > 10 && (
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              Showing 10 of {filteredLoadingSheets.length} loading sheets
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Assignments Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Carrier Assignments</CardTitle>
+          <CardDescription>
+            List of all carrier assignments ({filteredAssignments.length} found)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Assigned Date</TableHead>
+                  <TableHead>Carrier</TableHead>
+                  <TableHead>Loading Sheet</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Assigned By</TableHead>
+                  <TableHead>Transit Duration</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredAssignments.slice(0, 10).map((assignment) => {
+                  const transitDays = assignment.transit_started_at && assignment.transit_completed_at 
+                    ? calculateDaysBetween(assignment.transit_started_at, assignment.transit_completed_at)
+                    : assignment.transit_started_at 
+                    ? calculateDaysBetween(assignment.transit_started_at, new Date().toISOString())
+                    : null;
+
+                  return (
+                    <TableRow key={assignment.id}>
+                      <TableCell>
+                        {new Date(assignment.assigned_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{assignment.carrier?.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {assignment.carrier?.vehicle_registration || 'N/A'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{assignment.loading_sheet?.bill_number || 'No Bill'}</div>
+                      </TableCell>
+                      <TableCell>{assignment.loading_sheet?.client || 'N/A'}</TableCell>
+                      <TableCell>{getStatusBadge(assignment.status)}</TableCell>
+                      <TableCell>{assignment.assigned_by}</TableCell>
+                      <TableCell>
+                        {transitDays !== null ? `${transitDays} days` : 'Not started'}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          {filteredAssignments.length === 0 && (
+            <div className="text-center py-8">
+              <Truck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No assignments found</h3>
+              <p className="text-muted-foreground mb-4">
+                {searchTerm ? 'Try adjusting your search terms' : 'Create assignments to see them here'}
+              </p>
+            </div>
+          )}
+          {filteredAssignments.length > 10 && (
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              Showing 10 of {filteredAssignments.length} assignments
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function OutboundPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2426,7 +2903,7 @@ export default function OutboundPage() {
             </Button>
           </div>
 
-          {/* Tabs Navigation */}
+          {/* Tabs Navigation - Added History tab */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-flex">
               <TabsTrigger value="dashboard">
@@ -2444,6 +2921,10 @@ export default function OutboundPage() {
               <TabsTrigger value="transit-management">
                 <Truck className="h-4 w-4 mr-2" />
                 Transit Management
+              </TabsTrigger>
+              <TabsTrigger value="history">
+                <History className="h-4 w-4 mr-2" />
+                History & Reports
               </TabsTrigger>
             </TabsList>
 
@@ -2673,6 +3154,11 @@ export default function OutboundPage() {
             {/* Transit Management Tab */}
             <TabsContent value="transit-management">
               <TransitManagement />
+            </TabsContent>
+
+            {/* NEW: History & Reports Tab */}
+            <TabsContent value="history">
+              <HistoryDownload />
             </TabsContent>
           </Tabs>
         </main>

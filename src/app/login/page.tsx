@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,26 +27,31 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      // Use NextAuth's signIn function instead of custom API call
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false, // We handle redirect manually
+        callbackUrl: callbackUrl,
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Login successful!');
-        router.push('/dashboard'); // Redirect to dashboard
-        router.refresh();
+      if (result?.error) {
+        const errorMessage = result.error === 'CredentialsSignin' 
+          ? 'Invalid email or password' 
+          : 'Login failed. Please try again.';
+        setError(errorMessage);
+        toast.error(errorMessage);
       } else {
-        setError(data.error || 'Login failed');
-        toast.error(data.error || 'Login failed');
+        toast.success('Login successful!');
+        // Redirect to the callback URL or dashboard
+        router.push(callbackUrl);
+        router.refresh(); // Important: refresh to update session state
       }
     } catch (error) {
       console.error('Login error:', error);
-      setError('An error occurred. Please try again.');
-      toast.error('An error occurred. Please try again.');
+      const errorMessage = 'An error occurred. Please try again.';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -99,7 +107,7 @@ export default function LoginPage() {
                 type="password"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.value)}
                 required
                 disabled={isLoading}
               />

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -26,9 +25,9 @@ const allUsers: Employee[] = [
   ...carrierData.map(c => ({ ...c, role: 'Carrier' as const, image: '' })), // Carriers don't have images
 ];
 
-
 export function Header() {
-  const { user, setUser } = useUser();
+  // Destructure logout from useUser - it's now available after updating UserContext
+  const { user, setUser, logout } = useUser();
 
   const getInitials = (name: string = '') => {
     return name.split(' ').map(n => n[0]).join('');
@@ -86,7 +85,13 @@ export function Header() {
                 <User className="mr-2"/>
                 My Account
             </DropdownMenuItem>
-            <DropdownMenuItem>Logout</DropdownMenuItem>
+            {/* UPDATED LOGOUT BUTTON WITH onClick HANDLER */}
+            <DropdownMenuItem 
+              onClick={logout} 
+              className="cursor-pointer text-red-600 hover:text-red-700 hover:bg-red-50 focus:text-red-700 focus:bg-red-50"
+            >
+              Logout
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

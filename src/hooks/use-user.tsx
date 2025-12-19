@@ -23,7 +23,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setUser(null);
     
     // 2. Redirect to the login page
-    router.push('/login');
+    router.push('/');
     
     // 3. Optional: Refresh to clear any stale state
     router.refresh();

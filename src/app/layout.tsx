@@ -6,6 +6,9 @@ import { UserProvider } from '@/hooks/use-user';
 import './globals.css';
 import 'leaflet/dist/leaflet.css';
 
+// Import SessionProviderWrapper component
+import { SessionProviderWrapper } from '@/components/session-provider-wrapper';
+
 const ptSans = PT_Sans({
   subsets: ['latin'],
   weight: ['400', '700'],
@@ -17,7 +20,6 @@ const roboto = Roboto({
   weight: ['400', '500', '700'],
   variable: '--font-receipt',
 });
-
 
 export const metadata: Metadata = {
   title: 'FreshTrace',
@@ -32,10 +34,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={cn('font-body antialiased', ptSans.variable, roboto.variable)}>
-        <UserProvider>
-          {children}
-        </UserProvider>
-        <Toaster />
+        {/* Wrap with SessionProviderWrapper */}
+        <SessionProviderWrapper>
+          <UserProvider>
+            {children}
+          </UserProvider>
+          <Toaster />
+        </SessionProviderWrapper>
       </body>
     </html>
   );

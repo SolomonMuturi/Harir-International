@@ -51,7 +51,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 // Define permission types
 type Permission = {
@@ -1310,16 +1309,9 @@ const createNewUser = async () => {
                                       />
                                     </TableCell>
                                     <TableCell>
-                                      <div className="flex items-center gap-3">
-                                        <Avatar className="h-8 w-8">
-                                          <AvatarFallback>
-                                            {user.name?.split(' ').map(n => n[0]).join('') || user.email[0].toUpperCase()}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                        <div>
-                                          <div className="font-medium">{user.name || 'No name'}</div>
-                                          <div className="text-sm text-muted-foreground">{user.email}</div>
-                                        </div>
+                                      <div className="flex flex-col">
+                                        <div className="font-medium">{user.name || 'No name'}</div>
+                                        <div className="text-sm text-muted-foreground">{user.email}</div>
                                       </div>
                                     </TableCell>
                                     <TableCell>

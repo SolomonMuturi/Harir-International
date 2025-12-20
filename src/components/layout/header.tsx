@@ -8,35 +8,41 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Search, User, ChevronDown } from 'lucide-react';
+import { Search, User, Settings, LogOut } from 'lucide-react';
 import { Input } from '../ui/input';
-import { useUser } from '@/hooks/use-user';
-import { employeeData, supplierData, carrierData, type Employee } from '@/lib/data';
-
-// Create a unified list of "users" for the switcher
-const allUsers: Employee[] = [
-  ...employeeData,
-  ...supplierData.map(s => ({ ...s, role: 'Supplier' as const, image: s.logoUrl })),
-  ...carrierData.map(c => ({ ...c, role: 'Carrier' as const, image: '' })), // Carriers don't have images
-];
+import { useSession, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 export function Header() {
-  // Destructure logout from useUser - it's now available after updating UserContext
-  const { user, setUser, logout } = useUser();
+  const { data: session } = useSession();
+  const router = useRouter();
 
   const getInitials = (name: string = '') => {
     return name.split(' ').map(n => n[0]).join('');
-  }
+  };
 
-  const handleUserChange = (id: string) => {
-    const selectedUser = allUsers.find(u => u.id === id);
-    setUser(selectedUser || null);
-  }
+  const handleLogout = async () => {
+    try {
+      await signOut({ 
+        redirect: false,
+        callbackUrl: '/login'
+      });
+      toast.success('Logged out successfully');
+      router.push('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Failed to logout');
+    }
+  };
+
+  const user = session?.user;
+  const userRole = (user as any)?.role || 'No Role';
+  const userPermissions = (user as any)?.permissions || [];
 
   return (
     <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6">
@@ -51,46 +57,58 @@ export function Header() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search products..."
+              placeholder="Search..."
               className="pl-8 sm:w-[300px] md:w-[200px] lg:w-[300px]"
             />
           </div>
         </form>
+        
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-             <Button variant="outline" className="flex items-center gap-2">
-                <Avatar className="h-6 w-6">
-                  <AvatarImage src={user?.image || `https://i.pravatar.cc/150?u=${user?.id}`} />
-                  <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
-                </Avatar>
-                <div>
-                    <p className="text-sm font-medium">{user?.name}</p>
-                    <p className="text-xs text-muted-foreground">{user?.role}</p>
-                </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-             </Button>
+            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+              <Avatar className="h-8 w-8">
+                <AvatarImage 
+                  src={user?.image || `https://i.pravatar.cc/150?u=${user?.email}`} 
+                  alt={user?.name || 'User'}
+                />
+                <AvatarFallback>
+                  {getInitials(user?.name || user?.email || 'U')}
+                </AvatarFallback>
+              </Avatar>
+            </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Switch User Role</DropdownMenuLabel>
+          <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium leading-none">
+                  {user?.name || 'User'}
+                </p>
+                <p className="text-xs leading-none text-muted-foreground">
+                  {user?.email}
+                </p>
+                <p className="text-xs font-medium text-primary mt-1">
+                  Role: {userRole}
+                </p>
+                {userPermissions.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {userPermissions.length} permission(s)
+                  </p>
+                )}
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup value={user?.id} onValueChange={handleUserChange}>
-              {allUsers.map(u => (
-                <DropdownMenuRadioItem key={u.id} value={u.id}>
-                    {u.name} ({u.role})
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-                <User className="mr-2"/>
-                My Account
+            <DropdownMenuItem onClick={() => router.push('/profile')}>
+              <User className="mr-2 h-4 w-4" />
+              <span>Profile</span>
             </DropdownMenuItem>
-            {/* UPDATED LOGOUT BUTTON WITH onClick HANDLER */}
-            <DropdownMenuItem 
-              onClick={logout} 
-              className="cursor-pointer text-red-600 hover:text-red-700 hover:bg-red-50 focus:text-red-700 focus:bg-red-50"
-            >
-              Logout
+            <DropdownMenuItem onClick={() => router.push('/settings')}>
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-700">
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

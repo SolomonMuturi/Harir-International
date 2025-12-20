@@ -24,14 +24,11 @@ import {
   Zap,
   FlaskConical,
   Grape,
-  LogOut,
 } from 'lucide-react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useSession, signOut } from 'next-auth/react';
+import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { Separator } from '../ui/separator';
 import Link from 'next/link';
-import { Button } from '../ui/button';
-import { toast } from 'sonner';
 
 type NavItem = {
   name: string;
@@ -43,8 +40,8 @@ type NavItem = {
 
 // Define all navigation items with their required permissions
 const allNavItems: NavItem[] = [
-  // Dashboard
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'dashboard.view' },
+  // Dashboard - FIXED: Changed from '/' to '/dashboard'
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
   
   // Analytics
   { name: 'Analytics', href: '/analytics', icon: BarChart3, permission: 'dashboard.analytics' },
@@ -82,7 +79,7 @@ const allNavItems: NavItem[] = [
 // Categorize the nav items
 const getNavItemsByCategory = () => {
   const mainItems = allNavItems.filter(item => 
-    ['/', '/analytics', '/bi-features', '/suppliers'].includes(item.href)
+    ['/dashboard', '/analytics', '/bi-features', '/suppliers'].includes(item.href)
   );
   
   const hrItems = allNavItems.filter(item => 
@@ -109,7 +106,6 @@ const getNavItemsByCategory = () => {
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const router = useRouter();
   const { data: session, status } = useSession();
   
   const userPermissions = (session?.user as any)?.permissions || [];
@@ -136,21 +132,6 @@ export function SidebarNav() {
     return true;
   };
   
-  const handleLogout = async () => {
-    try {
-      await signOut({ 
-        redirect: false,
-        callbackUrl: '/login'
-      });
-      toast.success('Logged out successfully');
-      router.push('/login');
-      router.refresh();
-    } catch (error) {
-      console.error('Logout error:', error);
-      toast.error('Failed to logout');
-    }
-  };
-
   // Filter items based on permissions
   const { mainItems, hrItems, accessItems, operationsItems, adminItems } = getNavItemsByCategory();
   
@@ -190,7 +171,7 @@ export function SidebarNav() {
   };
 
   return (
-    <div className="space-y-2 h-full flex flex-col">
+    <div className="space-y-2">
         <NavGroup title="Main" items={visibleMainItems} />
         <NavGroup title="HR" items={visibleHrItems} />
         <NavGroup title="Access Control" items={visibleAccessItems} />
@@ -200,26 +181,6 @@ export function SidebarNav() {
         
         <Separator />
         <NavGroup title="Administration" items={visibleAdminItems} />
-        
-        {/* User info and logout button at the bottom */}
-        <div className="mt-auto p-4 border-t">
-          <div className="mb-3">
-            <p className="text-sm font-medium truncate">
-              {session?.user?.name || session?.user?.email}
-            </p>
-            <p className="text-xs text-muted-foreground truncate">
-              {userRole}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            className="w-full justify-start"
-            onClick={handleLogout}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
-        </div>
     </div>
   );
 }

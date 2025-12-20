@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -115,41 +114,31 @@ export default function BiFeaturesPage() {
           )}
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-            <Link href="/visitor-management" className="block transition-transform hover:scale-[1.02]">
-                <OverviewCard
-                data={overviewData.visitorsToday}
-                icon={Users}
-                cardClass="bg-card"
-                />
-            </Link>
-            <Link href="/vehicle-management" className="block transition-transform hover:scale-[1.02]">
-                <OverviewCard
-                data={kpiData.vehiclesOnSite}
-                icon={Truck}
-                cardClass="bg-card"
-                />
-            </Link>
-             <Link href="/cold-room" className="block transition-transform hover:scale-[1.02]">
-                <OverviewCard
-                data={kpiData.coldChainCompliance}
-                icon={ShieldCheck}
-                cardClass="bg-card"
-                />
-            </Link>
-             <Link href={`/branches/${topBranch?.id}`} className="block transition-transform hover:scale-[1.02]">
-                <OverviewCard
-                data={kpiData.topBranch}
-                icon={Building}
-                cardClass="bg-card"
-                />
-            </Link>
-            <Link href="/utility" className="block transition-transform hover:scale-[1.02]">
-                <OverviewCard
-                data={{ title: 'Energy Risk', value: 'Low', change: 'consumption stable', changeType: 'increase' }}
-                icon={Zap}
-                cardClass="bg-card"
-                />
-            </Link>
+            <OverviewCard
+              data={overviewData.visitorsToday}
+              icon={Users}
+              cardClass="bg-card"
+            />
+            <OverviewCard
+              data={kpiData.vehiclesOnSite}
+              icon={Truck}
+              cardClass="bg-card"
+            />
+            <OverviewCard
+              data={kpiData.coldChainCompliance}
+              icon={ShieldCheck}
+              cardClass="bg-card"
+            />
+            <OverviewCard
+              data={kpiData.topBranch}
+              icon={Building}
+              cardClass="bg-card"
+            />
+            <OverviewCard
+              data={{ title: 'Energy Risk', value: 'Low', change: 'consumption stable', changeType: 'increase' }}
+              icon={Zap}
+              cardClass="bg-card"
+            />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -184,13 +173,11 @@ export default function BiFeaturesPage() {
             </div>
             <div className="lg:col-span-2 space-y-6">
                 <OperationalComplianceChart data={overallRiskProfileData} />
-                <Link href="/utility" className="block transition-transform hover:scale-[1.02]">
-                  <OverviewCard
-                    data={{ title: 'Water Risk', value: 'Medium', change: 'high consumption vs. peers', changeType: 'decrease' }}
-                    icon={Droplet}
-                    cardClass="bg-card"
-                  />
-                </Link>
+                <OverviewCard
+                  data={{ title: 'Water Risk', value: 'Medium', change: 'high consumption vs. peers', changeType: 'decrease' }}
+                  icon={Droplet}
+                  cardClass="bg-card"
+                />
             </div>
           </div>
         </main>

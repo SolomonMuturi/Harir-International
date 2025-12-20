@@ -4,26 +4,15 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarMenuSub,
-  SidebarMenuSubTrigger,
-  SidebarMenuSubContent,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
 } from '@/components/ui/sidebar';
 import {
   LayoutDashboard,
-  PackageSearch,
   Users,
   FileText,
   Settings,
   BarChart3,
   BrainCircuit,
   Briefcase,
-  TrendingUp,
-  Banknote,
-  QrCode,
-  BookUser,
-  List,
   Truck,
   Weight,
   Warehouse,
@@ -32,99 +21,144 @@ import {
   Cog,
   Shield,
   Boxes,
-  Leaf,
-  CreditCard,
-  Wallet,
-  HandCoins,
-  Building,
-  BookCheck,
-  Users2,
-  ClipboardCheck,
   Zap,
   FlaskConical,
   Grape,
+  LogOut,
 } from 'lucide-react';
-import { usePathname } from 'next/navigation';
-import { useUser } from '@/hooks/use-user';
-import type { Employee } from '@/lib/data';
+import { usePathname, useRouter } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
 import { Separator } from '../ui/separator';
 import Link from 'next/link';
+import { Button } from '../ui/button';
+import { toast } from 'sonner';
 
 type NavItem = {
   name: string;
   href: string;
   icon: React.ElementType;
-  roles: Employee['role'][];
+  permission?: string; // Single permission required
+  permissions?: string[]; // Multiple permissions (any of them)
 }
 
-const mainNavItems: NavItem[] = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'Driver'] },
-  { name: 'Dashboard', href: '/warehouse', icon: LayoutDashboard, roles: ['Warehouse'] },
-  { name: 'Dashboard', href: '/security/dashboard', icon: LayoutDashboard, roles: ['Security'] },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['Admin', 'Manager'] },
-  { name: 'BI Features', href: '/bi-features', icon: BrainCircuit, roles: ['Admin', 'Manager'] },
- // { name: 'Customers', href: '/customers', icon: Users, roles: ['Admin', 'Manager'] },
-  { name: 'Suppliers', href: '/suppliers', icon: Grape, roles: ['Admin', 'Manager', 'Warehouse'] },
-];
-
-const hrNavItems: NavItem[] = [
-  { name: 'Employees', href: '/employees', icon: Briefcase, roles: ['Admin', 'Manager'] },
-];
-
-const accessManagementNavItems: NavItem[] = [
-  { name: 'Visitor Log', href: '/visitor-management', icon: Users, roles: ['Admin', 'Manager', 'Security'] },
-  { name: 'Vehicle Log', href: '/vehicle-management', icon: Truck, roles: ['Admin', 'Manager', 'Security'] },
-];
-
-const operationsNavItems: NavItem[] = [
-//  { name: 'Traceability', href: '/traceability', icon: PackageSearch, roles: ['Admin', 'Manager', 'Warehouse', 'Security'] },
-{ name: 'Intake', href: '/weight-capture', icon: Weight, roles: ['Admin', 'Manager', 'Warehouse', 'Driver'] },  
-{ name: 'Quality Control', href: '/quality-control', icon: FlaskConical, roles: ['Admin', 'Manager', 'Warehouse'] },
-{ name: 'Counting', href: '/warehouse', icon: Warehouse, roles: ['Admin', 'Manager', 'Warehouse'] },
-{ name: 'Cold Room', href: '/cold-room', icon: Thermometer, roles: ['Admin', 'Manager', 'Warehouse'] },
-{ name: 'Shipments', href: '/shipments', icon: Truck, roles: ['Admin', 'Manager', 'Warehouse'] },
-{ name: 'Carriers', href: '/carriers', icon: Briefcase, roles: ['Admin', 'Manager'] },
-{ name: 'Loading', href: '/outbound', icon: Truck, roles: ['Admin', 'Manager', 'Warehouse'] },
+// Define all navigation items with their required permissions
+const allNavItems: NavItem[] = [
+  // Dashboard
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'dashboard.view' },
   
- // { name: 'Tag Management', href: '/tag-management', icon: QrCode, roles: ['Admin', 'Manager', 'Warehouse'] },
+  // Analytics
+  { name: 'Analytics', href: '/analytics', icon: BarChart3, permission: 'dashboard.analytics' },
+  { name: 'BI Features', href: '/bi-features', icon: BrainCircuit, permission: 'dashboard.analytics' },
   
-  { name: 'Inventory', href: '/inventory', icon: Boxes, roles: ['Admin', 'Manager', 'Warehouse'] },
-//  { name: 'Produce', href: '/produce', icon: Leaf, roles: ['Admin', 'Manager', 'Warehouse'] },
-  { name: 'Utility Management', href: '/utility', icon: Zap, roles: ['Admin', 'Manager'] },
+  // Suppliers
+  { name: 'Suppliers', href: '/suppliers', icon: Grape, permissions: ['suppliers.view', 'suppliers.manage'] },
+  
+  // HR
+  { name: 'Employees', href: '/employees', icon: Briefcase, permissions: ['employees.view', 'employees.manage'] },
+  
+  // Access Management
+  { name: 'Visitor Log', href: '/visitor-management', icon: Users, permission: 'suppliers.visitors' },
+  { name: 'Vehicle Log', href: '/vehicle-management', icon: Truck, permission: 'carriers.view' },
+  
+  // Operations
+  { name: 'Intake', href: '/weight-capture', icon: Weight, permission: 'suppliers.weigh' },
+  { name: 'Quality Control', href: '/quality-control', icon: FlaskConical, permissions: ['qc.view', 'qc.perform'] },
+  { name: 'Counting', href: '/warehouse', icon: Warehouse, permission: 'inventory.view' },
+  { name: 'Cold Room', href: '/cold-room', icon: Thermometer, permissions: ['cold_room.view', 'cold_room.temperature'] },
+  { name: 'Shipments', href: '/shipments', icon: Truck, permissions: ['shipments.view', 'shipments.track'] },
+  { name: 'Carriers', href: '/carriers', icon: Briefcase, permissions: ['carriers.view', 'carriers.manage'] },
+  { name: 'Loading', href: '/outbound', icon: Truck, permissions: ['loading.view', 'loading.create'] },
+  { name: 'Inventory', href: '/inventory', icon: Boxes, permissions: ['inventory.view', 'inventory.manage'] },
+  { name: 'Utility Management', href: '/utility', icon: Zap, permissions: ['utilities.view', 'utilities.record'] },
+  
+  // Administration
+  { name: 'Reports', href: '/reports', icon: FileText, permission: 'admin.audit' },
+  { name: 'Standard Procedures', href: '/sop', icon: FileText, permission: 'admin.settings' },
+  { name: 'User Roles', href: '/user-roles', icon: ShieldCheck, permissions: ['admin.roles', 'admin.users'] },
+  { name: 'Security Center', href: '/security', icon: Shield, permissions: ['admin.settings', 'admin.users'] },
+  { name: 'Settings', href: '/settings', icon: Cog, permission: 'admin.settings' },
 ];
 
-const administrationNavItems: NavItem[] = [
-  { name: 'Reports', href: '/reports', icon: FileText, roles: ['Admin', 'Manager'] },
-  { name: 'Standard Procedures', href: '/sop', icon: BookCheck, roles: ['Admin', 'Manager', 'Warehouse', 'Driver', 'Security'] },
-  { name: 'User Roles', href: '/user-roles', icon: ShieldCheck, roles: ['Admin'] },
- // { name: 'Branches', href: '/branches', icon: Building, roles: ['Admin'] },
- // { name: 'Client Management', href: '/clients', icon: Users2, roles: ['Admin'] },
-  { name: 'Security Center', href: '/security', icon: Shield, roles: ['Admin'] },
-  { name: 'Settings', href: '/settings', icon: Cog, roles: ['Admin'] },
-];
-
-const financialNavItems: NavItem[] = [
-//  { name: 'Dashboard', href: '/financials', icon: LayoutDashboard, roles: ['Admin', 'Manager'] },
-//  { name: 'Payroll', href: '/payroll', icon: Wallet, roles: ['Admin', 'Manager'] },
-//  { name: 'Petty Cash', href: '/financials/petty-cash', icon: HandCoins, roles: ['Admin', 'Manager'] },
-//  { name: 'Accounts Receivable', href: '/financials/accounts-receivable', icon: BookUser, roles: ['Admin', 'Manager'] },
-//  { name: 'Invoices', href: '/financials/invoices', icon: List, roles: ['Admin', 'Manager'] },
-//  { name: 'General Ledger', href: '/financials/ledger', icon: FileText, roles: ['Admin'] },
-];
+// Categorize the nav items
+const getNavItemsByCategory = () => {
+  const mainItems = allNavItems.filter(item => 
+    ['/', '/analytics', '/bi-features', '/suppliers'].includes(item.href)
+  );
+  
+  const hrItems = allNavItems.filter(item => 
+    item.href === '/employees'
+  );
+  
+  const accessItems = allNavItems.filter(item => 
+    ['/visitor-management', '/vehicle-management'].includes(item.href)
+  );
+  
+  const operationsItems = allNavItems.filter(item => 
+    [
+      '/weight-capture', '/quality-control', '/warehouse', '/cold-room',
+      '/shipments', '/carriers', '/outbound', '/inventory', '/utility'
+    ].includes(item.href)
+  );
+  
+  const adminItems = allNavItems.filter(item => 
+    ['/reports', '/sop', '/user-roles', '/security', '/settings'].includes(item.href)
+  );
+  
+  return { mainItems, hrItems, accessItems, operationsItems, adminItems };
+};
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const { user } = useUser();
-  const userRole = user?.role || 'Admin'; // Default to Admin if no user
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  
+  const userPermissions = (session?.user as any)?.permissions || [];
+  const userRole = (session?.user as any)?.role || 'No Role';
+  
+  // Helper function to check permissions
+  const hasAccess = (item: NavItem): boolean => {
+    // Admin has access to everything
+    if (userRole === 'Administrator' || userPermissions.includes('admin.all')) {
+      return true;
+    }
+    
+    // Check single permission
+    if (item.permission) {
+      return userPermissions.includes(item.permission);
+    }
+    
+    // Check multiple permissions (any of them)
+    if (item.permissions && item.permissions.length > 0) {
+      return item.permissions.some(perm => userPermissions.includes(perm));
+    }
+    
+    // If no permission specified, allow access
+    return true;
+  };
+  
+  const handleLogout = async () => {
+    try {
+      await signOut({ 
+        redirect: false,
+        callbackUrl: '/login'
+      });
+      toast.success('Logged out successfully');
+      router.push('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Failed to logout');
+    }
+  };
 
-  const hasAccess = (roles: Employee['role'][]) => roles.includes(userRole);
-
-  const visibleMainNav = mainNavItems.filter(item => hasAccess(item.roles));
-  const visibleHrNav = hrNavItems.filter(item => hasAccess(item.roles));
-  const visibleAccessNav = accessManagementNavItems.filter(item => hasAccess(item.roles));
-  const visibleOperationsNav = operationsNavItems.filter(item => hasAccess(item.roles));
-  const visibleAdminNav = administrationNavItems.filter(item => hasAccess(item.roles));
-  const visibleFinancialNav = financialNavItems.filter(item => hasAccess(item.roles));
+  // Filter items based on permissions
+  const { mainItems, hrItems, accessItems, operationsItems, adminItems } = getNavItemsByCategory();
+  
+  const visibleMainItems = mainItems.filter(hasAccess);
+  const visibleHrItems = hrItems.filter(hasAccess);
+  const visibleAccessItems = accessItems.filter(hasAccess);
+  const visibleOperationsItems = operationsItems.filter(hasAccess);
+  const visibleAdminItems = adminItems.filter(hasAccess);
   
   const NavGroup = ({ title, items }: { title: string, items: NavItem[] }) => {
     if (items.length === 0) return null;
@@ -154,58 +188,38 @@ export function SidebarNav() {
         </div>
     );
   };
-  
-  const SubNavGroup = ({ title, items, icon: Icon }: { title: string, items: NavItem[], icon: React.ElementType }) => {
-    if (items.length === 0) return null;
-
-    const isAnyItemActive = items.some(item => pathname.startsWith(item.href));
-
-    return (
-        <SidebarMenuItem>
-            <SidebarMenuSub open={isAnyItemActive}>
-            <SidebarMenuSubTrigger>
-                <SidebarMenuButton
-                isActive={isAnyItemActive}
-                variant={isAnyItemActive ? 'secondary' : 'ghost'}
-                className="w-full justify-start"
-                tooltip={title}
-                >
-                <Icon className="mr-2 h-4 w-4" />
-                <span>{title}</span>
-                </SidebarMenuButton>
-            </SidebarMenuSubTrigger>
-            <SidebarMenuSubContent>
-                {items.map((item) => (
-                <SidebarMenuSubItem key={`${item.name}-${item.href}`}>
-                    <SidebarMenuSubButton
-                    isActive={pathname === item.href}
-                    asChild
-                    >
-                    <Link href={item.href}>
-                        <span>{item.name}</span>
-                    </Link>
-                    </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                ))}
-            </SidebarMenuSubContent>
-            </SidebarMenuSub>
-        </SidebarMenuItem>
-    );
-  };
 
   return (
-    <div className="space-y-2">
-        <NavGroup title="Main" items={visibleMainNav} />
-        <NavGroup title="HR" items={visibleHrNav} />
-        <NavGroup title="Access Control" items={visibleAccessNav} />
+    <div className="space-y-2 h-full flex flex-col">
+        <NavGroup title="Main" items={visibleMainItems} />
+        <NavGroup title="HR" items={visibleHrItems} />
+        <NavGroup title="Access Control" items={visibleAccessItems} />
         <Separator />
         
-        <NavGroup title="Operations" items={visibleOperationsNav} />
+        <NavGroup title="Operations" items={visibleOperationsItems} />
         
         <Separator />
-        <NavGroup title="Financials" items={visibleFinancialNav} />
-        <Separator />
-        <NavGroup title="Administration" items={visibleAdminNav} />
+        <NavGroup title="Administration" items={visibleAdminItems} />
+        
+        {/* User info and logout button at the bottom */}
+        <div className="mt-auto p-4 border-t">
+          <div className="mb-3">
+            <p className="text-sm font-medium truncate">
+              {session?.user?.name || session?.user?.email}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {userRole}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="w-full justify-start"
+            onClick={handleLogout}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+        </div>
     </div>
   );
 }

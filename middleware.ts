@@ -11,33 +11,100 @@ const publicRoutes = [
   '/api/auth',
   '/_next',
   '/favicon.ico',
+  '/unauthorized',
 ];
 
-// Routes that only require authentication (no specific role)
-const protectedRoutes = [
-  '/dashboard',
-  '/profile',
-  '/settings',
-];
+// Define required permissions for each route based on your sidebar
+const routePermissions: Record<string, string[]> = {
+  // Dashboard routes
+  '/': ['dashboard.view'],
+  '/dashboard': ['dashboard.view'],
+  '/warehouse': ['dashboard.view'],
+  '/security/dashboard': ['dashboard.view'],
+  
+  // Analytics
+  '/analytics': ['dashboard.analytics'],
+  '/bi-features': ['dashboard.analytics'],
+  
+  // Customers (commented but keeping for reference)
+  '/customers': ['customers.view'],
+  '/customers/manage': ['customers.manage'],
+  '/customers/quotes': ['customers.quotes'],
+  '/customers/invoices': ['customers.invoices'],
+  '/customers/receivables': ['customers.receivables'],
+  
+  // Suppliers
+  '/suppliers': ['suppliers.view'],
+  '/suppliers/manage': ['suppliers.manage'],
+  '/suppliers/weigh': ['suppliers.weigh'],
+  '/suppliers/visitors': ['suppliers.visitors'],
+  
+  // HR - Employees
+  '/employees': ['employees.view'],
+  '/employees/manage': ['employees.manage'],
+  '/employees/attendance': ['employees.attendance'],
+  '/employees/payroll': ['employees.payroll'],
+  
+  // Access Management
+  '/visitor-management': ['suppliers.visitors'],
+  '/vehicle-management': ['carriers.view'],
+  
+  // Operations
+  '/traceability': ['inventory.view'],
+  '/weight-capture': ['suppliers.weigh'],
+  '/quality-control': ['qc.view'],
+  '/quality-control/perform': ['qc.perform'],
+  '/quality-control/approve': ['qc.approve'],
+  '/cold-room': ['cold_room.view'],
+  '/cold-room/manage': ['cold_room.manage'],
+  '/cold-room/temperature': ['cold_room.temperature'],
+  '/cold-room/inventory': ['cold_room.inventory'],
+  '/shipments': ['shipments.view'],
+  '/shipments/create': ['shipments.create'],
+  '/shipments/track': ['shipments.track'],
+  '/carriers': ['carriers.view'],
+  '/carriers/manage': ['carriers.manage'],
+  '/carriers/assign': ['carriers.assign'],
+  '/outbound': ['loading.view'],
+  '/loading': ['loading.view'],
+  '/loading/create': ['loading.create'],
+  '/loading/manage': ['loading.manage'],
+  '/tag-management': ['inventory.manage'],
+  '/inventory': ['inventory.view'],
+  '/inventory/manage': ['inventory.manage'],
+  '/inventory/packaging': ['inventory.packaging'],
+  '/produce': ['cold_room.inventory'],
+  '/utility': ['utilities.view'],
+  '/utility/record': ['utilities.record'],
+  
+  // Financials
+  '/financials': ['dashboard.analytics'],
+  '/payroll': ['employees.payroll'],
+  '/financials/petty-cash': ['admin.settings'],
+  '/financials/accounts-receivable': ['customers.receivables'],
+  '/financials/invoices': ['customers.invoices'],
+  '/financials/ledger': ['admin.settings'],
+  
+  // Administration
+  '/reports': ['admin.audit'],
+  '/sop': ['admin.settings'],
+  '/user-roles': ['admin.roles'],
+  '/branches': ['admin.settings'],
+  '/clients': ['customers.manage'],
+  '/security': ['admin.settings'],
+  '/settings': ['admin.settings'],
+};
 
-// Admin routes that require admin role
-const adminRoutes = [
-  '/admin',
+// Admin-only routes (full system access)
+const adminOnlyRoutes = [
   '/user-roles',
-  '/users',
-  '/system-settings',
+  '/security',
+  '/settings',
+  '/branches',
 ];
 
-// Export the middleware configuration
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     '/((?!_next/static|_next/image|favicon.ico|public/).*)',
   ],
 };
@@ -54,119 +121,59 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   
-  // 2. Check if user is authenticated
+  // 2. Get authentication token
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
   });
   
-  // If no token and not on public route, redirect to login
+  // If no token, redirect to login
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('callbackUrl', encodeURI(pathname));
+    loginUrl.searchParams.set('callbackUrl', encodeURI(request.url));
     return NextResponse.redirect(loginUrl);
   }
   
-  // 3. Parse user role from token (adjust based on your token structure)
-  const userRole = token.role || 'user';
+  // 3. Parse user permissions from token
   const userPermissions = token.permissions || [];
+  const userRole = token.role || 'No Role';
   
-  // 4. Check if route requires admin access
-  const isAdminRoute = adminRoutes.some(route => 
+  // 4. Check if route is admin-only
+  const isAdminRoute = adminOnlyRoutes.some(route => 
     pathname === route || pathname.startsWith(route + '/')
   );
   
   if (isAdminRoute) {
-    // Check if user has admin role or specific permissions
-    const isAdmin = userRole === 'Administrator' || 
-                    userRole === 'admin' || 
-                    userPermissions.includes('admin.users') ||
-                    userPermissions.includes('admin.roles');
+    const hasAdminAccess = userRole === 'Administrator' || 
+                          userPermissions.includes('admin.all') ||
+                          userPermissions.includes('admin.settings');
     
-    if (!isAdmin) {
-      // Redirect to dashboard if not admin
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+    if (!hasAdminAccess) {
+      return NextResponse.redirect(new URL('/unauthorized', request.url));
     }
   }
   
-  // 5. Check if route is protected (requires authentication)
-  const isProtectedRoute = protectedRoutes.some(route => 
-    pathname === route || pathname.startsWith(route + '/')
-  );
+  // 5. Check route-specific permissions
+  let routePermissionChecked = false;
   
-  if (isProtectedRoute && !token) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('callbackUrl', encodeURI(pathname));
-    return NextResponse.redirect(loginUrl);
-  }
-  
-  // 6. Handle API routes with CORS
-  if (pathname.startsWith('/api/')) {
-    const response = NextResponse.next();
-    
-    // Set CORS headers for all API routes except auth
-    if (!pathname.startsWith('/api/auth/')) {
-      response.headers.set('Access-Control-Allow-Origin', '*');
-      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  for (const [route, requiredPermissions] of Object.entries(routePermissions)) {
+    if (pathname === route || pathname.startsWith(route + '/')) {
+      routePermissionChecked = true;
       
-      // Handle preflight requests
-      if (request.method === 'OPTIONS') {
-        return new NextResponse(null, {
-          status: 200,
-          headers: response.headers,
-        });
-      }
-    }
-    
-    // Check authentication for protected API routes
-    if (!pathname.startsWith('/api/auth/') && !token) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+      // Check if user has at least one required permission
+      const hasRequiredPermission = requiredPermissions.some(permission => 
+        userPermissions.includes(permission) ||
+        userPermissions.includes('admin.all') ||
+        userRole === 'Administrator'
       );
+      
+      if (!hasRequiredPermission) {
+        return NextResponse.redirect(new URL('/unauthorized', request.url));
+      }
+      break;
     }
-    
-    return response;
   }
   
-  // 7. Allow access for authenticated users
+  // 6. For authenticated routes without specific permissions, allow access
   return NextResponse.next();
-}
-
-// Helper function to check if user has permission
-function hasPermission(userPermissions: string[], requiredPermission: string): boolean {
-  return userPermissions.includes(requiredPermission) || 
-         userPermissions.includes('admin.all');
-}
-
-// Optional: Create a custom middleware for specific route protection
-export async function withRoleCheck(
-  request: NextRequest,
-  requiredRole?: string,
-  requiredPermission?: string
-) {
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
-  
-  if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-  
-  const userRole = token.role || 'user';
-  const userPermissions = token.permissions || [];
-  
-  // Check role if required
-  if (requiredRole && userRole !== requiredRole) {
-    return NextResponse.redirect(new URL('/unauthorized', request.url));
-  }
-  
-  // Check permission if required
-  if (requiredPermission && !hasPermission(userPermissions, requiredPermission)) {
-    return NextResponse.redirect(new URL('/unauthorized', request.url));
-  }
-  
-  return null; // Allow access
 }

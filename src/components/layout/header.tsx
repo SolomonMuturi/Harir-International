@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Search, User, Settings, LogOut } from 'lucide-react';
+import { Search, LogOut } from 'lucide-react';
 import { Input } from '../ui/input';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -29,10 +29,10 @@ export function Header() {
     try {
       await signOut({ 
         redirect: false,
-        callbackUrl: '/login'
+        callbackUrl: '/' // CHANGED FROM '/login' TO '/'
       });
       toast.success('Logged out successfully');
-      router.push('/login');
+      router.push('/'); // CHANGED FROM '/login' TO '/'
       router.refresh();
     } catch (error) {
       console.error('Logout error:', error);
@@ -96,15 +96,6 @@ export function Header() {
                 )}
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push('/profile')}>
-              <User className="mr-2 h-4 w-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/settings')}>
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Settings</span>
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-700">
               <LogOut className="mr-2 h-4 w-4" />

@@ -5,7 +5,7 @@ import { z } from 'zod';
 const prisma = new PrismaClient();
 
 const updateRoleSchema = z.object({
-  name: z.string().min(1, 'Role name must be at least 1 character').max(100, 'Role name cannot exceed 100 characters').optional(),
+  name: z.string().min(1, 'Role name is required').max(100).optional(),
   description: z.string().optional(),
   permissions: z.array(z.string()).optional(),
   isDefault: z.boolean().optional(),
@@ -14,20 +14,23 @@ const updateRoleSchema = z.object({
 // GET /api/user-roles/[id] - Get single role
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+    const includeUsers = request.nextUrl.searchParams.get('includeUsers') === 'true';
+    
     const role = await prisma.userRole.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
-        users: {
+        users: includeUsers ? {
           select: {
             id: true,
             email: true,
             name: true,
             createdAt: true,
           },
-        },
+        } : false,
         _count: {
           select: {
             users: true,
@@ -73,9 +76,10 @@ export async function GET(
 // PUT /api/user-roles/[id] - Update role
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     
     // Validate input
@@ -83,7 +87,7 @@ export async function PUT(
     
     // Check if role exists
     const existingRole = await prisma.userRole.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
     
     if (!existingRole) {
@@ -125,118 +129,14 @@ export async function PUT(
       await prisma.userRole.updateMany({
         where: { 
           isDefault: true,
-          id: { not: params.id },
+          id: { not: id },
         },
         data: { isDefault: false },
       });
     }
     
     const updatedRole = await prisma.userRole.update({
-      where: { id: params.id },
-      data: updateData,
-    });
-    
-    // Parse permissions for response
-    const roleWithParsedPermissions = {
-      ...updatedRole,
-      permissions: JSON.parse(updatedRole.permissions || '[]') as string[],
-    };
-    
-    return NextResponse.json({
-      success: true,
-      role: roleWithParsedPermissions,
-      message: 'Role updated successfully'
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Validation failed', 
-          details: error.errors.map(err => ({
-            field: err.path.join('.'),
-            message: err.message
-          }))
-        },
-        { status: 400 }
-      );
-    }
-    
-    console.error('Error updating role:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to update user role',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// PATCH /api/user-roles/[id] - Partial update (optional alternative)
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const body = await request.json();
-    
-    // Validate input with partial schema
-    const validatedData = updateRoleSchema.partial().parse(body);
-    
-    // Check if role exists
-    const existingRole = await prisma.userRole.findUnique({
-      where: { id: params.id },
-    });
-    
-    if (!existingRole) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Role not found' 
-        },
-        { status: 404 }
-      );
-    }
-    
-    // Check if new name already exists (if name is being updated)
-    if (validatedData.name && validatedData.name !== existingRole.name) {
-      const nameExists = await prisma.userRole.findUnique({
-        where: { name: validatedData.name },
-      });
-      
-      if (nameExists) {
-        return NextResponse.json(
-          { 
-            success: false,
-            error: 'Role with this name already exists' 
-          },
-          { status: 400 }
-        );
-      }
-    }
-    
-    // Prepare update data
-    const updateData: any = {};
-    if (validatedData.name !== undefined) updateData.name = validatedData.name;
-    if (validatedData.description !== undefined) updateData.description = validatedData.description;
-    if (validatedData.permissions !== undefined) updateData.permissions = JSON.stringify(validatedData.permissions);
-    if (validatedData.isDefault !== undefined) updateData.isDefault = validatedData.isDefault;
-    
-    // If setting as default, unset other defaults
-    if (validatedData.isDefault === true) {
-      await prisma.userRole.updateMany({
-        where: { 
-          isDefault: true,
-          id: { not: params.id },
-        },
-        data: { isDefault: false },
-      });
-    }
-    
-    const updatedRole = await prisma.userRole.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
     });
     
@@ -281,12 +181,14 @@ export async function PATCH(
 // DELETE /api/user-roles/[id] - Delete role
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+    
     // Check if role exists
     const role = await prisma.userRole.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         _count: {
           select: {
@@ -331,7 +233,7 @@ export async function DELETE(
     }
     
     await prisma.userRole.delete({
-      where: { id: params.id },
+      where: { id },
     });
     
     return NextResponse.json(

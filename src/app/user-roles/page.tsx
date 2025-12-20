@@ -85,6 +85,7 @@ type UserWithRole = {
   createdAt: Date;
   loginAttempts: number;
   twoFactorEnabled: boolean;
+  password?: string; // Add this if needed
 };
 
 type UserAssignmentState = {
@@ -451,43 +452,58 @@ export default function UserRolesPage() {
     }
   };
 
-  // NEW: Create new user
-  const createNewUser = async () => {
-    if (!newUserEmail || !newUserName || !newUserPassword) {
-      toast.error('Please fill all required fields');
+// NEW: Create new user
+const createNewUser = async () => {
+  if (!newUserEmail || !newUserName || !newUserPassword) {
+    toast.error('Please fill all required fields');
+    return;
+  }
+  
+  try {
+    setSaving(true);
+    
+    // Convert 'no-role' to null
+    const roleIdToAssign = newUserRoleId === 'no-role' ? null : newUserRoleId;
+    
+    const response = await fetch('/api/user-roles/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: newUserEmail,
+        name: newUserName,
+        password: newUserPassword,
+        roleId: roleIdToAssign,
+      }),
+    });
+    
+    // First, get the response text to debug
+    const responseText = await response.text();
+    
+    // Try to parse it as JSON
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Failed to parse response as JSON:', responseText);
+      toast.error('Server returned invalid response');
       return;
     }
     
-    try {
-      setSaving(true);
-      const response = await fetch('/api/user-roles/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newUserEmail,
-          name: newUserName,
-          password: newUserPassword,
-          roleId: newUserRoleId || null,
-        }),
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(result.message || 'User created successfully');
-        setShowCreateUserDialog(false);
-        resetNewUserForm();
-        fetchUsers();
-      } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create user');
-      }
-    } catch (error: any) {
-      console.error('Error creating user:', error);
-      toast.error(error.message || 'Failed to create user');
-    } finally {
-      setSaving(false);
+    if (response.ok) {
+      toast.success(result.message || 'User created successfully');
+      setShowCreateUserDialog(false);
+      resetNewUserForm();
+      fetchUsers();
+    } else {
+      throw new Error(result.error || 'Failed to create user');
     }
-  };
+  } catch (error: any) {
+    console.error('Error creating user:', error);
+    toast.error(error.message || 'Failed to create user');
+  } finally {
+    setSaving(false);
+  }
+};
 
   // NEW: Save all pending assignments
   const saveAllAssignments = async () => {
@@ -1193,15 +1209,13 @@ export default function UserRolesPage() {
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Select 
-                                value={bulkAssignRoleId} 
-                                onValueChange={setBulkAssignRoleId}
-                              >
+                              <Select value={bulkAssignRoleId} onValueChange={setBulkAssignRoleId}>
                                 <SelectTrigger className="w-[200px]">
                                   <SelectValue placeholder="Select role to assign" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">No Role (Unassign)</SelectItem>
+                                  {/* ✅ Fixed: Changed from value="" to value="no-role" */}
+                                  <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                   {roles.map(role => (
                                     <SelectItem key={role.id} value={role.id}>
                                       {role.name}
@@ -1324,13 +1338,14 @@ export default function UserRolesPage() {
                                     <TableCell>
                                       <Select
                                         value={assignment?.newRoleId || ''}
-                                        onValueChange={(value) => updateUserAssignment(user.id, value || null)}
+                                        onValueChange={(value) => updateUserAssignment(user.id, value === 'no-role' ? null : value)}
                                       >
                                         <SelectTrigger className="w-[200px]">
                                           <SelectValue placeholder="Select role..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="">No Role (Unassign)</SelectItem>
+                                          {/* ✅ Fixed: Changed from value="" to value="no-role" */}
+                                          <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                           {roles.map(role => (
                                             <SelectItem key={role.id} value={role.id}>
                                               {role.name}
@@ -1929,7 +1944,8 @@ export default function UserRolesPage() {
                   <SelectValue placeholder="Select a role (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No Role</SelectItem>
+                  {/* ✅ FIXED: Changed from value="" to value="no-role" */}
+                  <SelectItem value="no-role">No Role</SelectItem>
                   {roles.map(role => (
                     <SelectItem key={role.id} value={role.id}>
                       {role.name}

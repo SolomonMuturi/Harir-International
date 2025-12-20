@@ -15,10 +15,22 @@ import { Input } from '../ui/input';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 export function Header() {
   const { data: session } = useSession();
   const router = useRouter();
+
+  // Get initials from name
+  const getInitials = (name: string = '') => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
 
   const handleLogout = async () => {
     try {
@@ -37,60 +49,83 @@ export function Header() {
 
   const user = session?.user;
   const userRole = (user as any)?.role || 'No Role';
-  const userPermissions = (user as any)?.permissions || [];
+  const userInitials = getInitials(user?.name || user?.email || 'U');
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6">
-      <div className="flex items-center gap-2">
-         <SidebarTrigger className="md:hidden" />
-         <h1 className="font-headline text-xl font-semibold hidden md:block">Dashboard</h1>
+    <header className="sticky top-0 z-50 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 md:px-6">
+      <div className="flex items-center gap-3">
+        <SidebarTrigger className="md:hidden" />
+        <div className="hidden md:block">
+          <h1 className="font-headline text-xl font-semibold tracking-tight">Dashboard</h1>
+        </div>
       </div>
       
-      <div className="flex w-full items-center gap-4 md:ml-auto md:gap-2 lg:gap-4">
-        <form className="ml-auto flex-1 sm:flex-initial">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search..."
-              className="pl-8 sm:w-[300px] md:w-[200px] lg:w-[300px]"
-            />
-          </div>
-        </form>
+      <div className="flex flex-1 items-center justify-end gap-3 md:gap-4">
+        {/* Search */}
+        <div className="relative hidden sm:block">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search..."
+            className="pl-9 w-[200px] lg:w-[280px] transition-all focus:w-[240px] lg:focus:w-[320px]"
+          />
+        </div>
         
+        {/* User Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <div className="flex flex-col items-start">
-                <span className="text-sm font-medium">{user?.name || 'User'}</span>
-                <span className="text-xs text-muted-foreground">{userRole}</span>
+            <Button 
+              variant="ghost" 
+              className={cn(
+                "h-10 w-10 p-0 rounded-full",
+                "hover:bg-primary/10 hover:scale-105",
+                "transition-all duration-200",
+                "border border-border hover:border-primary/20"
+              )}
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold text-sm shadow-sm">
+                {userInitials}
               </div>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">
-                  {user?.name || 'User'}
-                </p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  {user?.email}
-                </p>
-                <p className="text-xs font-medium text-primary mt-1">
-                  Role: {userRole}
-                </p>
-                {userPermissions.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {userPermissions.length} permission(s)
+          <DropdownMenuContent 
+            className="w-56 p-0" 
+            align="end" 
+            forceMount
+            sideOffset={8}
+          >
+            <div className="p-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold shadow-sm">
+                  {userInitials}
+                </div>
+                <div className="flex flex-col overflow-hidden">
+                  <p className="text-sm font-medium truncate">
+                    {user?.name || 'User'}
                   </p>
-                )}
+                  <p className="text-xs text-muted-foreground truncate">
+                    {user?.email}
+                  </p>
+                  <div className="mt-1">
+                    <Badge variant="secondary" className="text-xs font-normal px-2 py-0 h-5">
+                      {userRole}
+                    </Badge>
+                  </div>
+                </div>
               </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-700">
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
-            </DropdownMenuItem>
+            </div>
+            
+            <DropdownMenuSeparator className="mx-2" />
+            
+            <div className="p-2">
+              <DropdownMenuItem 
+                onClick={handleLogout}
+                className="cursor-pointer rounded-md px-3 py-2 text-sm transition-colors focus:bg-destructive/10 focus:text-destructive text-destructive"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

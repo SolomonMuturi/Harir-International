@@ -152,7 +152,7 @@ export function FinalTagDialog({
         <div className="tag-card">
             <div className="logo">
                 <FreshTraceLogo className="logo-svg" />
-                <span className="logo-text">FreshTrace</span>
+                <span className="logo-text">Harir International</span>
             </div>
             <div className="content-grid">
               <div>

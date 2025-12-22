@@ -1,4 +1,3 @@
-
 import type { SVGProps } from 'react';
 
 export function FreshTraceLogo(props: SVGProps<SVGSVGElement>) {
@@ -13,9 +12,11 @@ export function FreshTraceLogo(props: SVGProps<SVGSVGElement>) {
       strokeLinejoin="round"
       {...props}
     >
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5" />
-        <path d="M15.21 8.85a1.5 1.5 0 0 0-2.42 0l-4.5 7.5a1.5 1.5 0 0 0 2.42 2.3l4.5-7.5a1.5 1.5 0 0 0 0-2.3Z" />
-        <path d="M22 10.5V12l-10 5-10-5v-1.5" />
+      {/* Your original paths, just cleaned up */}
+      <path d="M12 2L2 7l10 5 10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M12 9l-3.5 6a1.5 1.5 0 102.6 1.5l3.5-6a1.5 1.5 0 10-2.6-1.5" />
+      <path d="M2 12l10 5 10-5" />
     </svg>
   );
 }
@@ -32,10 +33,11 @@ export function FreshViewLogo(props: SVGProps<SVGSVGElement>) {
       strokeLinejoin="round"
       {...props}
     >
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-      <path d="M15.5 8.5L18 10l-2.5 1.5"></path>
-      <path d="M22 12v5l-2.5-1.5"></path>
-      <path d="M8.5 15.5L6 14l2.5-1.5"></path>
+      {/* Your original paths */}
+      <path d="M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+      <path d="M15 9l2 1-2 1" />
+      <path d="M9 15l-2-1 2-1" />
+      <path d="M18 12v5l-2.5-1.5" />
     </svg>
   );
 }

@@ -159,8 +159,8 @@ export function GoodsReceivedNoteDialog({
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                 <FreshTraceLogo className="h-12 w-12 text-primary" />
                                 <div>
-                                    <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>FreshTrace Inc.</h3>
-                                    <div style={{ fontSize: '0.875rem', color: '#666' }}>info@freshtrace.co.ke | www.freshtrace.co.ke</div>
+                                    <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Harir Int.</h3>
+                                    <div style={{ fontSize: '0.875rem', color: '#666' }}>info@harirint.com | www.harirint.com</div>
                                 </div>
                             </div>
                         </td>

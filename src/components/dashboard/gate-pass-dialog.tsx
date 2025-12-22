@@ -46,8 +46,8 @@ export function GatePassDialog({ isOpen, onOpenChange, visitor }: GatePassDialog
               <div className="flex items-center gap-4">
                 <FreshTraceLogo className="h-12 w-12 text-primary" />
                 <div>
-                  <h3 className="text-xl font-bold">FreshTrace Inc.</h3>
-                  <p className="text-sm text-muted-foreground">info@freshtrace.co.ke | www.freshtrace.co.ke</p>
+                  <h3 className="text-xl font-bold">Harir Int.</h3>
+                  <p className="text-sm text-muted-foreground">info@harirint.com | www.harirint.com</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">

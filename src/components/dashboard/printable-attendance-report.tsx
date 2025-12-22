@@ -38,8 +38,8 @@ export function PrintableAttendanceReport({ employees, attendance }: PrintableAt
         </div>
         <div className="flex items-start gap-4">
             <div className="text-right">
-                <p className="font-bold">FreshTrace Inc.</p>
-                <p className="text-sm">info@freshtrace.co.ke | www.freshtrace.co.ke</p>
+                <p className="font-bold">Harir Int.</p>
+                <p className="text-sm">info@harirint.com | www.harirint.com</p>
                 <p className="font-mono text-xs mt-1">{reportId}</p>
             </div>
              <img 

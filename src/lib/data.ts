@@ -1454,7 +1454,7 @@ export type ProductionReportData = {
 };
 
 export const productionReportData: ProductionReportData = {
-    company: 'FreshTrace Inc. - Nakuru Packhouse',
+    company: 'Harir International. - Nakuru Packhouse',
     date: '31st July, 2024',
     shift: 'Day Shift (07:00 - 19:00)',
     productionDetails: [

@@ -60,7 +60,7 @@ export async function GET(request: Request) {
       salary: emp.salary || '0',
       rating: emp.rating || 0,
       performance: emp.performance || 'Meets_Expectations',
-      company: emp.company || 'FreshTrace'
+      company: emp.company || 'Harir International'
     }));
     
     return NextResponse.json(transformedEmployees);
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
       data: {
         id: `emp-${Date.now()}`,
         name: body.name,
-        email: body.email || `${body.name.replace(/\s+/g, '.').toLowerCase()}@freshtrace.com`,
+        email: body.email || `${body.name.replace(/\s+/g, '.').toLowerCase()}@haririnternational.com`,
         role: body.role || 'Employee',
         status: body.status || 'active',
         performance: body.performance || 'Meets_Expectations',
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
         phone: body.phone || '',
         issue_date: body.issue_date || body.issueDate ? new Date(body.issue_date || body.issueDate) : null,
         expiry_date: body.expiry_date || body.expiryDate ? new Date(body.expiry_date || body.expiryDate) : null,
-        company: body.company || 'FreshTrace'
+        company: body.company || 'Harir International'
       }
     });
 

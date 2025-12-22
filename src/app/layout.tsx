@@ -22,8 +22,8 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: 'FreshTrace',
-  description: 'FreshTrace Production System Dashboard',
+  title: 'Harir International',
+  description: 'Harir International Production System Dashboard',
 };
 
 export default function RootLayout({

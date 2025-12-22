@@ -109,7 +109,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
           </div>
           <CardTitle className="text-2xl font-bold text-center">Welcome Back</CardTitle>
           <CardDescription className="text-center">
-            Enter your credentials to access FreshTrace
+            Enter your credentials to access Harir International
           </CardDescription>
         </CardHeader>
         <CardContent>

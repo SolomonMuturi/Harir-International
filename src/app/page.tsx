@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { FreshTraceLogo } from '@/components/icons'; // Added this import
 
 // Wrapper component that handles search params
 function LoginFormWrapper() {
@@ -103,11 +104,11 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-2">
-            <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
-              <LogIn className="w-6 h-6 text-primary-foreground" />
+            <div className="w-20 h-20 bg-primary rounded-lg flex items-center justify-center">
+              <FreshTraceLogo className="w-40 h-20 text-primary-foreground" /> {/* Made logo bigger */}
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold text-center">Welcome Back</CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">Harir International</CardTitle>
           <CardDescription className="text-center">
             Enter your credentials to access Harir International
           </CardDescription>
@@ -216,20 +217,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex flex-col items-center space-y-3">
-          <div className="text-sm text-muted-foreground">
-            <a href="/forgot-password" className="hover:text-primary underline">
-              Forgot your password?
-            </a>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <a href="/register" className="hover:text-primary underline font-medium">
-              Sign up
-            </a>
-          </div>
-        </CardFooter>
-      </Card>
+       </Card>
     </div>
   );
 }

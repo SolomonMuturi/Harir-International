@@ -47,7 +47,15 @@ import {
   UserMinus,
   RefreshCw,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  DoorOpen,
+  DoorClosed,
+  MapPin,
+  ListChecks,
+  BarChart,
+  UserCog,
+  CalendarCheck,
+  Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -94,7 +102,7 @@ type UserAssignmentState = {
   newRoleId: string | null;
 };
 
-// Default permissions based on your schema
+// Default permissions based on your schema - UPDATED WITH EMPLOYEE PERMISSIONS
 const DEFAULT_PERMISSIONS: Permission[] = [
   // Dashboard Permissions
   { id: 'dashboard.view', name: 'View Dashboard', description: 'Access to main dashboard', category: 'Dashboard' },
@@ -158,11 +166,45 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'utilities.analyze', name: 'Analyze Consumption', description: 'Analyze utility consumption patterns', category: 'Utilities' },
   { id: 'utilities.reports', name: 'Utility Reports', description: 'Generate utility reports', category: 'Utilities' },
   
-  // Employee Management
-  { id: 'employees.view', name: 'View Employees', description: 'View employee records', category: 'Employees' },
-  { id: 'employees.manage', name: 'Manage Employees', description: 'Add/edit/delete employee records', category: 'Employees' },
-  { id: 'employees.attendance', name: 'View Attendance', description: 'View employee attendance records', category: 'Employees' },
-  { id: 'employees.payroll', name: 'Payroll Management', description: 'Manage payroll and salaries', category: 'Employees' },
+  // Employee Management Permissions - NEWLY ADDED
+  // Overview Tab Permissions
+  { id: 'employees.overview.view', name: 'View Employee Overview', description: 'View employee dashboard and statistics', category: 'Employee Management' },
+  { id: 'employees.overview.export', name: 'Export Overview Reports', description: 'Export employee overview reports', category: 'Employee Management' },
+  { id: 'employees.overview.bulk_actions', name: 'Perform Bulk Actions', description: 'Perform bulk check-in/check-out operations', category: 'Employee Management' },
+  
+  // Gate In/Check-in Permissions
+  { id: 'employees.checkin.view', name: 'View Check-in Tab', description: 'Access to gate in/check-in functionality', category: 'Employee Management' },
+  { id: 'employees.checkin.perform', name: 'Perform Check-in', description: 'Check in individual employees', category: 'Employee Management' },
+  { id: 'employees.checkin.bulk', name: 'Bulk Check-in', description: 'Perform bulk check-in operations', category: 'Employee Management' },
+  { id: 'employees.attendance.mark', name: 'Mark Attendance Status', description: 'Mark employees as absent or on leave', category: 'Employee Management' },
+  { id: 'employees.attendance.late', name: 'Mark Late Arrival', description: 'Mark employees as late arrivals', category: 'Employee Management' },
+  
+  // Assign Designation Permissions
+  { id: 'employees.designation.view', name: 'View Designation Tab', description: 'Access to assign designation functionality', category: 'Employee Management' },
+  { id: 'employees.designation.assign', name: 'Assign Designation', description: 'Assign work areas to contract employees', category: 'Employee Management' },
+  { id: 'employees.designation.bulk', name: 'Bulk Assign Designation', description: 'Perform bulk designation assignments', category: 'Employee Management' },
+  { id: 'employees.designation.manage', name: 'Manage Designations', description: 'Create/edit/delete designation types', category: 'Employee Management' },
+  
+  // Gate Out/Check-out Permissions
+  { id: 'employees.checkout.view', name: 'View Check-out Tab', description: 'Access to gate out/check-out functionality', category: 'Employee Management' },
+  { id: 'employees.checkout.perform', name: 'Perform Check-out', description: 'Check out individual employees', category: 'Employee Management' },
+  { id: 'employees.checkout.bulk', name: 'Bulk Check-out', description: 'Perform bulk check-out operations', category: 'Employee Management' },
+  { id: 'employees.checkout.override', name: 'Override Check-out', description: 'Check out employees without designation (admin)', category: 'Employee Management' },
+  
+  // Employee List Management
+  { id: 'employees.list.view', name: 'View Employee List', description: 'View all employees in the system', category: 'Employee Management' },
+  { id: 'employees.create', name: 'Create Employees', description: 'Add new employees to the system', category: 'Employee Management' },
+  { id: 'employees.edit', name: 'Edit Employees', description: 'Edit existing employee information', category: 'Employee Management' },
+  { id: 'employees.delete', name: 'Delete Employees', description: 'Remove employees from the system', category: 'Employee Management' },
+  { id: 'employees.export', name: 'Export Employee Data', description: 'Export employee lists to CSV/Excel', category: 'Employee Management' },
+  { id: 'employees.import', name: 'Import Employee Data', description: 'Import employees from CSV/Excel', category: 'Employee Management' },
+  
+  // Attendance Log Permissions
+  { id: 'employees.attendance.view', name: 'View Attendance Log', description: 'View attendance history and records', category: 'Employee Management' },
+  { id: 'employees.attendance.export', name: 'Export Attendance Data', description: 'Export attendance records to CSV/Excel', category: 'Employee Management' },
+  { id: 'employees.attendance.edit', name: 'Edit Attendance Records', description: 'Edit existing attendance records', category: 'Employee Management' },
+  { id: 'employees.attendance.delete', name: 'Delete Attendance Records', description: 'Delete attendance records', category: 'Employee Management' },
+  { id: 'employees.attendance.reports', name: 'Generate Attendance Reports', description: 'Generate detailed attendance reports', category: 'Employee Management' },
   
   // System Administration
   { id: 'admin.users', name: 'Manage Users', description: 'Create and manage user accounts', category: 'Administration' },
@@ -172,7 +214,7 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'admin.backup', name: 'System Backup', description: 'Perform system backups', category: 'Administration' },
 ];
 
-// Predefined roles
+// Predefined roles - UPDATED WITH NEW PERMISSION SETS
 const PREDEFINED_ROLES = [
   {
     name: 'Administrator',
@@ -208,8 +250,23 @@ const PREDEFINED_ROLES = [
       'inventory.reports',
       'utilities.view',
       'utilities.record',
-      'employees.view',
-      'employees.attendance'
+      
+      // Employee Management Permissions
+      'employees.overview.view',
+      'employees.checkin.view',
+      'employees.checkin.perform',
+      'employees.checkin.bulk',
+      'employees.attendance.mark',
+      'employees.designation.view',
+      'employees.designation.assign',
+      'employees.designation.bulk',
+      'employees.checkout.view',
+      'employees.checkout.perform',
+      'employees.checkout.bulk',
+      'employees.list.view',
+      'employees.export',
+      'employees.attendance.view',
+      'employees.attendance.export',
     ]
   },
   {
@@ -222,7 +279,12 @@ const PREDEFINED_ROLES = [
       'cold_room.view',
       'cold_room.temperature',
       'inventory.view',
-      'shipments.view'
+      'shipments.view',
+      
+      // Employee Management Permissions (Limited)
+      'employees.overview.view',
+      'employees.checkin.perform', // Can check themselves in/out
+      'employees.checkout.perform',
     ]
   },
   {
@@ -241,7 +303,13 @@ const PREDEFINED_ROLES = [
       'loading.create',
       'loading.assign',
       'loading.transit',
-      'customers.view'
+      'customers.view',
+      
+      // Employee Management Permissions
+      'employees.overview.view',
+      'employees.checkin.perform',
+      'employees.checkout.perform',
+      'employees.list.view',
     ]
   },
   {
@@ -254,7 +322,13 @@ const PREDEFINED_ROLES = [
       'suppliers.weigh',
       'suppliers.visitors',
       'qc.view',
-      'inventory.view'
+      'inventory.view',
+      
+      // Employee Management Permissions
+      'employees.overview.view',
+      'employees.checkin.perform',
+      'employees.checkout.perform',
+      'employees.list.view',
     ]
   },
   {
@@ -268,7 +342,78 @@ const PREDEFINED_ROLES = [
       'customers.invoices',
       'customers.receivables',
       'shipments.view',
-      'shipments.track'
+      'shipments.track',
+      
+      // Employee Management Permissions
+      'employees.overview.view',
+      'employees.checkin.perform',
+      'employees.checkout.perform',
+      'employees.list.view',
+    ]
+  },
+  {
+    name: 'HR Manager',
+    description: 'Manage employee records and HR operations',
+    isDefault: false,
+    permissions: [
+      'employees.overview.view',
+      'employees.overview.export',
+      'employees.checkin.view',
+      'employees.checkin.perform',
+      'employees.checkin.bulk',
+      'employees.attendance.mark',
+      'employees.designation.view',
+      'employees.designation.assign',
+      'employees.designation.bulk',
+      'employees.checkout.view',
+      'employees.checkout.perform',
+      'employees.checkout.bulk',
+      'employees.list.view',
+      'employees.create',
+      'employees.edit',
+      'employees.delete',
+      'employees.export',
+      'employees.attendance.view',
+      'employees.attendance.export',
+      'employees.attendance.edit',
+      'employees.attendance.reports',
+      'dashboard.view',
+      'dashboard.analytics',
+    ]
+  },
+  {
+    name: 'Gate Security',
+    description: 'Handle employee check-in and check-out operations',
+    isDefault: false,
+    permissions: [
+      'employees.checkin.view',
+      'employees.checkin.perform',
+      'employees.checkin.bulk',
+      'employees.attendance.mark',
+      'employees.checkout.view',
+      'employees.checkout.perform',
+      'employees.checkout.bulk',
+      'employees.list.view',
+    ]
+  },
+  {
+    name: 'Department Supervisor',
+    description: 'Supervise department employees and assign work',
+    isDefault: false,
+    permissions: [
+      'employees.overview.view',
+      'employees.checkin.view',
+      'employees.designation.view',
+      'employees.designation.assign',
+      'employees.designation.bulk',
+      'employees.checkout.view',
+      'employees.list.view',
+      'employees.attendance.view',
+      
+      // Department specific permissions
+      'cold_room.view',
+      'qc.view',
+      'inventory.view',
     ]
   },
   {
@@ -286,7 +431,12 @@ const PREDEFINED_ROLES = [
       'customers.view',
       'inventory.view',
       'utilities.view',
-      'employees.view'
+      'employees.view',
+      
+      // Employee Management Permissions (View only)
+      'employees.overview.view',
+      'employees.list.view',
+      'employees.attendance.view',
     ]
   }
 ];
@@ -1070,6 +1220,15 @@ const createNewUser = async () => {
                                   <div className="flex items-center gap-2">
                                     <Shield className="h-4 w-4 text-primary" />
                                     {role.name}
+                                    {role.name === 'Gate Security' && (
+                                      <DoorOpen className="h-4 w-4 text-blue-500" />
+                                    )}
+                                    {role.name === 'HR Manager' && (
+                                      <UserCog className="h-4 w-4 text-green-500" />
+                                    )}
+                                    {role.name === 'Department Supervisor' && (
+                                      <MapPin className="h-4 w-4 text-purple-500" />
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell>
@@ -1174,7 +1333,12 @@ const createNewUser = async () => {
                             <SelectItem value="unassigned">Unassigned</SelectItem>
                             {roles.map(role => (
                               <SelectItem key={role.id} value={role.id}>
-                                {role.name}
+                                <div className="flex items-center gap-2">
+                                  {role.name}
+                                  {role.name === 'Gate Security' && (
+                                    <DoorOpen className="h-3 w-3 text-blue-500" />
+                                  )}
+                                </div>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1217,7 +1381,12 @@ const createNewUser = async () => {
                                   <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                   {roles.map(role => (
                                     <SelectItem key={role.id} value={role.id}>
-                                      {role.name}
+                                      <div className="flex items-center gap-2">
+                                        {role.name}
+                                        {role.name === 'Gate Security' && (
+                                          <DoorOpen className="h-3 w-3 text-blue-500" />
+                                        )}
+                                      </div>
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -1317,7 +1486,13 @@ const createNewUser = async () => {
                                     <TableCell>
                                       {user.role ? (
                                         <Badge variant="outline" className="gap-1">
-                                          <Shield className="h-3 w-3" />
+                                          {user.role.name === 'Gate Security' ? (
+                                            <DoorOpen className="h-3 w-3" />
+                                          ) : user.role.name === 'HR Manager' ? (
+                                            <UserCog className="h-3 w-3" />
+                                          ) : (
+                                            <Shield className="h-3 w-3" />
+                                          )}
                                           {user.role.name}
                                         </Badge>
                                       ) : (
@@ -1339,7 +1514,12 @@ const createNewUser = async () => {
                                           <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                           {roles.map(role => (
                                             <SelectItem key={role.id} value={role.id}>
-                                              {role.name}
+                                              <div className="flex items-center gap-2">
+                                                {role.name}
+                                                {role.name === 'Gate Security' && (
+                                                  <DoorOpen className="h-3 w-3 text-blue-500" />
+                                                )}
+                                              </div>
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
@@ -1451,6 +1631,9 @@ const createNewUser = async () => {
                         {permissionCategories.map(category => (
                           <TabsTrigger key={category} value={category}>
                             {category}
+                            {category === 'Employee Management' && (
+                              <Users className="ml-2 h-3 w-3" />
+                            )}
                           </TabsTrigger>
                         ))}
                       </TabsList>
@@ -1484,39 +1667,55 @@ const createNewUser = async () => {
                         
                         <ScrollArea className="h-[400px]">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {filteredPermissions.map((permission) => (
-                              <Card 
-                                key={permission.id}
-                                className={`cursor-pointer transition-colors ${
-                                  selectedPermissions.includes(permission.id)
-                                    ? 'border-primary bg-primary/5'
-                                    : ''
-                                }`}
-                                onClick={() => togglePermission(permission.id)}
-                              >
-                                <CardContent className="p-4">
-                                  <div className="flex items-start justify-between">
-                                    <div className="space-y-1">
-                                      <div className="flex items-center gap-2">
-                                        <h4 className="font-medium">{permission.name}</h4>
-                                        {selectedPermissions.includes(permission.id) && (
-                                          <Check className="h-4 w-4 text-primary" />
-                                        )}
+                            {filteredPermissions.map((permission) => {
+                              // Get icon based on permission category/type
+                              const getPermissionIcon = () => {
+                                if (permission.id.includes('checkin')) return DoorOpen;
+                                if (permission.id.includes('checkout')) return DoorClosed;
+                                if (permission.id.includes('designation')) return MapPin;
+                                if (permission.id.includes('attendance')) return ListChecks;
+                                if (permission.id.includes('overview')) return BarChart;
+                                if (permission.id.includes('employees')) return Users;
+                                return Key;
+                              };
+                              
+                              const PermissionIcon = getPermissionIcon();
+                              
+                              return (
+                                <Card 
+                                  key={permission.id}
+                                  className={`cursor-pointer transition-colors ${
+                                    selectedPermissions.includes(permission.id)
+                                      ? 'border-primary bg-primary/5'
+                                      : ''
+                                  }`}
+                                  onClick={() => togglePermission(permission.id)}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start justify-between">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <PermissionIcon className="h-4 w-4 text-muted-foreground" />
+                                          <h4 className="font-medium">{permission.name}</h4>
+                                          {selectedPermissions.includes(permission.id) && (
+                                            <Check className="h-4 w-4 text-primary" />
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                          {permission.description}
+                                        </p>
+                                        <Badge variant="outline" className="mt-2">
+                                          {permission.category}
+                                        </Badge>
                                       </div>
-                                      <p className="text-sm text-muted-foreground">
-                                        {permission.description}
-                                      </p>
-                                      <Badge variant="outline" className="mt-2">
-                                        {permission.category}
-                                      </Badge>
+                                      <div className="text-xs text-muted-foreground">
+                                        {permission.id}
+                                      </div>
                                     </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {permission.id}
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
                           </div>
                         </ScrollArea>
                       </TabsContent>
@@ -1524,7 +1723,12 @@ const createNewUser = async () => {
                       {permissionCategories.map(category => (
                         <TabsContent key={category} value={category} className="space-y-4">
                           <div className="flex items-center justify-between">
-                            <h3 className="font-semibold">{category} Permissions</h3>
+                            <h3 className="font-semibold flex items-center gap-2">
+                              {category} Permissions
+                              {category === 'Employee Management' && (
+                                <Users className="h-4 w-4" />
+                              )}
+                            </h3>
                             <Button
                               variant="outline"
                               size="sm"
@@ -1539,37 +1743,64 @@ const createNewUser = async () => {
                             </Button>
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {DEFAULT_PERMISSIONS
-                              .filter(p => p.category === category)
-                              .map((permission) => (
-                                <Card 
-                                  key={permission.id}
-                                  className={`cursor-pointer transition-colors ${
-                                    selectedPermissions.includes(permission.id)
-                                      ? 'border-primary bg-primary/5'
-                                      : ''
-                                  }`}
-                                  onClick={() => togglePermission(permission.id)}
-                                >
-                                  <CardContent className="p-4">
-                                    <div className="flex items-start justify-between">
-                                      <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
-                                          <h4 className="font-medium">{permission.name}</h4>
-                                          {selectedPermissions.includes(permission.id) && (
-                                            <Check className="h-4 w-4 text-primary" />
-                                          )}
+                          <ScrollArea className="h-[400px]">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {DEFAULT_PERMISSIONS
+                                .filter(p => p.category === category)
+                                .map((permission) => {
+                                  // Get icon for employee management permissions
+                                  const getPermissionIcon = () => {
+                                    if (permission.id.includes('checkin')) return DoorOpen;
+                                    if (permission.id.includes('checkout')) return DoorClosed;
+                                    if (permission.id.includes('designation')) return MapPin;
+                                    if (permission.id.includes('attendance')) return ListChecks;
+                                    if (permission.id.includes('overview')) return BarChart;
+                                    if (permission.id.includes('employees.list')) return Users;
+                                    if (permission.id.includes('employees.create')) return UserPlus;
+                                    if (permission.id.includes('employees.edit')) return Edit;
+                                    if (permission.id.includes('employees.delete')) return Trash2;
+                                    if (permission.id.includes('employees.export')) return Download;
+                                    if (permission.id.includes('employees.attendance')) return Clock;
+                                    if (permission.id.includes('employees')) return UserCog;
+                                    return Key;
+                                  };
+                                  
+                                  const PermissionIcon = getPermissionIcon();
+                                  
+                                  return (
+                                    <Card 
+                                      key={permission.id}
+                                      className={`cursor-pointer transition-colors ${
+                                        selectedPermissions.includes(permission.id)
+                                          ? 'border-primary bg-primary/5'
+                                          : ''
+                                      }`}
+                                      onClick={() => togglePermission(permission.id)}
+                                    >
+                                      <CardContent className="p-4">
+                                        <div className="flex items-start justify-between">
+                                          <div className="space-y-1">
+                                            <div className="flex items-center gap-2">
+                                              <PermissionIcon className="h-4 w-4 text-muted-foreground" />
+                                              <h4 className="font-medium">{permission.name}</h4>
+                                              {selectedPermissions.includes(permission.id) && (
+                                                <Check className="h-4 w-4 text-primary" />
+                                              )}
+                                            </div>
+                                            <p className="text-sm text-muted-foreground">
+                                              {permission.description}
+                                            </p>
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                              {permission.id}
+                                            </div>
+                                          </div>
                                         </div>
-                                        <p className="text-sm text-muted-foreground">
-                                          {permission.description}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              ))}
-                          </div>
+                                      </CardContent>
+                                    </Card>
+                                  );
+                                })}
+                            </div>
+                          </ScrollArea>
                         </TabsContent>
                       ))}
                     </Tabs>
@@ -1638,33 +1869,54 @@ const createNewUser = async () => {
               
               <ScrollArea className="h-[300px] border rounded-md p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {DEFAULT_PERMISSIONS.map((permission) => (
-                    <div
-                      key={permission.id}
-                      className={`flex items-center space-x-2 p-2 rounded-md cursor-pointer ${
-                        selectedPermissions.includes(permission.id)
-                          ? 'bg-primary/10 border border-primary/20'
-                          : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => togglePermission(permission.id)}
-                    >
-                      <div className={`h-4 w-4 rounded border flex items-center justify-center ${
-                        selectedPermissions.includes(permission.id)
-                          ? 'bg-primary border-primary'
-                          : 'border-muted-foreground'
-                      }`}>
-                        {selectedPermissions.includes(permission.id) && (
-                          <Check className="h-3 w-3 text-primary-foreground" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{permission.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {permission.description}
+                  {DEFAULT_PERMISSIONS.map((permission) => {
+                    // Get icon for permission
+                    const getPermissionIcon = () => {
+                      if (permission.id.includes('checkin')) return DoorOpen;
+                      if (permission.id.includes('checkout')) return DoorClosed;
+                      if (permission.id.includes('designation')) return MapPin;
+                      if (permission.id.includes('attendance')) return ListChecks;
+                      if (permission.id.includes('overview')) return BarChart;
+                      if (permission.id.includes('employees')) return Users;
+                      return Key;
+                    };
+                    
+                    const PermissionIcon = getPermissionIcon();
+                    
+                    return (
+                      <div
+                        key={permission.id}
+                        className={`flex items-center space-x-2 p-2 rounded-md cursor-pointer ${
+                          selectedPermissions.includes(permission.id)
+                            ? 'bg-primary/10 border border-primary/20'
+                            : 'hover:bg-muted/50'
+                        }`}
+                        onClick={() => togglePermission(permission.id)}
+                      >
+                        <div className={`h-4 w-4 rounded border flex items-center justify-center ${
+                          selectedPermissions.includes(permission.id)
+                            ? 'bg-primary border-primary'
+                            : 'border-muted-foreground'
+                        }`}>
+                          {selectedPermissions.includes(permission.id) && (
+                            <Check className="h-3 w-3 text-primary-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-sm flex items-center gap-2">
+                            <PermissionIcon className="h-3 w-3 text-muted-foreground" />
+                            {permission.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {permission.description}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {permission.category}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </div>
@@ -1751,33 +2003,54 @@ const createNewUser = async () => {
               
               <ScrollArea className="h-[300px] border rounded-md p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {DEFAULT_PERMISSIONS.map((permission) => (
-                    <div
-                      key={permission.id}
-                      className={`flex items-center space-x-2 p-2 rounded-md cursor-pointer ${
-                        selectedPermissions.includes(permission.id)
-                          ? 'bg-primary/10 border border-primary/20'
-                          : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => togglePermission(permission.id)}
-                    >
-                      <div className={`h-4 w-4 rounded border flex items-center justify-center ${
-                        selectedPermissions.includes(permission.id)
-                          ? 'bg-primary border-primary'
-                          : 'border-muted-foreground'
-                      }`}>
-                        {selectedPermissions.includes(permission.id) && (
-                          <Check className="h-3 w-3 text-primary-foreground" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{permission.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {permission.description}
+                  {DEFAULT_PERMISSIONS.map((permission) => {
+                    // Get icon for permission
+                    const getPermissionIcon = () => {
+                      if (permission.id.includes('checkin')) return DoorOpen;
+                      if (permission.id.includes('checkout')) return DoorClosed;
+                      if (permission.id.includes('designation')) return MapPin;
+                      if (permission.id.includes('attendance')) return ListChecks;
+                      if (permission.id.includes('overview')) return BarChart;
+                      if (permission.id.includes('employees')) return Users;
+                      return Key;
+                    };
+                    
+                    const PermissionIcon = getPermissionIcon();
+                    
+                    return (
+                      <div
+                        key={permission.id}
+                        className={`flex items-center space-x-2 p-2 rounded-md cursor-pointer ${
+                          selectedPermissions.includes(permission.id)
+                            ? 'bg-primary/10 border border-primary/20'
+                            : 'hover:bg-muted/50'
+                        }`}
+                        onClick={() => togglePermission(permission.id)}
+                      >
+                        <div className={`h-4 w-4 rounded border flex items-center justify-center ${
+                          selectedPermissions.includes(permission.id)
+                            ? 'bg-primary border-primary'
+                            : 'border-muted-foreground'
+                        }`}>
+                          {selectedPermissions.includes(permission.id) && (
+                            <Check className="h-3 w-3 text-primary-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-sm flex items-center gap-2">
+                            <PermissionIcon className="h-3 w-3 text-muted-foreground" />
+                            {permission.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {permission.description}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {permission.category}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </div>
@@ -1939,7 +2212,12 @@ const createNewUser = async () => {
                   <SelectItem value="no-role">No Role</SelectItem>
                   {roles.map(role => (
                     <SelectItem key={role.id} value={role.id}>
-                      {role.name}
+                      <div className="flex items-center gap-2">
+                        {role.name}
+                        {role.name === 'Gate Security' && (
+                          <DoorOpen className="h-3 w-3 text-blue-500" />
+                        )}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>

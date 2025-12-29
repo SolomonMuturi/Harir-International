@@ -56,6 +56,8 @@ import {
   CheckCheck,
   AlertCircle,
   ThumbsUp,
+  Weight,
+  XCircle,
 } from 'lucide-react';
 import { ColdChainChart } from '@/components/dashboard/cold-chain-chart';
 import { RecentAlerts } from '@/components/dashboard/recent-alerts';
@@ -182,14 +184,13 @@ interface DashboardStats {
   supplierPerformance: Array<{
     id: string;
     name: string;
-    intake: number;
-    quality: number;
-    onTime: number;
+    intakeWeight: number; // Total intake weight in kg
+    totalBoxes: number; // Total number of boxes/crates
+    rejectedWeight: number; // Rejected weight in kg
+    rejectionRate: number; // Percentage of rejected weight
     status: 'Active' | 'Inactive' | 'Onboarding';
-    activeContracts: number;
-    produceTypes: string[];
+    region: string;
     lastDelivery: string;
-    overallScore: number;
   }>;
 }
 
@@ -230,6 +231,20 @@ interface CountingRecord {
   total_counted_weight: number;
   submitted_at: string;
   status: string;
+}
+
+interface RejectionRecord {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  pallet_id: string;
+  region: string;
+  total_intake_weight: number;
+  total_counted_weight: number;
+  total_rejected_weight: number;
+  weight_variance: number;
+  variance_level: 'low' | 'medium' | 'high';
+  submitted_at: string;
 }
 
 // Cold Room Interface
@@ -282,15 +297,7 @@ const AdminDashboard = () => {
   const [supplierIntakeRecords, setSupplierIntakeRecords] = useState<SupplierIntakeRecord[]>([]);
   const [qualityChecks, setQualityChecks] = useState<QualityCheck[]>([]);
   const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
-  const [warehouseStats, setWarehouseStats] = useState({
-    total_processed: 0,
-    pending_rejections: 0,
-    total_suppliers: 0,
-    fuerte_4kg: 0,
-    fuerte_10kg: 0,
-    hass_4kg: 0,
-    hass_10kg: 0,
-  });
+  const [rejectionRecords, setRejectionRecords] = useState<RejectionRecord[]>([]);
   
   // Cold room data states
   const [coldRooms, setColdRooms] = useState<ColdRoomData[]>([]);
@@ -372,84 +379,180 @@ const AdminDashboard = () => {
     }
   };
   
-  // Calculate supplier performance from real data
-  const calculateSupplierPerformance = (suppliers: RealSupplier[]) => {
+  // Fetch intake weight data from weight capture
+  const fetchWeightData = async () => {
+    try {
+      const response = await fetch('/api/weights?limit=1000');
+      if (response.ok) {
+        const weightEntries = await response.json();
+        
+        const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => ({
+          id: entry.id,
+          pallet_id: entry.pallet_id || `WE-${entry.id}`,
+          supplier_name: entry.supplier || 'Unknown Supplier',
+          driver_name: entry.driver_name || '',
+          vehicle_plate: entry.vehicle_plate || entry.truck_id || '',
+          total_weight: entry.net_weight || entry.weight || 0,
+          fruit_varieties: Array.isArray(entry.fruit_variety) ? entry.fruit_variety.map((f: any) => ({
+            name: f.name || f.product || 'Unknown',
+            weight: f.weight || 0,
+            crates: f.crates || 0
+          })) : [{
+            name: entry.product || 'Unknown',
+            weight: 0,
+            crates: 0
+          }],
+          region: entry.region || '',
+          timestamp: entry.timestamp || entry.created_at || new Date().toISOString(),
+          status: 'processed'
+        }));
+        
+        setSupplierIntakeRecords(intakeRecords);
+        return intakeRecords;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching weight data:', error);
+      return [];
+    }
+  };
+  
+  // Fetch counting and box data from warehouse
+  const fetchWarehouseData = async () => {
+    try {
+      // Fetch counting records
+      const countingResponse = await fetch('/api/counting?limit=100');
+      if (countingResponse.ok) {
+        const result = await countingResponse.json();
+        if (result.success) {
+          const countingData = result.data || [];
+          setCountingRecords(countingData);
+          
+          // Fetch rejection records from warehouse history
+          const historyResponse = await fetch('/api/counting?action=history');
+          if (historyResponse.ok) {
+            const historyResult = await historyResponse.json();
+            if (historyResult.success) {
+              const rejectionData: RejectionRecord[] = (historyResult.data || []).map((record: any) => ({
+                id: record.id,
+                supplier_id: record.supplier_id,
+                supplier_name: record.supplier_name,
+                pallet_id: record.pallet_id,
+                region: record.region,
+                total_intake_weight: record.total_intake_weight || record.total_weight || 0,
+                total_counted_weight: record.total_counted_weight || 0,
+                total_rejected_weight: record.total_rejected_weight || 0,
+                weight_variance: record.weight_variance || 0,
+                variance_level: record.variance_level || 'low',
+                submitted_at: record.submitted_at || new Date().toISOString()
+              }));
+              setRejectionRecords(rejectionData);
+              return { countingData, rejectionData };
+            }
+          }
+          
+          return { countingData, rejectionData: [] };
+        }
+      }
+      return { countingData: [], rejectionData: [] };
+    } catch (error) {
+      console.error('Error fetching warehouse data:', error);
+      return { countingData: [], rejectionData: [] };
+    }
+  };
+  
+  // Calculate supplier performance with actual data from weight capture and warehouse
+  const calculateSupplierPerformance = (
+    suppliers: RealSupplier[],
+    intakeRecords: SupplierIntakeRecord[],
+    countingRecords: CountingRecord[],
+    rejectionRecords: RejectionRecord[]
+  ) => {
     if (suppliers.length === 0) {
       return [];
     }
     
-    // Get today's date for calculations
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(today.getDate() - 30);
+    // Group intake records by supplier name
+    const intakeBySupplier = new Map<string, number>();
+    const boxesBySupplier = new Map<string, number>();
+    const rejectionBySupplier = new Map<string, number>();
     
+    // Calculate intake weight from weight capture data
+    intakeRecords.forEach(record => {
+      const supplierName = record.supplier_name;
+      const currentWeight = intakeBySupplier.get(supplierName) || 0;
+      intakeBySupplier.set(supplierName, currentWeight + record.total_weight);
+      
+      // Calculate total boxes/crates from fruit varieties
+      const totalCrates = record.fruit_varieties.reduce((sum, fv) => sum + (fv.crates || 0), 0);
+      const currentBoxes = boxesBySupplier.get(supplierName) || 0;
+      boxesBySupplier.set(supplierName, currentBoxes + totalCrates);
+    });
+    
+    // Calculate rejection weight from warehouse rejection records
+    rejectionRecords.forEach(record => {
+      const supplierName = record.supplier_name;
+      const currentRejection = rejectionBySupplier.get(supplierName) || 0;
+      rejectionBySupplier.set(supplierName, currentRejection + record.total_rejected_weight);
+    });
+    
+    // Calculate boxes from counting records
+    countingRecords.forEach(record => {
+      const supplierName = record.supplier_name;
+      
+      // Parse counting totals if available
+      if (record.totals) {
+        const totals = typeof record.totals === 'string' ? JSON.parse(record.totals) : record.totals;
+        const totalBoxes = 
+          (totals.fuerte_4kg_total || 0) +
+          (totals.fuerte_10kg_total || 0) +
+          (totals.hass_4kg_total || 0) +
+          (totals.hass_10kg_total || 0);
+        
+        const currentBoxes = boxesBySupplier.get(supplierName) || 0;
+        boxesBySupplier.set(supplierName, currentBoxes + totalBoxes);
+      }
+    });
+    
+    // Calculate performance for each supplier
     return suppliers.map(supplier => {
-      // Calculate intake percentage based on active contracts (scale of 0-100)
-      // Assuming max contracts per supplier is 5
-      const maxContracts = 5;
-      const intake = Math.min((supplier.active_contracts / maxContracts) * 100, 100);
+      const supplierName = supplier.name;
+      const intakeWeight = intakeBySupplier.get(supplierName) || 0;
+      const totalBoxes = boxesBySupplier.get(supplierName) || 0;
+      const rejectedWeight = rejectionBySupplier.get(supplierName) || 0;
+      const rejectionRate = intakeWeight > 0 ? (rejectedWeight / intakeWeight) * 100 : 0;
       
-      // Calculate quality based on status and age
-      let quality = 80; // Base score
-      
-      // Adjust based on status
-      if (supplier.status === 'Active') quality += 15;
-      if (supplier.status === 'Inactive') quality -= 20;
-      
-      // Adjust based on how long they've been a supplier (newer = higher potential quality)
-      const supplierAge = new Date(supplier.created_at);
-      const daysSinceCreation = Math.floor((today.getTime() - supplierAge.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysSinceCreation < 30) {
-        // New supplier, give benefit of doubt
-        quality += 5;
-      } else if (daysSinceCreation > 365) {
-        // Established supplier
-        quality += 10;
+      // Get region from intake records if available
+      let region = supplier.location || 'Unknown';
+      const supplierIntakeRecord = intakeRecords.find(record => record.supplier_name === supplierName);
+      if (supplierIntakeRecord) {
+        region = supplierIntakeRecord.region || region;
       }
       
-      // Cap quality between 0-100
-      quality = Math.max(0, Math.min(100, quality));
-      
-      // Calculate on-time delivery based on creation date and status
-      // This is simulated data - in a real app, you'd have actual delivery records
-      let onTime = 85; // Base score
-      
-      // Adjust based on status
-      if (supplier.status === 'Active') onTime += 10;
-      if (supplier.status === 'Inactive') onTime -= 30;
-      
-      // Add some variation based on supplier name (for demo purposes)
-      const nameHash = supplier.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const variation = (nameHash % 20) - 10; // -10 to +10 variation
-      onTime += variation;
-      
-      // Cap on-time between 0-100
-      onTime = Math.max(0, Math.min(100, onTime));
-      
-      // Calculate overall score (weighted average)
-      const overallScore = Math.round(
-        (intake * 0.4) + // 40% weight on intake
-        (quality * 0.35) + // 35% weight on quality
-        (onTime * 0.25) // 25% weight on on-time delivery
-      );
-      
-      // Get last delivery date (simulated - in real app, use actual data)
-      const lastDeliveryDate = new Date(supplier.created_at);
-      lastDeliveryDate.setDate(today.getDate() - Math.floor(Math.random() * 7)); // Random within last 7 days
+      // Get last delivery date
+      let lastDelivery = '';
+      if (supplierIntakeRecord) {
+        lastDelivery = supplierIntakeRecord.timestamp;
+      } else if (countingRecords.length > 0) {
+        const supplierCounting = countingRecords.find(r => r.supplier_name === supplierName);
+        if (supplierCounting) {
+          lastDelivery = supplierCounting.submitted_at;
+        }
+      }
       
       return {
         id: supplier.id,
-        name: supplier.name,
-        intake: Math.round(intake),
-        quality: Math.round(quality),
-        onTime: Math.round(onTime),
+        name: supplierName,
+        intakeWeight: Math.round(intakeWeight),
+        totalBoxes,
+        rejectedWeight: Math.round(rejectedWeight),
+        rejectionRate: Math.round(rejectionRate * 10) / 10, // 1 decimal place
         status: supplier.status,
-        activeContracts: supplier.active_contracts,
-        produceTypes: supplier.produce_types || [],
-        lastDelivery: lastDeliveryDate.toISOString().split('T')[0],
-        overallScore,
+        region,
+        lastDelivery: lastDelivery || supplier.created_at,
       };
-    }).sort((a, b) => b.overallScore - a.overallScore) // Sort by overall score descending
+    }).filter(supplier => supplier.intakeWeight > 0) // Only show suppliers with intake data
+      .sort((a, b) => b.intakeWeight - a.intakeWeight) // Sort by intake weight descending
       .slice(0, 8); // Get top 8 suppliers
   };
   
@@ -613,16 +716,28 @@ const AdminDashboard = () => {
     }));
   };
   
-  // Fetch all dashboard data including warehouse data
+  // Fetch all dashboard data
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
       
-      // Fetch real suppliers data
-      const suppliers = await fetchRealSuppliers();
+      // Fetch data from all sources in parallel
+      const [suppliers, intakeData, warehouseData, coldRoomData] = await Promise.all([
+        fetchRealSuppliers(),
+        fetchWeightData(),
+        fetchWarehouseData(),
+        fetchColdRoomData()
+      ]);
       
-      // Calculate supplier performance from real data
-      const supplierPerformanceData = calculateSupplierPerformance(suppliers);
+      const { countingData, rejectionData } = warehouseData;
+      
+      // Calculate supplier performance with real data
+      const supplierPerformanceData = calculateSupplierPerformance(
+        suppliers,
+        intakeData,
+        countingData,
+        rejectionData
+      );
       
       // Calculate statistics from suppliers
       const totalSuppliers = suppliers.length;
@@ -643,11 +758,20 @@ const AdminDashboard = () => {
       const vehiclesResponse = await fetch('/api/suppliers?vehicles=true');
       const vehiclesData = vehiclesResponse.ok ? await vehiclesResponse.json() : [];
       
-      // Fetch warehouse data
-      await fetchWarehouseData();
-      
-      // Fetch cold room data
-      const coldRoomData = await fetchColdRoomData();
+      // Fetch quality checks
+      const qualityResponse = await fetch('/api/quality-control?limit=10');
+      if (qualityResponse.ok) {
+        const qualityChecksData = await qualityResponse.json();
+        const transformedChecks: QualityCheck[] = qualityChecksData.map((qc: any) => ({
+          id: qc.id,
+          weight_entry_id: qc.weight_entry_id,
+          pallet_id: qc.pallet_id || `WE-${qc.weight_entry_id}`,
+          supplier_name: qc.supplier_name || 'Unknown Supplier',
+          overall_status: qc.overall_status || 'approved',
+          processed_at: qc.processed_at || new Date().toISOString(),
+        }));
+        setQualityChecks(transformedChecks);
+      }
       
       // Calculate today's date for filtering
       const today = new Date().toISOString().split('T')[0];
@@ -689,8 +813,17 @@ const AdminDashboard = () => {
       }).length;
       
       // Process operational statistics
-      const palletsWeighedToday = supplierIntakeRecords.length;
-      const totalWeightToday = supplierIntakeRecords.reduce((sum, record) => sum + record.total_weight, 0);
+      const todayIntakes = intakeData.filter(record => {
+        const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+        return recordDate === today;
+      }).length;
+      const palletsWeighedToday = todayIntakes;
+      const totalWeightToday = intakeData
+        .filter(record => {
+          const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+          return recordDate === today;
+        })
+        .reduce((sum, record) => sum + record.total_weight, 0);
       
       // Calculate cold room capacity
       const coldRoomCapacity = coldRoomData.rooms.reduce((total, room) => {
@@ -703,11 +836,7 @@ const AdminDashboard = () => {
       const qualityCheckPassRate = qualityChecks.length > 0 
         ? Math.round((qualityChecks.filter(q => q.overall_status === 'approved').length / qualityChecks.length) * 100)
         : 94.5;
-      const todayIntakes = supplierIntakeRecords.filter(record => {
-        const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
-        return recordDate === today;
-      }).length;
-      const todayProcessed = countingRecords.filter(record => {
+      const todayProcessed = countingData.filter((record: any) => {
         const recordDate = new Date(record.submitted_at).toISOString().split('T')[0];
         return recordDate === today && record.status === 'processed';
       }).length;
@@ -718,11 +847,6 @@ const AdminDashboard = () => {
       const monthlyOperationalCost = 0;
       const dieselConsumptionToday = 0;
       const electricityConsumptionToday = 0;
-      
-      // Calculate average supplier performance
-      const averageSupplierScore = supplierPerformanceData.length > 0
-        ? Math.round(supplierPerformanceData.reduce((acc, sp) => acc + sp.overallScore, 0) / supplierPerformanceData.length)
-        : 0;
       
       // Process performance metrics
       const intakeEfficiency = todayIntakes > 0 ? 92 : 0;
@@ -850,77 +974,6 @@ const AdminDashboard = () => {
     }
   };
   
-  // Fetch warehouse-specific data
-  const fetchWarehouseData = async () => {
-    try {
-      // Fetch intake records
-      const intakeResponse = await fetch('/api/weights?limit=10');
-      if (intakeResponse.ok) {
-        const weightEntries = await intakeResponse.json();
-        const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => ({
-          id: entry.id,
-          pallet_id: entry.pallet_id || `WE-${entry.id}`,
-          supplier_name: entry.supplier || 'Unknown Supplier',
-          driver_name: entry.driver_name || '',
-          vehicle_plate: entry.vehicle_plate || entry.truck_id || '',
-          total_weight: entry.net_weight || entry.weight || 0,
-          fruit_varieties: Array.isArray(entry.fruit_variety) ? entry.fruit_variety.map((f: any) => ({
-            name: f.name || f.product || 'Unknown',
-            weight: f.weight || 0,
-            crates: f.crates || 0
-          })) : [{
-            name: entry.product || 'Unknown',
-            weight: 0,
-            crates: 0
-          }],
-          region: entry.region || '',
-          timestamp: entry.timestamp || entry.created_at || new Date().toISOString(),
-          status: 'processed'
-        }));
-        setSupplierIntakeRecords(intakeRecords);
-      }
-      
-      // Fetch quality checks
-      const qualityResponse = await fetch('/api/quality-control?limit=10');
-      if (qualityResponse.ok) {
-        const qualityChecksData = await qualityResponse.json();
-        const transformedChecks: QualityCheck[] = qualityChecksData.map((qc: any) => ({
-          id: qc.id,
-          weight_entry_id: qc.weight_entry_id,
-          pallet_id: qc.pallet_id || `WE-${qc.weight_entry_id}`,
-          supplier_name: qc.supplier_name || 'Unknown Supplier',
-          overall_status: qc.overall_status || 'approved',
-          processed_at: qc.processed_at || new Date().toISOString(),
-        }));
-        setQualityChecks(transformedChecks);
-      }
-      
-      // Fetch counting records
-      const countingResponse = await fetch('/api/counting?limit=10');
-      if (countingResponse.ok) {
-        const result = await countingResponse.json();
-        if (result.success) {
-          setCountingRecords(result.data || []);
-          
-          const totalProcessed = result.data.filter((r: any) => r.status === 'processed').length;
-          const pendingRejections = result.data.filter((r: any) => r.status === 'pending').length;
-          
-          setWarehouseStats({
-            total_processed: totalProcessed,
-            pending_rejections: pendingRejections,
-            total_suppliers: supplierIntakeRecords.length,
-            fuerte_4kg: 0,
-            fuerte_10kg: 0,
-            hass_4kg: 0,
-            hass_10kg: 0,
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching warehouse data:', error);
-    }
-  };
-  
   // Generate recent alerts
   const generateRecentAlerts = (
     employees: any[],
@@ -1028,30 +1081,22 @@ const AdminDashboard = () => {
       });
     }
     
-    // Check for suppliers with no active contracts
-    const suppliersNoContracts = suppliers.filter(s => s.active_contracts === 0);
-    if (suppliersNoContracts.length > 0) {
+    // Check for suppliers with no intake data
+    const suppliersNoIntake = suppliers.filter(s => {
+      const hasIntake = supplierIntakeRecords.some(record => 
+        record.supplier_name === s.name
+      );
+      return !hasIntake && s.status === 'Active';
+    });
+    
+    if (suppliersNoIntake.length > 0) {
       alerts.push({
         id: 'supplier-2',
         type: 'quality',
-        message: `${suppliersNoContracts.length} suppliers have no active contracts`,
+        message: `${suppliersNoIntake.length} active suppliers have no intake data`,
         severity: 'low' as const,
         time: 'Today',
       });
-    }
-    
-    // Warehouse alerts
-    if (countingRecords.length > 0) {
-      const pendingCounting = countingRecords.filter(r => r.status === 'pending').length;
-      if (pendingCounting > 0) {
-        alerts.push({
-          id: 'warehouse-1',
-          type: 'quality',
-          message: `${pendingCounting} counting records pending processing`,
-          severity: 'medium' as const,
-          time: 'Today',
-        });
-      }
     }
     
     // Return sorted alerts
@@ -1320,7 +1365,7 @@ const AdminDashboard = () => {
                           </div>
                           <div className="flex items-center gap-2 text-sm">
                             <span className="text-muted-foreground">
-                              {stats.totalContracts} active contracts
+                              {stats.supplierPerformance.length} with intake data
                             </span>
                             <Badge variant="outline" className="ml-auto">
                               {stats.suppliersOnboarding} onboarding
@@ -1908,7 +1953,7 @@ const AdminDashboard = () => {
                 </Card>
               </TabsContent>
 
-              {/* Analytics Tab */}
+              {/* Analytics Tab - UPDATED Supplier Performance */}
               <TabsContent value="analytics" className="mt-6 space-y-6">
                 {/* Performance Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1957,7 +2002,7 @@ const AdminDashboard = () => {
                         </Badge>
                       </CardTitle>
                       <CardDescription>
-                        Real supplier performance metrics based on contracts, status, and activity
+                        Real supplier performance metrics based on intake weight, boxes, and rejections
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -1967,7 +2012,7 @@ const AdminDashboard = () => {
                           <p className="text-sm text-muted-foreground">Loading supplier data...</p>
                         </div>
                       ) : stats.supplierPerformance.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                           {stats.supplierPerformance.map((supplier) => (
                             <div key={supplier.id} className="space-y-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
                               <div className="flex items-center justify-between">
@@ -1977,7 +2022,10 @@ const AdminDashboard = () => {
                                     supplier.status === 'Inactive' ? 'bg-red-500' :
                                     'bg-blue-500'
                                   }`} />
-                                  <span className="text-sm font-medium truncate">{supplier.name}</span>
+                                  <div>
+                                    <span className="text-sm font-medium truncate">{supplier.name}</span>
+                                    <div className="text-xs text-muted-foreground">{supplier.region}</div>
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <Badge variant="outline" className={
@@ -1987,53 +2035,102 @@ const AdminDashboard = () => {
                                   }>
                                     {supplier.status}
                                   </Badge>
-                                  <Badge variant="outline" className="font-semibold">
-                                    {supplier.overallScore}%
-                                  </Badge>
                                 </div>
                               </div>
                               
+                              {/* Performance Metrics Grid */}
                               <div className="grid grid-cols-3 gap-3">
+                                {/* Intake Weight */}
                                 <div className="text-center">
                                   <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                                    <FileText className="w-3 h-3" />
-                                    Intake
+                                    <Weight className="w-3 h-3" />
+                                    Intake Weight
                                   </div>
-                                  <div className="font-semibold flex items-center justify-center gap-1">
-                                    {supplier.intake}%
-                                    {supplier.activeContracts > 0 && (
-                                      <Badge variant="secondary" className="text-xs h-4">
-                                        {supplier.activeContracts} contracts
-                                      </Badge>
-                                    )}
+                                  <div className="font-semibold text-lg">
+                                    {(supplier.intakeWeight / 1000).toFixed(1)} t
                                   </div>
-                                  <Progress value={supplier.intake} className="h-1 mt-1" />
+                                  <div className="text-xs text-muted-foreground">
+                                    {supplier.intakeWeight.toLocaleString()} kg
+                                  </div>
                                 </div>
+                                
+                                {/* Boxes Count */}
                                 <div className="text-center">
                                   <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                                    <CheckCheck className="w-3 h-3" />
-                                    Quality
+                                    <Package className="w-3 h-3" />
+                                    Boxes
                                   </div>
-                                  <div className="font-semibold">{supplier.quality}%</div>
-                                  <Progress value={supplier.quality} className="h-1 mt-1" />
+                                  <div className="font-semibold text-lg">
+                                    {supplier.totalBoxes.toLocaleString()}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    total boxes/crates
+                                  </div>
                                 </div>
+                                
+                                {/* Rejected Weight */}
                                 <div className="text-center">
                                   <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                                    <Clock4 className="w-3 h-3" />
-                                    On Time
+                                    <XCircle className="w-3 h-3" />
+                                    Rejected
                                   </div>
-                                  <div className="font-semibold">{supplier.onTime}%</div>
-                                  <Progress value={supplier.onTime} className="h-1 mt-1" />
+                                  <div className="font-semibold text-lg">
+                                    {(supplier.rejectedWeight / 1000).toFixed(1)} t
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {supplier.rejectionRate.toFixed(1)}% rate
+                                  </div>
                                 </div>
                               </div>
                               
-                              <div className="flex items-center justify-between text-xs">
-                                <div className="text-muted-foreground">
-                                  {supplier.produceTypes.slice(0, 2).join(', ')}
-                                  {supplier.produceTypes.length > 2 && '...'}
+                              {/* Progress Bars for Visual Comparison */}
+                              <div className="space-y-2">
+                                <div>
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-muted-foreground">Intake Weight</span>
+                                    <span className="font-medium">{supplier.intakeWeight.toLocaleString()} kg</span>
+                                  </div>
+                                  <Progress 
+                                    value={Math.min((supplier.intakeWeight / 10000) * 100, 100)} 
+                                    className="h-2" 
+                                  />
                                 </div>
+                                
+                                <div>
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-muted-foreground">Rejection Rate</span>
+                                    <span className={
+                                      supplier.rejectionRate > 10 ? 'text-red-600 font-medium' :
+                                      supplier.rejectionRate > 5 ? 'text-yellow-600 font-medium' :
+                                      'text-green-600 font-medium'
+                                    }>
+                                      {supplier.rejectionRate.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <Progress 
+                                    value={Math.min(supplier.rejectionRate, 100)} 
+                                    className={`h-2 ${
+                                      supplier.rejectionRate > 10 ? '[&>div]:bg-red-500' :
+                                      supplier.rejectionRate > 5 ? '[&>div]:bg-yellow-500' :
+                                      '[&>div]:bg-green-500'
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+                              
+                              {/* Additional Info */}
+                              <div className="flex items-center justify-between text-xs pt-2 border-t">
                                 <div className="text-muted-foreground">
-                                  Last: {supplier.lastDelivery}
+                                  Last delivery: {formatDate(supplier.lastDelivery)}
+                                </div>
+                                <div className={`px-2 py-1 rounded ${
+                                  supplier.rejectionRate > 10 ? 'bg-red-50 text-red-700' :
+                                  supplier.rejectionRate > 5 ? 'bg-yellow-50 text-yellow-700' :
+                                  'bg-green-50 text-green-700'
+                                }`}>
+                                  {supplier.rejectionRate > 10 ? 'High Rejection' :
+                                   supplier.rejectionRate > 5 ? 'Moderate Rejection' :
+                                   'Low Rejection'}
                                 </div>
                               </div>
                             </div>
@@ -2042,18 +2139,18 @@ const AdminDashboard = () => {
                       ) : (
                         <div className="text-center py-8">
                           <Building className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                          <p className="text-muted-foreground">No supplier data available</p>
+                          <p className="text-muted-foreground">No supplier intake data available</p>
                           <p className="text-sm text-muted-foreground mt-1">
-                            Add suppliers to see performance metrics
+                            Supplier intake data will appear here after weight capture
                           </p>
                           <Button 
                             variant="outline" 
                             size="sm" 
                             className="mt-4"
-                            onClick={() => router.push('/suppliers')}
+                            onClick={() => router.push('/weight-capture')}
                           >
-                            <Building className="w-4 h-4 mr-2" />
-                            Go to Suppliers
+                            <Scale className="w-4 h-4 mr-2" />
+                            Go to Weight Capture
                           </Button>
                         </div>
                       )}
@@ -2061,19 +2158,25 @@ const AdminDashboard = () => {
                     <CardFooter>
                       <div className="w-full">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-muted-foreground">Average Performance</span>
+                          <span className="text-sm text-muted-foreground">Total Intake Weight</span>
+                          <span className="text-sm font-semibold">
+                            {(stats.supplierPerformance.reduce((acc, sp) => acc + sp.intakeWeight, 0) / 1000).toFixed(1)} tons
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-muted-foreground">Average Rejection Rate</span>
                           <span className="text-sm font-semibold">
                             {stats.supplierPerformance.length > 0 
-                              ? Math.round(stats.supplierPerformance.reduce((acc, sp) => acc + sp.overallScore, 0) / stats.supplierPerformance.length)
+                              ? (stats.supplierPerformance.reduce((acc, sp) => acc + sp.rejectionRate, 0) / stats.supplierPerformance.length).toFixed(1)
                               : 0}%
                           </span>
                         </div>
-                        <Progress 
-                          value={stats.supplierPerformance.length > 0 
-                            ? Math.round(stats.supplierPerformance.reduce((acc, sp) => acc + sp.overallScore, 0) / stats.supplierPerformance.length)
-                            : 0} 
-                          className="h-2" 
-                        />
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">Total Boxes Processed</span>
+                          <span className="text-sm font-semibold">
+                            {stats.supplierPerformance.reduce((acc, sp) => acc + sp.totalBoxes, 0).toLocaleString()}
+                          </span>
+                        </div>
                       </div>
                     </CardFooter>
                   </Card>
@@ -2125,8 +2228,10 @@ const AdminDashboard = () => {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="text-center">
-                        <div className="text-3xl font-bold text-blue-600">{stats.totalSuppliers}</div>
-                        <div className="text-sm text-muted-foreground">Total Suppliers</div>
+                        <div className="text-3xl font-bold text-blue-600">
+                          {stats.supplierPerformance.length}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Suppliers with Intake</div>
                       </div>
                     </CardContent>
                   </Card>
@@ -2134,8 +2239,10 @@ const AdminDashboard = () => {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="text-center">
-                        <div className="text-3xl font-bold text-green-600">{stats.activeSuppliers}</div>
-                        <div className="text-sm text-muted-foreground">Active</div>
+                        <div className="text-3xl font-bold text-green-600">
+                          {(stats.supplierPerformance.reduce((acc, sp) => acc + sp.intakeWeight, 0) / 1000).toFixed(1)}t
+                        </div>
+                        <div className="text-sm text-muted-foreground">Total Intake Weight</div>
                       </div>
                     </CardContent>
                   </Card>
@@ -2143,8 +2250,10 @@ const AdminDashboard = () => {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="text-center">
-                        <div className="text-3xl font-bold text-amber-600">{stats.suppliersOnboarding}</div>
-                        <div className="text-sm text-muted-foreground">Onboarding</div>
+                        <div className="text-3xl font-bold text-amber-600">
+                          {stats.supplierPerformance.reduce((acc, sp) => acc + sp.totalBoxes, 0).toLocaleString()}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Total Boxes Processed</div>
                       </div>
                     </CardContent>
                   </Card>
@@ -2152,8 +2261,10 @@ const AdminDashboard = () => {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="text-center">
-                        <div className="text-3xl font-bold text-purple-600">{stats.totalContracts}</div>
-                        <div className="text-sm text-muted-foreground">Total Contracts</div>
+                        <div className="text-3xl font-bold text-red-600">
+                          {(stats.supplierPerformance.reduce((acc, sp) => acc + sp.rejectedWeight, 0) / 1000).toFixed(1)}t
+                        </div>
+                        <div className="text-sm text-muted-foreground">Total Rejected Weight</div>
                       </div>
                     </CardContent>
                   </Card>

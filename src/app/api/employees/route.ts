@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
-// GET - Fetch all employees
+// GET - Fetch all employees or a single employee
 export async function GET(request: Request) {
   try {
     console.log('📨 GET /api/employees - Fetching employees');
@@ -207,6 +207,64 @@ export async function PUT(request: Request) {
     return NextResponse.json(
       { 
         error: 'Failed to update employee', 
+        details: error.message,
+        code: error.code
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Delete an employee
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Missing employee ID' },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`📨 DELETE /api/employees?id=${id} - Deleting employee`);
+    
+    // Check if employee exists
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { id }
+    });
+    
+    if (!existingEmployee) {
+      return NextResponse.json(
+        { error: 'Employee not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Delete the employee (Prisma will handle cascading deletes if configured)
+    await prisma.employee.delete({
+      where: { id }
+    });
+
+    console.log('✅ Employee deleted:', id);
+    return NextResponse.json(
+      { message: 'Employee deleted successfully' },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error('❌ Error deleting employee:', error);
+    
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Employee not found' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json(
+      { 
+        error: 'Failed to delete employee', 
         details: error.message,
         code: error.code
       },

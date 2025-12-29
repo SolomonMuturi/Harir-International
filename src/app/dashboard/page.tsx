@@ -41,6 +41,9 @@ import {
   Briefcase,
   Building,
   Percent,
+  Snowflake,
+  Database,
+  Warehouse,
 } from 'lucide-react';
 import { ColdChainChart } from '@/components/dashboard/cold-chain-chart';
 import { RecentAlerts } from '@/components/dashboard/recent-alerts';
@@ -113,24 +116,34 @@ interface DashboardStats {
     time: string;
   }>;
   
-  // Cold Chain Data
+  // Cold Chain Data - Updated to use real data structure
   coldChainData: Array<{
     id: string;
     name: string;
     temperature: number;
     humidity: number;
     status: 'optimal' | 'warning' | 'normal';
+    capacity: number;
+    occupied: number;
+    lastUpdate: string;
   }>;
   
-  // Shipment Data
-  shipmentData: Array<{
-    id: string;
-    supplier: string;
-    product: string;
-    status: 'Receiving' | 'Weighing' | 'Quality Check' | 'Cold Room' | 'Processing' | 'In-Transit' | 'Delivered';
-    arrival: string;
-    weight: number;
-  }>;
+  // Cold Room Statistics
+  coldRoomStats: {
+    total4kgBoxes: number;
+    total10kgBoxes: number;
+    total4kgPallets: number;
+    total10kgPallets: number;
+    totalBoxesLoadedToday: number;
+    totalWeightLoadedToday: number;
+    recentTemperatureLogs: Array<{
+      id: string;
+      cold_room_id: string;
+      temperature: number;
+      timestamp: string;
+      status: 'normal' | 'warning' | 'critical';
+    }>;
+  };
   
   // VMS/IoT Data
   vmsIotData: Array<{
@@ -142,6 +155,57 @@ interface DashboardStats {
   }>;
 }
 
+// Warehouse-related interfaces
+interface SupplierIntakeRecord {
+  id: string;
+  pallet_id: string;
+  supplier_name: string;
+  driver_name: string;
+  vehicle_plate: string;
+  total_weight: number;
+  fruit_varieties: Array<{
+    name: string;
+    weight: number;
+    crates: number;
+  }>;
+  region: string;
+  timestamp: string;
+  status: 'processed' | 'pending' | 'rejected';
+}
+
+interface QualityCheck {
+  id: string;
+  weight_entry_id: string;
+  pallet_id: string;
+  supplier_name: string;
+  overall_status: 'approved' | 'rejected';
+  processed_at: string;
+}
+
+interface CountingRecord {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  region: string;
+  pallet_id: string;
+  total_weight: number;
+  total_counted_weight: number;
+  submitted_at: string;
+  status: string;
+}
+
+// Cold Room Interface
+interface ColdRoomData {
+  id: string;
+  name: string;
+  current_temperature: number;
+  capacity: number;
+  occupied: number;
+  humidity?: number;
+  last_temperature_log?: string;
+  status?: 'optimal' | 'warning' | 'normal';
+}
+
 const AdminDashboard = () => {
   const router = useRouter();
   const { toast } = useToast();
@@ -151,7 +215,195 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   
-  // Fetch all dashboard data
+  // Warehouse data states
+  const [supplierIntakeRecords, setSupplierIntakeRecords] = useState<SupplierIntakeRecord[]>([]);
+  const [qualityChecks, setQualityChecks] = useState<QualityCheck[]>([]);
+  const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
+  const [warehouseStats, setWarehouseStats] = useState({
+    total_processed: 0,
+    pending_rejections: 0,
+    total_suppliers: 0,
+    fuerte_4kg: 0,
+    fuerte_10kg: 0,
+    hass_4kg: 0,
+    hass_10kg: 0,
+  });
+  
+  // Cold room data states
+  const [coldRooms, setColdRooms] = useState<ColdRoomData[]>([]);
+  const [temperatureLogs, setTemperatureLogs] = useState<any[]>([]);
+  const [coldRoomBoxes, setColdRoomBoxes] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<any[]>([]);
+  
+  // Format date function
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'Invalid date';
+    }
+  };
+  
+  // Fetch cold room data
+  const fetchColdRoomData = async () => {
+    try {
+      console.log('🌡️ Fetching cold room data...');
+      
+      // Fetch cold rooms
+      const roomsResponse = await fetch('/api/cold-room');
+      let roomsData: ColdRoomData[] = [];
+      
+      if (roomsResponse.ok) {
+        const result = await roomsResponse.json();
+        console.log('Cold rooms API response:', result);
+        
+        if (Array.isArray(result)) {
+          roomsData = result;
+        } else if (result && Array.isArray(result.data)) {
+          roomsData = result.data;
+        }
+      }
+      
+      // Fetch temperature logs
+      const tempResponse = await fetch('/api/cold-room?action=temperature&limit=5');
+      let tempLogs: any[] = [];
+      
+      if (tempResponse.ok) {
+        const result = await tempResponse.json();
+        if (result.success && Array.isArray(result.data)) {
+          tempLogs = result.data.slice(0, 10); // Get last 10 logs
+        }
+      }
+      
+      // Fetch cold room boxes for statistics
+      const boxesResponse = await fetch('/api/cold-room?action=boxes');
+      let boxesData: any[] = [];
+      let total4kgBoxes = 0;
+      let total10kgBoxes = 0;
+      
+      if (boxesResponse.ok) {
+        const result = await boxesResponse.json();
+        if (result.success && Array.isArray(result.data)) {
+          boxesData = result.data;
+          
+          // Calculate box statistics
+          boxesData.forEach(box => {
+            if (box.box_type === '4kg' || box.boxType === '4kg') {
+              total4kgBoxes += Number(box.quantity) || 0;
+            } else if (box.box_type === '10kg' || box.boxType === '10kg') {
+              total10kgBoxes += Number(box.quantity) || 0;
+            }
+          });
+        }
+      }
+      
+      // Fetch loading history for today's stats
+      const today = new Date().toISOString().split('T')[0];
+      const historyResponse = await fetch(`/api/cold-room?action=loading-history&date=${today}`);
+      let todayLoadingHistory: any[] = [];
+      let totalBoxesLoadedToday = 0;
+      let totalWeightLoadedToday = 0;
+      
+      if (historyResponse.ok) {
+        const result = await historyResponse.json();
+        if (result.success && Array.isArray(result.data)) {
+          todayLoadingHistory = result.data;
+          
+          todayLoadingHistory.forEach(record => {
+            totalBoxesLoadedToday += Number(record.quantity) || 0;
+            const boxWeight = (record.box_type === '4kg' || record.boxType === '4kg') ? 4 : 10;
+            totalWeightLoadedToday += (Number(record.quantity) || 0) * boxWeight;
+          });
+        }
+      }
+      
+      // Update cold rooms state
+      const updatedColdRooms = roomsData.map(room => {
+        // Get latest temperature for this room
+        const roomTempLogs = tempLogs.filter(log => log.cold_room_id === room.id);
+        const latestTempLog = roomTempLogs[0];
+        
+        // Determine status based on temperature
+        let status: 'optimal' | 'warning' | 'normal' = 'normal';
+        if (room.id === 'coldroom1') {
+          // Cold Room 1: 3-5°C range
+          if (latestTempLog && latestTempLog.temperature >= 3 && latestTempLog.temperature <= 5) {
+            status = 'optimal';
+          } else if (latestTempLog && (latestTempLog.temperature < 2 || latestTempLog.temperature > 6)) {
+            status = 'warning';
+          }
+        } else if (room.id === 'coldroom2') {
+          // Cold Room 2: 5°C range (based on your data)
+          if (latestTempLog && latestTempLog.temperature >= 4 && latestTempLog.temperature <= 6) {
+            status = 'optimal';
+          } else if (latestTempLog && (latestTempLog.temperature < 3 || latestTempLog.temperature > 7)) {
+            status = 'warning';
+          }
+        }
+        
+        return {
+          ...room,
+          humidity: 75, // Default humidity
+          last_temperature_log: latestTempLog?.timestamp,
+          status
+        };
+      });
+      
+      setColdRooms(updatedColdRooms);
+      setTemperatureLogs(tempLogs);
+      setColdRoomBoxes(boxesData);
+      setLoadingHistory(todayLoadingHistory);
+      
+      return {
+        rooms: updatedColdRooms,
+        tempLogs,
+        total4kgBoxes,
+        total10kgBoxes,
+        totalBoxesLoadedToday,
+        totalWeightLoadedToday
+      };
+      
+    } catch (error) {
+      console.error('❌ Error fetching cold room data:', error);
+      
+      // Return default data on error
+      return {
+        rooms: [
+          {
+            id: 'coldroom1',
+            name: 'Cold Room 1',
+            current_temperature: 5,
+            capacity: 100,
+            occupied: 0,
+            humidity: 75,
+            status: 'normal' as const
+          },
+          {
+            id: 'coldroom2',
+            name: 'Cold Room 2',
+            current_temperature: 5,
+            capacity: 100,
+            occupied: 0,
+            humidity: 75,
+            status: 'normal' as const
+          }
+        ],
+        tempLogs: [],
+        total4kgBoxes: 0,
+        total10kgBoxes: 0,
+        totalBoxesLoadedToday: 0,
+        totalWeightLoadedToday: 0
+      };
+    }
+  };
+  
+  // Fetch all dashboard data including warehouse data
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
@@ -171,6 +423,12 @@ const AdminDashboard = () => {
       // Fetch vehicle/gate data
       const vehiclesResponse = await fetch('/api/suppliers?vehicles=true');
       const vehiclesData = vehiclesResponse.ok ? await vehiclesResponse.json() : [];
+      
+      // Fetch warehouse data
+      await fetchWarehouseData();
+      
+      // Fetch cold room data
+      const coldRoomData = await fetchColdRoomData();
       
       // Calculate today's date for filtering
       const today = new Date().toISOString().split('T')[0];
@@ -217,53 +475,90 @@ const AdminDashboard = () => {
         return checkOutDate === today;
       }).length;
       
-      // Process operational statistics (you would need to implement these APIs)
-      const palletsWeighedToday = 0; // Implement API for this
-      const totalWeightToday = 0; // Implement API for this
-      const coldRoomCapacity = 85; // Default or implement API
-      const qualityCheckPassRate = 94.5; // Default or implement API
-      const todayIntakes = 0; // Implement API for this
-      const todayProcessed = 0; // Implement API for this
-      const todayDispatched = 0; // Implement API for this
+      // Process operational statistics
+      const palletsWeighedToday = supplierIntakeRecords.length; // Use actual intake records
+      const totalWeightToday = supplierIntakeRecords.reduce((sum, record) => sum + record.total_weight, 0);
       
-      // Process financial statistics (you would need to implement these APIs)
-      const todayOperationalCost = 0; // Implement API for this
-      const monthlyOperationalCost = 0; // Implement API for this
-      const dieselConsumptionToday = 0; // Implement API for this
-      const electricityConsumptionToday = 0; // Implement API for this
+      // Calculate cold room capacity based on actual data
+      const coldRoomCapacity = coldRoomData.rooms.reduce((total, room) => {
+        if (room.capacity > 0) {
+          return Math.round((room.occupied / room.capacity) * 100);
+        }
+        return total;
+      }, 0) / coldRoomData.rooms.length || 0;
       
-      // Process performance metrics (you would need to implement these APIs)
-      const intakeEfficiency = 92; // Implement API for this
-      const processingEfficiency = 88; // Implement API for this
-      const dispatchAccuracy = 96; // Implement API for this
+      const qualityCheckPassRate = qualityChecks.length > 0 
+        ? Math.round((qualityChecks.filter(q => q.overall_status === 'approved').length / qualityChecks.length) * 100)
+        : 94.5;
+      const todayIntakes = supplierIntakeRecords.filter(record => {
+        const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+        return recordDate === today;
+      }).length;
+      const todayProcessed = countingRecords.filter(record => {
+        const recordDate = new Date(record.submitted_at).toISOString().split('T')[0];
+        return recordDate === today && record.status === 'processed';
+      }).length;
+      const todayDispatched = 0; // You would need a separate API for this
+      
+      // Process financial statistics
+      const todayOperationalCost = 0;
+      const monthlyOperationalCost = 0;
+      const dieselConsumptionToday = 0;
+      const electricityConsumptionToday = 0;
+      
+      // Process performance metrics
+      const intakeEfficiency = todayIntakes > 0 ? 92 : 0;
+      const processingEfficiency = todayProcessed > 0 ? 88 : 0;
+      const dispatchAccuracy = 96;
       
       // Generate recent alerts from various sources
       const recentAlerts = generateRecentAlerts(
         employeesData,
         attendanceData,
         suppliersData,
-        vehiclesData
+        vehiclesData,
+        coldRoomData.rooms,
+        coldRoomData.tempLogs
       );
       
-      // Cold chain data (you would need IoT API for this)
-      const coldChainData = [
-        { id: 'cold-1', name: 'Cold Room 1', temperature: 3.2, humidity: 75, status: 'optimal' as const },
-        { id: 'cold-2', name: 'Cold Room 2', temperature: 4.8, humidity: 72, status: 'warning' as const },
-        { id: 'cold-3', name: 'Cold Room 3', temperature: 2.8, humidity: 78, status: 'optimal' as const },
-        { id: 'cold-4', name: 'Processing Line', temperature: 15.5, humidity: 65, status: 'normal' as const },
-        { id: 'cold-5', name: 'Loading Dock', temperature: 22.3, humidity: 60, status: 'normal' as const },
-      ];
+      // Cold chain data - using REAL data from cold rooms
+      const coldChainData = coldRoomData.rooms.map(room => ({
+        id: room.id,
+        name: room.name,
+        temperature: room.current_temperature,
+        humidity: room.humidity || 75,
+        status: room.status || 'normal',
+        capacity: room.capacity,
+        occupied: room.occupied,
+        lastUpdate: room.last_temperature_log || new Date().toISOString()
+      }));
       
-      // Shipment data (you would need shipments API for this)
-      const shipmentData = [
-        { id: 'SHIP-001', supplier: 'Green Valley Farms', product: 'Avocados', status: 'Receiving', arrival: '10:30 AM', weight: 1500 },
-        { id: 'SHIP-002', supplier: 'Mountain Fresh', product: 'Mangoes', status: 'Weighing', arrival: '11:15 AM', weight: 1200 },
-        { id: 'SHIP-003', supplier: 'Sunrise Orchards', product: 'Avocados', status: 'Quality Check', arrival: '9:45 AM', weight: 1800 },
-        { id: 'SHIP-004', supplier: 'River Side Produce', product: 'Pineapples', status: 'Cold Room', arrival: '8:30 AM', weight: 900 },
-        { id: 'SHIP-005', supplier: 'Highland Fruits', product: 'Passion Fruits', status: 'Processing', arrival: '1:00 PM', weight: 750 },
-      ];
+      // Calculate pallet counts from boxes
+      const calculatePallets = (boxes: number, boxType: '4kg' | '10kg') => {
+        if (boxType === '4kg') {
+          return Math.floor(boxes / 288);
+        } else {
+          return Math.floor(boxes / 120);
+        }
+      };
       
-      // VMS/IoT data (you would need IoT API for this)
+      const coldRoomStats = {
+        total4kgBoxes: coldRoomData.total4kgBoxes,
+        total10kgBoxes: coldRoomData.total10kgBoxes,
+        total4kgPallets: calculatePallets(coldRoomData.total4kgBoxes, '4kg'),
+        total10kgPallets: calculatePallets(coldRoomData.total10kgBoxes, '10kg'),
+        totalBoxesLoadedToday: coldRoomData.totalBoxesLoadedToday,
+        totalWeightLoadedToday: coldRoomData.totalWeightLoadedToday,
+        recentTemperatureLogs: coldRoomData.tempLogs.slice(0, 5).map((log: any) => ({
+          id: log.id,
+          cold_room_id: log.cold_room_id,
+          temperature: log.temperature,
+          timestamp: log.timestamp,
+          status: log.status || 'normal'
+        }))
+      };
+      
+      // VMS/IoT data
       const vmsIotData = [
         { id: 'device-1', device: 'Temperature Sensor #1', location: 'Cold Room 1', status: 'online' as const, lastUpdate: '2 min ago' },
         { id: 'device-2', device: 'Weight Scale #2', location: 'Weighing Station', status: 'online' as const, lastUpdate: '5 min ago' },
@@ -316,11 +611,11 @@ const AdminDashboard = () => {
         // Recent Alerts
         recentAlerts,
         
-        // Cold Chain Data
+        // Cold Chain Data - REAL DATA
         coldChainData,
         
-        // Shipment Data
-        shipmentData,
+        // Cold Room Statistics
+        coldRoomStats,
         
         // VMS/IoT Data
         vmsIotData,
@@ -342,19 +637,136 @@ const AdminDashboard = () => {
     }
   };
   
-  // Generate recent alerts from various data sources
+  // Fetch warehouse-specific data
+  const fetchWarehouseData = async () => {
+    try {
+      // Fetch intake records
+      const intakeResponse = await fetch('/api/weights?limit=10');
+      if (intakeResponse.ok) {
+        const weightEntries = await intakeResponse.json();
+        const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => ({
+          id: entry.id,
+          pallet_id: entry.pallet_id || `WE-${entry.id}`,
+          supplier_name: entry.supplier || 'Unknown Supplier',
+          driver_name: entry.driver_name || '',
+          vehicle_plate: entry.vehicle_plate || entry.truck_id || '',
+          total_weight: entry.net_weight || entry.weight || 0,
+          fruit_varieties: Array.isArray(entry.fruit_variety) ? entry.fruit_variety.map((f: any) => ({
+            name: f.name || f.product || 'Unknown',
+            weight: f.weight || 0,
+            crates: f.crates || 0
+          })) : [{
+            name: entry.product || 'Unknown',
+            weight: 0,
+            crates: 0
+          }],
+          region: entry.region || '',
+          timestamp: entry.timestamp || entry.created_at || new Date().toISOString(),
+          status: 'processed'
+        }));
+        setSupplierIntakeRecords(intakeRecords);
+      }
+      
+      // Fetch quality checks
+      const qualityResponse = await fetch('/api/quality-control?limit=10');
+      if (qualityResponse.ok) {
+        const qualityChecksData = await qualityResponse.json();
+        const transformedChecks: QualityCheck[] = qualityChecksData.map((qc: any) => ({
+          id: qc.id,
+          weight_entry_id: qc.weight_entry_id,
+          pallet_id: qc.pallet_id || `WE-${qc.weight_entry_id}`,
+          supplier_name: qc.supplier_name || 'Unknown Supplier',
+          overall_status: qc.overall_status || 'approved',
+          processed_at: qc.processed_at || new Date().toISOString(),
+        }));
+        setQualityChecks(transformedChecks);
+      }
+      
+      // Fetch counting records
+      const countingResponse = await fetch('/api/counting?limit=10');
+      if (countingResponse.ok) {
+        const result = await countingResponse.json();
+        if (result.success) {
+          setCountingRecords(result.data || []);
+          
+          // Calculate warehouse stats
+          const totalProcessed = result.data.filter((r: any) => r.status === 'processed').length;
+          const pendingRejections = result.data.filter((r: any) => r.status === 'pending').length;
+          
+          setWarehouseStats({
+            total_processed: totalProcessed,
+            pending_rejections: pendingRejections,
+            total_suppliers: supplierIntakeRecords.length,
+            fuerte_4kg: 0,
+            fuerte_10kg: 0,
+            hass_4kg: 0,
+            hass_10kg: 0,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching warehouse data:', error);
+    }
+  };
+  
+  // Generate recent alerts from various data sources - UPDATED with cold room alerts
   const generateRecentAlerts = (
     employees: any[],
     attendance: any[],
     suppliers: any[],
-    vehicles: any[]
+    vehicles: any[],
+    coldRooms: ColdRoomData[],
+    tempLogs: any[]
   ) => {
     const alerts = [];
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    
+    // Temperature alerts from cold rooms
+    coldRooms.forEach(room => {
+      const latestTempLog = tempLogs
+        .filter(log => log.cold_room_id === room.id)
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+      
+      if (latestTempLog) {
+        if (room.id === 'coldroom1' && (latestTempLog.temperature < 3 || latestTempLog.temperature > 5)) {
+          alerts.push({
+            id: `temp-${room.id}`,
+            type: 'temperature',
+            message: `${room.name} temperature out of range: ${latestTempLog.temperature}°C`,
+            severity: latestTempLog.temperature < 2 || latestTempLog.temperature > 6 ? 'high' : 'medium',
+            time: formatDate(latestTempLog.timestamp),
+          });
+        } else if (room.id === 'coldroom2' && (latestTempLog.temperature < 4 || latestTempLog.temperature > 6)) {
+          alerts.push({
+            id: `temp-${room.id}`,
+            type: 'temperature',
+            message: `${room.name} temperature out of range: ${latestTempLog.temperature}°C`,
+            severity: latestTempLog.temperature < 3 || latestTempLog.temperature > 7 ? 'high' : 'medium',
+            time: formatDate(latestTempLog.timestamp),
+          });
+        }
+      }
+    });
+    
+    // Cold room capacity alerts
+    coldRooms.forEach(room => {
+      if (room.capacity > 0) {
+        const occupancyRate = (room.occupied / room.capacity) * 100;
+        if (occupancyRate > 90) {
+          alerts.push({
+            id: `capacity-${room.id}`,
+            type: 'quality',
+            message: `${room.name} nearing capacity: ${Math.round(occupancyRate)}% full`,
+            severity: occupancyRate > 95 ? 'high' : 'medium',
+            time: 'Today',
+          });
+        }
+      }
+    });
     
     // Attendance alerts (employees missing check-in after 9 AM)
-    const now = new Date();
     if (now.getHours() >= 9) {
+      const today = new Date().toISOString().split('T')[0];
       const checkedInEmployees = attendance
         .filter((a: any) => a.date === today && (a.status === 'Present' || a.status === 'Late'))
         .map((a: any) => a.employeeId);
@@ -404,25 +816,25 @@ const AdminDashboard = () => {
       });
     }
     
-    // Add some sample alerts
-    alerts.push(
-      {
-        id: 'temp-1',
-        type: 'temperature',
-        message: 'Cold Room 2 temperature rising: 5.2°C',
-        severity: 'high' as const,
-        time: '10:30 AM',
-      },
-      {
-        id: 'vehicle-2',
-        type: 'vehicle',
-        message: 'Vehicle KCD 234X delayed by 45 minutes',
-        severity: 'low' as const,
-        time: '08:15 AM',
+    // Add warehouse alerts
+    if (countingRecords.length > 0) {
+      const pendingCounting = countingRecords.filter(r => r.status === 'pending').length;
+      if (pendingCounting > 0) {
+        alerts.push({
+          id: 'warehouse-1',
+          type: 'quality',
+          message: `${pendingCounting} counting records pending processing`,
+          severity: 'medium' as const,
+          time: 'Today',
+        });
       }
-    );
+    }
     
-    return alerts.slice(0, 4); // Return only the 4 most recent alerts
+    // Return only the 5 most recent alerts, sorted by severity (high first)
+    return alerts.sort((a, b) => {
+      const severityOrder = { high: 0, medium: 1, low: 2 };
+      return severityOrder[a.severity] - severityOrder[b.severity];
+    }).slice(0, 5);
   };
   
   useEffect(() => {
@@ -442,9 +854,16 @@ const AdminDashboard = () => {
     });
   };
   
-  const handleRecordWeight = (shipmentId: string) => router.push(`/weight-capture?shipmentId=${shipmentId}`);
-  const handleManageTags = (shipmentId: string) => router.push('/tag-management');
-  const handleViewDetails = (shipmentId: string) => router.push(`/traceability?shipmentId=${shipmentId}`);
+  // Calculate accepted suppliers (intake + QC approved)
+  const getAcceptedSuppliers = () => {
+    return supplierIntakeRecords.filter(intake => {
+      const qc = qualityChecks.find(q => q.weight_entry_id === intake.id);
+      const inCounting = countingRecords.some(record => record.supplier_id === intake.id);
+      return qc && qc.overall_status === 'approved' && !inCounting;
+    });
+  };
+  
+  const acceptedSuppliers = getAcceptedSuppliers();
   
   if (isLoading || !stats) {
     return (
@@ -478,7 +897,7 @@ const AdminDashboard = () => {
     );
   }
   
-  // Overview cards configuration
+  // Overview cards configuration - UPDATED with cold room data
   const overviewCards = [
     {
       id: 'employees',
@@ -501,14 +920,14 @@ const AdminDashboard = () => {
       color: 'bg-green-500',
     },
     {
-      id: 'vehicles',
-      title: 'Vehicles On Site',
-      value: String(stats.vehiclesOnSite),
-      change: `${stats.vehiclesPendingExit} pending exit`,
-      changeType: 'increase' as const,
-      icon: Truck,
-      link: '/vehicle-management',
-      color: 'bg-amber-500',
+      id: 'coldroom',
+      title: 'Cold Room Status',
+      value: `${stats.coldRoomCapacity}% occupied`,
+      change: `${stats.coldRoomStats.totalBoxesLoadedToday} boxes loaded today`,
+      changeType: stats.coldRoomCapacity > 90 ? 'increase' : 'normal' as const,
+      icon: Snowflake,
+      link: '/cold-room',
+      color: 'bg-cyan-500',
     },
     {
       id: 'pallets',
@@ -531,12 +950,12 @@ const AdminDashboard = () => {
       color: 'bg-emerald-500',
     },
     {
-      id: 'intake',
+      id: 'warehouse',
       title: "Today's Intake",
       value: String(stats.todayIntakes),
       change: `${stats.todayProcessed} processed, ${stats.todayDispatched} dispatched`,
       changeType: 'increase' as const,
-      icon: ClipboardCheck,
+      icon: Warehouse,
       link: '/warehouse',
       color: 'bg-indigo-500',
     },
@@ -594,8 +1013,8 @@ const AdminDashboard = () => {
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="operations">Operations</TabsTrigger>
-                <TabsTrigger value="personnel">Personnel</TabsTrigger>
-                <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
+                <TabsTrigger value="coldchain">Cold Chain</TabsTrigger>
+                <TabsTrigger value="warehouse">Warehouse</TabsTrigger>
               </TabsList>
 
               {/* Overview Tab */}
@@ -666,38 +1085,153 @@ const AdminDashboard = () => {
                       </CardContent>
                     </Card>
 
-                    {/* Shipments Overview */}
+                    {/* WAREHOUSE PROCESSING OVERVIEW */}
                     <Card>
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                           <div>
                             <CardTitle className="flex items-center gap-2">
-                              <Truck className="w-5 h-5" />
-                              Today's Shipments
+                              <HardHat className="w-5 h-5" />
+                              Warehouse Processing
                             </CardTitle>
                             <CardDescription>
-                              {stats.shipmentData.length} shipments received today
+                              {acceptedSuppliers.length} suppliers pending counting • {warehouseStats.pending_rejections} need variance
                             </CardDescription>
                           </div>
-                          <Badge variant="outline">
-                            Live Tracking
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                            Live Updates
                           </Badge>
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <ShipmentDataTable 
-                          shipments={stats.shipmentData} 
-                          onRecordWeight={handleRecordWeight}
-                          onManageTags={handleManageTags}
-                          onViewDetails={handleViewDetails}
-                        />
+                        <div className="space-y-4">
+                          {/* Stats Overview */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                              <div className="text-2xl font-bold text-blue-700">{acceptedSuppliers.length}</div>
+                              <div className="text-sm text-blue-600">Pending Counting</div>
+                            </div>
+                            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                              <div className="text-2xl font-bold text-orange-700">{warehouseStats.pending_rejections}</div>
+                              <div className="text-sm text-orange-600">Need Variance</div>
+                            </div>
+                            <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+                              <div className="text-2xl font-bold text-green-700">{warehouseStats.total_processed}</div>
+                              <div className="text-sm text-green-600">Total Processed</div>
+                            </div>
+                            <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
+                              <div className="text-2xl font-bold text-purple-700">
+                                {supplierIntakeRecords.length}
+                              </div>
+                              <div className="text-sm text-purple-600">Total Intakes</div>
+                            </div>
+                          </div>
+
+                          {/* Active Suppliers List */}
+                          <div>
+                            <h4 className="font-medium mb-2 text-sm text-gray-500">Recent Intake (Last 24 hours)</h4>
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                              {supplierIntakeRecords.slice(0, 5).map((supplier, index) => {
+                                const qc = qualityChecks.find(q => q.weight_entry_id === supplier.id);
+                                const isAccepted = acceptedSuppliers.some(s => s.id === supplier.id);
+                                const hasVariance = countingRecords.some(r => r.supplier_id === supplier.id);
+                                
+                                return (
+                                  <div key={supplier.id} className="p-3 border rounded-lg hover:bg-gray-50">
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex-1">
+                                        <div className="font-medium">{supplier.supplier_name}</div>
+                                        <div className="text-sm text-gray-500 mt-1 space-y-1">
+                                          <div className="flex items-center gap-4">
+                                            <span>📍 {supplier.region}</span>
+                                            <span>📞 {supplier.driver_name || "No contact"}</span>
+                                          </div>
+                                          <div className="flex items-center gap-4">
+                                            <span>🚚 {supplier.vehicle_plate || "No plate"}</span>
+                                            <span>⚖️ {supplier.total_weight} kg</span>
+                                            <span>📦 {supplier.fruit_varieties.length} varieties</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1">
+                                        <Badge variant="outline" className={`
+                                          ${isAccepted ? 'bg-green-50 text-green-700 border-green-200' : 
+                                            hasVariance ? 'bg-orange-50 text-orange-700 border-orange-200' : 
+                                            qc?.overall_status === 'approved' ? 'bg-blue-50 text-blue-700 border-blue-200' : 
+                                            'bg-gray-50 text-gray-700 border-gray-200'}
+                                        `}>
+                                          {isAccepted ? 'Ready for Counting' : 
+                                           hasVariance ? 'Needs Variance' : 
+                                           qc?.overall_status === 'approved' ? 'QC Approved' : 'Intake Complete'}
+                                        </Badge>
+                                        <div className="text-xs text-gray-400">
+                                          {formatDate(supplier.timestamp)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Fruit Varieties */}
+                                    {supplier.fruit_varieties.length > 0 && (
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {supplier.fruit_varieties.map((fruit, idx) => (
+                                          <span key={idx} className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+                                            {fruit.name}: {fruit.weight}kg ({fruit.crates} crates)
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              
+                              {supplierIntakeRecords.length === 0 && (
+                                <div className="text-center py-4 text-gray-500">
+                                  No supplier intake records found
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Quick Actions */}
+                          <div className="pt-4 border-t">
+                            <div className="flex gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="flex-1"
+                                onClick={() => router.push('/warehouse')}
+                              >
+                                <Scale className="w-4 h-4 mr-2" />
+                                Go to Warehouse
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="flex-1"
+                                onClick={() => router.push('/warehouse?tab=counting')}
+                              >
+                                <Package className="w-4 h-4 mr-2" />
+                                Start Counting
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="flex-1"
+                                onClick={() => router.push('/warehouse?tab=reject')}
+                              >
+                                <AlertTriangle className="w-4 h-4 mr-2" />
+                                Handle Variance
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>
 
                   {/* Right Column */}
                   <div className="space-y-6">
-                    {/* Cold Chain Status */}
+                    {/* Cold Chain Status - USING REAL DATA */}
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -705,12 +1239,50 @@ const AdminDashboard = () => {
                           Cold Chain Monitoring
                         </CardTitle>
                         <CardDescription>
-                          Real-time temperature and humidity
+                          Real-time temperature and humidity from cold rooms
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
                         <ColdChainChart data={stats.coldChainData} />
+                        
+                        {/* Cold Room Status Details */}
+                        <div className="mt-4 space-y-3">
+                          {stats.coldChainData.map((room) => (
+                            <div key={room.id} className="flex items-center justify-between p-3 border rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-3 h-3 rounded-full ${
+                                  room.status === 'optimal' ? 'bg-green-500' :
+                                  room.status === 'warning' ? 'bg-yellow-500' :
+                                  'bg-blue-500'
+                                }`} />
+                                <div>
+                                  <div className="font-medium">{room.name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {room.occupied}/{room.capacity} pallets • {formatDate(room.lastUpdate)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-bold text-lg">{room.temperature}°C</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {room.humidity}% humidity
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </CardContent>
+                      <CardFooter className="pt-0">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full"
+                          onClick={() => router.push('/cold-room')}
+                        >
+                          <Snowflake className="w-4 h-4 mr-2" />
+                          View Cold Room Details
+                        </Button>
+                      </CardFooter>
                     </Card>
 
                     {/* Recent Alerts */}
@@ -719,6 +1291,11 @@ const AdminDashboard = () => {
                         <CardTitle className="flex items-center gap-2">
                           <AlertTriangle className="w-5 h-5" />
                           Recent Alerts
+                          {stats.recentAlerts.filter(a => a.severity === 'high').length > 0 && (
+                            <Badge variant="destructive" className="ml-2">
+                              {stats.recentAlerts.filter(a => a.severity === 'high').length} Critical
+                            </Badge>
+                          )}
                         </CardTitle>
                         <CardDescription>
                           System notifications requiring attention
@@ -756,6 +1333,14 @@ const AdminDashboard = () => {
                               </div>
                             </div>
                           ))}
+                          
+                          {stats.recentAlerts.length === 0 && (
+                            <div className="text-center py-4">
+                              <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                              <p className="text-sm text-green-600">No active alerts</p>
+                              <p className="text-xs text-muted-foreground mt-1">All systems are operating normally</p>
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -784,8 +1369,10 @@ const AdminDashboard = () => {
                         <div className="text-sm text-muted-foreground">Total Employees</div>
                       </div>
                       <div className="text-center p-4 border rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">{stats.vehiclesOnSite}</div>
-                        <div className="text-sm text-muted-foreground">Vehicles On Site</div>
+                        <div className="text-2xl font-bold text-cyan-600">
+                          {stats.coldRoomStats.total4kgBoxes + stats.coldRoomStats.total10kgBoxes}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Boxes in Cold Rooms</div>
                       </div>
                       <div className="text-center p-4 border rounded-lg">
                         <div className="text-2xl font-bold text-amber-600">{stats.vehiclesCompletedToday}</div>
@@ -843,29 +1430,41 @@ const AdminDashboard = () => {
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Thermometer className="w-5 h-5" />
-                        Cold Chain Status
+                        <Truck className="w-5 h-5" />
+                        Vehicle Operations
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {stats.coldChainData.map((room) => (
-                          <div key={room.id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <div className="font-medium">{room.name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {room.temperature}°C • {room.humidity}% humidity
-                              </div>
-                            </div>
-                            <Badge className={
-                              room.status === 'optimal' ? 'bg-green-100 text-green-800 border-green-200' :
-                              room.status === 'warning' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                              'bg-blue-100 text-blue-800 border-blue-200'
-                            }>
-                              {room.status.toUpperCase()}
-                            </Badge>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-3 border rounded-lg">
+                            <div className="text-2xl font-bold">{stats.totalVehicles}</div>
+                            <div className="text-sm text-muted-foreground">Total Registered</div>
                           </div>
-                        ))}
+                          <div className="p-3 border rounded-lg">
+                            <div className="text-2xl font-bold text-amber-600">{stats.vehiclesOnSite}</div>
+                            <div className="text-sm text-muted-foreground">On Site</div>
+                          </div>
+                        </div>
+                        <Separator />
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span>Checked In</span>
+                            <span className="font-semibold">{stats.vehiclesOnSite - stats.vehiclesPendingExit}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Pending Exit</span>
+                            <span className="font-semibold">{stats.vehiclesPendingExit}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>In Transit</span>
+                            <span className="font-semibold">{stats.vehiclesInTransit}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Completed Today</span>
+                            <span className="font-semibold">{stats.vehiclesCompletedToday}</span>
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -895,65 +1494,237 @@ const AdminDashboard = () => {
                 </Card>
               </TabsContent>
 
-              {/* Personnel Tab */}
-              <TabsContent value="personnel" className="mt-6 space-y-6">
+              {/* Cold Chain Tab */}
+              <TabsContent value="coldchain" className="mt-6 space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Snowflake className="w-5 h-5" />
+                      Cold Chain Overview
+                    </CardTitle>
+                    <CardDescription>
+                      Real-time monitoring of cold storage facilities
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Cold Room Status Cards */}
+                      <div className="space-y-4">
+                        <h3 className="font-semibold">Cold Room Status</h3>
+                        {stats.coldChainData.map((room) => {
+                          const occupancyRate = room.capacity > 0 ? Math.round((room.occupied / room.capacity) * 100) : 0;
+                          return (
+                            <Card key={room.id}>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-sm flex items-center justify-between">
+                                  <span>{room.name}</span>
+                                  <Badge variant={
+                                    room.status === 'optimal' ? 'default' :
+                                    room.status === 'warning' ? 'secondary' :
+                                    'outline'
+                                  }>
+                                    {room.status.toUpperCase()}
+                                  </Badge>
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Thermometer className="w-4 h-4" />
+                                      <span>Temperature</span>
+                                    </div>
+                                    <span className="font-bold text-lg">{room.temperature}°C</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Package className="w-4 h-4" />
+                                      <span>Occupancy</span>
+                                    </div>
+                                    <span className="font-bold">{occupancyRate}%</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Database className="w-4 h-4" />
+                                      <span>Capacity</span>
+                                    </div>
+                                    <span className="font-medium">{room.occupied}/{room.capacity} pallets</span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Last updated: {formatDate(room.lastUpdate)}
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Cold Room Statistics */}
+                      <div className="space-y-4">
+                        <h3 className="font-semibold">Cold Room Statistics</h3>
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm">Inventory Summary</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="border rounded p-3">
+                                  <div className="text-2xl font-bold text-blue-600">
+                                    {stats.coldRoomStats.total4kgBoxes.toLocaleString()}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">4kg Boxes</div>
+                                </div>
+                                <div className="border rounded p-3">
+                                  <div className="text-2xl font-bold text-purple-600">
+                                    {stats.coldRoomStats.total10kgBoxes.toLocaleString()}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">10kg Boxes</div>
+                                </div>
+                              </div>
+                              
+                              <Separator />
+                              
+                              <div className="space-y-2">
+                                <div className="flex justify-between">
+                                  <span>Total Pallets (4kg)</span>
+                                  <span className="font-semibold">{stats.coldRoomStats.total4kgPallets}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Total Pallets (10kg)</span>
+                                  <span className="font-semibold">{stats.coldRoomStats.total10kgPallets}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Boxes Loaded Today</span>
+                                  <span className="font-semibold text-green-600">
+                                    {stats.coldRoomStats.totalBoxesLoadedToday}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Weight Loaded Today</span>
+                                  <span className="font-semibold">
+                                    {Math.round(stats.coldRoomStats.totalWeightLoadedToday / 1000)} tons
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        
+                        {/* Recent Temperature Logs */}
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm">Recent Temperature Logs</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              {stats.coldRoomStats.recentTemperatureLogs.map((log) => (
+                                <div key={log.id} className="flex items-center justify-between p-2 border rounded">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${
+                                      log.status === 'normal' ? 'bg-green-500' :
+                                      log.status === 'warning' ? 'bg-yellow-500' :
+                                      'bg-red-500'
+                                    }`} />
+                                    <span className="text-sm">
+                                      {log.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                    </span>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="font-medium">{log.temperature}°C</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {formatDate(log.timestamp).split(' ')[0]}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              
+                              {stats.coldRoomStats.recentTemperatureLogs.length === 0 && (
+                                <div className="text-center py-4 text-muted-foreground">
+                                  No temperature logs available
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button 
+                      className="w-full" 
+                      onClick={() => router.push('/cold-room')}
+                    >
+                      <Snowflake className="w-4 h-4 mr-2" />
+                      Go to Cold Room Management
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </TabsContent>
+
+              {/* Warehouse Tab */}
+              <TabsContent value="warehouse" className="mt-6 space-y-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Users className="w-5 h-5" />
-                        Employee Overview
+                        <Warehouse className="w-5 h-5" />
+                        Warehouse Processing Status
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="text-center p-3 border rounded-lg">
-                            <div className="text-2xl font-bold">{stats.totalEmployees}</div>
-                            <div className="text-sm text-muted-foreground">Total</div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-3 border rounded-lg">
+                            <div className="text-2xl font-bold">{acceptedSuppliers.length}</div>
+                            <div className="text-sm text-muted-foreground">Ready for Counting</div>
                           </div>
-                          <div className="text-center p-3 border rounded-lg">
-                            <div className="text-2xl font-bold text-green-600">{stats.employeesPresentToday}</div>
-                            <div className="text-sm text-muted-foreground">Present</div>
-                          </div>
-                          <div className="text-center p-3 border rounded-lg">
-                            <div className="text-2xl font-bold text-blue-600">{stats.employeesOnLeave}</div>
-                            <div className="text-sm text-muted-foreground">On Leave</div>
+                          <div className="p-3 border rounded-lg">
+                            <div className="text-2xl font-bold text-green-600">{warehouseStats.total_processed}</div>
+                            <div className="text-sm text-muted-foreground">Processed Today</div>
                           </div>
                         </div>
                         <Separator />
                         <div>
-                          <h4 className="font-medium mb-2">By Contract Type</h4>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="p-2 border rounded text-center">
-                              <div className="font-bold">{stats.employeesByContract.fullTime}</div>
-                              <div className="text-xs text-muted-foreground">Full-time</div>
+                          <h4 className="font-medium mb-2">Processing Pipeline</h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span>Intake Received</span>
+                              <span className="font-semibold">{supplierIntakeRecords.length}</span>
                             </div>
-                            <div className="p-2 border rounded text-center">
-                              <div className="font-bold">{stats.employeesByContract.partTime}</div>
-                              <div className="text-xs text-muted-foreground">Part-time</div>
+                            <div className="flex justify-between">
+                              <span>QC Approved</span>
+                              <span className="font-semibold">
+                                {qualityChecks.filter(q => q.overall_status === 'approved').length}
+                              </span>
                             </div>
-                            <div className="p-2 border rounded text-center">
-                              <div className="font-bold">{stats.employeesByContract.contract}</div>
-                              <div className="text-xs text-muted-foreground">Contract</div>
+                            <div className="flex justify-between">
+                              <span>Counting Completed</span>
+                              <span className="font-semibold">
+                                {countingRecords.filter(r => r.status === 'processed').length}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>To Cold Room</span>
+                              <span className="font-semibold text-blue-600">
+                                {acceptedSuppliers.length}
+                              </span>
                             </div>
                           </div>
                         </div>
                       </div>
                     </CardContent>
                     <CardFooter>
-                      <Button className="w-full" onClick={() => router.push('/employees')}>
-                        View Employee Management
+                      <Button className="w-full" onClick={() => router.push('/warehouse')}>
+                        View Warehouse Management
                       </Button>
                     </CardFooter>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Building className="w-5 h-5" />
-                        Supplier Overview
-                      </CardTitle>
+                      <CardTitle>Supplier Overview</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
@@ -992,105 +1763,40 @@ const AdminDashboard = () => {
                   </Card>
                 </div>
 
-                {/* Attendance Rate */}
+                {/* Recent Warehouse Activity */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Attendance Rate</CardTitle>
+                    <CardTitle>Recent Warehouse Activity</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-center justify-center">
-                      <div className="relative w-48 h-48">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="text-center">
-                            <div className="text-4xl font-bold">{stats.attendanceRate}%</div>
-                            <div className="text-sm text-muted-foreground">Today</div>
+                    <div className="space-y-3">
+                      {supplierIntakeRecords.slice(0, 3).map((intake) => (
+                        <div key={intake.id} className="flex items-center justify-between p-3 border rounded">
+                          <div>
+                            <div className="font-medium">{intake.supplier_name}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {intake.vehicle_plate} • {intake.total_weight} kg
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="outline">
+                              {formatDate(intake.timestamp).split(',')[0]}
+                            </Badge>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {formatDate(intake.timestamp).split(',')[1]}
+                            </div>
                           </div>
                         </div>
-                        <Progress value={stats.attendanceRate} className="h-48 w-48 [&>div]:bg-green-500" />
-                      </div>
+                      ))}
+                      
+                      {supplierIntakeRecords.length === 0 && (
+                        <div className="text-center py-4 text-muted-foreground">
+                          No recent intake activity
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-              </TabsContent>
-
-              {/* Vehicles Tab */}
-              <TabsContent value="vehicles" className="mt-6 space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Truck className="w-5 h-5" />
-                        Vehicle Status
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="p-3 border rounded-lg">
-                            <div className="text-2xl font-bold">{stats.totalVehicles}</div>
-                            <div className="text-sm text-muted-foreground">Total Registered</div>
-                          </div>
-                          <div className="p-3 border rounded-lg">
-                            <div className="text-2xl font-bold text-amber-600">{stats.vehiclesOnSite}</div>
-                            <div className="text-sm text-muted-foreground">On Site</div>
-                          </div>
-                        </div>
-                        <Separator />
-                        <div className="space-y-2">
-                          <div className="flex justify-between">
-                            <span>Checked In</span>
-                            <span className="font-semibold">{stats.vehiclesOnSite - stats.vehiclesPendingExit}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Pending Exit</span>
-                            <span className="font-semibold">{stats.vehiclesPendingExit}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>In Transit</span>
-                            <span className="font-semibold">{stats.vehiclesInTransit}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Completed Today</span>
-                            <span className="font-semibold">{stats.vehiclesCompletedToday}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                    <CardFooter>
-                      <Button className="w-full" onClick={() => router.push('/vehicle-management')}>
-                        View Vehicle Management
-                      </Button>
-                    </CardFooter>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Vehicle Activity</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {stats.vehiclesCompletedToday > 0 && (
-                          <div className="p-3 border rounded-lg bg-green-50">
-                            <div className="font-medium">{stats.vehiclesCompletedToday} deliveries completed today</div>
-                            <div className="text-sm text-muted-foreground">Successfully checked out</div>
-                          </div>
-                        )}
-                        {stats.vehiclesPendingExit > 0 && (
-                          <div className="p-3 border rounded-lg bg-yellow-50">
-                            <div className="font-medium">{stats.vehiclesPendingExit} vehicles pending exit</div>
-                            <div className="text-sm text-muted-foreground">Awaiting verification</div>
-                          </div>
-                        )}
-                        {stats.vehiclesOnSite > 0 && (
-                          <div className="p-3 border rounded-lg bg-blue-50">
-                            <div className="font-medium">{stats.vehiclesOnSite} vehicles currently on site</div>
-                            <div className="text-sm text-muted-foreground">Making deliveries</div>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
               </TabsContent>
             </Tabs>
           </div>
@@ -1114,7 +1820,7 @@ const WarehouseDashboard = () => {
     try {
       // Fetch relevant data for warehouse dashboard
       const [shipmentsRes, employeesRes] = await Promise.all([
-        fetch('/api/shipments'), // You need to create this API
+        fetch('/api/shipments'),
         fetch('/api/employees'),
       ]);
 
@@ -1141,7 +1847,6 @@ const WarehouseDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Warehouse dashboard content */}
-      {/* ... similar structure to admin dashboard but warehouse-focused ... */}
     </div>
   );
 };

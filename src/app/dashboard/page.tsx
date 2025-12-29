@@ -2014,7 +2014,7 @@ const AdminDashboard = () => {
                       ) : stats.supplierPerformance.length > 0 ? (
                         <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                           {stats.supplierPerformance.map((supplier) => (
-                            <div key={supplier.id} className="space-y-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                            <div key={supplier.id} className="space-y-3 p-3 border rounded-lg hover:bg-black-50 transition-colors">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                   <div className={`w-2 h-2 rounded-full ${
@@ -2191,7 +2191,7 @@ const AdminDashboard = () => {
                     <div className="h-80">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={stats.weeklyIntakeTrend}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f8f5f5ff" />
                           <XAxis dataKey="day" />
                           <YAxis yAxisId="left" />
                           <YAxis yAxisId="right" orientation="right" />

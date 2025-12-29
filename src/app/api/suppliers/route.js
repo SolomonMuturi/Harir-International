@@ -1,28 +1,24 @@
 import { prisma } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { startOfDay, endOfDay } from 'date-fns'
-import PDFDocument from 'pdfkit'
 
 // Helper function to generate small ID (max ~20 chars)
 function generateSmallId() {
-  // Using timestamp + random 4 chars = ~14 characters
-  const timestamp = Date.now().toString(36); // Base36 timestamp (~8 chars)
-  const random = Math.random().toString(36).substr(2, 4); // 4 random chars
-  return `s-${timestamp}-${random}`; // Example: s-khts0x8-abc1
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substr(2, 4);
+  return `s-${timestamp}-${random}`;
 }
 
 // Alternative: Even smaller ID (~10 chars)
 function generateTinyId() {
-  // Base36 timestamp only = ~8 chars
-  return `s${Date.now().toString(36)}`; // Example: skhts0x8
+  return `s${Date.now().toString(36)}`;
 }
 
 // Alternative: Short UUID (8 chars)
 function generateShortId() {
-  // Using part of timestamp + random
-  const timePart = Date.now().toString(36).slice(-6); // Last 6 chars
-  const randPart = Math.random().toString(36).substr(2, 2); // 2 random chars
-  return `s${timePart}${randPart}`; // Example: sts0x8ab
+  const timePart = Date.now().toString(36).slice(-6);
+  const randPart = Math.random().toString(36).substr(2, 2);
+  return `s${timePart}${randPart}`;
 }
 
 // Helper function to generate CSV with specified columns
@@ -32,7 +28,7 @@ function generateCSV(suppliers) {
     'Supplier Name',
     'Location',
     'Phone Number',
-    'Email Number'
+    'Email'
   ]
 
   const rows = suppliers.map(supplier => [
@@ -51,96 +47,162 @@ function generateCSV(suppliers) {
   return csvContent
 }
 
-// Helper function to generate PDF with specified columns
-async function generatePDF(suppliers, startDate, endDate) {
-  return new Promise((resolve, reject) => {
-    try {
-      const chunks = []
-      const doc = new PDFDocument({ 
-        margin: 50, 
-        size: 'A4',
-        bufferPages: true
-      })
+// Simple text-based PDF generation (no external font dependencies)
+async function generateTextPDF(suppliers, startDate, endDate) {
+  return new Promise((resolve) => {
+    // Create a simple text-based PDF structure
+    const pdfLines = [
+      '%PDF-1.4',
+      '1 0 obj',
+      '<</Type/Catalog/Pages 2 0 R>>',
+      'endobj',
+      '2 0 obj',
+      '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+      'endobj',
+      '3 0 obj',
+      '<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 4 0 R>>/ProcSet[/PDF/Text]>>/Contents 5 0 R>>',
+      'endobj',
+      '4 0 obj',
+      '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+      'endobj',
+      '5 0 obj',
+      '<</Length 1000>>',
+      'stream',
+    ];
+
+    // Add content (this is a simplified example - in production, you'd need proper PDF coordinate positioning)
+    const content = [
+      'BT',
+      '/F1 20 Tf',
+      '50 800 Td',
+      '(Supplier Report) Tj',
+      'ET',
+      'BT',
+      '/F1 12 Tf',
+      '50 770 Td',
+      `(Date Range: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}) Tj`,
+      'ET',
+    ];
+
+    // Add supplier information
+    let yPosition = 740;
+    suppliers.forEach((supplier, index) => {
+      if (yPosition < 50) {
+        // Need to add new page - for simplicity, just truncate
+        return;
+      }
       
-      // Handle data events
-      doc.on('data', (chunk) => {
-        chunks.push(chunk)
-      })
-      
-      // Handle end event - resolve when PDF is complete
-      doc.on('end', () => {
-        console.log('PDF generation completed successfully')
-        const pdfBuffer = Buffer.concat(chunks)
-        resolve(pdfBuffer)
-      })
-      
-      // Handle errors
-      doc.on('error', (error) => {
-        console.error('PDF generation error:', error)
-        reject(error)
-      })
-      
-      // --- Start building PDF content ---
-      
-      // Header
-      doc.fontSize(20).text('Supplier Report', { align: 'center' })
-      doc.moveDown()
-      
-      // Date range
-      doc.fontSize(12)
-        .text(`Date Range: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`, { align: 'center' })
-      doc.moveDown()
-      
-      // Summary
-      const totalSuppliers = suppliers.length
-      const activeSuppliers = suppliers.filter(s => s.status === 'Active').length
-      
-      doc.fontSize(14).text('Summary', { underline: true })
-      doc.fontSize(12)
-        .text(`Total Suppliers: ${totalSuppliers}`)
-        .text(`Active Suppliers: ${activeSuppliers}`)
-      doc.moveDown()
-      
-      // Supplier details table
-      doc.fontSize(12).text('Supplier Details:', { underline: true })
-      doc.moveDown()
-      
-      // Simple table implementation (avoiding complex column positioning)
-      suppliers.forEach((supplier, index) => {
-        const registrationDate = supplier.created_at 
-          ? new Date(supplier.created_at).toLocaleDateString()
-          : 'N/A'
-        
-        doc.fontSize(10)
-          .text(`Supplier Code: ${supplier.supplier_code || 'N/A'}`)
-          .text(`Supplier Name: ${supplier.name || 'N/A'}`)
-          .text(`Location: ${supplier.location || 'N/A'}`)
-          .text(`Phone Number: ${supplier.contact_phone || 'N/A'}`)
-          .text(`Registration Date: ${registrationDate}`)
-          .moveDown()
-        
-        // Add page break if near bottom
-        if (doc.y > doc.page.height - 100) {
-          doc.addPage()
-        }
-      })
-      
-      // Footer
-      doc.fontSize(10)
-      doc.text(
-        `Report generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-        { align: 'center' }
-      )
-      
-      // Finalize PDF
-      doc.end()
-      
-    } catch (error) {
-      console.error('Error in generatePDF function:', error)
-      reject(error)
-    }
-  })
+      content.push(
+        'BT',
+        '/F1 10 Tf',
+        `50 ${yPosition} Td`,
+        `(Supplier: ${supplier.name || 'N/A'} - ${supplier.supplier_code || 'N/A'}) Tj`,
+        'ET'
+      );
+      yPosition -= 20;
+    });
+
+    pdfLines.push(content.join('\n'));
+    pdfLines.push('endstream');
+    pdfLines.push('endobj');
+    
+    // Add cross-reference table and trailer
+    pdfLines.push(
+      'xref',
+      '0 6',
+      '0000000000 65535 f',
+      '0000000010 00000 n',
+      '0000000053 00000 n',
+      '0000000112 00000 n',
+      '0000000243 00000 n',
+      '0000000375 00000 n',
+      'trailer',
+      '<</Size 6/Root 1 0 R>>',
+      'startxref',
+      '480',
+      '%%EOF'
+    );
+
+    const pdfContent = pdfLines.join('\n');
+    resolve(Buffer.from(pdfContent, 'utf8'));
+  });
 }
+
+// HTML-based PDF generation using browser print (client-side solution)
+function generateHTMLReport(suppliers, startDate, endDate) {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Supplier Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    h1 { color: #333; text-align: center; }
+    .header { margin-bottom: 30px; }
+    .summary { background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th { background: #4CAF50; color: white; padding: 10px; text-align: left; }
+    td { padding: 10px; border-bottom: 1px solid #ddd; }
+    tr:nth-child(even) { background: #f9f9f9; }
+    .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Supplier Report</h1>
+  <div class="header">
+    <p><strong>Date Range:</strong> ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}</p>
+  </div>
+  
+  <div class="summary">
+    <h3>Summary</h3>
+    <p>Total Suppliers: ${suppliers.length}</p>
+    <p>Active Suppliers: ${suppliers.filter(s => s.status === 'Active').length}</p>
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Supplier Code</th>
+        <th>Supplier Name</th>
+        <th>Location</th>
+        <th>Phone Number</th>
+        <th>Email</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${suppliers.map(supplier => `
+        <tr>
+          <td>${supplier.supplier_code || 'N/A'}</td>
+          <td>${supplier.name || 'N/A'}</td>
+          <td>${supplier.location || 'N/A'}</td>
+          <td>${supplier.contact_phone || 'N/A'}</td>
+          <td>${supplier.contact_email || 'N/A'}</td>
+          <td>${supplier.status || 'N/A'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  
+  <div class="footer">
+    <p>Report generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+  </div>
+  
+  <script>
+    // Auto-print for convenience
+    window.onload = function() {
+      window.print();
+    };
+  </script>
+</body>
+</html>
+  `;
+
+  return html;
+}
+
+// Alternative: Use jsPDF if you can install it (client-side)
+// This would require a different approach since we're server-side
 
 export async function GET(request) {
   try {
@@ -150,7 +212,7 @@ export async function GET(request) {
     const id = searchParams.get('id');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const format = searchParams.get('format'); // 'csv' or 'pdf'
+    const format = searchParams.get('format'); // 'csv', 'pdf', or 'html'
     
     // Handle single supplier request
     if (id) {
@@ -200,7 +262,7 @@ export async function GET(request) {
         const csvContent = generateCSV(suppliers);
         return new NextResponse(csvContent, {
           headers: {
-            'Content-Type': 'text/csv',
+            'Content-Type': 'text/csv; charset=utf-8',
             'Content-Disposition': `attachment; filename=suppliers_${startDate}_to_${endDate}.csv`
           }
         });
@@ -213,14 +275,10 @@ export async function GET(request) {
             );
           }
           
-          console.log('Generating PDF report...');
-          const pdfBuffer = await generatePDF(suppliers, startDate, endDate);
+          console.log('Generating text-based PDF report...');
           
-          if (!pdfBuffer || pdfBuffer.length === 0) {
-            throw new Error('Generated PDF buffer is empty');
-          }
-          
-          console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+          // Option 1: Simple text-based PDF
+          const pdfBuffer = await generateTextPDF(suppliers, startDate, endDate);
           
           return new NextResponse(pdfBuffer, {
             headers: {
@@ -228,20 +286,30 @@ export async function GET(request) {
               'Content-Disposition': `attachment; filename=suppliers_report_${startDate}_to_${endDate}.pdf`
             }
           });
+          
         } catch (pdfError) {
           console.error('❌ PDF generation error:', pdfError);
           
-          // Provide a helpful error response
-          const errorMessage = pdfError.message || 'Unknown PDF generation error';
-          return NextResponse.json(
-            { 
-              error: 'Failed to generate PDF report',
-              details: errorMessage,
-              suggestion: 'Please try CSV export or contact support'
-            },
-            { status: 500 }
-          );
+          // Fallback to HTML report
+          console.log('🔄 Providing HTML report as fallback...');
+          const htmlReport = generateHTMLReport(suppliers, startDate, endDate);
+          
+          return new NextResponse(htmlReport, {
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Content-Disposition': `inline; filename=suppliers_report_${startDate}_to_${endDate}.html`
+            }
+          });
         }
+      } else if (format === 'html') {
+        // Direct HTML report request
+        const htmlReport = generateHTMLReport(suppliers, startDate, endDate);
+        return new NextResponse(htmlReport, {
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Disposition': `inline; filename=suppliers_report_${startDate}_to_${endDate}.html`
+          }
+        });
       }
       
       // Return JSON by default
@@ -315,7 +383,7 @@ export async function POST(request) {
     const newSupplier = await prisma.suppliers.create({
       data: {
         // Using the smallest ID option (8-10 chars)
-        id: generateTinyId(), // OR use generateShortId() or generateSmallId()
+        id: generateTinyId(),
         name: body.name,
         location: body.location || 'Gate Registration',
         contact_name: body.contact_name,

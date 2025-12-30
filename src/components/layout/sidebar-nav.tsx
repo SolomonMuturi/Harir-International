@@ -24,6 +24,11 @@ import {
   Zap,
   FlaskConical,
   Grape,
+  DoorOpen,
+  DoorClosed,
+  MapPin,
+  List,
+  CalendarCheck,
 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -40,7 +45,7 @@ type NavItem = {
 
 // Define all navigation items with their required permissions
 const allNavItems: NavItem[] = [
-  // Dashboard - FIXED: Changed from '/' to '/dashboard'
+  // Dashboard
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
   
   // Analytics
@@ -50,8 +55,23 @@ const allNavItems: NavItem[] = [
   // Suppliers
   { name: 'Suppliers', href: '/suppliers', icon: Grape, permissions: ['suppliers.view', 'suppliers.manage'] },
   
-  // HR
-  { name: 'Employees', href: '/employees', icon: Briefcase, permissions: ['employees.view', 'employees.manage'] },
+  // HR - Employee Management
+  { 
+    name: 'Employees', 
+    href: '/employees', 
+    icon: Briefcase,
+    // Check for ANY employee permission
+    permissions: [
+      'employees.overview.view',
+      'employees.checkin.view',
+      'employees.designation.view',
+      'employees.checkout.view',
+      'employees.list.view',
+      'employees.attendance.view',
+      'employees.create',
+      'employees.edit',
+    ]
+  },
   
   // Access Management
   { name: 'Visitor Log', href: '/visitor-management', icon: Users, permission: 'suppliers.visitors' },
@@ -118,6 +138,14 @@ export function SidebarNav() {
       return true;
     }
     
+    // Special handling for Employees section - Check for ANY employee permission
+    if (item.href === '/employees') {
+      const hasAnyEmployeePermission = userPermissions.some(perm => 
+        perm.startsWith('employees.')
+      );
+      return hasAnyEmployeePermission;
+    }
+    
     // Check single permission
     if (item.permission) {
       return userPermissions.includes(item.permission);
@@ -141,6 +169,9 @@ export function SidebarNav() {
   const visibleOperationsItems = operationsItems.filter(hasAccess);
   const visibleAdminItems = adminItems.filter(hasAccess);
   
+  // Check if we should show HR section
+  const shouldShowHRSection = visibleHrItems.length > 0;
+  
   const NavGroup = ({ title, items }: { title: string, items: NavItem[] }) => {
     if (items.length === 0) return null;
     return (
@@ -152,10 +183,10 @@ export function SidebarNav() {
                 {items.map(item => (
                     <SidebarMenuItem key={`${item.name}-${item.href}`}>
                         <SidebarMenuButton
-                            isActive={pathname === item.href}
+                            isActive={pathname === item.href || pathname?.startsWith(`${item.href}/`)}
                             asChild
                             tooltip={item.name}
-                            variant={pathname === item.href ? 'secondary' : 'ghost'}
+                            variant={pathname === item.href || pathname?.startsWith(`${item.href}/`) ? 'secondary' : 'ghost'}
                             className="w-full justify-start"
                         >
                             <Link href={item.href}>
@@ -173,14 +204,28 @@ export function SidebarNav() {
   return (
     <div className="space-y-2">
         <NavGroup title="Main" items={visibleMainItems} />
-        <NavGroup title="HR" items={visibleHrItems} />
-        <NavGroup title="Access Control" items={visibleAccessItems} />
-        <Separator />
+        
+        {shouldShowHRSection && (
+          <>
+            <NavGroup title="HR" items={visibleHrItems} />
+          </>
+        )}
+        
+        {visibleAccessItems.length > 0 && (
+          <>
+            <NavGroup title="Access Control" items={visibleAccessItems} />
+            <Separator />
+          </>
+        )}
         
         <NavGroup title="Operations" items={visibleOperationsItems} />
         
-        <Separator />
-        <NavGroup title="Administration" items={visibleAdminItems} />
+        {visibleAdminItems.length > 0 && (
+          <>
+            <Separator />
+            <NavGroup title="Administration" items={visibleAdminItems} />
+          </>
+        )}
     </div>
   );
 }

@@ -29,7 +29,7 @@ import {
   HardHat, Scale, Package, Truck, ChevronDown, CheckCircle, AlertCircle, 
   RefreshCw, Calculator, Box, History, Search, Calendar, Filter, X, 
   BarChart3, Users, PackageOpen, TrendingUp, XCircle, AlertTriangle, Check,
-  Download, FileSpreadsheet
+  Download, FileSpreadsheet, ChevronRight
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -120,7 +120,7 @@ interface RejectionRecord {
   crates: RejectedCrate[];
   notes: string;
   counting_data: any;
-  counting_totals: CountingTotals | string | null; // Can be object, string, or null
+  counting_totals: CountingTotals | string | null;
   submitted_at: string;
   processed_by: string;
   original_counting_id: string;
@@ -155,18 +155,15 @@ const processingStages = [
   { id: 'history', name: 'History', icon: History, description: 'Completed processing records.', tag: 'Finalized' },
 ];
 
-// Utility function to safely format numbers
 const safeToFixed = (value: any, decimals: number = 1): string => {
   const num = Number(value);
   return isNaN(num) ? '0.'.padEnd(decimals + 2, '0') : num.toFixed(decimals);
 };
 
-// Safe array access utility
 const safeArray = <T,>(array: T[] | undefined | null): T[] => {
   return Array.isArray(array) ? array : [];
 };
 
-// Function to parse counting totals from database
 const parseCountingTotals = (countingTotals: any): CountingTotals => {
   if (!countingTotals) return {};
   
@@ -186,7 +183,6 @@ const parseCountingTotals = (countingTotals: any): CountingTotals => {
   return {};
 };
 
-// Function to get total boxes from counting totals
 const getTotalBoxesFromCountingTotals = (countingTotals: CountingTotals | string | null): number => {
   const totals = parseCountingTotals(countingTotals);
   
@@ -198,7 +194,6 @@ const getTotalBoxesFromCountingTotals = (countingTotals: CountingTotals | string
   return fuerte4kg + fuerte10kg + hass4kg + hass10kg;
 };
 
-// Function to get formatted boxes summary
 const getBoxesSummary = (countingTotals: CountingTotals | string | null): { 
   fuerte_4kg: number; 
   fuerte_10kg: number; 
@@ -217,7 +212,6 @@ const getBoxesSummary = (countingTotals: CountingTotals | string | null): {
   return { fuerte_4kg, fuerte_10kg, hass_4kg, hass_10kg, total };
 };
 
-// Function to get supplier info from counting data
 const getSupplierInfoFromCountingData = (countingData: any) => {
   if (!countingData) return { driver_name: '', vehicle_plate: '' };
   
@@ -281,7 +275,6 @@ export default function WarehousePage() {
     supplier_phone: '',
     region: '',
     fruits: [],
-    // Initialize all form fields to 0
     fuerte_4kg_class1_size12: 0,
     fuerte_4kg_class1_size14: 0,
     fuerte_4kg_class1_size16: 0,
@@ -375,7 +368,12 @@ export default function WarehousePage() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // Fetch intake records
+  // State for collapsible sections in counting form
+  const [expandedFuerteClass2, setExpandedFuerteClass2] = useState(false);
+  const [expandedFuerte10kg, setExpandedFuerte10kg] = useState(false);
+  const [expandedHassClass2, setExpandedHassClass2] = useState(false);
+  const [expandedHass10kg, setExpandedHass10kg] = useState(false);
+
   const fetchIntakeRecords = async () => {
     try {
       setIsLoading(prev => ({ ...prev, intake: true }));
@@ -413,7 +411,6 @@ export default function WarehousePage() {
     }
   };
 
-  // Fetch quality checks
   const fetchQualityChecks = async () => {
     try {
       setIsLoading(prev => ({ ...prev, quality: true }));
@@ -445,7 +442,6 @@ export default function WarehousePage() {
     }
   };
 
-  // Fetch counting records (pending rejection)
   const fetchCountingRecords = async () => {
     try {
       const response = await fetch('/api/counting');
@@ -460,7 +456,6 @@ export default function WarehousePage() {
     }
   };
 
-  // Fetch rejection records (history) - Updated to properly parse counting_totals
   const fetchRejectionRecords = async () => {
     try {
       setIsLoading(prev => ({ ...prev, rejections: true }));
@@ -468,9 +463,7 @@ export default function WarehousePage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          // Process each record to ensure counting_totals is properly parsed
           const processedRecords = (result.data || []).map((record: any) => {
-            // Parse counting_totals if it's a string
             let counting_totals = record.counting_totals;
             if (typeof counting_totals === 'string') {
               try {
@@ -481,7 +474,6 @@ export default function WarehousePage() {
               }
             }
             
-            // Parse counting_data if it's a string
             let counting_data = record.counting_data;
             if (typeof counting_data === 'string') {
               try {
@@ -492,7 +484,6 @@ export default function WarehousePage() {
               }
             }
             
-            // Parse crates if it's a string
             let crates = record.crates;
             if (typeof crates === 'string') {
               try {
@@ -521,7 +512,6 @@ export default function WarehousePage() {
     }
   };
 
-  // Fetch statistics
   const fetchStats = async () => {
     try {
       setIsLoading(prev => ({ ...prev, stats: true }));
@@ -595,15 +585,11 @@ export default function WarehousePage() {
     setExpandedHistory(newExpanded);
   };
 
-  // Get accepted suppliers (intake complete + QC approved) that are NOT in ANY subsequent stage
   const acceptedSuppliers = supplierIntakeRecords.filter(intake => {
     const qc = qualityChecks.find(q => q.weight_entry_id === intake.id);
-    
-    // Check if supplier exists in ANY stage after QC
     const inCounting = countingRecords.some(record => record.supplier_id === intake.id);
     const inRejection = rejectionRecords.some(record => record.supplier_id === intake.id);
     
-    // Only show if: has QC approval AND NOT in any subsequent stage
     return qc && 
            qc.overall_status === 'approved' && 
            !inCounting && 
@@ -614,7 +600,6 @@ export default function WarehousePage() {
     setSelectedSupplier(supplier);
     setSelectedQC(qc);
     
-    // Pre-fill the counting form
     setCountingForm(prev => ({
       ...prev,
       supplier_id: supplier.id,
@@ -626,14 +611,12 @@ export default function WarehousePage() {
       }))
     }));
     
-    // Immediately remove from expanded quality list
     if (expandedQuality.has(supplier.supplier_name)) {
       const newExpanded = new Set(expandedQuality);
       newExpanded.delete(supplier.supplier_name);
       setExpandedQuality(newExpanded);
     }
     
-    // Switch to counting tab automatically
     setActiveTab('counting');
     
     toast({
@@ -679,7 +662,6 @@ export default function WarehousePage() {
     }
 
     try {
-      // Calculate totals
       const totals = {
         fuerte_4kg_class1: calculateSubtotal('fuerte', 'class1', '4kg'),
         fuerte_4kg_class2: calculateSubtotal('fuerte', 'class2', '4kg'),
@@ -698,7 +680,6 @@ export default function WarehousePage() {
         hass_10kg_total: calculateTotalBoxes('hass', '10kg'),
       };
 
-      // Calculate total counted weight
       const calculateTotalWeight = () => {
         const fuerte4kgWeight = totals.fuerte_4kg_total * 4;
         const fuerte10kgWeight = totals.fuerte_10kg_total * 10;
@@ -707,7 +688,6 @@ export default function WarehousePage() {
         return fuerte4kgWeight + fuerte10kgWeight + hass4kgWeight + hass10kgWeight;
       };
 
-      // Prepare counting data - ADD STATUS FOR COLD ROOM
       const countingData = {
         supplier_id: selectedSupplier.id,
         supplier_name: selectedSupplier.supplier_name,
@@ -720,14 +700,12 @@ export default function WarehousePage() {
         processed_by: "Warehouse Staff",
         totals,
         total_counted_weight: calculateTotalWeight(),
-        // CRITICAL: Add these two fields
-        status: 'pending_coldroom', // This tells the Cold Room page to fetch this
-        for_coldroom: true, // Explicit flag for cold room
+        status: 'pending_coldroom',
+        for_coldroom: true,
       };
 
       console.log('📦 Submitting counting data for cold room:', countingData);
 
-      // Submit to API
       const response = await fetch('/api/counting', {
         method: 'POST',
         headers: {
@@ -742,10 +720,8 @@ export default function WarehousePage() {
         throw new Error(result.error || 'Failed to save counting data');
       }
 
-      // Store the counting data ID for cold room reference
       const countingRecordId = result.data.id;
       
-      // Also store in localStorage for immediate access
       localStorage.setItem('recentCountingData', JSON.stringify({
         id: countingRecordId,
         supplier_name: selectedSupplier.supplier_name,
@@ -754,19 +730,16 @@ export default function WarehousePage() {
         timestamp: new Date().toISOString()
       }));
       
-      // Set flag to refresh cold room
       localStorage.setItem('refreshColdRoom', 'true');
       console.log('✅ Set refreshColdRoom flag for cold room');
 
-      // Update local state
       setCountingRecords(prev => [result.data, ...prev]);
       
-      // Clear selected supplier
       setSelectedSupplier(null);
       setSelectedQC(null);
       
-      // Reset form
-      setCountingForm({
+      // Reset counting form
+      const resetForm: CountingFormData = {
         supplier_id: '',
         supplier_name: '',
         supplier_phone: '',
@@ -849,15 +822,19 @@ export default function WarehousePage() {
         hass_10kg_class2_size30: 0,
         hass_10kg_class2_size32: 0,
         notes: '',
-      });
+      };
       
-      // Refresh stats
+      // Reset collapsible sections
+      setExpandedFuerteClass2(false);
+      setExpandedFuerte10kg(false);
+      setExpandedHassClass2(false);
+      setExpandedHass10kg(false);
+      
+      setCountingForm(resetForm);
+      
       fetchStats();
-      
-      // Switch to variance tab
       setActiveTab('reject');
       
-      // Show success message with options
       toast({
         title: "✅ Counting Data Saved Successfully!",
         description: (
@@ -868,7 +845,6 @@ export default function WarehousePage() {
                 size="sm"
                 onClick={() => {
                   window.open('/cold-room', '_blank');
-                  // Force refresh cold room data
                   localStorage.setItem('forceColdRoomRefresh', 'true');
                 }}
                 className="bg-blue-600 hover:bg-blue-700"
@@ -878,7 +854,6 @@ export default function WarehousePage() {
               <Button
                 size="sm"
                 onClick={() => {
-                  // Copy data to clipboard for debugging
                   navigator.clipboard.writeText(JSON.stringify({
                     id: countingRecordId,
                     supplier: selectedSupplier.supplier_name,
@@ -899,7 +874,7 @@ export default function WarehousePage() {
             </p>
           </div>
         ),
-        duration: 10000, // Show for 10 seconds
+        duration: 10000,
       });
       
     } catch (err: any) {
@@ -937,7 +912,6 @@ export default function WarehousePage() {
         [field]: value
       };
       
-      // Recalculate total weight if quantity or weight_per_crate changes
       if (field === 'quantity' || field === 'weight_per_crate') {
         updatedCrates[index].total_weight = 
           Number(updatedCrates[index].quantity) * Number(updatedCrates[index].weight_per_crate);
@@ -983,7 +957,6 @@ export default function WarehousePage() {
     const record = rejectionForm.countingRecord;
     
     try {
-      // Prepare rejection payload
       const rejectionPayload = {
         counting_record_id: record.id,
         rejection_data: {
@@ -993,7 +966,6 @@ export default function WarehousePage() {
         }
       };
 
-      // Use PUT endpoint to move to rejection/history
       const response = await fetch('/api/counting', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1006,28 +978,22 @@ export default function WarehousePage() {
         throw new Error(result.error || 'Failed to process variance');
       }
 
-      // Update local state - remove from counting records, add to rejection records
       setCountingRecords(prev => prev.filter(r => r.id !== record.id));
       setRejectionRecords(prev => [result.data, ...prev]);
       
-      // Remove from expanded reject list if it was expanded
       if (expandedReject.has(record.id)) {
         const newExpanded = new Set(expandedReject);
         newExpanded.delete(record.id);
         setExpandedReject(newExpanded);
       }
       
-      // Reset rejection form
       setRejectionForm({
         countingRecord: null,
         crates: [],
         notes: ''
       });
       
-      // Refresh stats
       fetchStats();
-      
-      // Switch to history tab
       setActiveTab('history');
       
       toast({
@@ -1045,15 +1011,12 @@ export default function WarehousePage() {
     }
   };
 
-  // Filter history records
   const filteredHistory = rejectionRecords.filter(record => {
-    // Search filter
     const matchesSearch = searchTerm === '' || 
       record.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       record.pallet_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       record.region.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Date filter
     const recordDate = new Date(record.submitted_at);
     const start = startDate ? new Date(startDate) : null;
     const end = endDate ? new Date(endDate) : null;
@@ -1071,7 +1034,6 @@ export default function WarehousePage() {
     return matchesSearch && matchesDate;
   });
 
-  // Format date
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -1082,18 +1044,15 @@ export default function WarehousePage() {
     });
   };
 
-  // Clear date filter
   const clearDateFilter = () => {
     setStartDate('');
     setEndDate('');
   };
 
-  // Clear search filter
   const clearSearchFilter = () => {
     setSearchTerm('');
   };
 
-  // Function to generate CSV data from rejection records
   const generateCSVData = (records: RejectionRecord[]): CSVRow[] => {
     return records.map(record => {
       const boxesSummary = getBoxesSummary(record.counting_totals);
@@ -1122,7 +1081,6 @@ export default function WarehousePage() {
     });
   };
 
-  // Function to download CSV
   const downloadCSV = (records: RejectionRecord[]) => {
     if (records.length === 0) {
       toast({
@@ -1135,7 +1093,6 @@ export default function WarehousePage() {
     
     const csvData = generateCSVData(records);
     
-    // Create CSV headers
     const headers = [
       'Date',
       'Supplier Name',
@@ -1157,7 +1114,6 @@ export default function WarehousePage() {
       'Notes'
     ];
     
-    // Create CSV rows
     const rows = csvData.map(row => [
       row.date,
       `"${row.supplier_name}"`,
@@ -1176,7 +1132,7 @@ export default function WarehousePage() {
       row.hass_10kg_crates,
       row.total_boxes,
       `"${row.processed_by}"`,
-      `"${row.notes.replace(/"/g, '""')}"` // Escape quotes in notes
+      `"${row.notes.replace(/"/g, '""')}"`
     ]);
     
     const csvContent = [
@@ -1184,7 +1140,6 @@ export default function WarehousePage() {
       ...rows.map(row => row.join(','))
     ].join('\n');
     
-    // Create and download file
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -1201,24 +1156,22 @@ export default function WarehousePage() {
     });
   };
 
-  // Download all history
   const downloadAllHistory = () => {
     downloadCSV(rejectionRecords);
   };
 
-  // Download filtered history
   const downloadFilteredHistory = () => {
     downloadCSV(filteredHistory);
   };
 
-  // Render size input grid
+  // UPDATED: Render size grid with better layout
   const renderSizeGrid = (prefix: string, boxType: '4kg' | '10kg', classType: 'class1' | 'class2') => {
     const sizes = boxType === '4kg' 
       ? ['12', '14', '16', '18', '20', '22', '24', '26']
       : ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'];
     
     return (
-      <div className="grid grid-cols-6 gap-2 mb-4">
+      <div className="grid grid-cols-8 gap-2 mb-4">
         {sizes.map(size => {
           const fieldName = `${prefix}_${boxType}_${classType}_size${size}` as keyof CountingFormData;
           return (
@@ -1240,7 +1193,41 @@ export default function WarehousePage() {
     );
   };
 
-  // Render variance level badge
+  // UPDATED: Render collapsible section for counting form
+  const renderCollapsibleSection = (
+    title: string,
+    isExpanded: boolean,
+    onToggle: () => void,
+    children: React.ReactNode,
+    subtitle?: string
+  ) => (
+    <Collapsible
+      open={isExpanded}
+      onOpenChange={onToggle}
+      className="border rounded-lg overflow-hidden mb-4"
+    >
+      <CollapsibleTrigger asChild>
+        <div className="flex items-center justify-between p-4 bg-black-50 hover:bg-black-100 cursor-pointer">
+          <div className="flex items-center gap-3">
+            <div className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+              <ChevronRight className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-semibold">{title}</div>
+              {subtitle && <div className="text-sm text-gray-500">{subtitle}</div>}
+            </div>
+          </div>
+          <Badge variant="outline" className="bg-gray-100 text-gray-700">
+            {isExpanded ? 'Hide' : 'Show'}
+          </Badge>
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="p-4 bg-black border-t">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+
   const renderVarianceBadge = (varianceLevel: 'low' | 'medium' | 'high') => {
     const config = {
       low: { color: 'bg-green-50 text-green-700 border-green-200', label: 'Low Variance' },
@@ -1273,7 +1260,6 @@ export default function WarehousePage() {
       <SidebarInset>
         <Header />
         <main className="p-4 md:p-6 lg:p-8 space-y-6">
-          {/* Error Alert */}
           {error && (
             <div className="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-md flex items-start justify-between">
               <div className="flex items-start gap-2">
@@ -1298,7 +1284,6 @@ export default function WarehousePage() {
             </div>
           )}
 
-          {/* Header */}
           <div className="flex justify-between items-start">
             <div>
               <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
@@ -1326,7 +1311,6 @@ export default function WarehousePage() {
             </div>
           </div>
 
-          {/* Statistics Card */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1339,7 +1323,6 @@ export default function WarehousePage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* Total Processed */}
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-gray-500">Total Processed</div>
@@ -1351,7 +1334,6 @@ export default function WarehousePage() {
                   <div className="text-xs text-gray-400 mt-1">Completed processing sessions</div>
                 </div>
 
-                {/* Pending Variance */}
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-gray-500">Pending Variance</div>
@@ -1363,7 +1345,6 @@ export default function WarehousePage() {
                   <div className="text-xs text-gray-400 mt-1">Need variance handling</div>
                 </div>
 
-                {/* Fuerte Boxes */}
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-gray-500">Fuerte Boxes</div>
@@ -1391,7 +1372,6 @@ export default function WarehousePage() {
                   </div>
                 </div>
 
-                {/* Hass Boxes */}
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-gray-500">Hass Boxes</div>
@@ -1420,7 +1400,6 @@ export default function WarehousePage() {
                 </div>
               </div>
               
-              {/* Summary Row */}
               <div className="mt-6 pt-6 border-t">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center">
@@ -1458,7 +1437,6 @@ export default function WarehousePage() {
             </CardContent>
           </Card>
 
-          {/* Processing Stages */}
           <Card>
             <CardHeader>
               <CardTitle>Processing Stages</CardTitle>
@@ -1480,7 +1458,6 @@ export default function WarehousePage() {
             </CardContent>
           </Card>
 
-          {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-5">
               <TabsTrigger value="intake">Intake</TabsTrigger>
@@ -1490,7 +1467,6 @@ export default function WarehousePage() {
               <TabsTrigger value="history">History</TabsTrigger>
             </TabsList>
 
-            {/* Intake Tab */}
             <TabsContent value="intake" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -1587,7 +1563,6 @@ export default function WarehousePage() {
               </Card>
             </TabsContent>
 
-            {/* Quality Control Tab */}
             <TabsContent value="quality" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -1732,10 +1707,9 @@ export default function WarehousePage() {
               </Card>
             </TabsContent>
 
-            {/* Counting Tab */}
+            {/* UPDATED: Counting Tab with Collapsible Sections */}
             <TabsContent value="counting" className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Selected Supplier Info */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -1819,7 +1793,6 @@ export default function WarehousePage() {
                   </CardContent>
                 </Card>
 
-                {/* Counting Form */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -1827,134 +1800,214 @@ export default function WarehousePage() {
                       Box Counting Form
                     </CardTitle>
                     <CardDescription>
-                      Enter number of boxes per size and class
+                      Enter number of boxes per size and class. Class 1 (4kg) is default.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleSubmitCountingForm} className="space-y-6">
                       <ScrollArea className="h-[500px] pr-4">
-                        {/* Fuerte 4kg */}
+                        {/* Fuerte Section */}
                         <div className="mb-6">
-                          <h3 className="font-semibold text-lg mb-4">Fuerte 4kg Boxes</h3>
+                          <h3 className="font-semibold text-lg mb-4 text-green-700 border-b pb-2">Fuerte Avocado</h3>
                           
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 1</h4>
+                          {/* Fuerte 4kg Class 1 - DEFAULT VISIBLE */}
+                          <div className="mb-6">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-medium text-green-600">4kg Boxes - Class 1</h4>
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                Default
+                              </Badge>
+                            </div>
                             {renderSizeGrid('fuerte', '4kg', 'class1')}
-                            <div className="text-right">
-                              <span className="font-medium"> Fuerte 4kg Class 1 Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('fuerte', 'class1', '4kg')} boxes</span>
+                            <div className="text-right text-sm mt-2">
+                              <span className="font-medium">Sub-Total: </span>
+                              <span className="font-bold text-green-700">{calculateSubtotal('fuerte', 'class1', '4kg')} boxes</span>
                             </div>
                           </div>
-                          
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 2</h4>
-                            {renderSizeGrid('fuerte', '4kg', 'class2')}
-                            <div className="text-right">
-                              <span className="font-medium">Fuerte 4kg Class 2 Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('fuerte', 'class2', '4kg')} boxes</span>
-                            </div>
-                          </div>
-                          
-                          <div className="pt-2 border-t">
+
+                          {/* Fuerte 4kg Class 2 - COLLAPSIBLE */}
+                          {renderCollapsibleSection(
+                            "Fuerte 4kg Boxes - Class 2",
+                            expandedFuerteClass2,
+                            () => setExpandedFuerteClass2(!expandedFuerteClass2),
+                            <>
+                              {renderSizeGrid('fuerte', '4kg', 'class2')}
+                              <div className="text-right text-sm mt-2">
+                                <span className="font-medium">Sub-Total: </span>
+                                <span className="font-bold text-green-700">{calculateSubtotal('fuerte', 'class2', '4kg')} boxes</span>
+                              </div>
+                            </>,
+                            "Secondary quality boxes"
+                          )}
+
+                          {/* Fuerte 10kg - COLLAPSIBLE */}
+                          {renderCollapsibleSection(
+                            "Fuerte 10kg Crates",
+                            expandedFuerte10kg,
+                            () => setExpandedFuerte10kg(!expandedFuerte10kg),
+                            <>
+                              {/* Fuerte 10kg Class 1 */}
+                              <div className="mb-4">
+                                <h5 className="font-medium mb-2">Class 1</h5>
+                                {renderSizeGrid('fuerte', '10kg', 'class1')}
+                                <div className="text-right text-sm mt-2">
+                                  <span className="font-medium">Sub-Total: </span>
+                                  <span className="font-bold text-green-700">{calculateSubtotal('fuerte', 'class1', '10kg')} crates</span>
+                                </div>
+                              </div>
+                              
+                              {/* Fuerte 10kg Class 2 */}
+                              <div className="mb-4">
+                                <h5 className="font-medium mb-2">Class 2</h5>
+                                {renderSizeGrid('fuerte', '10kg', 'class2')}
+                                <div className="text-right text-sm mt-2">
+                                  <span className="font-medium">Sub-Total: </span>
+                                  <span className="font-bold text-green-700">{calculateSubtotal('fuerte', 'class2', '10kg')} crates</span>
+                                </div>
+                              </div>
+                            </>,
+                            "Large crates (Class 1 & Class 2)"
+                          )}
+
+                          {/* Fuerte Total Summary */}
+                          <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
                             <div className="flex justify-between items-center">
-                              <span className="font-semibold">Fuerte Total 4kg:</span>
-                              <span className="font-bold text-lg">{calculateTotalBoxes('fuerte', '4kg')} boxes</span>
+                              <span className="font-semibold text-green-800">Fuerte Total 4kg:</span>
+                              <span className="font-bold text-lg text-green-900">{calculateTotalBoxes('fuerte', '4kg')} boxes</span>
+                            </div>
+                            {calculateTotalBoxes('fuerte', '10kg') > 0 && (
+                              <div className="flex justify-between items-center mt-2">
+                                <span className="font-semibold text-green-800">Fuerte Total 10kg:</span>
+                                <span className="font-bold text-lg text-green-900">{calculateTotalBoxes('fuerte', '10kg')} crates</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-green-300">
+                              <span className="font-bold text-green-900">Fuerte Total All:</span>
+                              <span className="font-bold text-xl text-green-900">
+                                {calculateTotalBoxes('fuerte', '4kg') + calculateTotalBoxes('fuerte', '10kg')} boxes/crates
+                              </span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Fuerte 10kg */}
+                        {/* Hass Section */}
                         <div className="mb-6">
-                          <h3 className="font-semibold text-lg mb-4">Fuerte 10kg Crates</h3>
+                          <h3 className="font-semibold text-lg mb-4 text-purple-700 border-b pb-2">Hass Avocado</h3>
                           
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 1</h4>
-                            {renderSizeGrid('fuerte', '10kg', 'class1')}
-                            <div className="text-right">
-                              <span className="font-medium">Fuerte 10kg Class 1 Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('fuerte', 'class1', '10kg')} crates</span>
+                          {/* Hass 4kg Class 1 - DEFAULT VISIBLE */}
+                          <div className="mb-6">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-medium text-purple-600">4kg Boxes - Class 1</h4>
+                              <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                                Default
+                              </Badge>
                             </div>
-                          </div>
-                          
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 2</h4>
-                            {renderSizeGrid('fuerte', '10kg', 'class2')}
-                            <div className="text-right">
-                              <span className="font-medium">Fuerte 10kg Class 2 Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('fuerte', 'class2', '10kg')} crates</span>
-                            </div>
-                          </div>
-                          
-                          <div className="pt-2 border-t">
-                            <div className="flex justify-between items-center">
-                              <span className="font-semibold">Fuerte Total 10kg:</span>
-                              <span className="font-bold text-lg">{calculateTotalBoxes('fuerte', '10kg')} crates</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Hass 4kg */}
-                        <div className="mb-6">
-                          <h3 className="font-semibold text-lg mb-4">Hass 4kg Boxes</h3>
-                          
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 1</h4>
                             {renderSizeGrid('hass', '4kg', 'class1')}
-                            <div className="text-right">
-                              <span className="font-medium">Hass 4kg Class 1 Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('hass', 'class1', '4kg')} boxes</span>
-                            </div>
-                          </div>
-                          
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 2</h4>
-                            {renderSizeGrid('hass', '4kg', 'class2')}
-                            <div className="text-right">
+                            <div className="text-right text-sm mt-2">
                               <span className="font-medium">Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('hass', 'class2', '4kg')} boxes</span>
+                              <span className="font-bold text-purple-700">{calculateSubtotal('hass', 'class1', '4kg')} boxes</span>
                             </div>
                           </div>
-                          
-                          <div className="pt-2 border-t">
+
+                          {/* Hass 4kg Class 2 - COLLAPSIBLE */}
+                          {renderCollapsibleSection(
+                            "Hass 4kg Boxes - Class 2",
+                            expandedHassClass2,
+                            () => setExpandedHassClass2(!expandedHassClass2),
+                            <>
+                              {renderSizeGrid('hass', '4kg', 'class2')}
+                              <div className="text-right text-sm mt-2">
+                                <span className="font-medium">Sub-Total: </span>
+                                <span className="font-bold text-purple-700">{calculateSubtotal('hass', 'class2', '4kg')} boxes</span>
+                              </div>
+                            </>,
+                            "Secondary quality boxes"
+                          )}
+
+                          {/* Hass 10kg - COLLAPSIBLE */}
+                          {renderCollapsibleSection(
+                            "Hass 10kg Crates",
+                            expandedHass10kg,
+                            () => setExpandedHass10kg(!expandedHass10kg),
+                            <>
+                              {/* Hass 10kg Class 1 */}
+                              <div className="mb-4">
+                                <h5 className="font-medium mb-2">Class 1</h5>
+                                {renderSizeGrid('hass', '10kg', 'class1')}
+                                <div className="text-right text-sm mt-2">
+                                  <span className="font-medium">Sub-Total: </span>
+                                  <span className="font-bold text-purple-700">{calculateSubtotal('hass', 'class1', '10kg')} crates</span>
+                                </div>
+                              </div>
+                              
+                              {/* Hass 10kg Class 2 */}
+                              <div className="mb-4">
+                                <h5 className="font-medium mb-2">Class 2</h5>
+                                {renderSizeGrid('hass', '10kg', 'class2')}
+                                <div className="text-right text-sm mt-2">
+                                  <span className="font-medium">Sub-Total: </span>
+                                  <span className="font-bold text-purple-700">{calculateSubtotal('hass', 'class2', '10kg')} crates</span>
+                                </div>
+                              </div>
+                            </>,
+                            "Large crates (Class 1 & Class 2)"
+                          )}
+
+                          {/* Hass Total Summary */}
+                          <div className="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
                             <div className="flex justify-between items-center">
-                              <span className="font-semibold">Total 4kg Boxes:</span>
-                              <span className="font-bold text-lg">{calculateTotalBoxes('hass', '4kg')} boxes</span>
+                              <span className="font-semibold text-purple-800">Hass Total 4kg:</span>
+                              <span className="font-bold text-lg text-purple-900">{calculateTotalBoxes('hass', '4kg')} boxes</span>
+                            </div>
+                            {calculateTotalBoxes('hass', '10kg') > 0 && (
+                              <div className="flex justify-between items-center mt-2">
+                                <span className="font-semibold text-purple-800">Hass Total 10kg:</span>
+                                <span className="font-bold text-lg text-purple-900">{calculateTotalBoxes('hass', '10kg')} crates</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-purple-300">
+                              <span className="font-bold text-purple-900">Hass Total All:</span>
+                              <span className="font-bold text-xl text-purple-900">
+                                {calculateTotalBoxes('hass', '4kg') + calculateTotalBoxes('hass', '10kg')} boxes/crates
+                              </span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Hass 10kg */}
-                        <div className="mb-6">
-                          <h3 className="font-semibold text-lg mb-4">Hass 10kg Crates</h3>
-                          
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 1</h4>
-                            {renderSizeGrid('hass', '10kg', 'class1')}
-                            <div className="text-right">
-                              <span className="font-medium">Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('hass', 'class1', '10kg')} crates</span>
+                        {/* Overall Summary */}
+                        <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                          <h4 className="font-semibold text-blue-800 mb-3">Overall Summary</h4>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <div className="text-blue-600">Fuerte Total Boxes:</div>
+                              <div className="font-bold text-blue-800">
+                                {calculateTotalBoxes('fuerte', '4kg') + calculateTotalBoxes('fuerte', '10kg')}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-purple-600">Hass Total Boxes:</div>
+                              <div className="font-bold text-purple-800">
+                                {calculateTotalBoxes('hass', '4kg') + calculateTotalBoxes('hass', '10kg')}
+                              </div>
                             </div>
                           </div>
-                          
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Class 2</h4>
-                            {renderSizeGrid('hass', '10kg', 'class2')}
-                            <div className="text-right">
-                              <span className="font-medium">Sub-Total: </span>
-                              <span className="font-bold">{calculateSubtotal('hass', 'class2', '10kg')} crates</span>
-                            </div>
-                          </div>
-                          
-                          <div className="pt-2 border-t">
+                          <div className="mt-3 pt-3 border-t border-blue-300">
                             <div className="flex justify-between items-center">
-                              <span className="font-semibold">Total 10kg Crates:</span>
-                              <span className="font-bold text-lg">{calculateTotalBoxes('hass', '10kg')} crates</span>
+                              <span className="font-bold text-blue-900">Total All Boxes/Crates:</span>
+                              <span className="font-bold text-2xl text-blue-900">
+                                {calculateTotalBoxes('fuerte', '4kg') + calculateTotalBoxes('fuerte', '10kg') + 
+                                 calculateTotalBoxes('hass', '4kg') + calculateTotalBoxes('hass', '10kg')}
+                              </span>
+                            </div>
+                            <div className="text-right text-xs text-blue-600 mt-1">
+                              Estimated Weight: {(calculateTotalBoxes('fuerte', '4kg') + calculateTotalBoxes('hass', '4kg')) * 4 + 
+                                              (calculateTotalBoxes('fuerte', '10kg') + calculateTotalBoxes('hass', '10kg')) * 10} kg
                             </div>
                           </div>
                         </div>
 
                         {/* Notes */}
-                        <div>
+                        <div className="mt-6">
                           <Label htmlFor="notes" className="mb-2">Notes</Label>
                           <Input
                             id="notes"
@@ -1982,10 +2035,8 @@ export default function WarehousePage() {
               </div>
             </TabsContent>
 
-            {/* Variance Tab */}
             <TabsContent value="reject" className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pending Variance */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -2105,7 +2156,7 @@ export default function WarehousePage() {
                     </ScrollArea>
                   </CardContent>
                 </Card>
-                {/* Variance Form */}
+                
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -2303,7 +2354,6 @@ export default function WarehousePage() {
               </div>
             </TabsContent>
 
-            {/* History Tab */}
             <TabsContent value="history" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -2338,7 +2388,6 @@ export default function WarehousePage() {
                 </CardHeader>
                 <CardContent>
 
-                  {/* Filters */}
                   <div className="space-y-4 mb-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-2">
@@ -2418,7 +2467,6 @@ export default function WarehousePage() {
                     </div>
                   </div>
 
-                  {/* History List */}
                   <ScrollArea className="h-[500px] pr-4">
                     {isLoading.rejections ? (
                       <div className="flex flex-col items-center justify-center py-12">
@@ -2471,7 +2519,6 @@ export default function WarehousePage() {
                               </CollapsibleTrigger>
                               <CollapsibleContent className="p-4 bg-black border-t">
                                 <div className="space-y-4">
-                                  {/* Supplier Info */}
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div>
                                       <div className="text-gray-500">Supplier</div>
@@ -2499,7 +2546,6 @@ export default function WarehousePage() {
                                     </div>
                                   </div>
 
-                                  {/* Weight Summary */}
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div className="bg-black-50 p-3 rounded border">
                                       <div className="text-gray-500">Intake Weight</div>
@@ -2527,7 +2573,6 @@ export default function WarehousePage() {
                                     </div>
                                   </div>
 
-                                  {/* Boxes Summary */}
                                   <div className="bg-black-50 p-3 rounded border">
                                     <div className="font-medium mb-2">Boxes Summary</div>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -2556,7 +2601,6 @@ export default function WarehousePage() {
                                     </div>
                                   </div>
 
-                                  {/* Detailed Counting Totals */}
                                   <div>
                                     <div className="text-gray-500 mb-2">Detailed Box Counts</div>
                                     <div className="bg-black-50 p-3 rounded border">
@@ -2601,7 +2645,6 @@ export default function WarehousePage() {
                                     </div>
                                   </div>
 
-                                  {/* Rejected Crates */}
                                   {safeArray(record.crates).length > 0 && (
                                     <div>
                                       <div className="text-gray-500 mb-2">Rejected Crates</div>
@@ -2624,7 +2667,6 @@ export default function WarehousePage() {
                                     </div>
                                   )}
 
-                                  {/* Notes */}
                                   {record.notes && (
                                     <div>
                                       <div className="text-gray-500 mb-2">Notes</div>

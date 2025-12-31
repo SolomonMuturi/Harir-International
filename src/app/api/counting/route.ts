@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       const startDate = searchParams.get('startDate');
       const endDate = searchParams.get('endDate');
 
-      let query = `SELECT * FROM rejection_records WHERE status = 'completed'`;
+      let query = `SELECT * FROM rejection_records WHERE 1=1`;
       const params: any[] = [];
       let paramIndex = 1;
 
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         // Get counting records stats
         const [countingStats, rejectionStats] = await Promise.all([
           prisma.$queryRaw`SELECT COUNT(*) as total FROM counting_records WHERE status = 'pending'`,
-          prisma.$queryRaw`SELECT COUNT(*) as total FROM rejection_records WHERE status = 'completed'`,
+          prisma.$queryRaw`SELECT COUNT(*) as total FROM rejection_records`,
         ]);
 
         // Get box totals from individual columns
@@ -139,21 +139,28 @@ export async function GET(request: NextRequest) {
       }
       
     } else if (action === 'coldroom') {
-      // Get counting records ready for cold room
+      // Get ALL counting records - NO STATUS FILTER
       try {
-        console.log('📦 Getting counting records ready for cold room...');
+        console.log('📦 Getting ALL counting records (no status filter)...');
         
-        const countingRecords = await prisma.$queryRaw`
-          SELECT * FROM counting_records 
-          WHERE status = 'pending' AND for_coldroom = true
+        const allCountingRecords = await prisma.$queryRaw`
+          SELECT * FROM counting
+          _records 
           ORDER BY submitted_at DESC
           LIMIT 100
         `;
         
-        console.log(`✅ Found ${Array.isArray(countingRecords) ? countingRecords.length : 0} counting records ready for cold room`);
+        console.log(`✅ Found ${Array.isArray(allCountingRecords) ? allCountingRecords.length : 0} counting records`);
+        
+        // Log the status of each record
+        if (Array.isArray(allCountingRecords) && allCountingRecords.length > 0) {
+          allCountingRecords.forEach((record: any, index: number) => {
+            console.log(`   Record ${index + 1}: ${record.supplier_name}, status: ${record.status}, for_coldroom: ${record.for_coldroom}`);
+          });
+        }
         
         // Process the data to ensure counting_data and totals are properly parsed
-        const processedRecords = Array.isArray(countingRecords) ? countingRecords.map((record: any) => {
+        const processedRecords = Array.isArray(allCountingRecords) ? allCountingRecords.map((record: any) => {
           // Parse counting_data if it's a string
           let countingData = record.counting_data;
           if (typeof countingData === 'string') {
@@ -188,7 +195,7 @@ export async function GET(request: NextRequest) {
           data: processedRecords || []
         });
       } catch (error) {
-        console.error('Error fetching counting records for cold room:', error);
+        console.error('Error fetching counting records:', error);
         return NextResponse.json({
           success: true,
           data: []
@@ -358,7 +365,7 @@ export async function POST(request: NextRequest) {
 
     // Determine status: Use 'pending' for variance tab
     const status = 'pending';
-    const for_coldroom = data.for_coldroom !== undefined ? data.for_coldroom : true; // Default to true now
+    const for_coldroom = data.for_coldroom !== undefined ? data.for_coldroom : false;
     
     // Ensure counting_data includes fruits array
     const countingDataWithFruits = {
@@ -498,7 +505,7 @@ export async function PUT(request: NextRequest) {
   try {
     const data = await request.json();
 
-    console.log('🔄 PUT /api/counting - Moving to rejection with cold room status');
+    console.log('🔄 PUT /api/counting - Moving to rejection');
 
     // Validate required fields
     if (!data.counting_record_id || !data.rejection_data) {
@@ -546,7 +553,7 @@ export async function PUT(request: NextRequest) {
     // Create rejection record ID
     const rejectionId = `REJ-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    // Save to rejection_records table with status = 'pending_coldroom'
+    // Save to rejection_records table
     await prisma.$executeRaw`
       INSERT INTO rejection_records (
         id,
@@ -565,8 +572,7 @@ export async function PUT(request: NextRequest) {
         counting_totals,
         submitted_at,
         processed_by,
-        original_counting_id,
-        status
+        original_counting_id
       ) VALUES (
         ${rejectionId},
         ${countingRecord.supplier_id},
@@ -584,8 +590,7 @@ export async function PUT(request: NextRequest) {
         ${JSON.stringify(countingRecord.totals || {})},
         NOW(),
         ${data.rejection_data.processed_by || 'Warehouse Staff'},
-        ${countingRecord.id},
-        'pending_coldroom'
+        ${countingRecord.id}
       )
     `;
 
@@ -594,7 +599,7 @@ export async function PUT(request: NextRequest) {
       DELETE FROM counting_records WHERE id = ${data.counting_record_id}
     `;
 
-    console.log(`✅ Moved to rejection with cold room status: ${countingRecord.supplier_name}`);
+    console.log(`✅ Moved to rejection: ${countingRecord.supplier_name}`);
 
     return NextResponse.json({
       success: true,
@@ -615,10 +620,9 @@ export async function PUT(request: NextRequest) {
         counting_totals: countingRecord.totals,
         submitted_at: new Date().toISOString(),
         processed_by: data.rejection_data.processed_by || 'Warehouse Staff',
-        original_counting_id: countingRecord.id,
-        status: 'pending_coldroom'
+        original_counting_id: countingRecord.id
       },
-      message: 'Supplier successfully moved to rejection with cold room pending status'
+      message: 'Supplier successfully moved to history'
     });
 
   } catch (error: any) {

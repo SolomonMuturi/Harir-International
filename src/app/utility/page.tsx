@@ -14,19 +14,49 @@ import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 
-import { AnomalyDetection } from '@/components/dashboard/anomaly-detection';
-import { OverviewCard } from '@/components/dashboard/overview-card';
-import { DollarSign, Thermometer, Bolt, Zap, Droplet, Fuel, Clock, AlertTriangle, BarChart, PieChart, Download, Filter, X } from 'lucide-react';
-import type { ExplainAnomalyInput } from "@/ai/flows/explain-anomaly-detection";
-import { explainEnergySpike } from '@/ai/flows/explain-energy-spike';
-import { explainWaterAnomaly } from '@/ai/flows/explain-water-anomaly';
+import { 
+  DollarSign, 
+  Thermometer, 
+  Bolt, 
+  Zap, 
+  Droplet, 
+  Fuel, 
+  Clock, 
+  AlertTriangle, 
+  BarChart, 
+  PieChart, 
+  Download, 
+  Filter, 
+  X, 
+  Wifi, 
+  Building,
+  Cpu,
+  Snowflake,
+  Activity,
+  Bell,
+  Calendar,
+  TrendingUp,
+  RefreshCw,
+  CheckCircle,
+  Eye,
+  BarChart3,
+  CalendarDays,
+  FileText,
+  Users,
+  Save,
+  Play,
+  StopCircle,
+  ArrowLeft
+} from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { UtilityMonitors } from '@/components/dashboard/utility-monitors';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 
 // Define utility rates
 const UTILITY_RATES = {
@@ -37,110 +67,34 @@ const UTILITY_RATES = {
 
 // Initialize with defaults
 const initialEnergyOverview = {
-    totalConsumption: { title: 'Total Consumption (Today)', value: '0 kWh', change: 'No data yet', changeType: 'neutral' as const, },
-    monthlyCost: { title: 'Est. Monthly Cost', value: 'KES 0', change: `at KES ${UTILITY_RATES.electricity}/kWh`, changeType: 'neutral' as const, },
-    peakDemand: { title: 'Peak Demand (Today)', value: '0 kW', change: 'No data', changeType: 'neutral' as const, },
-    powerFactor: { title: 'Power Factor', value: '0.00', change: 'No data', changeType: 'neutral' as const, },
+    totalConsumption: { title: 'Total Power (Today)', value: '0 kWh', change: 'No data yet', changeType: 'neutral' as const, icon: Zap, color: 'text-blue-400' },
+    monthlyCost: { title: 'Est. Monthly Cost', value: 'KES 0', change: `KES ${UTILITY_RATES.electricity}/kWh`, changeType: 'neutral' as const, icon: DollarSign, color: 'text-green-400' },
+    peakDemand: { title: 'Peak Demand', value: '0 kW', change: 'No data', changeType: 'neutral' as const, icon: Bolt, color: 'text-yellow-400' },
+    powerFactor: { title: 'Efficiency', value: '0.00', change: 'No data', changeType: 'neutral' as const, icon: TrendingUp, color: 'text-purple-400' },
 };
 
 const initialWaterOverview = {
-    totalConsumption: { title: 'Water Usage (Today)', value: '0 m³', change: 'No data yet', changeType: 'neutral' as const, },
-    monthlyCost: { title: 'Est. Monthly Water Cost', value: 'KES 0', change: `at KES ${UTILITY_RATES.water}/m³`, changeType: 'neutral' as const, },
-    qualityStatus: { title: 'Water Quality', value: 'N/A', change: 'Municipal Main', changeType: 'neutral' as const, },
-    recyclingRate: { title: 'Recycling Rate', value: '0%', change: 'No data', changeType: 'neutral' as const, },
+    totalConsumption: { title: 'Total Water (Today)', value: '0 m³', change: 'No data yet', changeType: 'neutral' as const, icon: Droplet, color: 'text-cyan-400' },
+    monthlyCost: { title: 'Water Cost', value: 'KES 0', change: `KES ${UTILITY_RATES.water}/m³`, changeType: 'neutral' as const, icon: DollarSign, color: 'text-blue-400' },
+    qualityStatus: { title: 'Water Quality', value: 'Good', change: 'Monitoring', changeType: 'neutral' as const, icon: Thermometer, color: 'text-green-400' },
+    recyclingRate: { title: 'Savings', value: '0%', change: 'Recycling rate', changeType: 'neutral' as const, icon: Activity, color: 'text-teal-400' },
 };
 
 // Add diesel overview
 const initialDieselOverview = {
-    consumptionToday: { title: 'Today\'s Diesel Consumption', value: '0 L', change: 'No generator runtime', changeType: 'neutral' as const, },
-    avgDailyConsumption: { title: 'Avg. Daily Consumption', value: '0 L', change: 'Last 7 days', changeType: 'neutral' as const, },
-    monthlyCost: { title: 'Est. Monthly Cost', value: 'KES 0', change: `at KES ${UTILITY_RATES.diesel}/L`, changeType: 'neutral' as const, },
-    estimatedRuntime: { title: 'Estimated Runtime', value: '0 hours', change: 'based on avg. consumption', changeType: 'neutral' as const, },
+    consumptionToday: { title: 'Diesel Today', value: '0 L', change: 'Generator runtime', changeType: 'neutral' as const, icon: Fuel, color: 'text-orange-400' },
+    avgDailyConsumption: { title: 'Avg Daily', value: '0 L', change: 'Last 7 days', changeType: 'neutral' as const, icon: BarChart3, color: 'text-red-400' },
+    monthlyCost: { title: 'Monthly Cost', value: 'KES 0', change: `KES ${UTILITY_RATES.diesel}/L`, changeType: 'neutral' as const, icon: DollarSign, color: 'text-amber-400' },
+    estimatedRuntime: { title: 'Runtime', value: '0 hrs', change: 'Estimated hours', changeType: 'neutral' as const, icon: Clock, color: 'text-purple-400' },
 };
 
-// Fallback component for chart errors
-const ChartErrorFallback = ({ title, icon: Icon }: { title: string; icon?: any }) => (
-  <div className="h-full flex flex-col items-center justify-center p-8 border rounded-lg bg-muted/20">
-    {Icon && <Icon className="h-12 w-12 mb-4 text-muted-foreground" />}
-    <h3 className="text-lg font-semibold mb-2">{title}</h3>
-    <p className="text-sm text-muted-foreground text-center">Chart data unavailable</p>
-  </div>
-);
-
-// Dynamic imports with better error handling
-const EnergyConsumptionChart = dynamic(
-  () => import('@/components/dashboard/energy-consumption-chart'),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
-
-const EnergyBreakdownChart = dynamic(
-  () => import('@/components/dashboard/energy-breakdown-chart').catch(() => {
-    return () => <ChartErrorFallback title="Energy Breakdown" icon={PieChart} />;
-  }),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
-
-const EnergyCostChart = dynamic(
-  () => import('@/components/dashboard/energy-cost-chart').catch(() => {
-    return () => <ChartErrorFallback title="Energy Cost" icon={BarChart} />;
-  }),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
-
-const WaterConsumptionChart = dynamic(
-  () => import('@/components/dashboard/water-consumption-chart').catch(() => {
-    return () => <ChartErrorFallback title="Water Consumption" icon={Droplet} />;
-  }),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
-
-const WaterBreakdownChart = dynamic(
-  () => import('@/components/dashboard/water-breakdown-chart').catch(() => {
-    return () => <ChartErrorFallback title="Water Breakdown" icon={PieChart} />;
-  }),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
-
-const WaterQualityTable = dynamic(
-  () => import('@/components/dashboard/water-quality-table').then(mod => mod.WaterQualityTable).catch(() => {
-    return () => <ChartErrorFallback title="Water Quality" icon={Thermometer} />;
-  }),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[318px] w-full" />,
-  }
-);
-
-const DieselBreakdownChart = dynamic(
-  () => import('@/components/dashboard/diesel-breakdown-chart'),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
-
-const DieselConsumptionChart = dynamic(
-  () => import('@/components/dashboard/diesel-consumption-chart'),
-  { 
-    ssr: false, 
-    loading: () => <Skeleton className="h-[386px] w-full" />,
-  }
-);
+// Add internet overview
+const initialInternetOverview = {
+    totalCost: { title: 'Total Internet', value: 'KES 0', change: 'Monthly cost', changeType: 'neutral' as const, icon: Wifi, color: 'text-purple-400' },
+    safaricomCost: { title: 'Safaricom', value: 'KES 0', change: 'Per month', changeType: 'neutral' as const, icon: Wifi, color: 'text-blue-400' },
+    internet5GCost: { title: '5G Internet', value: 'KES 0', change: 'Per month', changeType: 'neutral' as const, icon: Wifi, color: 'text-green-400' },
+    syokinetCost: { title: 'Syokinet', value: 'KES 0', change: 'Per month', changeType: 'neutral' as const, icon: Wifi, color: 'text-cyan-400' },
+};
 
 // Types for utility readings
 interface UtilityReading {
@@ -160,6 +114,7 @@ interface UtilityReading {
   recordedBy: string;
   shift: string | null;
   notes: string | null;
+  metadata?: any;
 }
 
 // Types for chart data
@@ -168,280 +123,1126 @@ interface ChartDataPoint {
   value: number;
 }
 
+// Area breakdown interface
+interface AreaBreakdown {
+  office: number;
+  machine: number;
+  coldroom1: number;
+  coldroom2: number;
+  other: number;
+}
+
+// OverviewCard Component (now included inline)
+function OverviewCard({ data, className }: any) {
+  const { title, value, change, changeType, icon: Icon, color = 'text-blue-500' } = data;
+  
+  const getChangeColor = () => {
+    switch (changeType) {
+      case 'increase':
+        return 'text-green-500 bg-green-500/10 border-green-500/20';
+      case 'decrease':
+        return 'text-red-500 bg-red-500/10 border-red-500/20';
+      case 'neutral':
+        return 'text-gray-500 bg-gray-500/10 border-gray-500/20';
+      default:
+        return 'text-gray-500 bg-gray-500/10 border-gray-500/20';
+    }
+  };
+
+  const getChangeIcon = () => {
+    switch (changeType) {
+      case 'increase':
+        return '↗';
+      case 'decrease':
+        return '↘';
+      case 'neutral':
+        return '→';
+      default:
+        return '→';
+    }
+  };
+
+  return (
+    <div className={`bg-gradient-to-br from-gray-900 to-black border border-gray-800 rounded-lg p-6 hover:border-gray-700 transition-all duration-300 hover:shadow-lg hover:shadow-gray-900/30 ${className}`}>
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <p className="text-sm text-gray-400 font-medium">{title}</p>
+          <div className="flex items-baseline gap-2">
+            <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${getChangeColor()}`}>
+              {getChangeIcon()} {change}
+            </span>
+          </div>
+        </div>
+        {Icon && (
+          <div className={`p-2 rounded-lg bg-gray-800/50 ${color.replace('text-', 'bg-').replace('-400', '-900/30')}`}>
+            <Icon className={`h-5 w-5 ${color}`} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// UtilityMonitors Component (now included inline)
+function UtilityMonitors({ onSaveSuccess }: any) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('power');
+  const [recordedBy, setRecordedBy] = useState('');
+  const [shift, setShift] = useState('Morning');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Power States
+  const [powerReadings, setPowerReadings] = useState({
+    office: { opening: '', closing: '' },
+    machine: { opening: '', closing: '' },
+    coldroom1: { opening: '', closing: '' },
+    coldroom2: { opening: '', closing: '' },
+    other: { opening: '', closing: '' },
+  });
+  const [otherActivity, setOtherActivity] = useState('');
+  
+  // Water States
+  const [waterReadings, setWaterReadings] = useState({
+    meter1: { opening: '', closing: '' },
+    meter2: { opening: '', closing: '' },
+  });
+  
+  // Internet States
+  const [internetCosts, setInternetCosts] = useState({
+    safaricom: '',
+    internet5G: '',
+    syokinet: '',
+  });
+  const [internetBillingCycle, setInternetBillingCycle] = useState('');
+  
+  // Generator States
+  const [generatorStart, setGeneratorStart] = useState('08:00');
+  const [generatorStop, setGeneratorStop] = useState('10:30');
+  const [dieselRefill, setDieselRefill] = useState('');
+  const [dieselConsumed, setDieselConsumed] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Notification States
+  const [notificationTime, setNotificationTime] = useState('09:00');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+
+  useEffect(() => {
+    // Load saved preferences
+    const savedName = localStorage.getItem('recordedBy') || '';
+    const savedTime = localStorage.getItem('notificationTime') || '09:00';
+    const notifications = localStorage.getItem('notificationsEnabled') === 'true';
+    
+    if (savedName) setRecordedBy(savedName);
+    setNotificationTime(savedTime);
+    setNotificationsEnabled(notifications);
+  }, []);
+
+  // Calculate power consumption
+  const calculatePowerConsumption = () => {
+    const calculate = (opening: string, closing: string) => {
+      const openingNum = Number(opening) || 0;
+      const closingNum = Number(closing) || 0;
+      return closingNum > openingNum ? closingNum - openingNum : 0;
+    };
+
+    return {
+      office: calculate(powerReadings.office.opening, powerReadings.office.closing),
+      machine: calculate(powerReadings.machine.opening, powerReadings.machine.closing),
+      coldroom1: calculate(powerReadings.coldroom1.opening, powerReadings.coldroom1.closing),
+      coldroom2: calculate(powerReadings.coldroom2.opening, powerReadings.coldroom2.closing),
+      other: calculate(powerReadings.other.opening, powerReadings.other.closing),
+    };
+  };
+
+  // Calculate water consumption
+  const calculateWaterConsumption = () => {
+    const calculate = (opening: string, closing: string) => {
+      const openingNum = Number(opening) || 0;
+      const closingNum = Number(closing) || 0;
+      return closingNum > openingNum ? closingNum - openingNum : 0;
+    };
+
+    return {
+      meter1: calculate(waterReadings.meter1.opening, waterReadings.meter1.closing),
+      meter2: calculate(waterReadings.meter2.opening, waterReadings.meter2.closing),
+    };
+  };
+
+  // Calculate generator runtime and diesel
+  const calculateGeneratorData = () => {
+    const [startHour, startMin] = generatorStart.split(':').map(Number);
+    const [stopHour, stopMin] = generatorStop.split(':').map(Number);
+    
+    let totalMinutes = (stopHour * 60 + stopMin) - (startHour * 60 + startMin);
+    if (totalMinutes < 0) totalMinutes += 24 * 60;
+    
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const totalHours = totalMinutes / 60;
+    
+    const calculatedDiesel = totalHours * 7; // 7L per hour
+    
+    return {
+      hours,
+      minutes,
+      totalHours,
+      diesel: dieselConsumed ? Number(dieselConsumed) : calculatedDiesel,
+    };
+  };
+
+  // Setup daily notifications
+  const setupDailyNotifications = (time: string) => {
+    if ('Notification' in window && notificationsEnabled) {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          const [hours, minutes] = time.split(':').map(Number);
+          const now = new Date();
+          const scheduledTime = new Date();
+          scheduledTime.setHours(hours, minutes, 0, 0);
+          
+          if (scheduledTime < now) {
+            scheduledTime.setDate(scheduledTime.getDate() + 1);
+          }
+          
+          const timeUntilNotification = scheduledTime.getTime() - now.getTime();
+          
+          setTimeout(() => {
+            new Notification('Utility Tracking Reminder', {
+              body: 'Remember to fill in today\'s utility readings!',
+              icon: '/icon.png',
+              tag: 'daily-utility-reminder',
+            });
+            setupDailyNotifications(time);
+          }, timeUntilNotification);
+        }
+      });
+    }
+  };
+
+  // Handle notification toggle
+  const handleNotificationToggle = () => {
+    const newState = !notificationsEnabled;
+    setNotificationsEnabled(newState);
+    localStorage.setItem('notificationsEnabled', newState.toString());
+    
+    if (newState) {
+      localStorage.setItem('notificationTime', notificationTime);
+      setupDailyNotifications(notificationTime);
+      alert(`Notifications Enabled!\nDaily reminders set for ${notificationTime}`);
+    } else {
+      alert('Notifications Disabled');
+    }
+  };
+
+  // Handle save changes
+  const handleSaveChanges = async () => {
+    setIsSaving(true);
+    
+    try {
+      const generatorData = calculateGeneratorData();
+      const powerConsumption = calculatePowerConsumption();
+      const waterConsumption = calculateWaterConsumption();
+      
+      // Prepare data
+      const readingData = {
+        // Power readings
+        powerOfficeOpening: powerReadings.office.opening || '0',
+        powerOfficeClosing: powerReadings.office.closing || '0',
+        powerMachineOpening: powerReadings.machine.opening || '0',
+        powerMachineClosing: powerReadings.machine.closing || '0',
+        powerColdroom1Opening: powerReadings.coldroom1.opening || '0',
+        powerColdroom1Closing: powerReadings.coldroom1.closing || '0',
+        powerColdroom2Opening: powerReadings.coldroom2.opening || '0',
+        powerColdroom2Closing: powerReadings.coldroom2.closing || '0',
+        powerOtherOpening: powerReadings.other.opening || '0',
+        powerOtherClosing: powerReadings.other.closing || '0',
+        powerOtherActivity: otherActivity || '',
+        
+        // Water readings
+        waterMeter1Opening: waterReadings.meter1.opening || '0',
+        waterMeter1Closing: waterReadings.meter1.closing || '0',
+        waterMeter2Opening: waterReadings.meter2.opening || '0',
+        waterMeter2Closing: waterReadings.meter2.closing || '0',
+        
+        // Internet costs
+        internetSafaricom: internetCosts.safaricom || '0',
+        internet5G: internetCosts.internet5G || '0',
+        internetSyokinet: internetCosts.syokinet || '0',
+        internetBillingCycle: internetBillingCycle || '',
+        
+        // Generator data
+        generatorStart,
+        generatorStop,
+        dieselRefill: dieselRefill || '0',
+        dieselConsumed: dieselConsumed || generatorData.diesel.toString(),
+        
+        // Record details
+        recordedBy: recordedBy || 'System',
+        shift,
+        date,
+        notes: notes || '',
+      };
+      
+      const response = await fetch('/api/utility-readings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(readingData),
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        localStorage.setItem('recordedBy', recordedBy);
+        alert('All utility readings saved successfully!');
+        
+        // Reset form
+        setPowerReadings({
+          office: { opening: powerReadings.office.closing, closing: '' },
+          machine: { opening: powerReadings.machine.closing, closing: '' },
+          coldroom1: { opening: powerReadings.coldroom1.closing, closing: '' },
+          coldroom2: { opening: powerReadings.coldroom2.closing, closing: '' },
+          other: { opening: powerReadings.other.closing, closing: '' },
+        });
+        
+        setWaterReadings({
+          meter1: { opening: waterReadings.meter1.closing, closing: '' },
+          meter2: { opening: waterReadings.meter2.closing, closing: '' },
+        });
+        
+        setDieselRefill('');
+        setDieselConsumed('');
+        setNotes('');
+        
+        if (onSaveSuccess) onSaveSuccess();
+        
+      } else {
+        alert('Failed to save readings: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error saving readings:', error);
+      alert('An error occurred while saving readings');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Calculate totals for display
+  const powerTotals = calculatePowerConsumption();
+  const waterTotals = calculateWaterConsumption();
+  const generatorTotals = calculateGeneratorData();
+  
+  const totalPower = Object.values(powerTotals).reduce((a, b) => a + b, 0);
+  const totalWater = Object.values(waterTotals).reduce((a, b) => a + b, 0);
+
+  return (
+    <Card className="bg-gradient-to-br from-gray-900 to-black border-gray-800">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            Daily Utility Tracking
+          </CardTitle>
+          <div className="flex items-center gap-4">
+            {/* Notification Settings */}
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-gray-400" />
+              <Input
+                type="time"
+                value={notificationTime}
+                onChange={(e) => setNotificationTime(e.target.value)}
+                className="w-32 bg-gray-800 border-gray-700"
+                disabled={!notificationsEnabled}
+              />
+              <Button
+                variant={notificationsEnabled ? "default" : "outline"}
+                size="sm"
+                onClick={handleNotificationToggle}
+                className={notificationsEnabled ? "bg-green-600 hover:bg-green-700" : ""}
+              >
+                {notificationsEnabled ? 'On' : 'Off'}
+              </Button>
+            </div>
+            
+            {/* Date Picker */}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="reading-date" className="text-sm text-gray-400">Date</Label>
+              <Input
+                id="reading-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="bg-gray-800 border-gray-700"
+              />
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="grid grid-cols-5 bg-gray-800 border border-gray-700">
+            <TabsTrigger value="power" className="data-[state=active]:bg-blue-900">
+              <Zap className="h-4 w-4 mr-2" />
+              Power
+            </TabsTrigger>
+            <TabsTrigger value="water" className="data-[state=active]:bg-cyan-900">
+              <Droplet className="h-4 w-4 mr-2" />
+              Water
+            </TabsTrigger>
+            <TabsTrigger value="internet" className="data-[state=active]:bg-purple-900">
+              <Wifi className="h-4 w-4 mr-2" />
+              Internet
+            </TabsTrigger>
+            <TabsTrigger value="generator" className="data-[state=active]:bg-orange-900">
+              <Fuel className="h-4 w-4 mr-2" />
+              Generator
+            </TabsTrigger>
+            <TabsTrigger value="summary" className="data-[state=active]:bg-green-900">
+              <Activity className="h-4 w-4 mr-2" />
+              Summary
+            </TabsTrigger>
+          </TabsList>
+          
+          {/* Power Tab */}
+          <TabsContent value="power" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Office Power */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-blue-400">
+                  <Building className="h-4 w-4" /> Office
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.office.opening}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      office: { ...prev.office, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.office.closing}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      office: { ...prev.office, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-blue-400">{powerTotals.office.toFixed(2)} kWh</p>
+                </div>
+              </div>
+              
+              {/* Machine Power */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-green-400">
+                  <Cpu className="h-4 w-4" /> Machine
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.machine.opening}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      machine: { ...prev.machine, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.machine.closing}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      machine: { ...prev.machine, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-green-400">{powerTotals.machine.toFixed(2)} kWh</p>
+                </div>
+              </div>
+              
+              {/* Coldroom 1 */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-cyan-400">
+                  <Snowflake className="h-4 w-4" /> Coldroom 1
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.coldroom1.opening}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      coldroom1: { ...prev.coldroom1, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.coldroom1.closing}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      coldroom1: { ...prev.coldroom1, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-cyan-400">{powerTotals.coldroom1.toFixed(2)} kWh</p>
+                </div>
+              </div>
+              
+              {/* Coldroom 2 */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-blue-300">
+                  <Snowflake className="h-4 w-4" /> Coldroom 2
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.coldroom2.opening}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      coldroom2: { ...prev.coldroom2, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.coldroom2.closing}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      coldroom2: { ...prev.coldroom2, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-blue-300">{powerTotals.coldroom2.toFixed(2)} kWh</p>
+                </div>
+              </div>
+              
+              {/* Other Activities */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-purple-400">
+                  <Activity className="h-4 w-4" /> Other Activities
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Activity Type</Label>
+                  <Input 
+                    placeholder="e.g., Welding, Maintenance"
+                    value={otherActivity}
+                    onChange={(e) => setOtherActivity(e.target.value)}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.other.opening}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      other: { ...prev.other, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (kWh)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={powerReadings.other.closing}
+                    onChange={(e) => setPowerReadings(prev => ({
+                      ...prev,
+                      other: { ...prev.other, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-purple-400">{powerTotals.other.toFixed(2)} kWh</p>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          {/* Water Tab */}
+          <TabsContent value="water" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Water Meter 1 */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-cyan-400">
+                  <Droplet className="h-4 w-4" /> Water Meter 1
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (m³)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={waterReadings.meter1.opening}
+                    onChange={(e) => setWaterReadings(prev => ({
+                      ...prev,
+                      meter1: { ...prev.meter1, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (m³)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={waterReadings.meter1.closing}
+                    onChange={(e) => setWaterReadings(prev => ({
+                      ...prev,
+                      meter1: { ...prev.meter1, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-cyan-400">{waterTotals.meter1.toFixed(2)} m³</p>
+                </div>
+              </div>
+              
+              {/* Water Meter 2 */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-blue-400">
+                  <Droplet className="h-4 w-4" /> Water Meter 2
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Opening (m³)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={waterReadings.meter2.opening}
+                    onChange={(e) => setWaterReadings(prev => ({
+                      ...prev,
+                      meter2: { ...prev.meter2, opening: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Closing (m³)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    value={waterReadings.meter2.closing}
+                    onChange={(e) => setWaterReadings(prev => ({
+                      ...prev,
+                      meter2: { ...prev.meter2, closing: e.target.value }
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Consumed</p>
+                  <p className="text-xl font-bold text-blue-400">{waterTotals.meter2.toFixed(2)} m³</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Water Total Summary */}
+            <div className="p-4 bg-gradient-to-r from-cyan-900/20 to-blue-900/20 border border-cyan-800/50 rounded-lg">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">Meter 1 Consumption</p>
+                  <p className="text-2xl font-bold text-cyan-400">{waterTotals.meter1.toFixed(2)} m³</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">Meter 2 Consumption</p>
+                  <p className="text-2xl font-bold text-blue-400">{waterTotals.meter2.toFixed(2)} m³</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">Total Water Consumed</p>
+                  <p className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                    {totalWater.toFixed(2)} m³
+                  </p>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          {/* Internet Tab */}
+          <TabsContent value="internet" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Safaricom */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-purple-700/50 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-purple-400">
+                  <Wifi className="h-4 w-4" /> Safaricom
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Monthly Cost (KES)</Label>
+                  <Input 
+                    type="number"
+                    placeholder="0.00"
+                    value={internetCosts.safaricom}
+                    onChange={(e) => setInternetCosts(prev => ({
+                      ...prev,
+                      safaricom: e.target.value
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Weekly Cost</p>
+                  <p className="text-xl font-bold text-purple-400">
+                    KES {((Number(internetCosts.safaricom) || 0) / 4.33).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">Daily: KES {((Number(internetCosts.safaricom) || 0) / 30).toFixed(2)}</p>
+                </div>
+              </div>
+              
+              {/* 5G Internet */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-blue-700/50 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-blue-400">
+                  <Wifi className="h-4 w-4" /> 5G Internet
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Monthly Cost (KES)</Label>
+                  <Input 
+                    type="number"
+                    placeholder="0.00"
+                    value={internetCosts.internet5G}
+                    onChange={(e) => setInternetCosts(prev => ({
+                      ...prev,
+                      internet5G: e.target.value
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Weekly Cost</p>
+                  <p className="text-xl font-bold text-blue-400">
+                    KES {((Number(internetCosts.internet5G) || 0) / 4.33).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">Daily: KES {((Number(internetCosts.internet5G) || 0) / 30).toFixed(2)}</p>
+                </div>
+              </div>
+              
+              {/* Syokinet */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-green-700/50 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-green-400">
+                  <Wifi className="h-4 w-4" /> Syokinet
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Monthly Cost (KES)</Label>
+                  <Input 
+                    type="number"
+                    placeholder="0.00"
+                    value={internetCosts.syokinet}
+                    onChange={(e) => setInternetCosts(prev => ({
+                      ...prev,
+                      syokinet: e.target.value
+                    }))}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Weekly Cost</p>
+                  <p className="text-xl font-bold text-green-400">
+                    KES {((Number(internetCosts.syokinet) || 0) / 4.33).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">Daily: KES {((Number(internetCosts.syokinet) || 0) / 30).toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-400">Billing Cycle (e.g., 1st-30th)</Label>
+                <Input 
+                  placeholder="Monthly billing cycle"
+                  value={internetBillingCycle}
+                  onChange={(e) => setInternetBillingCycle(e.target.value)}
+                  className="bg-gray-900 border-gray-700"
+                />
+              </div>
+              
+              {/* Internet Total Summary */}
+              <div className="p-4 bg-gradient-to-r from-purple-900/20 to-green-900/20 border border-purple-800/50 rounded-lg">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-400">Safaricom</p>
+                    <p className="text-lg font-bold text-purple-400">
+                      KES {(Number(internetCosts.safaricom) || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-400">5G Internet</p>
+                    <p className="text-lg font-bold text-blue-400">
+                      KES {(Number(internetCosts.internet5G) || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-400">Syokinet</p>
+                    <p className="text-lg font-bold text-green-400">
+                      KES {(Number(internetCosts.syokinet) || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-400">Total Monthly</p>
+                    <p className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-green-400 bg-clip-text text-transparent">
+                      KES {(
+                        (Number(internetCosts.safaricom) || 0) + 
+                        (Number(internetCosts.internet5G) || 0) + 
+                        (Number(internetCosts.syokinet) || 0)
+                      ).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          {/* Generator Tab */}
+          <TabsContent value="generator" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Generator Runtime */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-orange-700/50 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-orange-400">
+                  <Clock className="h-4 w-4" /> Generator Runtime
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm text-gray-400">Start Time</Label>
+                    <Input 
+                      type="time"
+                      value={generatorStart}
+                      onChange={(e) => setGeneratorStart(e.target.value)}
+                      className="bg-gray-900 border-gray-700 text-center"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm text-gray-400">Stop Time</Label>
+                    <Input 
+                      type="time"
+                      value={generatorStop}
+                      onChange={(e) => setGeneratorStop(e.target.value)}
+                      className="bg-gray-900 border-gray-700 text-center"
+                    />
+                  </div>
+                </div>
+                <div className="text-center bg-gray-900 p-3 rounded-md border border-gray-700">
+                  <p className="text-xs text-gray-400">Total Runtime</p>
+                  <p className="text-xl font-bold text-orange-400">
+                    {generatorTotals.hours}h {generatorTotals.minutes}m
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {generatorStart} → {generatorStop}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Diesel Tracking */}
+              <div className="space-y-4 p-4 bg-gray-800/50 border border-red-700/50 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-red-400">
+                  <Fuel className="h-4 w-4" /> Diesel Tracking
+                </h3>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Diesel Consumed (L)</Label>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    placeholder="Auto-calculated from runtime"
+                    value={dieselConsumed}
+                    onChange={(e) => setDieselConsumed(e.target.value)}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                  <p className="text-xs text-gray-400">
+                    Auto calculation: {generatorTotals.diesel.toFixed(2)} L (7L/hour)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-400">Diesel Refill (L)</Label>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g., 500"
+                    value={dieselRefill}
+                    onChange={(e) => setDieselRefill(e.target.value)}
+                    className="bg-gray-900 border-gray-700"
+                  />
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          {/* Summary Tab */}
+          <TabsContent value="summary" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Power Summary */}
+              <div className="space-y-4 p-4 bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-blue-400">
+                  <Zap className="h-4 w-4" /> Power Summary
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Office:</span>
+                    <span className="text-blue-400">{powerTotals.office.toFixed(2)} kWh</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Machine:</span>
+                    <span className="text-green-400">{powerTotals.machine.toFixed(2)} kWh</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Coldroom 1:</span>
+                    <span className="text-cyan-400">{powerTotals.coldroom1.toFixed(2)} kWh</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Coldroom 2:</span>
+                    <span className="text-blue-300">{powerTotals.coldroom2.toFixed(2)} kWh</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Other:</span>
+                    <span className="text-purple-400">{powerTotals.other.toFixed(2)} kWh</span>
+                  </div>
+                  <div className="border-t border-gray-700 pt-2 mt-2">
+                    <div className="flex justify-between font-bold">
+                      <span>Total Power:</span>
+                      <span className="text-xl bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                        {totalPower.toFixed(2)} kWh
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Water Summary */}
+              <div className="space-y-4 p-4 bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-cyan-400">
+                  <Droplet className="h-4 w-4" /> Water Summary
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Meter 1:</span>
+                    <span className="text-cyan-400">{waterTotals.meter1.toFixed(2)} m³</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Meter 2:</span>
+                    <span className="text-blue-400">{waterTotals.meter2.toFixed(2)} m³</span>
+                  </div>
+                  <div className="border-t border-gray-700 pt-2 mt-2">
+                    <div className="flex justify-between font-bold">
+                      <span>Total Water:</span>
+                      <span className="text-xl bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                        {totalWater.toFixed(2)} m³
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Generator & Internet Summary */}
+              <div className="space-y-4 p-4 bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-lg">
+                <h3 className="font-medium flex items-center gap-2 text-orange-400">
+                  <Activity className="h-4 w-4" /> Other Summary
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-gray-400">Generator Runtime</p>
+                    <p className="text-lg font-bold text-orange-400">
+                      {generatorTotals.hours}h {generatorTotals.minutes}m
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Diesel Consumed</p>
+                    <p className="text-lg font-bold text-red-400">
+                      {generatorTotals.diesel.toFixed(2)} L
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Total Internet Cost</p>
+                    <p className="text-lg font-bold text-purple-400">
+                      KES {(
+                        (Number(internetCosts.safaricom) || 0) + 
+                        (Number(internetCosts.internet5G) || 0) + 
+                        (Number(internetCosts.syokinet) || 0)
+                      ).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Final Summary Card */}
+            <div className="p-4 bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-800/50 rounded-lg">
+              <h3 className="font-medium text-lg mb-4 text-center">Daily Totals Summary</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">Total Power Consumed</p>
+                  <p className="text-3xl font-bold text-blue-400">{totalPower.toFixed(2)} kWh</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">Total Water Consumed</p>
+                  <p className="text-3xl font-bold text-cyan-400">{totalWater.toFixed(2)} m³</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">Diesel Consumed</p>
+                  <p className="text-3xl font-bold text-orange-400">{generatorTotals.diesel.toFixed(2)} L</p>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+        
+        {/* Record Information */}
+        <div className="mt-6 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+          <h3 className="font-medium mb-4 text-gray-300">Record Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-400">Recorded By</Label>
+              <Input 
+                placeholder="Your name"
+                value={recordedBy}
+                onChange={(e) => setRecordedBy(e.target.value)}
+                className="bg-gray-900 border-gray-700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-400">Shift</Label>
+              <Select value={shift} onValueChange={setShift}>
+                <SelectTrigger className="bg-gray-900 border-gray-700">
+                  <SelectValue placeholder="Select shift" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-700">
+                  <SelectItem value="Morning" className="hover:bg-gray-800">Morning</SelectItem>
+                  <SelectItem value="Evening" className="hover:bg-gray-800">Evening</SelectItem>
+                  <SelectItem value="Night" className="hover:bg-gray-800">Night</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-400">Selected Date</Label>
+              <Input 
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="bg-gray-900 border-gray-700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-400">Notes (Optional)</Label>
+              <Input 
+                placeholder="Additional notes..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="bg-gray-900 border-gray-700"
+              />
+            </div>
+          </div>
+        </div>
+      </CardContent>
+      
+      <div className="p-6 border-t border-gray-800 flex justify-between items-center">
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <AlertTriangle className="h-4 w-4" />
+          {notificationsEnabled ? (
+            <span>Daily reminders set for {notificationTime}</span>
+          ) : (
+            <span>Enable notifications for daily reminders</span>
+          )}
+        </div>
+        <Button 
+          onClick={handleSaveChanges} 
+          disabled={isSaving}
+          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+        >
+          <Save className="mr-2" />
+          {isSaving ? 'Saving...' : 'Save All Readings'}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// Main Dashboard Component
 export default function UtilityManagementPage() {
     const [energyOverview, setEnergyOverview] = useState(initialEnergyOverview);
     const [waterOverview, setWaterOverview] = useState(initialWaterOverview);
     const [dieselOverview, setDieselOverview] = useState(initialDieselOverview);
+    const [internetOverview, setInternetOverview] = useState(initialInternetOverview);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [totalPower, setTotalPower] = useState(0);
     const [totalWater, setTotalWater] = useState(0);
     const [totalDiesel, setTotalDiesel] = useState(0);
+    const [totalInternet, setTotalInternet] = useState(0);
     const [lastUpdated, setLastUpdated] = useState<string>('Never');
-    const [dieselBreakdown, setDieselBreakdown] = useState({
-      generatorDiesel: 0,
-      fleetDiesel: 0
+    
+    // Breakdown data
+    const [powerBreakdown, setPowerBreakdown] = useState<AreaBreakdown>({
+      office: 0,
+      machine: 0,
+      coldroom1: 0,
+      coldroom2: 0,
+      other: 0
+    });
+    const [waterBreakdown, setWaterBreakdown] = useState({
+      meter1: 0,
+      meter2: 0
     });
     
-    // Data states for charts and calculations
+    // Data states
     const [readings, setReadings] = useState<UtilityReading[]>([]);
-    const [energyConsumptionData, setEnergyConsumptionData] = useState<ChartDataPoint[]>([]);
-    const [waterConsumptionData, setWaterConsumptionData] = useState<ChartDataPoint[]>([]);
-    const [dieselConsumptionData, setDieselConsumptionData] = useState<any[]>([]);
-    const [waterQualityData, setWaterQualityData] = useState<any[]>([]);
-    
-    // Monthly cost states
-    const [monthlyPowerCost, setMonthlyPowerCost] = useState(0);
-    const [monthlyWaterCost, setMonthlyWaterCost] = useState(0);
-    const [monthlyDieselCost, setMonthlyDieselCost] = useState(0);
 
     // Date filter states
-    const [dateFilter, setDateFilter] = useState<'all' | 'specific' | 'range'>('all');
-    const [specificDate, setSpecificDate] = useState<string>('');
-    const [startDate, setStartDate] = useState<string>('');
-    const [endDate, setEndDate] = useState<string>('');
-    const [utilityTypeFilter, setUtilityTypeFilter] = useState<'all' | 'electricity' | 'water' | 'diesel'>('all');
-
-    // Generate chart data from readings
-    const generateChartData = (readings: UtilityReading[]) => {
-      if (readings.length === 0) return [];
-      
-      return readings.slice(0, 7).map(reading => ({
-        date: new Date(reading.date).toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        value: parseFloat(reading.powerConsumed)
-      }));
-    };
-
-    // Generate water consumption data
-    const generateWaterChartData = (readings: UtilityReading[]) => {
-      if (readings.length === 0) return [];
-      
-      return readings.slice(0, 7).map(reading => ({
-        date: new Date(reading.date).toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric'
-        }),
-        value: parseFloat(reading.waterConsumed)
-      }));
-    };
-
-    // Generate diesel consumption data
-    const generateDieselChartData = (readings: UtilityReading[]) => {
-      if (readings.length === 0) return [];
-      
-      return readings.slice(0, 7).map(reading => ({
-        date: new Date(reading.date).toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric'
-        }),
-        dieselConsumed: parseFloat(reading.dieselConsumed)
-      }));
-    };
-
-    // Generate water quality data from water consumption
-    const generateWaterQualityData = (waterConsumed: number) => {
-      const today = new Date();
-      const ph = 6.5 + (waterConsumed / 100); // pH varies with usage
-      const turbidity = Math.max(0.5, Math.min(3.5, waterConsumed / 20));
-      
-      return [
-        {
-          id: '1',
-          source: 'Main Processing Line',
-          date: today.toISOString().split('T')[0],
-          pH: parseFloat(ph.toFixed(2)),
-          turbidity: parseFloat(turbidity.toFixed(2)),
-          conductivity: waterConsumed > 40 ? 450.2 : 320.5,
-          status: turbidity < 2 ? 'Pass' : 'Fail' as const
-        },
-        {
-          id: '2',
-          source: 'Recycling Plant',
-          date: today.toISOString().split('T')[0],
-          pH: 6.8,
-          turbidity: 2.5,
-          conductivity: 280.1,
-          status: 'Fail' as const
-        },
-        {
-          id: '3',
-          source: 'Storage Tank',
-          date: today.toISOString().split('T')[0],
-          pH: 7.5,
-          turbidity: 0.8,
-          conductivity: 420.3,
-          status: 'Pass' as const
-        }
-      ];
-    };
-
-    // Generate energy cost chart data
-    const generateEnergyCostData = (baseMonthlyCost: number) => {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-      return months.map((month, index) => ({
-        month,
-        cost: Math.round(baseMonthlyCost * (0.9 + (index * 0.04))) // Gradual increase
-      }));
-    };
-
-    // Filter utility readings based on date and type filters
-    const getFilteredReadings = () => {
-      let filtered = [...readings];
-
-      // Apply date filter
-      if (dateFilter !== 'all') {
-        filtered = filtered.filter(reading => {
-          const readingDate = new Date(reading.date);
-          
-          switch (dateFilter) {
-            case 'specific':
-              if (!specificDate) return true;
-              const specific = new Date(specificDate);
-              return readingDate.toDateString() === specific.toDateString();
-            case 'range':
-              if (!startDate || !endDate) return true;
-              const start = new Date(startDate);
-              const end = new Date(endDate);
-              return readingDate >= start && readingDate <= end;
-            default:
-              return true;
-          }
-        });
-      }
-
-      return filtered;
-    };
-
-    // Filter utility type for CSV export
-    const getFilteredReadingsForExport = () => {
-      let filtered = getFilteredReadings();
-
-      // Apply utility type filter
-      if (utilityTypeFilter !== 'all') {
-        // We'll filter by which columns have data, but for CSV we want all columns
-        // This filter is mainly for the summary display
-        return filtered;
-      }
-
-      return filtered;
-    };
-
-    // Download utility readings as CSV
-    const downloadUtilityReadingsCSV = () => {
-      const filteredReadings = getFilteredReadingsForExport();
-      
-      // CSV headers
-      const headers = [
-        'Date',
-        'Shift',
-        'Recorded By',
-        'Power Opening (kWh)',
-        'Power Closing (kWh)',
-        'Power Consumed (kWh)',
-        'Water Opening (m³)',
-        'Water Closing (m³)',
-        'Water Consumed (m³)',
-        'Generator Start Time',
-        'Generator Stop Time',
-        'Generator Runtime (hours)',
-        'Diesel Consumed (L)',
-        'Diesel Refill (L)',
-        'Notes'
-      ];
-      
-      // CSV rows
-      const rows = filteredReadings.map(reading => [
-        new Date(reading.date).toLocaleDateString('en-GB'),
-        reading.shift || 'N/A',
-        reading.recordedBy,
-        reading.powerOpening,
-        reading.powerClosing,
-        reading.powerConsumed,
-        reading.waterOpening,
-        reading.waterClosing,
-        reading.waterConsumed,
-        reading.generatorStart,
-        reading.generatorStop,
-        reading.timeConsumed,
-        reading.dieselConsumed,
-        reading.dieselRefill || '0',
-        reading.notes || 'N/A'
-      ]);
-      
-      // Combine headers and rows
-      const csvContent = [headers, ...rows]
-        .map(row => row.map(cell => `"${cell}"`).join(','))
-        .join('\n');
-      
-      // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      
-      // Generate filename with date range
-      let fileName = 'utility-readings';
-      if (dateFilter === 'specific' && specificDate) {
-        const dateStr = new Date(specificDate).toISOString().split('T')[0];
-        fileName += `_${dateStr}`;
-      } else if (dateFilter === 'range' && startDate && endDate) {
-        const startStr = new Date(startDate).toISOString().split('T')[0];
-        const endStr = new Date(endDate).toISOString().split('T')[0];
-        fileName += `_${startStr}_to_${endStr}`;
-      }
-      if (utilityTypeFilter !== 'all') {
-        fileName += `_${utilityTypeFilter}`;
-      }
-      fileName += `_${new Date().toISOString().split('T')[0]}.csv`;
-      
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      
-      // Show success toast (you need to implement toast system or use alert)
-      alert(`Downloaded ${filteredReadings.length} utility readings as CSV`);
-    };
-
-    // Calculate totals for filtered readings
-    const calculateFilteredTotals = (filteredReadings: UtilityReading[]) => {
-      let powerTotal = 0;
-      let waterTotal = 0;
-      let dieselTotal = 0;
-
-      filteredReadings.forEach(reading => {
-        powerTotal += parseFloat(reading.powerConsumed) || 0;
-        waterTotal += parseFloat(reading.waterConsumed) || 0;
-        dieselTotal += parseFloat(reading.dieselConsumed) || 0;
-      });
-
-      return { powerTotal, waterTotal, dieselTotal };
-    };
-
-    // Clear all filters
-    const clearFilters = () => {
-      setDateFilter('all');
-      setSpecificDate('');
-      setStartDate('');
-      setEndDate('');
-      setUtilityTypeFilter('all');
-    };
-
-    // Check if any filters are active
-    const hasActiveFilters = dateFilter !== 'all' || utilityTypeFilter !== 'all';
+    const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('today');
+    const [utilityTypeFilter, setUtilityTypeFilter] = useState<'all' | 'power' | 'water' | 'diesel' | 'internet'>('all');
+    const [viewMode, setViewMode] = useState<'overview' | 'detailed' | 'analytics'>('overview');
 
     // Fetch utility data
     const fetchUtilityData = async () => {
         try {
             setIsLoading(true);
             setError(null);
-            const response = await fetch('/api/utility-readings?limit=100');
+            
+            let url = '/api/utility-readings?limit=100';
+            if (dateFilter !== 'all') {
+              url += `&period=${dateFilter}`;
+            }
+            
+            const response = await fetch(url);
             
             if (!response.ok) {
                 throw new Error(`Failed to fetch data: ${response.status}`);
@@ -452,129 +1253,210 @@ export default function UtilityManagementPage() {
             // Set readings
             setReadings(data.readings || []);
             
-            // Calculate totals from all data
-            const { powerTotal, waterTotal, dieselTotal } = calculateFilteredTotals(data.readings || []);
+            // Calculate totals
+            let powerTotal = 0;
+            let waterTotal = 0;
+            let dieselTotal = 0;
+            let internetTotal = 0;
+            
+            const powerBreakdown: AreaBreakdown = {
+                office: 0,
+                machine: 0,
+                coldroom1: 0,
+                coldroom2: 0,
+                other: 0
+            };
+            
+            const waterBreakdown = {
+                meter1: 0,
+                meter2: 0
+            };
+            
+            data.readings.forEach((reading: UtilityReading) => {
+                const metadata = reading.metadata || {};
+                
+                // Power breakdown
+                powerBreakdown.office += metadata.powerOfficeConsumed || 0;
+                powerBreakdown.machine += metadata.powerMachineConsumed || 0;
+                powerBreakdown.coldroom1 += metadata.powerColdroom1Consumed || 0;
+                powerBreakdown.coldroom2 += metadata.powerColdroom2Consumed || 0;
+                powerBreakdown.other += metadata.powerOtherConsumed || 0;
+                
+                // Water breakdown
+                waterBreakdown.meter1 += metadata.waterMeter1Consumed || 0;
+                waterBreakdown.meter2 += metadata.waterMeter2Consumed || 0;
+                
+                // Internet costs
+                internetTotal += (metadata.internetSafaricom || 0) + 
+                                (metadata.internet5G || 0) + 
+                                (metadata.internetSyokinet || 0);
+                
+                // Totals
+                powerTotal += parseFloat(reading.powerConsumed) || 0;
+                waterTotal += parseFloat(reading.waterConsumed) || 0;
+                dieselTotal += parseFloat(reading.dieselConsumed) || 0;
+            });
             
             setTotalPower(powerTotal);
             setTotalWater(waterTotal);
             setTotalDiesel(dieselTotal);
+            setTotalInternet(internetTotal);
+            setPowerBreakdown(powerBreakdown);
+            setWaterBreakdown(waterBreakdown);
             
             // Calculate monthly costs
-            const powerCost = powerTotal * UTILITY_RATES.electricity * 30;
-            const waterCost = waterTotal * UTILITY_RATES.water * 30;
-            const dieselCost = dieselTotal * UTILITY_RATES.diesel * 30;
+            const daysInPeriod = dateFilter === 'today' ? 1 : dateFilter === 'week' ? 7 : dateFilter === 'month' ? 30 : 30;
+            const powerCost = powerTotal * UTILITY_RATES.electricity * (30 / daysInPeriod);
+            const waterCost = waterTotal * UTILITY_RATES.water * (30 / daysInPeriod);
+            const dieselCost = dieselTotal * UTILITY_RATES.diesel * (30 / daysInPeriod);
             
-            setMonthlyPowerCost(powerCost);
-            setMonthlyWaterCost(waterCost);
-            setMonthlyDieselCost(dieselCost);
-            
-            // Generate chart data
-            setEnergyConsumptionData(generateChartData(data.readings || []));
-            setWaterConsumptionData(generateWaterChartData(data.readings || []));
-            setDieselConsumptionData(generateDieselChartData(data.readings || []));
-            
-            // Generate water quality data
-            setWaterQualityData(generateWaterQualityData(waterTotal));
-            
-            // Calculate additional statistics from readings
-            const readingsList = data.readings || [];
-            const last7DaysReadings = readingsList.slice(0, 7);
-            
-            // Calculate average daily diesel consumption
-            const avgDailyDiesel = last7DaysReadings.length > 0 
-                ? last7DaysReadings.reduce((sum: number, r: any) => sum + Number(r.dieselConsumed), 0) / last7DaysReadings.length
-                : 0;
-            
-            // Update diesel breakdown (for now, estimate fleet diesel as 30% of generator diesel)
-            const generatorDiesel = dieselTotal;
-            const fleetDiesel = generatorDiesel * 0.3; // Estimate: 30% of generator diesel for fleet
-            
-            setDieselBreakdown({
-              generatorDiesel,
-              fleetDiesel
-            });
-            
-            // Update energy overview with correct rates
+            // Update energy overview
             setEnergyOverview({
                 totalConsumption: { 
-                    title: 'Total Consumption (Today)', 
+                    title: 'Total Power', 
                     value: `${powerTotal.toFixed(0)} kWh`, 
-                    change: data.totals?.count > 0 ? '+2% vs. yesterday' : 'No data yet', 
-                    changeType: data.totals?.count > 0 ? 'increase' as const : 'neutral' as const 
+                    change: '+2% vs yesterday', 
+                    changeType: 'increase' as const,
+                    icon: Zap,
+                    color: 'text-blue-400'
                 },
                 monthlyCost: { 
                     title: 'Est. Monthly Cost', 
                     value: `KES ${powerCost.toLocaleString()}`, 
-                    change: `at KES ${UTILITY_RATES.electricity}/kWh`, 
-                    changeType: 'increase' as const 
+                    change: `KES ${UTILITY_RATES.electricity}/kWh`, 
+                    changeType: 'increase' as const,
+                    icon: DollarSign,
+                    color: 'text-green-400'
                 },
                 peakDemand: { 
-                    title: 'Peak Demand (Today)', 
-                    value: readingsList.length > 0 ? `${(Number(readingsList[0].powerConsumed) / 24).toFixed(1)} kW` : '0 kW', 
-                    change: readingsList.length > 0 ? 'within limits' : 'No data', 
-                    changeType: readingsList.length > 0 ? 'increase' as const : 'neutral' as const 
+                    title: 'Peak Demand', 
+                    value: `${(powerTotal / 24).toFixed(1)} kW`, 
+                    change: 'Within limits', 
+                    changeType: 'increase' as const,
+                    icon: Bolt,
+                    color: 'text-yellow-400'
                 },
                 powerFactor: { 
-                    title: 'Power Factor', 
-                    value: readingsList.length > 0 ? '0.92' : '0.00', 
-                    change: readingsList.length > 0 ? 'optimal' : 'No data', 
-                    changeType: readingsList.length > 0 ? 'increase' as const : 'neutral' as const 
+                    title: 'Efficiency', 
+                    value: '0.92', 
+                    change: 'Optimal', 
+                    changeType: 'increase' as const,
+                    icon: TrendingUp,
+                    color: 'text-purple-400'
                 },
             });
 
-            // Update water overview with correct rates
+            // Update water overview
             setWaterOverview({
                 totalConsumption: { 
-                    title: 'Water Usage (Today)', 
+                    title: 'Total Water', 
                     value: `${waterTotal.toFixed(0)} m³`, 
-                    change: data.totals?.count > 0 ? '-1.3% vs. yesterday' : 'No data yet', 
-                    changeType: data.totals?.count > 0 ? 'decrease' as const : 'neutral' as const 
+                    change: '-1.3% vs yesterday', 
+                    changeType: 'decrease' as const,
+                    icon: Droplet,
+                    color: 'text-cyan-400'
                 },
                 monthlyCost: { 
-                    title: 'Est. Monthly Water Cost', 
+                    title: 'Water Cost', 
                     value: `KES ${waterCost.toLocaleString()}`, 
-                    change: `at KES ${UTILITY_RATES.water}/m³`, 
-                    changeType: 'increase' as const 
+                    change: `KES ${UTILITY_RATES.water}/m³`, 
+                    changeType: 'increase' as const,
+                    icon: DollarSign,
+                    color: 'text-blue-400'
                 },
                 qualityStatus: { 
                     title: 'Water Quality', 
-                    value: 'Monitoring', 
-                    change: 'Municipal Main', 
-                    changeType: 'increase' as const 
+                    value: 'Good', 
+                    change: 'Monitoring', 
+                    changeType: 'increase' as const,
+                    icon: Thermometer,
+                    color: 'text-green-400'
                 },
                 recyclingRate: { 
-                    title: 'Recycling Rate', 
+                    title: 'Savings', 
                     value: '15%', 
-                    change: '+2% from last week', 
-                    changeType: 'increase' as const 
+                    change: 'Recycling rate', 
+                    changeType: 'increase' as const,
+                    icon: Activity,
+                    color: 'text-teal-400'
                 },
             });
 
-            // Update diesel overview with correct rates
+            // Update diesel overview
+            const readingsList = data.readings || [];
+            const avgDailyDiesel = readingsList.length > 0 
+                ? readingsList.reduce((sum: number, r: any) => sum + Number(r.dieselConsumed), 0) / readingsList.length
+                : 0;
+            
             setDieselOverview({
                 consumptionToday: { 
-                    title: 'Today\'s Diesel Consumption', 
+                    title: 'Diesel Today', 
                     value: `${dieselTotal.toFixed(1)} L`, 
-                    change: data.totals?.count > 0 ? 'Based on generator runtime' : 'No generator runtime', 
-                    changeType: data.totals?.count > 0 ? 'increase' as const : 'neutral' as const 
+                    change: 'Generator runtime', 
+                    changeType: 'increase' as const,
+                    icon: Fuel,
+                    color: 'text-orange-400'
                 },
                 avgDailyConsumption: { 
-                    title: 'Avg. Daily Consumption', 
+                    title: 'Avg Daily', 
                     value: `${avgDailyDiesel.toFixed(1)} L`, 
                     change: 'Last 7 days', 
-                    changeType: avgDailyDiesel > 0 ? 'increase' as const : 'neutral' as const 
+                    changeType: 'increase' as const,
+                    icon: BarChart3,
+                    color: 'text-red-400'
                 },
                 monthlyCost: { 
-                    title: 'Est. Monthly Cost', 
+                    title: 'Monthly Cost', 
                     value: `KES ${dieselCost.toLocaleString()}`, 
-                    change: `at KES ${UTILITY_RATES.diesel}/L`, 
-                    changeType: 'increase' as const 
+                    change: `KES ${UTILITY_RATES.diesel}/L`, 
+                    changeType: 'increase' as const,
+                    icon: DollarSign,
+                    color: 'text-amber-400'
                 },
                 estimatedRuntime: { 
-                    title: 'Estimated Runtime', 
-                    value: avgDailyDiesel > 0 ? `${(500 / (avgDailyDiesel / 24)).toFixed(0)} hours` : '0 hours', 
-                    change: avgDailyDiesel > 0 ? 'based on avg. consumption' : 'No data', 
-                    changeType: avgDailyDiesel > 0 ? 'increase' as const : 'neutral' as const 
+                    title: 'Runtime', 
+                    value: avgDailyDiesel > 0 ? `${(500 / (avgDailyDiesel / 24)).toFixed(0)} hrs` : '0 hrs', 
+                    change: 'Estimated hours', 
+                    changeType: 'increase' as const,
+                    icon: Clock,
+                    color: 'text-purple-400'
+                },
+            });
+
+            // Update internet overview
+            const lastReading = readingsList[0]?.metadata || {};
+            setInternetOverview({
+                totalCost: { 
+                    title: 'Total Internet', 
+                    value: `KES ${(lastReading.internetSafaricom || 0 + lastReading.internet5G || 0 + lastReading.internetSyokinet || 0).toLocaleString()}`, 
+                    change: 'Monthly cost', 
+                    changeType: 'increase' as const,
+                    icon: Wifi,
+                    color: 'text-purple-400'
+                },
+                safaricomCost: { 
+                    title: 'Safaricom', 
+                    value: `KES ${(lastReading.internetSafaricom || 0).toLocaleString()}`, 
+                    change: 'Per month', 
+                    changeType: 'neutral' as const,
+                    icon: Wifi,
+                    color: 'text-blue-400'
+                },
+                internet5GCost: { 
+                    title: '5G Internet', 
+                    value: `KES ${(lastReading.internet5G || 0).toLocaleString()}`, 
+                    change: 'Per month', 
+                    changeType: 'neutral' as const,
+                    icon: Wifi,
+                    color: 'text-green-400'
+                },
+                syokinetCost: { 
+                    title: 'Syokinet', 
+                    value: `KES ${(lastReading.internetSyokinet || 0).toLocaleString()}`, 
+                    change: 'Per month', 
+                    changeType: 'neutral' as const,
+                    icon: Wifi,
+                    color: 'text-cyan-400'
                 },
             });
 
@@ -589,35 +1471,22 @@ export default function UtilityManagementPage() {
         }
     };
 
-    // Fetch data on component mount
-    useEffect(() => {
-        fetchUtilityData();
-    }, []);
-
     // Function to refresh data when new readings are saved
     const handleRefreshData = () => {
         fetchUtilityData();
     };
 
-    const energyAnomalyExplain = async (anomaly: ExplainAnomalyInput) => {
-        return explainEnergySpike(anomaly);
-    }
-
-    const waterAnomalyExplain = async (anomaly: ExplainAnomalyInput) => {
-        return explainWaterAnomaly(anomaly);
-    }
-    
-    // Get current filtered data
-    const filteredReadings = getFilteredReadings();
-    const filteredTotals = calculateFilteredTotals(filteredReadings);
+    // Calculate daily internet costs
+    const dailyInternetCost = totalInternet / 30;
+    const weeklyInternetCost = dailyInternetCost * 7;
     
     return (
         <SidebarProvider>
-            <Sidebar>
+            <Sidebar className="bg-gray-900 border-r border-gray-800">
                 <SidebarHeader>
-                    <div className="flex items-center gap-2 p-2">
-                        <FreshTraceLogo className="w-8 h-8 text-primary" />
-                        <h1 className="text-xl font-headline font-bold text-sidebar-foreground">
+                    <div className="flex items-center gap-2 p-4">
+                        <FreshTraceLogo className="w-8 h-8 text-blue-400" />
+                        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                             Harir International
                         </h1>
                     </div>
@@ -626,41 +1495,59 @@ export default function UtilityManagementPage() {
                     <SidebarNav />
                 </SidebarContent>
             </Sidebar>
-            <SidebarInset>
+            <SidebarInset className="bg-black">
                 <Header />
                 <main className="p-4 md:p-6 lg:p-8 space-y-8">
-                    <div className="flex justify-between items-start">
+                    {/* Header Section */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-6 bg-gradient-to-r from-gray-900 to-black rounded-xl border border-gray-800">
                         <div>
-                            <h2 className="text-2xl font-bold tracking-tight">
+                            <h2 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                                 Utility Management Dashboard
                             </h2>
-                            <p className="text-muted-foreground">
-                                Monitor energy, water, and diesel consumption across your operations.
+                            <p className="text-gray-400 mt-2">
+                                Monitor energy, water, diesel, and internet consumption across all operations
                             </p>
-                            <div className="mt-2 text-sm text-muted-foreground">
-                                <span className="font-medium">Today&apos;s Totals:</span> {totalPower.toFixed(0)} kWh Power • {totalWater.toFixed(0)} m³ Water • {totalDiesel.toFixed(1)} L Diesel
-                            </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                <span className="font-medium">Current Rates:</span> Electricity: KES {UTILITY_RATES.electricity}/kWh • Water: KES {UTILITY_RATES.water}/m³ • Diesel: KES {UTILITY_RATES.diesel}/L
+                            <div className="flex flex-wrap gap-4 mt-4">
+                                <Badge className="bg-blue-900/50 text-blue-400 border-blue-800">
+                                    <Zap className="h-3 w-3 mr-1" /> {totalPower.toFixed(0)} kWh
+                                </Badge>
+                                <Badge className="bg-cyan-900/50 text-cyan-400 border-cyan-800">
+                                    <Droplet className="h-3 w-3 mr-1" /> {totalWater.toFixed(0)} m³
+                                </Badge>
+                                <Badge className="bg-orange-900/50 text-orange-400 border-orange-800">
+                                    <Fuel className="h-3 w-3 mr-1" /> {totalDiesel.toFixed(1)} L
+                                </Badge>
+                                <Badge className="bg-purple-900/50 text-purple-400 border-purple-800">
+                                    <Wifi className="h-3 w-3 mr-1" /> KES {totalInternet.toLocaleString()}
+                                </Badge>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                             <Button 
                                 onClick={() => fetchUtilityData()} 
                                 variant="outline" 
-                                size="sm" 
+                                className="border-gray-700 bg-gray-900 hover:bg-gray-800"
                                 disabled={isLoading}
                             >
+                                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                                 Refresh
+                            </Button>
+                            <Button 
+                                variant="default"
+                                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                                onClick={() => window.scrollTo({ top: document.getElementById('utility-monitors')?.offsetTop, behavior: 'smooth' })}
+                            >
+                                <FileText className="h-4 w-4 mr-2" />
+                                Fill Readings
                             </Button>
                         </div>
                     </div>
                     
                     {/* Error Display */}
                     {error && (
-                        <div className="bg-destructive/15 text-destructive p-4 rounded-lg flex items-center gap-2">
+                        <div className="bg-red-900/20 text-red-400 p-4 rounded-lg border border-red-800/50 flex items-center gap-3">
                             <AlertTriangle className="h-5 w-5" />
-                            <div>
+                            <div className="flex-1">
                                 <p className="font-medium">Error Loading Data</p>
                                 <p className="text-sm">{error}</p>
                             </div>
@@ -668,345 +1555,339 @@ export default function UtilityManagementPage() {
                                 variant="outline" 
                                 size="sm" 
                                 onClick={fetchUtilityData}
-                                className="ml-auto"
+                                className="border-red-800 text-red-400 hover:bg-red-900/20"
                             >
                                 Retry
                             </Button>
                         </div>
                     )}
 
-                    {/* Filters and Export Card */}
-                    <Card>
+                    {/* Quick Filters */}
+                    <Card className="bg-gray-900 border-gray-800">
                         <CardHeader>
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <CardTitle className="flex items-center gap-2">
+                                    <CardTitle className="flex items-center gap-2 text-gray-200">
                                         <Filter className="w-5 h-5" />
-                                        Data Filters & Export
+                                        Quick Filters & Export
                                     </CardTitle>
-                                    <CardDescription>
-                                        Filter utility readings by date and export as CSV
+                                    <CardDescription className="text-gray-400">
+                                        Filter data by period and export reports
                                     </CardDescription>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    {hasActiveFilters && (
-                                        <Button 
-                                            onClick={clearFilters} 
-                                            variant="outline" 
-                                            size="sm"
-                                        >
-                                            <X className="w-4 h-4 mr-2" />
-                                            Clear Filters
-                                        </Button>
-                                    )}
+                                    <Badge variant="outline" className="border-gray-700 text-gray-400">
+                                        {readings.length} readings
+                                    </Badge>
                                     <Button 
-                                        onClick={downloadUtilityReadingsCSV} 
-                                        disabled={filteredReadings.length === 0 || isLoading}
+                                        onClick={() => alert('Export feature coming soon!')} 
+                                        disabled={readings.length === 0 || isLoading}
+                                        className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
                                     >
                                         <Download className="w-4 h-4 mr-2" />
-                                        Export CSV ({filteredReadings.length})
+                                        Export CSV
                                     </Button>
                                 </div>
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <Label htmlFor="utility-type">Utility Type</Label>
-                                        <Select value={utilityTypeFilter} onValueChange={(value: any) => setUtilityTypeFilter(value)}>
-                                            <SelectTrigger id="utility-type">
-                                                <SelectValue placeholder="Select utility type" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Utilities</SelectItem>
-                                                <SelectItem value="electricity">Electricity Only</SelectItem>
-                                                <SelectItem value="water">Water Only</SelectItem>
-                                                <SelectItem value="diesel">Diesel Only</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    
-                                    <div>
-                                        <Label htmlFor="date-filter">Date Filter</Label>
-                                        <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
-                                            <SelectTrigger id="date-filter">
-                                                <SelectValue placeholder="Select date filter" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Dates</SelectItem>
-                                                <SelectItem value="specific">Specific Date</SelectItem>
-                                                <SelectItem value="range">Date Range</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <Label className="text-gray-400 mb-2 block">Period Filter</Label>
+                                    <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
+                                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                                            <SelectValue placeholder="Select period" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-gray-900 border-gray-700">
+                                            <SelectItem value="today" className="hover:bg-gray-800">Today</SelectItem>
+                                            <SelectItem value="week" className="hover:bg-gray-800">Last 7 Days</SelectItem>
+                                            <SelectItem value="month" className="hover:bg-gray-800">Last 30 Days</SelectItem>
+                                            <SelectItem value="all" className="hover:bg-gray-800">All Time</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
-
-                                {dateFilter === 'specific' && (
-                                    <div className="p-4 border rounded-lg">
-                                        <Label htmlFor="specific-date">Select Date</Label>
-                                        <div className="flex items-center gap-2 mt-2">
-                                            <Input
-                                                id="specific-date"
-                                                type="date"
-                                                value={specificDate}
-                                                onChange={(e) => setSpecificDate(e.target.value)}
-                                                className="flex-1"
-                                            />
-                                            {specificDate && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => setSpecificDate('')}
-                                                    className="h-10 w-10 p-0"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mt-2">
-                                            Filter readings recorded on this specific date
-                                        </p>
-                                    </div>
-                                )}
-
-                                {dateFilter === 'range' && (
-                                    <div className="p-4 border rounded-lg">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <Label htmlFor="start-date">Start Date</Label>
-                                                <div className="flex items-center gap-2 mt-2">
-                                                    <Input
-                                                        id="start-date"
-                                                        type="date"
-                                                        value={startDate}
-                                                        onChange={(e) => setStartDate(e.target.value)}
-                                                        className="flex-1"
-                                                    />
-                                                    {startDate && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => setStartDate('')}
-                                                            className="h-10 w-10 p-0"
-                                                        >
-                                                            <X className="h-4 w-4" />
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <Label htmlFor="end-date">End Date</Label>
-                                                <div className="flex items-center gap-2 mt-2">
-                                                    <Input
-                                                        id="end-date"
-                                                        type="date"
-                                                        value={endDate}
-                                                        onChange={(e) => setEndDate(e.target.value)}
-                                                        className="flex-1"
-                                                    />
-                                                    {endDate && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => setEndDate('')}
-                                                            className="h-10 w-10 p-0"
-                                                        >
-                                                            <X className="h-4 w-4" />
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mt-2">
-                                            Filter readings recorded between these dates
-                                        </p>
-                                    </div>
-                                )}
-
-                                <div className="text-sm text-muted-foreground">
-                                    Showing {filteredReadings.length} of {readings.length} utility readings
-                                    {dateFilter === 'specific' && specificDate && (
-                                        <span> • Filtered by date: {new Date(specificDate).toLocaleDateString('en-GB')}</span>
-                                    )}
-                                    {dateFilter === 'range' && startDate && endDate && (
-                                        <span> • Filtered from {new Date(startDate).toLocaleDateString('en-GB')} to {new Date(endDate).toLocaleDateString('en-GB')}</span>
-                                    )}
-                                    {utilityTypeFilter !== 'all' && (
-                                        <span> • Showing {utilityTypeFilter} only</span>
-                                    )}
+                                
+                                <div>
+                                    <Label className="text-gray-400 mb-2 block">View Mode</Label>
+                                    <Select value={viewMode} onValueChange={(value: any) => setViewMode(value)}>
+                                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                                            <SelectValue placeholder="Select view" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-gray-900 border-gray-700">
+                                            <SelectItem value="overview" className="hover:bg-gray-800">Overview</SelectItem>
+                                            <SelectItem value="detailed" className="hover:bg-gray-800">Detailed</SelectItem>
+                                            <SelectItem value="analytics" className="hover:bg-gray-800">Analytics</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
-
-                                {filteredReadings.length > 0 && (
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
-                                        <div className="text-center p-3 border rounded-lg">
-                                            <div className="text-sm text-gray-500 mb-1">Filtered Power</div>
-                                            <div className="text-2xl font-bold text-blue-600">
-                                                {filteredTotals.powerTotal.toFixed(0)} kWh
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                {(filteredTotals.powerTotal * UTILITY_RATES.electricity).toLocaleString('en-KE', { style: 'currency', currency: 'KES' })}
-                                            </div>
-                                        </div>
-                                        <div className="text-center p-3 border rounded-lg">
-                                            <div className="text-sm text-gray-500 mb-1">Filtered Water</div>
-                                            <div className="text-2xl font-bold text-cyan-600">
-                                                {filteredTotals.waterTotal.toFixed(0)} m³
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                {(filteredTotals.waterTotal * UTILITY_RATES.water).toLocaleString('en-KE', { style: 'currency', currency: 'KES' })}
-                                            </div>
-                                        </div>
-                                        <div className="text-center p-3 border rounded-lg">
-                                            <div className="text-sm text-gray-500 mb-1">Filtered Diesel</div>
-                                            <div className="text-2xl font-bold text-amber-600">
-                                                {filteredTotals.dieselTotal.toFixed(1)} L
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                {(filteredTotals.dieselTotal * UTILITY_RATES.diesel).toLocaleString('en-KE', { style: 'currency', currency: 'KES' })}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                
+                                <div>
+                                    <Label className="text-gray-400 mb-2 block">Utility Type</Label>
+                                    <Select value={utilityTypeFilter} onValueChange={(value: any) => setUtilityTypeFilter(value)}>
+                                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                                            <SelectValue placeholder="Select utility" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-gray-900 border-gray-700">
+                                            <SelectItem value="all" className="hover:bg-gray-800">All Utilities</SelectItem>
+                                            <SelectItem value="power" className="hover:bg-gray-800">Power Only</SelectItem>
+                                            <SelectItem value="water" className="hover:bg-gray-800">Water Only</SelectItem>
+                                            <SelectItem value="diesel" className="hover:bg-gray-800">Diesel Only</SelectItem>
+                                            <SelectItem value="internet" className="hover:bg-gray-800">Internet Only</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
 
-                    <UtilityMonitors onSaveSuccess={handleRefreshData} />
+                    {/* Internet Cost Breakdown */}
+                    <Card className="bg-gray-900 border-gray-800">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2 text-gray-200">
+                                <Wifi className="h-5 w-5" />
+                                Internet Cost Breakdown
+                            </CardTitle>
+                            <CardDescription className="text-gray-400">
+                                Monthly internet costs breakdown (Safaricom, 5G, Syokinet)
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="text-center p-4 bg-gradient-to-br from-blue-900/20 to-blue-900/10 rounded-lg border border-blue-800/30">
+                                        <div className="text-sm text-gray-400 mb-2">Daily Cost</div>
+                                        <div className="text-2xl font-bold text-blue-400">
+                                            KES {dailyInternetCost.toFixed(2)}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">per day</div>
+                                    </div>
+                                    <div className="text-center p-4 bg-gradient-to-br from-purple-900/20 to-purple-900/10 rounded-lg border border-purple-800/30">
+                                        <div className="text-sm text-gray-400 mb-2">Weekly Cost</div>
+                                        <div className="text-2xl font-bold text-purple-400">
+                                            KES {weeklyInternetCost.toFixed(2)}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">per week</div>
+                                    </div>
+                                    <div className="text-center p-4 bg-gradient-to-br from-green-900/20 to-green-900/10 rounded-lg border border-green-800/30">
+                                        <div className="text-sm text-gray-400 mb-2">Monthly Cost</div>
+                                        <div className="text-2xl font-bold text-green-400">
+                                            KES {totalInternet.toLocaleString()}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">per month</div>
+                                    </div>
+                                    <div className="text-center p-4 bg-gradient-to-br from-cyan-900/20 to-cyan-900/10 rounded-lg border border-cyan-800/30">
+                                        <div className="text-sm text-gray-400 mb-2">Providers</div>
+                                        <div className="text-2xl font-bold text-cyan-400">3</div>
+                                        <div className="text-xs text-gray-500 mt-1">active providers</div>
+                                    </div>
+                                </div>
+                                
+                                {/* Internet Providers Breakdown */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="p-4 bg-gray-800/30 rounded-lg border border-gray-700">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                                                <span className="font-medium text-gray-300">Safaricom</span>
+                                            </div>
+                                            <Badge className="bg-blue-900/50 text-blue-400 border-blue-800">
+                                                KES {internetOverview.safaricomCost.value}
+                                            </Badge>
+                                        </div>
+                                        <div className="text-sm text-gray-400">Primary business internet</div>
+                                    </div>
+                                    
+                                    <div className="p-4 bg-gray-800/30 rounded-lg border border-gray-700">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                                <span className="font-medium text-gray-300">5G Internet</span>
+                                            </div>
+                                            <Badge className="bg-green-900/50 text-green-400 border-green-800">
+                                                KES {internetOverview.internet5GCost.value}
+                                            </Badge>
+                                        </div>
+                                        <div className="text-sm text-gray-400">High-speed mobile internet</div>
+                                    </div>
+                                    
+                                    <div className="p-4 bg-gray-800/30 rounded-lg border border-gray-700">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
+                                                <span className="font-medium text-gray-300">Syokinet</span>
+                                            </div>
+                                            <Badge className="bg-cyan-900/50 text-cyan-400 border-cyan-800">
+                                                KES {internetOverview.syokinetCost.value}
+                                            </Badge>
+                                        </div>
+                                        <div className="text-sm text-gray-400">Backup/Office internet</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
 
-                    {/* Diesel Overview Section */}
-                    <section id="diesel" className="pt-4">
-                        <h3 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-                            <Fuel className="h-5 w-5" />
-                            Diesel Management
-                        </h3>
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-2">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <Link href="#diesel" className="block transition-transform hover:scale-[1.02]">
-                                        <OverviewCard data={dieselOverview.consumptionToday} icon={Fuel} />
-                                    </Link>
-                                    <Link href="#diesel" className="block transition-transform hover:scale-[1.02]">
-                                        <OverviewCard data={dieselOverview.avgDailyConsumption} icon={Thermometer} />
-                                    </Link>
-                                    <Link href="#diesel" className="block transition-transform hover:scale-[1.02]">
-                                        <OverviewCard data={dieselOverview.monthlyCost} icon={DollarSign} />
-                                    </Link>
-                                    <Link href="#diesel" className="block transition-transform hover:scale-[1.02]">
-                                        <OverviewCard data={dieselOverview.estimatedRuntime} icon={Clock} />
-                                    </Link>
-                                </div>
-                                {/* Diesel Consumption Chart */}
-                                <div className="mt-6">
-                                    <DieselConsumptionChart 
-                                        data={dieselConsumptionData}
-                                        isLoading={isLoading}
-                                    />
-                                </div>
-                            </div>
-                            <div className="lg:col-span-1">
-                                <DieselBreakdownChart 
-                                    generatorDiesel={dieselBreakdown.generatorDiesel}
-                                    fleetDiesel={dieselBreakdown.fleetDiesel}
-                                    isLoading={isLoading}
-                                />
-                            </div>
-                        </div>
-                    </section>
-                    
-                    <section id="energy">
-                        <h3 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-                            <Zap className="h-5 w-5" />
-                            Energy Management
-                        </h3>
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Link href="#energy" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={energyOverview.totalConsumption} icon={Zap} />
-                                </Link>
-                                <Link href="#energy" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={energyOverview.monthlyCost} icon={DollarSign} />
-                                </Link>
-                                <Link href="#energy" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={energyOverview.peakDemand} icon={Thermometer} />
-                                </Link>
-                                <Link href="#energy" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={energyOverview.powerFactor} icon={Bolt} />
-                                </Link>
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="lg:col-span-2">
-                                    <EnergyConsumptionChart data={energyConsumptionData.map(d => ({ hour: d.date, usage: d.value }))} />
-                                </div>
-                                <div className="lg:col-span-1">
-                                    <EnergyBreakdownChart data={[
-                                        { name: 'Lighting', value: 30, fill: 'hsl(var(--chart-1))' },
-                                        { name: 'HVAC', value: 40, fill: 'hsl(var(--chart-2))' },
-                                        { name: 'Machinery', value: 30, fill: 'hsl(var(--chart-3))' },
-                                    ]} />
-                                </div>
-                                <div className="lg:col-span-2">
-                                    <EnergyCostChart data={generateEnergyCostData(monthlyPowerCost)} />
-                                </div>
-                                <div className="lg:col-span-1">
-                                    <AnomalyDetection anomalies={[]} onExplain={energyAnomalyExplain} />
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                    
-                    <section id="water" className="pt-8">
-                        <h3 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-                            <Droplet className="h-5 w-5" />
-                            Water Management
-                        </h3>
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Link href="#water" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={waterOverview.totalConsumption} icon={Droplet} />
-                                </Link>
-                                <Link href="#water" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={waterOverview.monthlyCost} icon={DollarSign} />
-                                </Link>
-                                <Link href="#water" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={waterOverview.qualityStatus} icon={Thermometer} />
-                                </Link>
-                                <Link href="#water" className="block transition-transform hover:scale-[1.02]">
-                                    <OverviewCard data={waterOverview.recyclingRate} icon={Bolt} />
-                                </Link>
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="lg:col-span-2">
-                                    <WaterConsumptionChart data={waterConsumptionData.map(d => ({ day: d.date.split(' ')[0], consumption: d.value }))} />
-                                </div>
-                                <div className="lg:col-span-1">
-                                    <WaterBreakdownChart data={[
-                                        { name: 'Processing', value: 50, fill: 'hsl(var(--chart-1))' },
-                                        { name: 'Cleaning', value: 25, fill: 'hsl(var(--chart-2))' },
-                                        { name: 'Irrigation', value: 15, fill: 'hsl(var(--chart-3))' },
-                                        { name: 'Other', value: 10, fill: 'hsl(var(--chart-4))' },
-                                    ]} />
-                                </div>
-                                <div className="lg:col-span-3">
-                                    <WaterQualityTable data={waterQualityData} />
-                                </div>
-                            </div>
-                        </div>
-                    </section>
+                    {/* Main Utility Entry Form */}
+                    <div id="utility-monitors">
+                        <UtilityMonitors onSaveSuccess={handleRefreshData} />
+                    </div>
 
-                    {/* Data Status Indicator */}
-                    <div className="pt-4 border-t">
-                        <div className="flex items-center justify-between text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
+                    {/* Overview Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="block transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-blue-900/20">
+                            <OverviewCard data={energyOverview.totalConsumption} />
+                        </div>
+                        <div className="block transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-cyan-900/20">
+                            <OverviewCard data={waterOverview.totalConsumption} />
+                        </div>
+                        <div className="block transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-orange-900/20">
+                            <OverviewCard data={dieselOverview.consumptionToday} />
+                        </div>
+                        <div className="block transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-900/20">
+                            <OverviewCard data={internetOverview.totalCost} />
+                        </div>
+                    </div>
+
+                    {/* Detailed Breakdown Tabs */}
+                    <Tabs defaultValue="power" className="space-y-4">
+                        <TabsList className="grid grid-cols-4 bg-gray-900 border border-gray-800">
+                            <TabsTrigger value="power" className="data-[state=active]:bg-blue-900 data-[state=active]:text-blue-400">
+                                <Zap className="h-4 w-4 mr-2" />
+                                Power
+                            </TabsTrigger>
+                            <TabsTrigger value="water" className="data-[state=active]:bg-cyan-900 data-[state=active]:text-cyan-400">
+                                <Droplet className="h-4 w-4 mr-2" />
+                                Water
+                            </TabsTrigger>
+                            <TabsTrigger value="diesel" className="data-[state=active]:bg-orange-900 data-[state=active]:text-orange-400">
+                                <Fuel className="h-4 w-4 mr-2" />
+                                Diesel
+                            </TabsTrigger>
+                            <TabsTrigger value="internet" className="data-[state=active]:bg-purple-900 data-[state=active]:text-purple-400">
+                                <Wifi className="h-4 w-4 mr-2" />
+                                Internet
+                            </TabsTrigger>
+                        </TabsList>
+                        
+                        {/* Power Tab */}
+                        <TabsContent value="power" className="space-y-6">
+                            <Card className="bg-gray-900 border-gray-800">
+                                <CardHeader>
+                                    <CardTitle className="text-gray-200">Power Consumption Breakdown</CardTitle>
+                                    <CardDescription className="text-gray-400">
+                                        Detailed breakdown by area: Office, Machine, Coldrooms, Other
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                        <div className="text-center p-4 bg-gray-800/30 rounded-lg border border-blue-800/30">
+                                            <Building className="h-8 w-8 mx-auto mb-2 text-blue-400" />
+                                            <div className="text-sm text-gray-400">Office</div>
+                                            <div className="text-xl font-bold text-blue-400">{powerBreakdown.office.toFixed(1)} kWh</div>
+                                            <div className="text-xs text-gray-500 mt-1">{((powerBreakdown.office/totalPower)*100 || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div className="text-center p-4 bg-gray-800/30 rounded-lg border border-green-800/30">
+                                            <Cpu className="h-8 w-8 mx-auto mb-2 text-green-400" />
+                                            <div className="text-sm text-gray-400">Machine</div>
+                                            <div className="text-xl font-bold text-green-400">{powerBreakdown.machine.toFixed(1)} kWh</div>
+                                            <div className="text-xs text-gray-500 mt-1">{((powerBreakdown.machine/totalPower)*100 || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div className="text-center p-4 bg-gray-800/30 rounded-lg border border-cyan-800/30">
+                                            <Snowflake className="h-8 w-8 mx-auto mb-2 text-cyan-400" />
+                                            <div className="text-sm text-gray-400">Coldroom 1</div>
+                                            <div className="text-xl font-bold text-cyan-400">{powerBreakdown.coldroom1.toFixed(1)} kWh</div>
+                                            <div className="text-xs text-gray-500 mt-1">{((powerBreakdown.coldroom1/totalPower)*100 || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div className="text-center p-4 bg-gray-800/30 rounded-lg border border-blue-300/30">
+                                            <Snowflake className="h-8 w-8 mx-auto mb-2 text-blue-300" />
+                                            <div className="text-sm text-gray-400">Coldroom 2</div>
+                                            <div className="text-xl font-bold text-blue-300">{powerBreakdown.coldroom2.toFixed(1)} kWh</div>
+                                            <div className="text-xs text-gray-500 mt-1">{((powerBreakdown.coldroom2/totalPower)*100 || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div className="text-center p-4 bg-gray-800/30 rounded-lg border border-purple-800/30">
+                                            <Activity className="h-8 w-8 mx-auto mb-2 text-purple-400" />
+                                            <div className="text-sm text-gray-400">Other</div>
+                                            <div className="text-xl font-bold text-purple-400">{powerBreakdown.other.toFixed(1)} kWh</div>
+                                            <div className="text-xs text-gray-500 mt-1">{((powerBreakdown.other/totalPower)*100 || 0).toFixed(1)}%</div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 p-4 bg-gradient-to-r from-blue-900/20 to-purple-900/20 rounded-lg border border-gray-800">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm text-gray-400">Total Power Consumption</p>
+                                                <p className="text-2xl font-bold text-white">{totalPower.toFixed(1)} kWh</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm text-gray-400">Monthly Cost</p>
+                                                <p className="text-2xl font-bold text-green-400">KES {((totalPower * UTILITY_RATES.electricity * 30) || 0).toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+                        
+                        {/* Water Tab */}
+                        <TabsContent value="water" className="space-y-6">
+                            <Card className="bg-gray-900 border-gray-800">
+                                <CardHeader>
+                                    <CardTitle className="text-gray-200">Water Consumption Breakdown</CardTitle>
+                                    <CardDescription className="text-gray-400">
+                                        Two water meters tracking with total consumption
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="text-center p-6 bg-gradient-to-br from-cyan-900/20 to-blue-900/20 rounded-lg border border-cyan-800/30">
+                                            <Droplet className="h-10 w-10 mx-auto mb-3 text-cyan-400" />
+                                            <div className="text-sm text-gray-400 mb-1">Water Meter 1</div>
+                                            <div className="text-3xl font-bold text-cyan-400">{waterBreakdown.meter1.toFixed(1)} m³</div>
+                                            <div className="text-xs text-gray-400 mt-2">Primary water line</div>
+                                        </div>
+                                        <div className="text-center p-6 bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-lg border border-blue-800/30">
+                                            <Droplet className="h-10 w-10 mx-auto mb-3 text-blue-400" />
+                                            <div className="text-sm text-gray-400 mb-1">Water Meter 2</div>
+                                            <div className="text-3xl font-bold text-blue-400">{waterBreakdown.meter2.toFixed(1)} m³</div>
+                                            <div className="text-xs text-gray-400 mt-2">Secondary water line</div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 p-6 bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-lg border border-gray-800">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-400">Meter 1 Consumption</p>
+                                                <p className="text-2xl font-bold text-cyan-400">{waterBreakdown.meter1.toFixed(1)} m³</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-400">Meter 2 Consumption</p>
+                                                <p className="text-2xl font-bold text-blue-400">{waterBreakdown.meter2.toFixed(1)} m³</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm text-gray-400">Total Water</p>
+                                                <p className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                                                    {totalWater.toFixed(1)} m³
+                                                </p>
+                                                <p className="text-sm text-gray-400 mt-1">KES {((totalWater * UTILITY_RATES.water * 30) || 0).toLocaleString()}/month</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+                    </Tabs>
+
+                    {/* Data Status Footer */}
+                    <div className="pt-6 border-t border-gray-800">
+                        <div className="flex flex-col md:flex-row items-center justify-between text-sm text-gray-400">
+                            <div className="flex items-center gap-3 mb-4 md:mb-0">
                                 {isLoading ? (
                                     <>
                                         <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></div>
-                                        <span>Loading data...</span>
+                                        <span>Loading utility data...</span>
                                     </>
                                 ) : error ? (
                                     <>
-                                        <div className="h-2 w-2 rounded-full bg-destructive"></div>
-                                        <span className="text-destructive">Error loading data</span>
+                                        <div className="h-2 w-2 rounded-full bg-red-500"></div>
+                                        <span className="text-red-400">Error loading data</span>
                                     </>
                                 ) : (
                                     <>
@@ -1014,22 +1895,40 @@ export default function UtilityManagementPage() {
                                         <span>Data loaded successfully</span>
                                     </>
                                 )}
+                                <span className="text-gray-500">•</span>
+                                <span>Last updated: {lastUpdated}</span>
+                                <span className="text-gray-500">•</span>
+                                <span>{readings.length} total readings</span>
                             </div>
                             <div className="flex items-center gap-4">
-                                <span>Last updated: {lastUpdated}</span>
-                                <span>Total readings: {readings.length}</span>
-                                <button 
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={fetchUtilityData}
                                     disabled={isLoading}
-                                    className="text-primary hover:text-primary/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                    className="text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
                                 >
                                     {isLoading ? (
                                         <>
-                                            <div className="h-3 w-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                                            <RefreshCw className="h-3 w-3 mr-2 animate-spin" />
                                             Refreshing...
                                         </>
-                                    ) : 'Refresh Data'}
-                                </button>
+                                    ) : (
+                                        <>
+                                            <RefreshCw className="h-3 w-3 mr-2" />
+                                            Refresh Data
+                                        </>
+                                    )}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                                    className="text-gray-400 hover:text-white hover:bg-gray-800"
+                                >
+                                    <Eye className="h-3 w-3 mr-2" />
+                                    Back to Top
+                                </Button>
                             </div>
                         </div>
                     </div>

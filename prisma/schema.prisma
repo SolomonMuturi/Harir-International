@@ -377,7 +377,7 @@ model CountingRecord {
   notes                 String?
   for_coldroom          Boolean?        @default(false)
   loaded_to_coldroom_at DateTime?
-  status                String?         @default("pending")  // CHANGED
+  status                String?         @default("pending")
   total_counted_weight  Float?
   totals                String?         @db.LongText
   weight_entry          weight_entries? @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
@@ -407,34 +407,56 @@ model RejectionRecord {
   submitted_at          DateTime @default(now())
   processed_by          String
   original_counting_id  String?
-  status                String?  @default("pending_coldroom")  // NEW
+  status                String?  @default("pending_coldroom")
 
   @@index([supplier_name])
   @@index([pallet_id])
   @@index([submitted_at])
-  @@index([status])  // NEW
+  @@index([status])
   @@map("rejection_records")
 }
 
+// UPDATED UTILITY READINGS MODEL WITH ALL NEW FIELDS
 model utility_readings {
-  id             Int      @id @default(autoincrement())
-  date           DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  date         DateTime @default(now())
+  
+  // Power readings (totals for backward compatibility)
   powerOpening   String
   powerClosing   String
   powerConsumed  String
+  
+  // Water readings (totals for backward compatibility)
   waterOpening   String
   waterClosing   String
   waterConsumed  String
+  
+  // Generator data
   generatorStart String
   generatorStop  String
   timeConsumed   String
   dieselConsumed String
   dieselRefill   String?
+  
+  // Record details
   recordedBy     String
   shift          String?
   notes          String?
+  
+  // Metadata for detailed tracking (JSON format)
+  metadata       Json?
+  
+  // Timestamps
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  // Indexes
+  @@index([date])
+  @@index([shift])
+  @@index([recordedBy])
+  @@index([createdAt])
+  
+  @@map("utility_readings")
 }
 
 model cold_room_boxes {
@@ -664,6 +686,117 @@ model UserRole {
   @@map("user_roles")
 }
 
+// NEW: Utility rates table for configurable pricing
+model utility_rates {
+  id             Int      @id @default(autoincrement())
+  utility_type   String   @db.VarChar(50)  // 'electricity', 'water', 'diesel'
+  rate           Decimal  @db.Decimal(10, 2)  // Rate per unit
+  unit           String   @db.VarChar(20)   // 'KES/kWh', 'KES/m³', 'KES/L'
+  effective_from DateTime @default(now())
+  effective_to   DateTime?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([utility_type])
+  @@index([effective_from])
+  @@map("utility_rates")
+}
+
+// NEW: Internet costs tracking
+model internet_costs {
+  id                 Int      @id @default(autoincrement())
+  provider           String   @db.VarChar(100)  // 'Safaricom', '5G Internet', 'Syokinet'
+  monthly_cost       Decimal  @db.Decimal(10, 2)  // Monthly cost in KES
+  billing_cycle      String   @db.VarChar(50)   // e.g., '1st-30th'
+  payment_due_date   DateTime?                  // Next payment due date
+  status             String   @default("active") @db.VarChar(20)
+  notes              String?  @db.Text
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  @@index([provider])
+  @@index([status])
+  @@map("internet_costs")
+}
+
+// NEW: Daily utility notifications
+model utility_notifications {
+  id                  Int      @id @default(autoincrement())
+  user_id             String?  @db.VarChar(255)
+  notification_time   String   @db.VarChar(5)  // Format: 'HH:MM'
+  enabled             Boolean  @default(true)
+  last_sent           DateTime?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  @@index([user_id])
+  @@index([enabled])
+  @@map("utility_notifications")
+}
+
+// NEW: Utility area consumption (for detailed breakdown)
+model utility_area_consumption {
+  id             Int      @id @default(autoincrement())
+  reading_id     Int?                       // Reference to utility_readings
+  area_type      String   @db.VarChar(50)   // 'office', 'machine', 'coldroom1', 'coldroom2', 'other'
+  opening_reading String? @db.VarChar(50)
+  closing_reading String? @db.VarChar(50)
+  consumed       Decimal? @db.Decimal(10, 2)
+  created_at     DateTime @default(now())
+
+  @@index([reading_id])
+  @@index([area_type])
+  @@index([created_at])
+  @@map("utility_area_consumption")
+}
+
+// NEW: Water meter details
+model water_meters {
+  id           Int      @id @default(autoincrement())
+  meter_number String   @unique @db.VarChar(50)
+  meter_name   String   @db.VarChar(100)  // e.g., 'Water Meter 1', 'Water Meter 2'
+  location     String?  @db.VarChar(255)
+  status       String   @default("active") @db.VarChar(20)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([meter_number])
+  @@index([status])
+  @@map("water_meters")
+}
+
+// NEW: Generator details
+model generator_details {
+  id            Int      @id @default(autoincrement())
+  generator_code String  @unique @db.VarChar(50)
+  generator_name String  @db.VarChar(100)
+  fuel_rate     Decimal  @db.Decimal(5, 2)  // Liters per hour
+  status        String   @default("active") @db.VarChar(20)
+  last_service  DateTime?
+  next_service  DateTime?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([generator_code])
+  @@index([status])
+  @@map("generator_details")
+}
+
+// NEW: Equipment temperature monitoring
+model equipment_temperatures {
+  id            Int      @id @default(autoincrement())
+  equipment_type String  @db.VarChar(50)  // 'coldroom1', 'coldroom2', 'machine'
+  temperature   Decimal? @db.Decimal(4, 1)
+  status        String   @db.VarChar(20)
+  recorded_at   DateTime @default(now())
+  recorded_by   String?  @db.VarChar(100)
+
+  @@index([equipment_type])
+  @@index([recorded_at])
+  @@map("equipment_temperatures")
+}
+
+// Enums
 enum carriers_status {
   Active
   Inactive

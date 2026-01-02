@@ -1,59 +1,128 @@
-// app/api/utility-readings/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
 
-// Schema for what comes from frontend
+// Enhanced schema with all equipment data
 const utilityReadingInputSchema = z.object({
-  powerOpening: z.string().min(1, 'Power opening reading is required'),
-  powerClosing: z.string().min(1, 'Power closing reading is required'),
-  waterOpening: z.string().min(1, 'Water opening reading is required'),
-  waterClosing: z.string().min(1, 'Water closing reading is required'),
+  // Power readings by area
+  powerOfficeOpening: z.string().min(1, 'Office power opening reading is required'),
+  powerOfficeClosing: z.string().min(1, 'Office power closing reading is required'),
+  powerMachineOpening: z.string().min(1, 'Machine power opening reading is required'),
+  powerMachineClosing: z.string().min(1, 'Machine power closing reading is required'),
+  powerColdroom1Opening: z.string().min(1, 'Coldroom 1 power opening reading is required'),
+  powerColdroom1Closing: z.string().min(1, 'Coldroom 1 power closing reading is required'),
+  powerColdroom2Opening: z.string().min(1, 'Coldroom 2 power opening reading is required'),
+  powerColdroom2Closing: z.string().min(1, 'Coldroom 2 power closing reading is required'),
+  powerOtherOpening: z.string().optional().nullable(),
+  powerOtherClosing: z.string().optional().nullable(),
+  powerOtherActivity: z.string().optional().nullable(),
+  
+  // Water readings for two meters
+  waterMeter1Opening: z.string().min(1, 'Water Meter 1 opening reading is required'),
+  waterMeter1Closing: z.string().min(1, 'Water Meter 1 closing reading is required'),
+  waterMeter2Opening: z.string().min(1, 'Water Meter 2 opening reading is required'),
+  waterMeter2Closing: z.string().min(1, 'Water Meter 2 closing reading is required'),
+  
+  // Internet costs (monthly)
+  internetSafaricom: z.string().optional().nullable(),
+  internet5G: z.string().optional().nullable(),
+  internetSyokinet: z.string().optional().nullable(),
+  internetBillingCycle: z.string().optional().nullable(),
+  
+  // Generator data
   generatorStart: z.string().regex(/^\d{2}:\d{2}$/, 'Generator start time must be in HH:MM format'),
   generatorStop: z.string().regex(/^\d{2}:\d{2}$/, 'Generator stop time must be in HH:MM format'),
+  generatorCode: z.string().optional().nullable(),
+  generatorName: z.string().optional().nullable(),
+  
+  // Diesel
   dieselRefill: z.string().optional().nullable(),
+  dieselConsumed: z.string().optional().nullable(),
+  
+  // Record details
   recordedBy: z.string().min(1, 'Recorded by is required'),
-  shift: z.string().optional().nullable(),
+  shift: z.enum(['Morning', 'Evening', 'Night']).optional().nullable(),
+  date: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  
+  // Equipment status
+  coldroom1Temp: z.string().optional().nullable(),
+  coldroom2Temp: z.string().optional().nullable(),
+  machineStatus: z.string().optional().nullable(),
+  
+  // Water meter details
+  waterMeter1Number: z.string().optional().nullable(),
+  waterMeter2Number: z.string().optional().nullable(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    console.log('📦 Received request body:', body);
 
     // Validate input
     const parsed = utilityReadingInputSchema.parse(body);
-    console.log('✅ Parsed data:', parsed);
 
-    // Convert numeric values
-    const powerOpening = parseFloat(parsed.powerOpening);
-    const powerClosing = parseFloat(parsed.powerClosing);
-    const waterOpening = parseFloat(parsed.waterOpening);
-    const waterClosing = parseFloat(parsed.waterClosing);
+    // Convert numeric values for power
+    const powerOfficeOpening = parseFloat(parsed.powerOfficeOpening);
+    const powerOfficeClosing = parseFloat(parsed.powerOfficeClosing);
+    const powerMachineOpening = parseFloat(parsed.powerMachineOpening);
+    const powerMachineClosing = parseFloat(parsed.powerMachineClosing);
+    const powerColdroom1Opening = parseFloat(parsed.powerColdroom1Opening);
+    const powerColdroom1Closing = parseFloat(parsed.powerColdroom1Closing);
+    const powerColdroom2Opening = parseFloat(parsed.powerColdroom2Opening);
+    const powerColdroom2Closing = parseFloat(parsed.powerColdroom2Closing);
+    
+    const powerOtherOpening = parsed.powerOtherOpening ? parseFloat(parsed.powerOtherOpening) : 0;
+    const powerOtherClosing = parsed.powerOtherClosing ? parseFloat(parsed.powerOtherClosing) : 0;
+    
+    // Convert water readings
+    const waterMeter1Opening = parseFloat(parsed.waterMeter1Opening);
+    const waterMeter1Closing = parseFloat(parsed.waterMeter1Closing);
+    const waterMeter2Opening = parseFloat(parsed.waterMeter2Opening);
+    const waterMeter2Closing = parseFloat(parsed.waterMeter2Closing);
+    
+    // Convert internet costs
+    const internetSafaricom = parsed.internetSafaricom ? parseFloat(parsed.internetSafaricom) : 0;
+    const internet5G = parsed.internet5G ? parseFloat(parsed.internet5G) : 0;
+    const internetSyokinet = parsed.internetSyokinet ? parseFloat(parsed.internetSyokinet) : 0;
     
     // Handle optional nullable fields
     const dieselRefill = parsed.dieselRefill && parsed.dieselRefill.trim() !== '' 
       ? parseFloat(parsed.dieselRefill) 
       : null;
 
-    // Validate logic
-    if (powerClosing < powerOpening) {
-      return NextResponse.json(
-        { error: 'Power closing reading must be greater than opening reading' },
-        { status: 400 }
-      );
-    }
-    if (waterClosing < waterOpening) {
-      return NextResponse.json(
-        { error: 'Water closing reading must be greater than opening reading' },
-        { status: 400 }
-      );
-    }
+    // Validate power readings
+    const validateReadings = (opening: number, closing: number, name: string) => {
+      if (closing < opening) {
+        throw new Error(`${name} closing reading must be greater than opening reading`);
+      }
+    };
 
-    // Derived calculations
-    const powerConsumed = powerClosing - powerOpening;
-    const waterConsumed = waterClosing - waterOpening;
+    validateReadings(powerOfficeOpening, powerOfficeClosing, 'Office Power');
+    validateReadings(powerMachineOpening, powerMachineClosing, 'Machine Power');
+    validateReadings(powerColdroom1Opening, powerColdroom1Closing, 'Coldroom 1 Power');
+    validateReadings(powerColdroom2Opening, powerColdroom2Closing, 'Coldroom 2 Power');
+    if (powerOtherClosing > 0) {
+      validateReadings(powerOtherOpening, powerOtherClosing, 'Other Activities Power');
+    }
+    
+    validateReadings(waterMeter1Opening, waterMeter1Closing, 'Water Meter 1');
+    validateReadings(waterMeter2Opening, waterMeter2Closing, 'Water Meter 2');
+
+    // Calculate power consumption by area
+    const powerOfficeConsumed = powerOfficeClosing - powerOfficeOpening;
+    const powerMachineConsumed = powerMachineClosing - powerMachineOpening;
+    const powerColdroom1Consumed = powerColdroom1Closing - powerColdroom1Opening;
+    const powerColdroom2Consumed = powerColdroom2Closing - powerColdroom2Opening;
+    const powerOtherConsumed = powerOtherClosing - powerOtherOpening;
+    const totalPowerConsumed = powerOfficeConsumed + powerMachineConsumed + 
+                               powerColdroom1Consumed + powerColdroom2Consumed + 
+                               powerOtherConsumed;
+
+    // Calculate water consumption
+    const waterMeter1Consumed = waterMeter1Closing - waterMeter1Opening;
+    const waterMeter2Consumed = waterMeter2Closing - waterMeter2Opening;
+    const totalWaterConsumed = waterMeter1Consumed + waterMeter2Consumed;
 
     // Generator runtime calculation
     const [startHour, startMin] = parsed.generatorStart.split(':').map(Number);
@@ -65,7 +134,11 @@ export async function POST(request: NextRequest) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     const totalHours = totalMinutes / 60;
-    const dieselConsumed = totalHours * 7;
+    
+    // Calculate diesel consumption if not provided
+    const dieselConsumed = parsed.dieselConsumed 
+      ? parseFloat(parsed.dieselConsumed)
+      : totalHours * 7; // Default calculation: 7L per hour
 
     const formatTimeDisplay = () => {
       if (hours === 0 && minutes === 0) return '0 hours';
@@ -76,123 +149,96 @@ export async function POST(request: NextRequest) {
     };
     const timeConsumed = formatTimeDisplay();
 
-    console.log('🧮 Calculated values:', {
-      powerConsumed,
-      waterConsumed,
-      dieselConsumed,
-      timeConsumed
+    // Total internet cost
+    const totalInternetCost = internetSafaricom + internet5G + internetSyokinet;
+
+    // Create metadata for additional fields
+    const metadata = JSON.stringify({
+      // Power breakdown
+      powerOfficeOpening,
+      powerOfficeClosing,
+      powerMachineOpening,
+      powerMachineClosing,
+      powerColdroom1Opening,
+      powerColdroom1Closing,
+      powerColdroom2Opening,
+      powerColdroom2Closing,
+      powerOtherOpening,
+      powerOtherClosing,
+      powerOtherActivity: parsed.powerOtherActivity,
+      
+      // Water meter details
+      waterMeter1Number: parsed.waterMeter1Number,
+      waterMeter2Number: parsed.waterMeter2Number,
+      
+      // Internet costs
+      internetSafaricom,
+      internet5G,
+      internetSyokinet,
+      internetBillingCycle: parsed.internetBillingCycle,
+      
+      // Equipment status
+      coldroom1Temp: parsed.coldroom1Temp,
+      coldroom2Temp: parsed.coldroom2Temp,
+      machineStatus: parsed.machineStatus,
+      
+      // Generator details
+      generatorCode: parsed.generatorCode,
+      generatorName: parsed.generatorName,
     });
 
-    // Try Prisma create first
-    try {
-      console.log('🔄 Attempting Prisma create...');
-      const reading = await prisma.utility_readings.create({
-        data: {
-          // DO NOT include id, date, createdAt, updatedAt - they have defaults
-          powerOpening: powerOpening.toString(),
-          powerClosing: powerClosing.toString(),
-          powerConsumed: powerConsumed.toString(),
-          waterOpening: waterOpening.toString(),
-          waterClosing: waterClosing.toString(),
-          waterConsumed: waterConsumed.toString(),
-          generatorStart: parsed.generatorStart,
-          generatorStop: parsed.generatorStop,
-          timeConsumed,
-          dieselConsumed: dieselConsumed.toString(),
-          dieselRefill: dieselRefill ? dieselRefill.toString() : null,
-          recordedBy: parsed.recordedBy,
-          shift: parsed.shift || null,
-          notes: parsed.notes || null,
-        },
-      });
-      
-      console.log('✅ Successfully created record via Prisma:', reading.id);
-      return NextResponse.json({ 
-        success: true, 
-        reading,
-        calculated: {
-          powerConsumed,
-          waterConsumed,
-          timeConsumed,
-          dieselConsumed,
-        }
-      }, { status: 201 });
-      
-    } catch (prismaError: any) {
-      console.error('❌ Prisma create failed:', prismaError);
-      console.error('❌ Error name:', prismaError.name);
-      console.error('❌ Error message:', prismaError.message);
-      
-      if (prismaError.code) {
-        console.error('❌ Prisma error code:', prismaError.code);
+    const reading = await prisma.utility_readings.create({
+      data: {
+        // Store totals for quick access
+        powerOpening: totalPowerConsumed.toString(), // Storing total for backward compatibility
+        powerClosing: "0", // Not used in new system
+        powerConsumed: totalPowerConsumed.toString(),
+        
+        waterOpening: totalWaterConsumed.toString(), // Storing total for backward compatibility
+        waterClosing: "0", // Not used in new system
+        waterConsumed: totalWaterConsumed.toString(),
+        
+        generatorStart: parsed.generatorStart,
+        generatorStop: parsed.generatorStop,
+        timeConsumed,
+        dieselConsumed: dieselConsumed.toString(),
+        dieselRefill: dieselRefill ? dieselRefill.toString() : null,
+        recordedBy: parsed.recordedBy,
+        shift: parsed.shift || null,
+        date: parsed.date ? new Date(parsed.date) : new Date(),
+        notes: parsed.notes || null,
+        metadata,
+      },
+    });
+    
+    return NextResponse.json({ 
+      success: true, 
+      reading,
+      calculated: {
+        // Power breakdown
+        powerOfficeConsumed,
+        powerMachineConsumed,
+        powerColdroom1Consumed,
+        powerColdroom2Consumed,
+        powerOtherConsumed,
+        totalPowerConsumed,
+        
+        // Water breakdown
+        waterMeter1Consumed,
+        waterMeter2Consumed,
+        totalWaterConsumed,
+        
+        // Generator
+        timeConsumed,
+        dieselConsumed,
+        
+        // Internet
+        totalInternetCost,
       }
-      
-      // Fallback to raw SQL to get detailed MySQL error
-      console.log('🔄 Attempting raw SQL insert as fallback...');
-      
-      try {
-        const sqlResult = await prisma.$executeRaw`
-          INSERT INTO utility_readings (
-            powerOpening, powerClosing, powerConsumed,
-            waterOpening, waterClosing, waterConsumed,
-            generatorStart, generatorStop, timeConsumed, dieselConsumed,
-            dieselRefill, recordedBy, shift, notes
-          ) VALUES (
-            ${powerOpening}, ${powerClosing}, ${powerConsumed},
-            ${waterOpening}, ${waterClosing}, ${waterConsumed},
-            ${parsed.generatorStart}, ${parsed.generatorStop}, 
-            ${timeConsumed}, ${dieselConsumed},
-            ${dieselRefill}, ${parsed.recordedBy}, 
-            ${parsed.shift || null}, ${parsed.notes || null}
-          )
-        `;
-        
-        console.log('✅ Raw SQL insert successful, rows affected:', sqlResult);
-        
-        // Fetch the newly created record
-        const newReading = await prisma.utility_readings.findFirst({
-          orderBy: { date: 'desc' },
-          where: {
-            recordedBy: parsed.recordedBy,
-            generatorStart: parsed.generatorStart,
-            generatorStop: parsed.generatorStop,
-          }
-        });
-        
-        return NextResponse.json({ 
-          success: true, 
-          reading: newReading,
-          calculated: {
-            powerConsumed,
-            waterConsumed,
-            timeConsumed,
-            dieselConsumed,
-          },
-          note: 'Created via raw SQL fallback'
-        }, { status: 201 });
-        
-      } catch (sqlError: any) {
-        console.error('❌ Raw SQL insert also failed!');
-        console.error('❌ MySQL error message:', sqlError.message);
-        console.error('❌ MySQL error code:', sqlError.code);
-        console.error('❌ Full SQL error:', sqlError);
-        
-        // Try one more diagnostic query
-        try {
-          const tableInfo = await prisma.$queryRaw`
-            SELECT COUNT(*) as count FROM utility_readings
-          `;
-          console.log('ℹ️ Table row count:', tableInfo);
-        } catch (countError) {
-          console.error('❌ Even count query failed:', countError);
-        }
-        
-        throw new Error(`Database insertion failed: ${sqlError.message}`);
-      }
-    }
+    }, { status: 201 });
     
   } catch (error) {
-    console.error('🔥 Top-level error in utility readings POST:', error);
+    console.error('Error in utility readings POST:', error);
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -211,7 +257,6 @@ export async function POST(request: NextRequest) {
       { 
         error: 'Internal Server Error',
         message: error instanceof Error ? error.message : 'Unknown error',
-        hint: 'Check server logs for detailed MySQL error'
       },
       { status: 500 }
     );
@@ -221,20 +266,49 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get('limit') || '100');
     const date = searchParams.get('date');
-    const limit = parseInt(searchParams.get('limit') || '30');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const period = searchParams.get('period'); // day, week, month
 
     // Build where clause
     const where: any = {};
     
     if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
+      const queryDate = new Date(date);
+      queryDate.setHours(0, 0, 0, 0);
+      const nextDate = new Date(queryDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+      
+      where.date = {
+        gte: queryDate,
+        lt: nextDate,
+      };
+    } else if (startDate && endDate) {
+      where.date = {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      };
+    } else if (period) {
+      const now = new Date();
+      let startDate = new Date();
+      
+      switch (period) {
+        case 'day':
+          startDate.setHours(0, 0, 0, 0);
+          break;
+        case 'week':
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case 'month':
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+      }
       
       where.date = {
         gte: startDate,
-        lt: endDate,
+        lte: now,
       };
     }
 
@@ -244,34 +318,48 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
-    // Calculate totals for today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Parse metadata and calculate totals
+    let totalPower = 0;
+    let totalWater = 0;
+    let totalDiesel = 0;
     
-    const todaysReadings = await prisma.utility_readings.findMany({
-      where: {
-        date: {
-          gte: today,
-          lt: tomorrow,
-        },
-      },
+    const parsedReadings = readings.map(reading => {
+      const metadata = reading.metadata ? JSON.parse(reading.metadata as string) : {};
+      
+      // Add to totals
+      totalPower += Number(reading.powerConsumed) || 0;
+      totalWater += Number(reading.waterConsumed) || 0;
+      totalDiesel += Number(reading.dieselConsumed) || 0;
+      
+      return {
+        ...reading,
+        metadata,
+        date: reading.date.toISOString(),
+      };
     });
 
-    const totals = {
-      totalPower: todaysReadings.reduce((sum, r) => sum + Number(r.powerConsumed), 0),
-      totalWater: todaysReadings.reduce((sum, r) => sum + Number(r.waterConsumed), 0),
-      totalDiesel: todaysReadings.reduce((sum, r) => sum + Number(r.dieselConsumed), 0),
-      count: todaysReadings.length,
-    };
+    // Calculate daily averages if we have date range
+    let dailyAverages = {};
+    if (startDate && endDate) {
+      const daysDiff = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) || 1;
+      dailyAverages = {
+        power: totalPower / daysDiff,
+        water: totalWater / daysDiff,
+        diesel: totalDiesel / daysDiff,
+      };
+    }
 
     return NextResponse.json({
-      readings,
-      totals,
+      readings: parsedReadings,
+      totals: {
+        power: totalPower,
+        water: totalWater,
+        diesel: totalDiesel,
+      },
+      dailyAverages,
       meta: {
         count: readings.length,
-        todayCount: todaysReadings.length,
+        period: period || 'all',
       },
     });
     

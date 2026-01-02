@@ -194,7 +194,7 @@ function OverviewCard({ data, className }: any) {
 }
 
 // UtilityMonitors Component with Enhanced Notification System
-function UtilityMonitors({ onSaveSuccess }: any) {
+function UtilityMonitors({ onSaveSuccess, todayReadingsFilled }: { onSaveSuccess: () => void; todayReadingsFilled: boolean }) {
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('power');
@@ -241,18 +241,14 @@ function UtilityMonitors({ onSaveSuccess }: any) {
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [nextNotificationTime, setNextNotificationTime] = useState<string>('');
-  const [isTodayFilled, setIsTodayFilled] = useState(false);
   
   const notificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const notificationCheckRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check if user has filled readings today
   const checkIfFilledToday = useCallback((): boolean => {
     const lastFilledDate = localStorage.getItem('lastFilledDate');
     const today = new Date().toISOString().split('T')[0];
-    const filled = lastFilledDate === today;
-    setIsTodayFilled(filled);
-    return filled;
+    return lastFilledDate === today;
   }, []);
 
   // Calculate time until next notification
@@ -425,44 +421,6 @@ function UtilityMonitors({ onSaveSuccess }: any) {
     }, timeUntilNotification);
   }, [checkNotificationPermission, calculateTimeUntilNotification, showNotification]);
 
-  // Initialize notifications - FIXED: Remove problematic dependencies
-  const initializeNotifications = useCallback(async () => {
-    const savedSettings = localStorage.getItem('notificationSettings');
-    if (savedSettings) {
-      try {
-        const settings = JSON.parse(savedSettings);
-        setNotificationSettings(settings);
-        
-        if (settings.enabled) {
-          const hasPermission = await checkNotificationPermission();
-          if (hasPermission) {
-            scheduleDailyNotification(settings.time);
-          } else {
-            setNotificationSettings(prev => ({ ...prev, enabled: false }));
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing notification settings:', error);
-      }
-    }
-
-    const savedName = localStorage.getItem('recordedBy') || '';
-    if (savedName) setRecordedBy(savedName);
-
-    checkIfFilledToday();
-
-    // Set up periodic check (simplified to avoid complex dependencies)
-    const checkInterval = setInterval(() => {
-      checkIfFilledToday();
-    }, 60 * 60 * 1000);
-    
-    notificationCheckRef.current = checkInterval;
-
-    return () => {
-      clearInterval(checkInterval);
-    };
-  }, []); // Empty dependencies to prevent re-creation
-
   // Toggle notifications
   const handleNotificationToggle = async (enabled: boolean) => {
     if (enabled) {
@@ -529,7 +487,7 @@ function UtilityMonitors({ onSaveSuccess }: any) {
     }
   };
 
-  // Initialize on component mount - FIXED: Call initializeNotifications directly
+  // Initialize on component mount
   useEffect(() => {
     let mounted = true;
     
@@ -558,8 +516,6 @@ function UtilityMonitors({ onSaveSuccess }: any) {
 
       const savedName = localStorage.getItem('recordedBy') || '';
       if (mounted && savedName) setRecordedBy(savedName);
-
-      if (mounted) checkIfFilledToday();
 
       // Fetch last readings
       const fetchLastReadings = async () => {
@@ -625,11 +581,8 @@ function UtilityMonitors({ onSaveSuccess }: any) {
       if (notificationTimeoutRef.current) {
         clearTimeout(notificationTimeoutRef.current);
       }
-      if (notificationCheckRef.current) {
-        clearInterval(notificationCheckRef.current);
-      }
     };
-  }, []); // Empty dependencies to run only once on mount
+  }, []);
 
   // Calculate power consumption
   const calculatePowerConsumption = () => {
@@ -780,9 +733,6 @@ function UtilityMonitors({ onSaveSuccess }: any) {
         localStorage.setItem('recordedBy', recordedBy);
         localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
-        // Update today's filled status
-        checkIfFilledToday();
-        
         // Show confirmation notification if enabled
         if (notificationSettings.enabled && hasNotificationPermission) {
           showNotification('confirmation');
@@ -880,7 +830,7 @@ function UtilityMonitors({ onSaveSuccess }: any) {
               <CardTitle className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                 Daily Utility Tracking
               </CardTitle>
-              {isTodayFilled && (
+              {todayReadingsFilled && (
                 <Badge className="bg-green-600 hover:bg-green-700">
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Today's readings filled
@@ -954,9 +904,9 @@ function UtilityMonitors({ onSaveSuccess }: any) {
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full ${isTodayFilled ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <div className={`h-2 w-2 rounded-full ${todayReadingsFilled ? 'bg-green-500' : 'bg-yellow-500'}`} />
                 <span className="text-gray-400">
-                  Today's status: {isTodayFilled ? 'Completed' : 'Pending'}
+                  Today's status: {todayReadingsFilled ? 'Completed' : 'Pending'}
                 </span>
               </div>
               
@@ -968,7 +918,7 @@ function UtilityMonitors({ onSaveSuccess }: any) {
               )}
             </div>
             
-            {!isTodayFilled && (
+            {!todayReadingsFilled && (
               <div className="text-yellow-400 text-sm flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" />
                 <span>Remember to fill today's readings</span>
@@ -1709,7 +1659,7 @@ function UtilityMonitors({ onSaveSuccess }: any) {
           >
             <Save className="mr-2" />
             {isSaving ? 'Saving...' : 'Save All Readings'}
-            {isTodayFilled && <CheckCircle className="ml-2 h-4 w-4" />}
+            {todayReadingsFilled && <CheckCircle className="ml-2 h-4 w-4" />}
           </Button>
         </CardFooter>
       </Card>
@@ -1730,6 +1680,9 @@ export default function UtilityManagementPage() {
     const [totalDiesel, setTotalDiesel] = useState(0);
     const [totalInternet, setTotalInternet] = useState(0);
     const [lastUpdated, setLastUpdated] = useState<string>('Never');
+    
+    // NEW: State to track if today's readings are filled
+    const [todayReadingsFilled, setTodayReadingsFilled] = useState(false);
     
     // Breakdown data
     const [powerBreakdown, setPowerBreakdown] = useState<AreaBreakdown>({
@@ -1752,6 +1705,13 @@ export default function UtilityManagementPage() {
     const [utilityTypeFilter, setUtilityTypeFilter] = useState<'all' | 'power' | 'water' | 'diesel' | 'internet'>('all');
     const [viewMode, setViewMode] = useState<'overview' | 'detailed' | 'analytics'>('overview');
 
+    // Check if today's readings are filled
+    const checkTodayReadings = useCallback((): boolean => {
+      const lastFilledDate = localStorage.getItem('lastFilledDate');
+      const today = new Date().toISOString().split('T')[0];
+      return lastFilledDate === today;
+    }, []);
+
     // Fetch utility data
     const fetchUtilityData = async () => {
         try {
@@ -1773,6 +1733,10 @@ export default function UtilityManagementPage() {
             
             // Set readings
             setReadings(data.readings || []);
+            
+            // Check if today's readings are filled
+            const todayFilled = checkTodayReadings();
+            setTodayReadingsFilled(todayFilled);
             
             // Calculate totals
             let powerTotal = 0;
@@ -2000,7 +1964,7 @@ export default function UtilityManagementPage() {
     // Initial data fetch
     useEffect(() => {
         fetchUtilityData();
-    }, [dateFilter]);
+    }, [dateFilter, checkTodayReadings]);
 
     // Calculate daily internet costs
     const dailyInternetCost = totalInternet / 30;
@@ -2024,6 +1988,56 @@ export default function UtilityManagementPage() {
             <SidebarInset className="bg-black">
                 <Header />
                 <main className="p-4 md:p-6 lg:p-8 space-y-8">
+                    {/* NEW: Today's Readings Alert Banner */}
+                    {!todayReadingsFilled && !isLoading && (
+                        <div className="bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border border-yellow-700/50 rounded-xl p-4 md:p-6 animate-pulse shadow-lg shadow-yellow-900/20">
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-2 bg-yellow-900/50 rounded-lg">
+                                        <AlertTriangle className="h-8 w-8 text-yellow-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-yellow-300">📋 Daily Utility Reading Required</h3>
+                                        <p className="text-yellow-200/80 mt-1">
+                                            Today's utility readings have not been recorded yet. Please fill in the readings to ensure accurate tracking.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2 mt-2">
+                                            <Badge className="bg-yellow-900/50 text-yellow-300 border-yellow-700">
+                                                <Clock className="h-3 w-3 mr-1" /> Today
+                                            </Badge>
+                                            <Badge className="bg-yellow-900/50 text-yellow-300 border-yellow-700">
+                                                <Zap className="h-3 w-3 mr-1" /> Power
+                                            </Badge>
+                                            <Badge className="bg-yellow-900/50 text-yellow-300 border-yellow-700">
+                                                <Droplet className="h-3 w-3 mr-1" /> Water
+                                            </Badge>
+                                            <Badge className="bg-yellow-900/50 text-yellow-300 border-yellow-700">
+                                                <Fuel className="h-3 w-3 mr-1" /> Diesel
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                </div>
+                                <Button 
+                                    onClick={() => {
+                                        const utilityMonitorsSection = document.getElementById('utility-monitors');
+                                        if (utilityMonitorsSection) {
+                                            utilityMonitorsSection.scrollIntoView({ behavior: 'smooth' });
+                                        }
+                                    }}
+                                    className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white shadow-lg shadow-yellow-700/30"
+                                    size="lg"
+                                >
+                                    <FileText className="mr-2 h-5 w-5" />
+                                    Fill Today's Readings
+                                </Button>
+                            </div>
+                            <div className="mt-4 flex items-center gap-2 text-sm text-yellow-300/80">
+                                <Clock className="h-4 w-4" />
+                                <span>Last reminder: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Header Section */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-6 bg-gradient-to-r from-gray-900 to-black rounded-xl border border-gray-800">
                         <div>
@@ -2061,7 +2075,12 @@ export default function UtilityManagementPage() {
                             <Button 
                                 variant="default"
                                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                                onClick={() => window.scrollTo({ top: document.getElementById('utility-monitors')?.offsetTop, behavior: 'smooth' })}
+                                onClick={() => {
+                                    const utilityMonitorsSection = document.getElementById('utility-monitors');
+                                    if (utilityMonitorsSection) {
+                                        utilityMonitorsSection.scrollIntoView({ behavior: 'smooth' });
+                                    }
+                                }}
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 Fill Readings
@@ -2255,7 +2274,7 @@ export default function UtilityManagementPage() {
 
                     {/* Main Utility Entry Form */}
                     <div id="utility-monitors">
-                        <UtilityMonitors onSaveSuccess={handleRefreshData} />
+                        <UtilityMonitors onSaveSuccess={handleRefreshData} todayReadingsFilled={todayReadingsFilled} />
                     </div>
 
                     {/* Overview Cards */}
@@ -2425,6 +2444,10 @@ export default function UtilityManagementPage() {
                                 <span>Last updated: {lastUpdated}</span>
                                 <span className="text-gray-500">•</span>
                                 <span>{readings.length} total readings</span>
+                                <span className="text-gray-500">•</span>
+                                <span className={todayReadingsFilled ? 'text-green-400' : 'text-yellow-400'}>
+                                    {todayReadingsFilled ? '✓ Today filled' : '⚠ Today pending'}
+                                </span>
                             </div>
                             <div className="flex items-center gap-4">
                                 <Button

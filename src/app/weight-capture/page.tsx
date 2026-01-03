@@ -1010,7 +1010,7 @@ export default function WeightCapturePage() {
               </TabsTrigger>
               <TabsTrigger value="history" className="flex items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4" />
-                History & Export
+                History
               </TabsTrigger>
             </TabsList>
 

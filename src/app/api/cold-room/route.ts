@@ -1,4 +1,3 @@
-// src/app/api/cold-room/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
@@ -24,7 +23,9 @@ export async function GET(request: NextRequest) {
             supplier_name,
             pallet_id,
             region,
-            created_at
+            counting_record_id,
+            created_at,
+            updated_at
           FROM cold_room_boxes 
           ORDER BY created_at DESC
         `;
@@ -111,28 +112,28 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // NEW: Fetch loading history
     if (action === 'loading-history') {
       try {
         const history = await prisma.$queryRaw`
-      SELECT 
-        id,
-        box_id,
-        supplier_name,
-        pallet_id,
-        region,
-        variety,
-        box_type,
-        size,
-        grade,
-        quantity,
-        cold_room_id,
-        loaded_by,
-        loaded_at,
-        notes
-      FROM loading_history 
-      ORDER BY loaded_at DESC
-    `;
+          SELECT 
+            id,
+            box_id,
+            supplier_name,
+            pallet_id,
+            region,
+            variety,
+            box_type,
+            size,
+            grade,
+            quantity,
+            cold_room_id,
+            loaded_by,
+            loaded_at,
+            notes,
+            counting_record_id
+          FROM loading_history 
+          ORDER BY loaded_at DESC
+        `;
         
         console.log('📜 Retrieved loading history:', Array.isArray(history) ? history.length : 0);
         return NextResponse.json({ 
@@ -355,7 +356,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST endpoint - UPDATED VERSION (with loading_history support)
+// POST endpoint
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
@@ -372,7 +373,7 @@ export async function POST(request: NextRequest) {
 
       const results = [];
       const errors = [];
-      const historyRecords = []; // NEW: Track history records
+      const historyRecords = [];
 
       console.log(`📤 Processing ${data.boxesData.length} boxes for cold room...`);
 
@@ -397,7 +398,7 @@ export async function POST(request: NextRequest) {
             coldRoomId: boxData.coldRoomId
           });
 
-          // 1. SAVE TO COLD_ROOM_BOXES (current inventory)
+          // 1. SAVE TO COLD_ROOM_BOXES (current inventory) - FIXED: added updated_at
           await prisma.$executeRaw`
             INSERT INTO cold_room_boxes (
               id,
@@ -410,7 +411,9 @@ export async function POST(request: NextRequest) {
               supplier_name,
               pallet_id,
               region,
-              created_at
+              counting_record_id,
+              created_at,
+              updated_at
             ) VALUES (
               ${boxId},
               ${boxData.variety},
@@ -422,11 +425,13 @@ export async function POST(request: NextRequest) {
               ${supplierName},
               ${palletId},
               ${region},
+              ${boxData.countingRecordId || null},
+              NOW(),
               NOW()
             )
           `;
 
-          // 2. SAVE TO LOADING_HISTORY (permanent record) - NEW
+          // 2. SAVE TO LOADING_HISTORY (permanent record)
           await prisma.$executeRaw`
             INSERT INTO loading_history (
               id,
@@ -442,7 +447,8 @@ export async function POST(request: NextRequest) {
               cold_room_id,
               loaded_by,
               loaded_at,
-              notes
+              notes,
+              counting_record_id
             ) VALUES (
               ${historyId},
               ${boxId},
@@ -457,7 +463,8 @@ export async function POST(request: NextRequest) {
               ${boxData.coldRoomId},
               ${loadedBy},
               NOW(),
-              ${boxData.notes || ''}
+              ${boxData.notes || ''},
+              ${boxData.countingRecordId || null}
             )
           `;
 
@@ -501,8 +508,7 @@ export async function POST(request: NextRequest) {
             await prisma.$executeRaw`
               UPDATE counting_records 
               SET status = 'completed',
-                  loaded_to_coldroom_at = NOW(),
-                  for_coldroom = false
+                  loaded_to_coldroom_at = NOW()
               WHERE id = ${recordId}
             `;
             console.log(`✅ Updated counting record ${recordId} to completed`);
@@ -568,7 +574,7 @@ export async function POST(request: NextRequest) {
         data: {
           loadedCount: results.length,
           results,
-          historyRecords, // NEW: Return history records
+          historyRecords,
           palletResults,
           errors: errors.length > 0 ? errors : undefined
         },
@@ -626,11 +632,12 @@ export async function POST(request: NextRequest) {
         )
       `;
 
-      // Update inventory based on repacking
+      // Update inventory based on repacking - FIXED: added updated_at
       for (const box of (data.removedBoxes || [])) {
         await prisma.$executeRaw`
           UPDATE cold_room_boxes 
-          SET quantity = quantity - ${box.quantity}
+          SET quantity = quantity - ${box.quantity},
+              updated_at = NOW()
           WHERE cold_room_id = ${data.coldRoomId}
             AND variety = ${box.variety}
             AND box_type = ${box.boxType}
@@ -653,14 +660,15 @@ export async function POST(request: NextRequest) {
         `;
 
         if (Array.isArray(existing) && existing.length > 0) {
-          // Update existing
+          // Update existing - FIXED: added updated_at
           await prisma.$executeRaw`
             UPDATE cold_room_boxes 
-            SET quantity = quantity + ${box.quantity}
+            SET quantity = quantity + ${box.quantity},
+                updated_at = NOW()
             WHERE id = ${existing[0].id}
           `;
         } else {
-          // Create new
+          // Create new - FIXED: added updated_at
           const boxId = `BOX-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
           await prisma.$executeRaw`
             INSERT INTO cold_room_boxes (
@@ -671,7 +679,8 @@ export async function POST(request: NextRequest) {
               grade,
               quantity,
               cold_room_id,
-              created_at
+              created_at,
+              updated_at
             ) VALUES (
               ${boxId},
               ${box.variety},
@@ -680,6 +689,7 @@ export async function POST(request: NextRequest) {
               ${box.grade},
               ${box.quantity},
               ${data.coldRoomId},
+              NOW(),
               NOW()
             )
           `;
@@ -692,7 +702,7 @@ export async function POST(request: NextRequest) {
       });
 
     } else if (data.action === 'search-history') {
-      // NEW: Search loading history
+      // Search loading history
       try {
         let query = `
           SELECT 
@@ -709,7 +719,8 @@ export async function POST(request: NextRequest) {
             cold_room_id,
             loaded_by,
             loaded_at,
-            notes
+            notes,
+            counting_record_id
           FROM loading_history 
           WHERE 1=1
         `;
@@ -757,6 +768,93 @@ export async function POST(request: NextRequest) {
         });
       }
       
+    } else if (data.action === 'remove-box') {
+      // Remove box from cold room
+      try {
+        const { boxId, quantity, coldRoomId, notes } = data;
+        
+        if (!boxId || !quantity || !coldRoomId) {
+          return NextResponse.json(
+            { success: false, error: 'Missing required fields' },
+            { status: 400 }
+          );
+        }
+        
+        // Check if box exists
+        const existingBox = await prisma.$queryRaw`
+          SELECT * FROM cold_room_boxes 
+          WHERE id = ${boxId} AND cold_room_id = ${coldRoomId}
+          LIMIT 1
+        `;
+        
+        if (!Array.isArray(existingBox) || existingBox.length === 0) {
+          return NextResponse.json(
+            { success: false, error: 'Box not found' },
+            { status: 404 }
+          );
+        }
+        
+        const currentQuantity = existingBox[0].quantity;
+        
+        if (currentQuantity < quantity) {
+          return NextResponse.json(
+            { success: false, error: 'Insufficient quantity' },
+            { status: 400 }
+          );
+        }
+        
+        // Update or remove box
+        if (currentQuantity === quantity) {
+          // Remove completely
+          await prisma.$executeRaw`
+            DELETE FROM cold_room_boxes 
+            WHERE id = ${boxId} AND cold_room_id = ${coldRoomId}
+          `;
+        } else {
+          // Reduce quantity
+          await prisma.$executeRaw`
+            UPDATE cold_room_boxes 
+            SET quantity = quantity - ${quantity},
+                updated_at = NOW()
+            WHERE id = ${boxId} AND cold_room_id = ${coldRoomId}
+          `;
+        }
+        
+        // Record in removal history
+        const removalId = `REM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        await prisma.$executeRaw`
+          INSERT INTO box_removal_history (
+            id,
+            box_id,
+            cold_room_id,
+            quantity_removed,
+            reason,
+            removed_by,
+            removed_at
+          ) VALUES (
+            ${removalId},
+            ${boxId},
+            ${coldRoomId},
+            ${quantity},
+            ${notes || 'Removed from cold room'},
+            ${data.removedBy || 'Warehouse Staff'},
+            NOW()
+          )
+        `;
+        
+        return NextResponse.json({
+          success: true,
+          message: `Successfully removed ${quantity} boxes from cold room`
+        });
+        
+      } catch (error: any) {
+        console.error('Error removing box:', error);
+        return NextResponse.json(
+          { success: false, error: error.message },
+          { status: 500 }
+        );
+      }
+      
     } else {
       return NextResponse.json(
         { success: false, error: 'Invalid action' },
@@ -766,6 +864,76 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('POST /api/cold-room Error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE endpoint for removing boxes
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const boxId = searchParams.get('boxId');
+    const coldRoomId = searchParams.get('coldRoomId');
+    
+    if (!boxId || !coldRoomId) {
+      return NextResponse.json(
+        { success: false, error: 'Missing boxId or coldRoomId' },
+        { status: 400 }
+      );
+    }
+    
+    // Check if box exists
+    const existingBox = await prisma.$queryRaw`
+      SELECT * FROM cold_room_boxes 
+      WHERE id = ${boxId} AND cold_room_id = ${coldRoomId}
+      LIMIT 1
+    `;
+    
+    if (!Array.isArray(existingBox) || existingBox.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Box not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Record removal before deleting
+    const removalId = `REM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    await prisma.$executeRaw`
+      INSERT INTO box_removal_history (
+        id,
+        box_id,
+        cold_room_id,
+        quantity_removed,
+        reason,
+        removed_by,
+        removed_at
+      ) VALUES (
+        ${removalId},
+        ${boxId},
+        ${coldRoomId},
+        ${existingBox[0].quantity},
+        'Complete removal from cold room',
+        'System',
+        NOW()
+      )
+    `;
+    
+    // Delete the box
+    await prisma.$executeRaw`
+      DELETE FROM cold_room_boxes 
+      WHERE id = ${boxId} AND cold_room_id = ${coldRoomId}
+    `;
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Box successfully removed from cold room'
+    });
+    
+  } catch (error: any) {
+    console.error('DELETE /api/cold-room Error:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

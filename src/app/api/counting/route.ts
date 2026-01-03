@@ -1,4 +1,4 @@
-// src/app/api/counting/route.ts
+// app/api/counting/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       const startDate = searchParams.get('startDate');
       const endDate = searchParams.get('endDate');
 
-      let query = `SELECT * FROM rejection_records WHERE 1=1`;
+      let query = `SELECT * FROM counting_records WHERE 1=1`;
       const params: any[] = [];
       let paramIndex = 1;
 
@@ -40,56 +40,100 @@ export async function GET(request: NextRequest) {
 
       const filteredRecords = await prisma.$queryRawUnsafe(query, ...params);
       
+      // Process records to ensure counting_data and totals are properly parsed
+      const processedRecords = Array.isArray(filteredRecords) ? filteredRecords.map((record: any) => {
+        let countingData = record.counting_data;
+        if (typeof countingData === 'string') {
+          try {
+            countingData = JSON.parse(countingData);
+          } catch (e) {
+            countingData = {};
+          }
+        }
+        
+        let totals = record.totals;
+        if (typeof totals === 'string') {
+          try {
+            totals = JSON.parse(totals);
+          } catch (e) {
+            totals = {};
+          }
+        }
+        
+        return {
+          ...record,
+          counting_data: countingData,
+          totals: totals,
+          // Ensure all required fields exist
+          total_counted_weight: record.total_counted_weight || 0,
+          for_coldroom: record.for_coldroom !== undefined ? Boolean(record.for_coldroom) : true,
+          status: record.status || 'pending_coldroom',
+          driver_name: record.driver_name || '',
+          vehicle_plate: record.vehicle_plate || ''
+        };
+      }) : [];
+      
       return NextResponse.json({
         success: true,
-        data: filteredRecords || []
+        data: processedRecords || []
       });
       
     } else if (action === 'stats') {
       // Handle stats GET request
       try {
-        // Get counting records stats
-        const [countingStats, rejectionStats] = await Promise.all([
-          prisma.$queryRaw`SELECT COUNT(*) as total FROM counting_records WHERE status = 'pending'`,
-          prisma.$queryRaw`SELECT COUNT(*) as total FROM rejection_records`,
-        ]);
-
-        // Get box totals from individual columns
-        const boxTotals = await prisma.$queryRaw`
+        // Get total processed records (completed status)
+        const totalProcessedResult = await prisma.$queryRaw`
+          SELECT COUNT(*) as total FROM counting_records 
+          WHERE status IN ('pending_coldroom', 'completed')
+        `;
+        
+        // Get pending coldroom records
+        const pendingColdroomResult = await prisma.$queryRaw`
+          SELECT COUNT(*) as total FROM counting_records 
+          WHERE status = 'pending_coldroom' AND for_coldroom = true
+        `;
+        
+        // Get unique suppliers
+        const uniqueSuppliersResult = await prisma.$queryRaw`
+          SELECT COUNT(DISTINCT supplier_name) as total FROM counting_records 
+          WHERE status IN ('pending_coldroom', 'completed')
+        `;
+        
+        // Get box totals from individual columns (now we have these columns)
+        const boxTotalsResult = await prisma.$queryRaw`
           SELECT 
             SUM(fuerte_4kg_total) as fuerte_4kg,
             SUM(fuerte_10kg_total) as fuerte_10kg,
             SUM(hass_4kg_total) as hass_4kg,
             SUM(hass_10kg_total) as hass_10kg
-          FROM counting_records
+          FROM counting_records 
+          WHERE status IN ('pending_coldroom', 'completed')
         `;
-
+        
         // Get recent activity (last 7 and 30 days)
-        const recentActivity = await prisma.$queryRaw`
+        const recentActivityResult = await prisma.$queryRaw`
           SELECT 
             COUNT(CASE WHEN DATE(submitted_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 END) as last_7_days,
             COUNT(CASE WHEN DATE(submitted_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 END) as last_30_days
-          FROM rejection_records
-        `;
-
-        // Get unique suppliers
-        const uniqueSuppliers = await prisma.$queryRaw`
-          SELECT COUNT(DISTINCT supplier_id) as total FROM counting_records
+          FROM counting_records
+          WHERE status IN ('pending_coldroom', 'completed')
         `;
 
         const stats = {
-          total_processed: Array.isArray(rejectionStats) && rejectionStats[0]?.total ? parseInt(rejectionStats[0].total) : 0,
-          pending_rejections: Array.isArray(countingStats) && countingStats[0]?.total ? parseInt(countingStats[0].total) : 0,
-          total_suppliers: Array.isArray(uniqueSuppliers) && uniqueSuppliers[0]?.total ? parseInt(uniqueSuppliers[0].total) : 0,
-          fuerte_4kg: Array.isArray(boxTotals) && boxTotals[0]?.fuerte_4kg ? parseInt(boxTotals[0].fuerte_4kg) : 0,
-          fuerte_10kg: Array.isArray(boxTotals) && boxTotals[0]?.fuerte_10kg ? parseInt(boxTotals[0].fuerte_10kg) : 0,
-          hass_4kg: Array.isArray(boxTotals) && boxTotals[0]?.hass_4kg ? parseInt(boxTotals[0].hass_4kg) : 0,
-          hass_10kg: Array.isArray(boxTotals) && boxTotals[0]?.hass_10kg ? parseInt(boxTotals[0].hass_10kg) : 0,
+          total_processed: Array.isArray(totalProcessedResult) && totalProcessedResult[0]?.total ? parseInt(totalProcessedResult[0].total) : 0,
+          pending_coldroom: Array.isArray(pendingColdroomResult) && pendingColdroomResult[0]?.total ? parseInt(pendingColdroomResult[0].total) : 0,
+          total_suppliers: Array.isArray(uniqueSuppliersResult) && uniqueSuppliersResult[0]?.total ? parseInt(uniqueSuppliersResult[0].total) : 0,
+          fuerte_4kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.fuerte_4kg ? parseInt(boxTotalsResult[0].fuerte_4kg) : 0,
+          fuerte_10kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.fuerte_10kg ? parseInt(boxTotalsResult[0].fuerte_10kg) : 0,
+          hass_4kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.hass_4kg ? parseInt(boxTotalsResult[0].hass_4kg) : 0,
+          hass_10kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.hass_10kg ? parseInt(boxTotalsResult[0].hass_10kg) : 0,
           recent_activity: {
-            last_7_days: Array.isArray(recentActivity) && recentActivity[0]?.last_7_days ? parseInt(recentActivity[0].last_7_days) : 0,
-            last_30_days: Array.isArray(recentActivity) && recentActivity[0]?.last_30_days ? parseInt(recentActivity[0].last_30_days) : 0,
+            last_7_days: Array.isArray(recentActivityResult) && recentActivityResult[0]?.last_7_days ? parseInt(recentActivityResult[0].last_7_days) : 0,
+            last_30_days: Array.isArray(recentActivityResult) && recentActivityResult[0]?.last_30_days ? parseInt(recentActivityResult[0].last_30_days) : 0,
           }
         };
+
+        console.log('📊 Counting statistics loaded:', stats);
 
         return NextResponse.json({
           success: true,
@@ -102,7 +146,7 @@ export async function GET(request: NextRequest) {
           success: true,
           data: {
             total_processed: 0,
-            pending_rejections: 0,
+            pending_coldroom: 0,
             total_suppliers: 0,
             fuerte_4kg: 0,
             fuerte_10kg: 0,
@@ -126,9 +170,36 @@ export async function GET(request: NextRequest) {
           LIMIT 50
         `;
         
+        // Process records
+        const processedRecords = Array.isArray(pendingRecords) ? pendingRecords.map((record: any) => {
+          let countingData = record.counting_data;
+          if (typeof countingData === 'string') {
+            try {
+              countingData = JSON.parse(countingData);
+            } catch (e) {
+              countingData = {};
+            }
+          }
+          
+          let totals = record.totals;
+          if (typeof totals === 'string') {
+            try {
+              totals = JSON.parse(totals);
+            } catch (e) {
+              totals = {};
+            }
+          }
+          
+          return {
+            ...record,
+            counting_data: countingData,
+            totals: totals
+          };
+        }) : [];
+        
         return NextResponse.json({
           success: true,
-          data: pendingRecords || []
+          data: processedRecords || []
         });
       } catch (error) {
         console.error('Error fetching pending records:', error);
@@ -139,28 +210,22 @@ export async function GET(request: NextRequest) {
       }
       
     } else if (action === 'coldroom') {
-      // Get ALL counting records - NO STATUS FILTER
+      // Get counting records ready for cold room loading
       try {
-        console.log('📦 Getting ALL counting records (no status filter)...');
+        console.log('📦 Getting counting records ready for cold room...');
         
-        const allCountingRecords = await prisma.$queryRaw`
-          SELECT * FROM counting
-          _records 
+        const coldroomRecords = await prisma.$queryRaw`
+          SELECT * FROM counting_records 
+          WHERE (status = 'pending_coldroom' OR status = 'pending')
+          AND (for_coldroom = true OR for_coldroom IS NULL)
           ORDER BY submitted_at DESC
           LIMIT 100
         `;
         
-        console.log(`✅ Found ${Array.isArray(allCountingRecords) ? allCountingRecords.length : 0} counting records`);
-        
-        // Log the status of each record
-        if (Array.isArray(allCountingRecords) && allCountingRecords.length > 0) {
-          allCountingRecords.forEach((record: any, index: number) => {
-            console.log(`   Record ${index + 1}: ${record.supplier_name}, status: ${record.status}, for_coldroom: ${record.for_coldroom}`);
-          });
-        }
+        console.log(`✅ Found ${Array.isArray(coldroomRecords) ? coldroomRecords.length : 0} records ready for cold room`);
         
         // Process the data to ensure counting_data and totals are properly parsed
-        const processedRecords = Array.isArray(allCountingRecords) ? allCountingRecords.map((record: any) => {
+        const processedRecords = Array.isArray(coldroomRecords) ? coldroomRecords.map((record: any) => {
           // Parse counting_data if it's a string
           let countingData = record.counting_data;
           if (typeof countingData === 'string') {
@@ -183,10 +248,36 @@ export async function GET(request: NextRequest) {
             }
           }
           
+          // If totals is empty, create it from individual columns
+          if (!totals || Object.keys(totals).length === 0) {
+            totals = {
+              fuerte_4kg_total: record.fuerte_4kg_total || 0,
+              fuerte_10kg_total: record.fuerte_10kg_total || 0,
+              hass_4kg_total: record.hass_4kg_total || 0,
+              hass_10kg_total: record.hass_10kg_total || 0,
+              fuerte_4kg_class1: record.fuerte_4kg_class1 || 0,
+              fuerte_4kg_class2: record.fuerte_4kg_class2 || 0,
+              fuerte_10kg_class1: record.fuerte_10kg_class1 || 0,
+              fuerte_10kg_class2: record.fuerte_10kg_class2 || 0,
+              hass_4kg_class1: record.hass_4kg_class1 || 0,
+              hass_4kg_class2: record.hass_4kg_class2 || 0,
+              hass_10kg_class1: record.hass_10kg_class1 || 0,
+              hass_10kg_class2: record.hass_10kg_class2 || 0,
+            };
+          }
+          
           return {
             ...record,
             counting_data: countingData,
-            totals: totals
+            totals: totals,
+            // Ensure these fields are available
+            fuerte_4kg_total: record.fuerte_4kg_total || totals?.fuerte_4kg_total || 0,
+            fuerte_10kg_total: record.fuerte_10kg_total || totals?.fuerte_10kg_total || 0,
+            hass_4kg_total: record.hass_4kg_total || totals?.hass_4kg_total || 0,
+            hass_10kg_total: record.hass_10kg_total || totals?.hass_10kg_total || 0,
+            total_counted_weight: record.total_counted_weight || 0,
+            for_coldroom: record.for_coldroom !== undefined ? Boolean(record.for_coldroom) : true,
+            status: record.status || 'pending_coldroom'
           };
         }) : [];
         
@@ -195,7 +286,7 @@ export async function GET(request: NextRequest) {
           data: processedRecords || []
         });
       } catch (error) {
-        console.error('Error fetching counting records:', error);
+        console.error('Error fetching coldroom records:', error);
         return NextResponse.json({
           success: true,
           data: []
@@ -269,7 +360,9 @@ export async function POST(request: NextRequest) {
       supplier_name: data.supplier_name,
       supplier_id: data.supplier_id,
       pallet_id: data.pallet_id,
-      total_weight: data.total_weight
+      total_weight: data.total_weight,
+      counting_data: data.counting_data ? 'Present' : 'Missing',
+      totals: data.totals ? 'Present' : 'Missing'
     });
 
     // Validate required fields
@@ -287,7 +380,7 @@ export async function POST(request: NextRequest) {
     const existing = await prisma.$queryRaw`
       SELECT id FROM counting_records 
       WHERE supplier_id = ${data.supplier_id} 
-      AND status IN ('pending', 'pending_coldroom', 'pending_rejection')
+      AND status IN ('pending', 'pending_coldroom')
     `;
     
     if (Array.isArray(existing) && existing.length > 0) {
@@ -363,19 +456,23 @@ export async function POST(request: NextRequest) {
 
     const total_counted_weight = data.total_counted_weight || calculateTotalWeight(totals);
 
-    // Determine status: Use 'pending' for variance tab
-    const status = 'pending';
-    const for_coldroom = data.for_coldroom !== undefined ? data.for_coldroom : false;
+    // Determine status: 'pending_coldroom' for cold room integration
+    const status = 'pending_coldroom'; // Changed from 'pending'
+    const for_coldroom = data.for_coldroom !== undefined ? data.for_coldroom : true; // Default to true
     
-    // Ensure counting_data includes fruits array
-    const countingDataWithFruits = {
+    // Ensure counting_data includes all metadata
+    const countingDataWithMetadata = {
       ...(data.counting_data || {}),
       fruits: data.fruits || [],
-      for_coldroom: for_coldroom
+      for_coldroom: for_coldroom,
+      driver_name: data.driver_name || data.counting_data?.driver_name || '',
+      vehicle_plate: data.vehicle_plate || data.counting_data?.vehicle_plate || '',
+      supplier_phone: data.supplier_phone || '',
+      region: data.region || ''
     };
 
-    // Save to database - Using total_weight
-    console.log('💾 Saving to counting_records table...');
+    // Save to database
+    console.log('💾 Saving to counting_records table with for_coldroom:', for_coldroom);
 
     await prisma.$executeRaw`
       INSERT INTO counting_records (
@@ -407,7 +504,9 @@ export async function POST(request: NextRequest) {
         for_coldroom,
         submitted_at,
         processed_by,
-        notes
+        notes,
+        driver_name,
+        vehicle_plate
       ) VALUES (
         ${id},
         ${data.supplier_id},
@@ -431,13 +530,15 @@ export async function POST(request: NextRequest) {
         ${totals.hass_10kg_class2 || 0},
         ${totals.hass_10kg_total || 0},
         
-        ${JSON.stringify(countingDataWithFruits)},
+        ${JSON.stringify(countingDataWithMetadata)},
         ${JSON.stringify(totals)},
         ${status},
         ${for_coldroom},
         NOW(),
         ${data.processed_by || 'Warehouse Staff'},
-        ${data.notes || ''}
+        ${data.notes || ''},
+        ${data.driver_name || countingDataWithMetadata.driver_name || ''},
+        ${data.vehicle_plate || countingDataWithMetadata.vehicle_plate || ''}
       )
     `;
 
@@ -452,7 +553,26 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to retrieve saved counting record');
     }
 
-    console.log(`✅ Counting record saved: ${data.supplier_name} with ID: ${id}`);
+    console.log(`✅ Counting record saved: ${data.supplier_name} with ID: ${id}, status: ${status}, for_coldroom: ${for_coldroom}`);
+
+    // Parse the data for response
+    let countingData = savedRecord.counting_data;
+    if (typeof countingData === 'string') {
+      try {
+        countingData = JSON.parse(countingData);
+      } catch (e) {
+        countingData = {};
+      }
+    }
+    
+    let totalsData = savedRecord.totals;
+    if (typeof totalsData === 'string') {
+      try {
+        totalsData = JSON.parse(totalsData);
+      } catch (e) {
+        totalsData = {};
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -480,15 +600,17 @@ export async function POST(request: NextRequest) {
         hass_10kg_class2: savedRecord.hass_10kg_class2 || 0,
         hass_10kg_total: savedRecord.hass_10kg_total || 0,
         
-        counting_data: savedRecord.counting_data,
-        totals: savedRecord.totals,
+        counting_data: countingData,
+        totals: totalsData,
         status: savedRecord.status,
         for_coldroom: savedRecord.for_coldroom,
         submitted_at: savedRecord.submitted_at,
         processed_by: savedRecord.processed_by,
-        notes: savedRecord.notes
+        notes: savedRecord.notes,
+        driver_name: savedRecord.driver_name || '',
+        vehicle_plate: savedRecord.vehicle_plate || ''
       },
-      message: 'Counting data saved successfully to database'
+      message: 'Counting data saved successfully to database and marked ready for cold room'
     }, { status: 201 });
 
   } catch (error: any) {
@@ -497,6 +619,63 @@ export async function POST(request: NextRequest) {
       success: false,
       error: 'Failed to save counting record: ' + error.message
     }, { status: 500 });
+  }
+}
+
+// PATCH endpoint to update counting record status (for cold room completion)
+export async function PATCH(request: NextRequest) {
+  try {
+    const data = await request.json();
+
+    console.log('🔄 PATCH /api/counting - Updating counting record for cold room completion');
+
+    // Validate required fields
+    if (!data.id || !data.status) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Missing required fields: id or status' 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Update the counting record status to 'completed' when loaded to cold room
+    const result = await prisma.$executeRaw`
+      UPDATE counting_records 
+      SET status = ${data.status},
+          loaded_to_coldroom_at = NOW(),
+          cold_room_loaded_to = ${data.cold_room_id || null}
+      WHERE id = ${data.id}
+    `;
+
+    // Check if any row was updated
+    if (typeof result === 'object' && 'affectedRows' in result && result.affectedRows === 0) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Counting record not found' 
+        },
+        { status: 404 }
+      );
+    }
+
+    console.log(`✅ Updated counting record: ${data.id} to status: ${data.status}, marked as loaded to cold room`);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Counting record updated successfully and marked as loaded to cold room'
+    });
+
+  } catch (error: any) {
+    console.error('❌ PATCH /api/counting Error:', error.message);
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to update counting record: ' + error.message
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -631,62 +810,6 @@ export async function PUT(request: NextRequest) {
       { 
         success: false,
         error: 'Failed to process rejection: ' + error.message
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// PATCH endpoint to update counting record status (for cold room)
-export async function PATCH(request: NextRequest) {
-  try {
-    const data = await request.json();
-
-    console.log('🔄 PATCH /api/counting - Updating counting record');
-
-    // Validate required fields
-    if (!data.id || !data.status) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Missing required fields: id or status' 
-        },
-        { status: 400 }
-      );
-    }
-
-    // Update the counting record status
-    const result = await prisma.$executeRaw`
-      UPDATE counting_records 
-      SET status = ${data.status},
-          for_coldroom = ${data.for_coldroom !== undefined ? data.for_coldroom : false}
-      WHERE id = ${data.id}
-    `;
-
-    // Check if any row was updated
-    if (typeof result === 'object' && 'affectedRows' in result && result.affectedRows === 0) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Counting record not found' 
-        },
-        { status: 404 }
-      );
-    }
-
-    console.log(`✅ Updated counting record: ${data.id} to status: ${data.status}`);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Counting record updated successfully'
-    });
-
-  } catch (error: any) {
-    console.error('❌ PATCH /api/counting Error:', error.message);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to update counting record: ' + error.message
       },
       { status: 500 }
     );

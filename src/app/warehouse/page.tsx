@@ -26,14 +26,14 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { 
-  HardHat, Scale, Package, Truck, ChevronDown, CheckCircle, AlertCircle, 
+  HardHat, Scale, Package, Truck, ChevronDown, CheckCircle, 
   RefreshCw, Calculator, Box, History, Search, Calendar, Filter, X, 
-  BarChart3, Users, PackageOpen, TrendingUp, XCircle, AlertTriangle, Check,
+  BarChart3, Users, PackageOpen, TrendingUp, AlertTriangle, Check,
   Download, FileSpreadsheet, ChevronRight
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { CountingFormData, CountingRecord } from '@/types/counting';
+import { CountingFormData } from '@/types/counting';
 import { format } from 'date-fns';
 
 interface SupplierIntakeRecord {
@@ -70,7 +70,7 @@ interface QualityCheck {
 
 interface CountingStats {
   total_processed: number;
-  pending_rejections: number;
+  pending_coldroom: number;
   total_suppliers: number;
   fuerte_4kg: number;
   fuerte_10kg: number;
@@ -82,48 +82,25 @@ interface CountingStats {
   };
 }
 
-interface RejectedCrate {
-  id: string;
-  box_type: string;
-  class_type: string;
-  quantity: number;
-  weight_per_crate: number;
-  total_weight: number;
-}
-
-interface CountingTotals {
-  fuerte_4kg_class1?: number;
-  fuerte_4kg_class2?: number;
-  fuerte_4kg_total?: number;
-  fuerte_10kg_class1?: number;
-  fuerte_10kg_class2?: number;
-  fuerte_10kg_total?: number;
-  hass_4kg_class1?: number;
-  hass_4kg_class2?: number;
-  hass_4kg_total?: number;
-  hass_10kg_class1?: number;
-  hass_10kg_class2?: number;
-  hass_10kg_total?: number;
-}
-
-interface RejectionRecord {
+interface CountingRecord {
   id: string;
   supplier_id: string;
   supplier_name: string;
   pallet_id: string;
   region: string;
-  total_intake_weight: number;
+  total_weight: number;
   total_counted_weight: number;
-  total_rejected_weight: number;
-  weight_variance: number;
-  variance_level: 'low' | 'medium' | 'high';
-  crates: RejectedCrate[];
-  notes: string;
+  fuerte_4kg_total: number;
+  fuerte_10kg_total: number;
+  hass_4kg_total: number;
+  hass_10kg_total: number;
   counting_data: any;
-  counting_totals: CountingTotals | string | null;
+  totals: any;
+  status: string;
+  for_coldroom: boolean;
   submitted_at: string;
   processed_by: string;
-  original_counting_id: string;
+  notes?: string;
 }
 
 interface CSVRow {
@@ -135,9 +112,6 @@ interface CSVRow {
   vehicle_plate: string;
   intake_weight_kg: number;
   counted_weight_kg: number;
-  rejected_weight_kg: number;
-  weight_variance_kg: number;
-  variance_level: string;
   fuerte_4kg_boxes: number;
   fuerte_10kg_crates: number;
   hass_4kg_boxes: number;
@@ -151,7 +125,6 @@ const processingStages = [
   { id: 'intake', name: 'Intake', icon: Truck, description: 'Supplier intake & initial check-in.', tag: 'Pallet ID' },
   { id: 'quality', name: 'Quality Control', icon: Scale, description: 'Quality assessment and packability checks.', tag: 'QC Assessment' },
   { id: 'counting', name: 'Counting', icon: Calculator, description: 'Box counting and size classification.', tag: 'Box Count Form' },
-  { id: 'reject', name: 'Variance', icon: XCircle, description: 'Record rejected crates and weight variance.', tag: 'Variance Check' },
   { id: 'history', name: 'History', icon: History, description: 'Completed processing records.', tag: 'Finalized' },
 ];
 
@@ -164,7 +137,7 @@ const safeArray = <T,>(array: T[] | undefined | null): T[] => {
   return Array.isArray(array) ? array : [];
 };
 
-const parseCountingTotals = (countingTotals: any): CountingTotals => {
+const parseCountingTotals = (countingTotals: any): any => {
   if (!countingTotals) return {};
   
   if (typeof countingTotals === 'string') {
@@ -183,7 +156,7 @@ const parseCountingTotals = (countingTotals: any): CountingTotals => {
   return {};
 };
 
-const getTotalBoxesFromCountingTotals = (countingTotals: CountingTotals | string | null): number => {
+const getTotalBoxesFromCountingTotals = (countingTotals: any): number => {
   const totals = parseCountingTotals(countingTotals);
   
   const fuerte4kg = totals.fuerte_4kg_total || 0;
@@ -194,7 +167,7 @@ const getTotalBoxesFromCountingTotals = (countingTotals: CountingTotals | string
   return fuerte4kg + fuerte10kg + hass4kg + hass10kg;
 };
 
-const getBoxesSummary = (countingTotals: CountingTotals | string | null): { 
+const getBoxesSummary = (countingTotals: any): { 
   fuerte_4kg: number; 
   fuerte_10kg: number; 
   hass_4kg: number; 
@@ -238,10 +211,9 @@ export default function WarehousePage() {
   const [supplierIntakeRecords, setSupplierIntakeRecords] = useState<SupplierIntakeRecord[]>([]);
   const [qualityChecks, setQualityChecks] = useState<QualityCheck[]>([]);
   const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
-  const [rejectionRecords, setRejectionRecords] = useState<RejectionRecord[]>([]);
   const [stats, setStats] = useState<CountingStats>({
     total_processed: 0,
-    pending_rejections: 0,
+    pending_coldroom: 0,
     total_suppliers: 0,
     fuerte_4kg: 0,
     fuerte_10kg: 0,
@@ -255,14 +227,13 @@ export default function WarehousePage() {
   const [isLoading, setIsLoading] = useState({ 
     intake: true, 
     quality: true, 
-    rejections: false,
+    counting: false,
     stats: false
   });
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [expandedIntake, setExpandedIntake] = useState<Set<string>>(new Set());
   const [expandedQuality, setExpandedQuality] = useState<Set<string>>(new Set());
-  const [expandedReject, setExpandedReject] = useState<Set<string>>(new Set());
   const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierIntakeRecord | null>(null);
   const [selectedQC, setSelectedQC] = useState<QualityCheck | null>(null);
@@ -354,16 +325,6 @@ export default function WarehousePage() {
     notes: '',
   });
 
-  const [rejectionForm, setRejectionForm] = useState<{
-    countingRecord: CountingRecord | null;
-    crates: RejectedCrate[];
-    notes: string;
-  }>({
-    countingRecord: null,
-    crates: [],
-    notes: ''
-  });
-
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -444,71 +405,48 @@ export default function WarehousePage() {
 
   const fetchCountingRecords = async () => {
     try {
-      const response = await fetch('/api/counting');
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setCountingRecords(result.data || []);
-        }
-      }
-    } catch (err: any) {
-      console.error('Error fetching counting records:', err);
-    }
-  };
-
-  const fetchRejectionRecords = async () => {
-    try {
-      setIsLoading(prev => ({ ...prev, rejections: true }));
+      setIsLoading(prev => ({ ...prev, counting: true }));
       const response = await fetch('/api/counting?action=history');
+      
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
+          // Process counting records
           const processedRecords = (result.data || []).map((record: any) => {
-            let counting_totals = record.counting_totals;
-            if (typeof counting_totals === 'string') {
-              try {
-                counting_totals = JSON.parse(counting_totals);
-              } catch (e) {
-                console.error('Error parsing counting_totals for record', record.id, e);
-                counting_totals = {};
-              }
-            }
-            
             let counting_data = record.counting_data;
             if (typeof counting_data === 'string') {
               try {
                 counting_data = JSON.parse(counting_data);
               } catch (e) {
-                console.error('Error parsing counting_data for record', record.id, e);
+                console.error('Error parsing counting_data:', e);
                 counting_data = {};
               }
             }
             
-            let crates = record.crates;
-            if (typeof crates === 'string') {
+            let totals = record.totals;
+            if (typeof totals === 'string') {
               try {
-                crates = JSON.parse(crates);
+                totals = JSON.parse(totals);
               } catch (e) {
-                console.error('Error parsing crates for record', record.id, e);
-                crates = [];
+                console.error('Error parsing totals:', e);
+                totals = {};
               }
             }
             
             return {
               ...record,
-              counting_totals,
               counting_data,
-              crates: safeArray(crates)
+              totals
             };
           });
           
-          setRejectionRecords(processedRecords);
+          setCountingRecords(processedRecords);
         }
       }
     } catch (err: any) {
-      console.error('Error fetching rejection records:', err);
+      console.error('Error fetching counting records:', err);
     } finally {
-      setIsLoading(prev => ({ ...prev, rejections: false }));
+      setIsLoading(prev => ({ ...prev, counting: false }));
     }
   };
 
@@ -535,7 +473,6 @@ export default function WarehousePage() {
       fetchIntakeRecords(),
       fetchQualityChecks(),
       fetchCountingRecords(),
-      fetchRejectionRecords(),
       fetchStats()
     ]);
     setLastRefreshed(new Date());
@@ -565,16 +502,6 @@ export default function WarehousePage() {
     setExpandedQuality(newExpanded);
   };
 
-  const toggleRejectExpansion = (recordId: string) => {
-    const newExpanded = new Set(expandedReject);
-    if (newExpanded.has(recordId)) {
-      newExpanded.delete(recordId);
-    } else {
-      newExpanded.add(recordId);
-    }
-    setExpandedReject(newExpanded);
-  };
-
   const toggleHistoryExpansion = (recordId: string) => {
     const newExpanded = new Set(expandedHistory);
     if (newExpanded.has(recordId)) {
@@ -588,12 +515,10 @@ export default function WarehousePage() {
   const acceptedSuppliers = supplierIntakeRecords.filter(intake => {
     const qc = qualityChecks.find(q => q.weight_entry_id === intake.id);
     const inCounting = countingRecords.some(record => record.supplier_id === intake.id);
-    const inRejection = rejectionRecords.some(record => record.supplier_id === intake.id);
     
     return qc && 
            qc.overall_status === 'approved' && 
-           !inCounting && 
-           !inRejection;
+           !inCounting;
   });
 
   const handleSelectSupplier = (supplier: SupplierIntakeRecord, qc: QualityCheck | null) => {
@@ -704,7 +629,7 @@ export default function WarehousePage() {
         for_coldroom: true,
       };
 
-      console.log('📦 Submitting counting data for cold room:', countingData);
+      console.log('📦 Saving counting data directly to history:', countingData);
 
       const response = await fetch('/api/counting', {
         method: 'POST',
@@ -833,7 +758,7 @@ export default function WarehousePage() {
       setCountingForm(resetForm);
       
       fetchStats();
-      setActiveTab('reject');
+      setActiveTab('history');
       
       toast({
         title: "✅ Counting Data Saved Successfully!",
@@ -887,131 +812,7 @@ export default function WarehousePage() {
     }
   };
 
-  const handleAddRejectedCrate = () => {
-    setRejectionForm(prev => ({
-      ...prev,
-      crates: [
-        ...prev.crates,
-        {
-          id: `crate-${Date.now()}`,
-          box_type: 'fuerte_4kg',
-          class_type: 'class1',
-          quantity: 0,
-          weight_per_crate: 4,
-          total_weight: 0
-        }
-      ]
-    }));
-  };
-
-  const handleUpdateRejectedCrate = (index: number, field: keyof RejectedCrate, value: any) => {
-    setRejectionForm(prev => {
-      const updatedCrates = [...prev.crates];
-      updatedCrates[index] = {
-        ...updatedCrates[index],
-        [field]: value
-      };
-      
-      if (field === 'quantity' || field === 'weight_per_crate') {
-        updatedCrates[index].total_weight = 
-          Number(updatedCrates[index].quantity) * Number(updatedCrates[index].weight_per_crate);
-      }
-      
-      return {
-        ...prev,
-        crates: updatedCrates
-      };
-    });
-  };
-
-  const handleRemoveRejectedCrate = (index: number) => {
-    setRejectionForm(prev => ({
-      ...prev,
-      crates: prev.crates.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleSelectForRejection = (record: CountingRecord) => {
-    setRejectionForm({
-      countingRecord: record,
-      crates: [],
-      notes: ''
-    });
-    
-    toast({
-      title: "Record Selected",
-      description: `${record.supplier_name} loaded for variance handling`,
-    });
-  };
-
-  const handleSubmitRejection = async () => {
-    if (!rejectionForm.countingRecord) {
-      toast({
-        title: "No Record Selected",
-        description: "Please select a counting record first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const record = rejectionForm.countingRecord;
-    
-    try {
-      const rejectionPayload = {
-        counting_record_id: record.id,
-        rejection_data: {
-          crates: rejectionForm.crates,
-          notes: rejectionForm.notes,
-          processed_by: "Warehouse Staff"
-        }
-      };
-
-      const response = await fetch('/api/counting', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rejectionPayload),
-      });
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to process variance');
-      }
-
-      setCountingRecords(prev => prev.filter(r => r.id !== record.id));
-      setRejectionRecords(prev => [result.data, ...prev]);
-      
-      if (expandedReject.has(record.id)) {
-        const newExpanded = new Set(expandedReject);
-        newExpanded.delete(record.id);
-        setExpandedReject(newExpanded);
-      }
-      
-      setRejectionForm({
-        countingRecord: null,
-        crates: [],
-        notes: ''
-      });
-      
-      fetchStats();
-      setActiveTab('history');
-      
-      toast({
-        title: "Variance Processed",
-        description: `${record.supplier_name} has been moved to history`,
-        variant: "default",
-      });
-
-    } catch (err: any) {
-      toast({
-        title: "Error",
-        description: err.message || "Failed to process variance",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const filteredHistory = rejectionRecords.filter(record => {
+  const filteredHistory = countingRecords.filter(record => {
     const matchesSearch = searchTerm === '' || 
       record.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       record.pallet_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1053,9 +854,9 @@ export default function WarehousePage() {
     setSearchTerm('');
   };
 
-  const generateCSVData = (records: RejectionRecord[]): CSVRow[] => {
+  const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
     return records.map(record => {
-      const boxesSummary = getBoxesSummary(record.counting_totals);
+      const boxesSummary = getBoxesSummary(record.totals);
       const supplierInfo = getSupplierInfoFromCountingData(record.counting_data);
       
       return {
@@ -1065,11 +866,8 @@ export default function WarehousePage() {
         pallet_id: record.pallet_id,
         driver_name: supplierInfo.driver_name,
         vehicle_plate: supplierInfo.vehicle_plate,
-        intake_weight_kg: record.total_intake_weight,
-        counted_weight_kg: record.total_counted_weight,
-        rejected_weight_kg: record.total_rejected_weight,
-        weight_variance_kg: record.weight_variance,
-        variance_level: record.variance_level.toUpperCase(),
+        intake_weight_kg: record.total_weight,
+        counted_weight_kg: record.total_counted_weight || 0,
         fuerte_4kg_boxes: boxesSummary.fuerte_4kg,
         fuerte_10kg_crates: boxesSummary.fuerte_10kg,
         hass_4kg_boxes: boxesSummary.hass_4kg,
@@ -1081,7 +879,7 @@ export default function WarehousePage() {
     });
   };
 
-  const downloadCSV = (records: RejectionRecord[]) => {
+  const downloadCSV = (records: CountingRecord[]) => {
     if (records.length === 0) {
       toast({
         title: 'No Data',
@@ -1102,9 +900,6 @@ export default function WarehousePage() {
       'Vehicle Plate',
       'Intake Weight (kg)',
       'Counted Weight (kg)',
-      'Rejected Weight (kg)',
-      'Weight Variance (kg)',
-      'Variance Level',
       'Fuerte 4kg Boxes',
       'Fuerte 10kg Crates',
       'Hass 4kg Boxes',
@@ -1123,9 +918,6 @@ export default function WarehousePage() {
       `"${row.vehicle_plate}"`,
       row.intake_weight_kg.toFixed(2),
       row.counted_weight_kg.toFixed(2),
-      row.rejected_weight_kg.toFixed(2),
-      row.weight_variance_kg.toFixed(2),
-      row.variance_level,
       row.fuerte_4kg_boxes,
       row.fuerte_10kg_crates,
       row.hass_4kg_boxes,
@@ -1157,7 +949,7 @@ export default function WarehousePage() {
   };
 
   const downloadAllHistory = () => {
-    downloadCSV(rejectionRecords);
+    downloadCSV(countingRecords);
   };
 
   const downloadFilteredHistory = () => {
@@ -1228,20 +1020,6 @@ export default function WarehousePage() {
     </Collapsible>
   );
 
-  const renderVarianceBadge = (varianceLevel: 'low' | 'medium' | 'high') => {
-    const config = {
-      low: { color: 'bg-green-50 text-green-700 border-green-200', label: 'Low Variance' },
-      medium: { color: 'bg-yellow-50 text-yellow-700 border-yellow-200', label: 'Medium Variance' },
-      high: { color: 'bg-red-50 text-red-700 border-red-200', label: 'High Variance' }
-    };
-    
-    return (
-      <Badge variant="outline" className={config[varianceLevel].color}>
-        {config[varianceLevel].label}
-      </Badge>
-    );
-  };
-
   return (
     <SidebarProvider>
       <Sidebar>
@@ -1263,7 +1041,7 @@ export default function WarehousePage() {
           {error && (
             <div className="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-md flex items-start justify-between">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-medium">Error loading data</p>
                   <p className="text-sm mt-1">{error}</p>
@@ -1302,11 +1080,11 @@ export default function WarehousePage() {
               )}
               <button
                 onClick={fetchAllData}
-                disabled={isLoading.intake || isLoading.quality || isLoading.rejections}
+                disabled={isLoading.intake || isLoading.quality || isLoading.counting}
                 className="flex items-center gap-2 px-3 py-2 text-sm bg-primary/10 hover:bg-primary/20 rounded-md transition-colors disabled:opacity-50"
               >
-                <RefreshCw className={`w-4 h-4 ${isLoading.intake || isLoading.quality || isLoading.rejections ? 'animate-spin' : ''}`} />
-                {isLoading.intake || isLoading.quality || isLoading.rejections ? 'Refreshing...' : 'Refresh'}
+                <RefreshCw className={`w-4 h-4 ${isLoading.intake || isLoading.quality || isLoading.counting ? 'animate-spin' : ''}`} />
+                {isLoading.intake || isLoading.quality || isLoading.counting ? 'Refreshing...' : 'Refresh'}
               </button>
             </div>
           </div>
@@ -1331,18 +1109,18 @@ export default function WarehousePage() {
                   <div className="text-2xl font-bold text-blue-700">
                     {stats.total_processed || 0}
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">Completed processing sessions</div>
+                  <div className="text-xs text-gray-400 mt-1">Completed counting sessions</div>
                 </div>
 
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Pending Variance</div>
-                    <AlertTriangle className="w-4 h-4 text-orange-500" />
+                    <div className="text-sm text-gray-500">Pending Coldroom</div>
+                    <Package className="w-4 h-4 text-orange-500" />
                   </div>
                   <div className="text-2xl font-bold text-orange-700">
-                    {stats.pending_rejections || 0}
+                    {stats.pending_coldroom || 0}
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">Need variance handling</div>
+                  <div className="text-xs text-gray-400 mt-1">Ready for cold room loading</div>
                 </div>
 
                 <div className="bg-black-50 p-4 rounded-lg border">
@@ -1459,11 +1237,10 @@ export default function WarehousePage() {
           </Card>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-5">
+            <TabsList className="grid grid-cols-4">
               <TabsTrigger value="intake">Intake</TabsTrigger>
               <TabsTrigger value="quality">Quality Control</TabsTrigger>
               <TabsTrigger value="counting">Counting</TabsTrigger>
-              <TabsTrigger value="reject">Variance</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
             </TabsList>
 
@@ -1586,7 +1363,7 @@ export default function WarehousePage() {
                         <CheckCircle className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                         <p className="text-gray-500 font-medium">No accepted suppliers pending counting</p>
                         <p className="text-sm text-gray-400 mt-1">
-                          All QC-approved suppliers have been counted. Check the Variance tab.
+                          All QC-approved suppliers have been counted. Check the History tab.
                         </p>
                       </div>
                     ) : (
@@ -2026,329 +1803,10 @@ export default function WarehousePage() {
                           size="lg"
                         >
                           <CheckCircle className="w-4 h-4 mr-2" />
-                          Save Counting Data
+                          Save Counting Data to History
                         </Button>
                       </div>
                     </form>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="reject" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5" />
-                      Pending Variance Handling
-                    </CardTitle>
-                    <CardDescription>
-                      {countingRecords.length} supplier(s) need variance handling
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[400px] pr-4">
-                      {isLoading.rejections ? (
-                        <div className="flex flex-col items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-                          <p className="text-muted-foreground">Loading pending variance...</p>
-                        </div>
-                      ) : countingRecords.length === 0 ? (
-                        <div className="text-center py-8">
-                          <Check className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                          <p className="text-gray-500 font-medium">No pending variance handling</p>
-                          <p className="text-sm text-gray-400 mt-1">
-                            All counted suppliers have been processed
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {countingRecords.map((record) => (
-                            <Collapsible
-                              key={record.id}
-                              open={expandedReject.has(record.id)}
-                              onOpenChange={() => toggleRejectExpansion(record.id)}
-                              className="border rounded-lg overflow-hidden"
-                            >
-                              <CollapsibleTrigger asChild>
-                                <div className="flex items-center justify-between p-4 bg-black-50 hover:bg-black-100 cursor-pointer">
-                                  <div className="flex items-center gap-3">
-                                    <div className={`transition-transform ${expandedReject.has(record.id) ? 'rotate-180' : ''}`}>
-                                      <ChevronDown className="w-4 h-4" />
-                                    </div>
-                                    <div>
-                                      <div className="font-semibold">{record.supplier_name}</div>
-                                      <div className="text-sm text-gray-500 flex items-center gap-4">
-                                        <span>Pallet: {record.pallet_id}</span>
-                                        <span>Intake: {record.total_weight} kg</span>
-                                        <span>{formatDate(record.submitted_at)}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Button
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleSelectForRejection(record);
-                                      }}
-                                      className="bg-orange-600 hover:bg-orange-700"
-                                    >
-                                      Handle Variance
-                                    </Button>
-                                    <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                                      Needs Handling
-                                    </Badge>
-                                  </div>
-                                </div>
-                              </CollapsibleTrigger>
-                              <CollapsibleContent className="p-4 bg-black border-t">
-                                <div className="space-y-4">
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                      <div className="text-gray-500">Supplier</div>
-                                      <div className="font-semibold">{record.supplier_name}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-gray-500">Region</div>
-                                      <div className="font-medium">{record.region}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-gray-500">Intake Weight</div>
-                                      <div className="font-bold">{record.total_weight} kg</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-gray-500">Counted Weight</div>
-                                      <div className="font-bold">
-                                        {Number(record.total_counted_weight || 0).toFixed(1)} kg
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="bg-black-50 p-3 rounded border">
-                                    <div className="font-medium mb-2">Counted Boxes Summary</div>
-                                    <div className="grid grid-cols-2 gap-2 text-sm">
-                                      <div>
-                                        <span className="text-gray-500">Fuerte 4kg:</span>
-                                        <span className="font-semibold ml-2">{record.totals?.fuerte_4kg_total || 0}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Fuerte 10kg:</span>
-                                        <span className="font-semibold ml-2">{record.totals?.fuerte_10kg_total || 0}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Hass 4kg:</span>
-                                        <span className="font-semibold ml-2">{record.totals?.hass_4kg_total || 0}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Hass 10kg:</span>
-                                        <span className="font-semibold ml-2">{record.totals?.hass_10kg_total || 0}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          ))}
-                        </div>
-                      )}
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-                
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <XCircle className="w-5 h-5" />
-                      Record Rejected Crates
-                    </CardTitle>
-                    <CardDescription>
-                      Add rejected crates and calculate weight variance
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {rejectionForm.countingRecord ? (
-                      <div className="space-y-4">
-                        <div className="bg-black-50 p-4 rounded border">
-                          <div className="font-medium">Selected Supplier</div>
-                          <div className="text-lg font-semibold mt-1">{rejectionForm.countingRecord.supplier_name}</div>
-                          <div className="text-sm text-gray-600">
-                            Pallet: {rejectionForm.countingRecord.pallet_id} | 
-                            Intake: {rejectionForm.countingRecord.total_weight} kg | 
-                            Counted: {Number(rejectionForm.countingRecord.total_counted_weight || 0).toFixed(1)} kg
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex justify-between items-center mb-3">
-                            <Label>Rejected Crates</Label>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={handleAddRejectedCrate}
-                              className="bg-gray-600 hover:bg-gray-700"
-                            >
-                              Add Crate
-                            </Button>
-                          </div>
-                          
-                          {rejectionForm.crates.length === 0 ? (
-                            <div className="text-center py-6 border rounded">
-                              <p className="text-gray-500">No rejected crates added yet</p>
-                              <p className="text-sm text-gray-400 mt-1">
-                                Click "Add Crate" to start recording rejected crates
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {safeArray(rejectionForm.crates).map((crate, index) => (
-                                <div key={crate.id} className="border rounded p-3 bg-black">
-                                  <div className="flex justify-between items-start mb-3">
-                                    <div className="font-medium">Crate #{index + 1}</div>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleRemoveRejectedCrate(index)}
-                                      className="h-6 w-6 p-0"
-                                    >
-                                      <X className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                      <Label htmlFor={`box-type-${index}`} className="text-xs">Box Type</Label>
-                                      <select
-                                        id={`box-type-${index}`}
-                                        value={crate.box_type}
-                                        onChange={(e) => handleUpdateRejectedCrate(index, 'box_type', e.target.value)}
-                                        className="w-full border rounded px-2 py-1 text-sm bg-black"
-                                      >
-                                        <option value="fuerte_4kg">Fuerte 4kg</option>
-                                        <option value="fuerte_10kg">Fuerte 10kg</option>
-                                        <option value="hass_4kg">Hass 4kg</option>
-                                        <option value="hass_10kg">Hass 10kg</option>
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <Label htmlFor={`class-type-${index}`} className="text-xs">Class</Label>
-                                      <select
-                                        id={`class-type-${index}`}
-                                        value={crate.class_type}
-                                        onChange={(e) => handleUpdateRejectedCrate(index, 'class_type', e.target.value)}
-                                        className="w-full border rounded px-2 py-1 text-sm bg-black"
-                                      >
-                                        <option value="class1">Class 1</option>
-                                        <option value="class2">Class 2</option>
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <Label htmlFor={`quantity-${index}`} className="text-xs">Quantity</Label>
-                                      <Input
-                                        id={`quantity-${index}`}
-                                        type="number"
-                                        min="0"
-                                        value={crate.quantity}
-                                        onChange={(e) => handleUpdateRejectedCrate(index, 'quantity', e.target.value)}
-                                        className="h-8 text-sm"
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label htmlFor={`weight-${index}`} className="text-xs">Weight/Crate (kg)</Label>
-                                      <Input
-                                        id={`weight-${index}`}
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={crate.weight_per_crate}
-                                        onChange={(e) => handleUpdateRejectedCrate(index, 'weight_per_crate', e.target.value)}
-                                        className="h-8 text-sm"
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="mt-3 pt-3 border-t">
-                                    <div className="flex justify-between text-sm">
-                                      <span>Total Weight:</span>
-                                      <span className="font-semibold">{safeToFixed(crate.total_weight)} kg</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <Label htmlFor="reject-notes" className="mb-2">Rejection Notes</Label>
-                          <Input
-                            id="reject-notes"
-                            value={rejectionForm.notes}
-                            onChange={(e) => setRejectionForm(prev => ({ ...prev, notes: e.target.value }))}
-                            placeholder="Reason for rejection, observations, etc."
-                          />
-                        </div>
-
-                        {rejectionForm.crates.length > 0 && (
-                          <div className="bg-black-50 p-4 rounded border">
-                            <div className="font-medium mb-2">Weight Variance Summary</div>
-                            <div className="space-y-2 text-sm">
-                              <div className="flex justify-between">
-                                <span>Total Counted Weight:</span>
-                                <span className="font-semibold">
-                                  {Number(rejectionForm.countingRecord.total_counted_weight || 0).toFixed(1)} kg
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Total Rejected Weight:</span>
-                                <span className="font-semibold">
-                                  {safeToFixed(rejectionForm.crates.reduce((sum, crate) => sum + crate.total_weight, 0))} kg
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Total Intake Weight:</span>
-                                <span className="font-semibold">
-                                  {rejectionForm.countingRecord.total_weight} kg
-                                </span>
-                              </div>
-                              <div className="flex justify-between pt-2 border-t">
-                                <span className="font-medium">Weight Variance:</span>
-                                <span className={`font-bold ${
-                                  Math.abs(rejectionForm.countingRecord.total_weight - 
-                                    (Number(rejectionForm.countingRecord.total_counted_weight || 0) + 
-                                     rejectionForm.crates.reduce((sum, crate) => sum + crate.total_weight, 0))) >= 10 ? 
-                                    'text-red-600' : 'text-green-600'
-                                }`}>
-                                  {safeToFixed(
-                                    rejectionForm.countingRecord.total_weight - 
-                                    (Number(rejectionForm.countingRecord.total_counted_weight || 0) + 
-                                    rejectionForm.crates.reduce((sum, crate) => sum + crate.total_weight, 0))
-                                  )} kg
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <Button
-                          type="button"
-                          onClick={handleSubmitRejection}
-                          className="w-full bg-red-600 hover:bg-red-700"
-                          size="lg"
-                        >
-                          <XCircle className="w-4 h-4 mr-2" />
-                          Submit Variance Data
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <AlertTriangle className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                        <p className="text-gray-500 font-medium">No record selected</p>
-                        <p className="text-sm text-gray-400 mt-1">
-                          Select a counting record from the left panel to record rejected crates
-                        </p>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -2360,12 +1818,12 @@ export default function WarehousePage() {
                   <CardTitle className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <History className="w-5 h-5" />
-                      Processing History & Export
+                      Counting History & Export
                     </div>
                     <div className="flex gap-2">
                       <Button
                         onClick={downloadFilteredHistory}
-                        disabled={filteredHistory.length === 0 || isLoading.rejections}
+                        disabled={filteredHistory.length === 0 || isLoading.counting}
                         className="gap-2"
                       >
                         <Download className="w-4 h-4" />
@@ -2373,7 +1831,7 @@ export default function WarehousePage() {
                       </Button>
                       <Button
                         onClick={downloadAllHistory}
-                        disabled={rejectionRecords.length === 0 || isLoading.rejections}
+                        disabled={countingRecords.length === 0 || isLoading.counting}
                         variant="outline"
                         className="gap-2"
                       >
@@ -2383,7 +1841,7 @@ export default function WarehousePage() {
                     </div>
                   </CardTitle>
                   <CardDescription>
-                    {filteredHistory.length} completed processing record(s)
+                    {filteredHistory.length} completed counting record(s)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -2440,7 +1898,7 @@ export default function WarehousePage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-muted-foreground">
-                        Showing {filteredHistory.length} of {rejectionRecords.length} records
+                        Showing {filteredHistory.length} of {countingRecords.length} records
                         {(startDate || endDate) && ' • Date filter applied'}
                         {searchTerm && ' • Search filter applied'}
                       </div>
@@ -2468,7 +1926,7 @@ export default function WarehousePage() {
                   </div>
 
                   <ScrollArea className="h-[500px] pr-4">
-                    {isLoading.rejections ? (
+                    {isLoading.counting ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
                         <p className="text-muted-foreground">Loading history...</p>
@@ -2476,15 +1934,15 @@ export default function WarehousePage() {
                     ) : filteredHistory.length === 0 ? (
                       <div className="text-center py-8">
                         <History className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                        <p className="text-gray-500 font-medium">No processing history found</p>
+                        <p className="text-gray-500 font-medium">No counting history found</p>
                         <p className="text-sm text-gray-400 mt-1">
-                          {searchTerm || startDate || endDate ? 'Try adjusting your filters' : 'Completed processing records will appear here'}
+                          {searchTerm || startDate || endDate ? 'Try adjusting your filters' : 'Completed counting records will appear here'}
                         </p>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         {filteredHistory.map((record) => {
-                          const boxesSummary = getBoxesSummary(record.counting_totals);
+                          const boxesSummary = getBoxesSummary(record.totals);
                           const supplierInfo = getSupplierInfoFromCountingData(record.counting_data);
                           return (
                             <Collapsible
@@ -2504,15 +1962,24 @@ export default function WarehousePage() {
                                       <div className="text-sm text-gray-500 flex items-center gap-4">
                                         <span>Pallet: {record.pallet_id}</span>
                                         <span>Boxes: {boxesSummary.total} boxes</span>
-                                        <span>Variance: {safeToFixed(record.weight_variance)} kg</span>
+                                        <span>Weight: {safeToFixed(record.total_counted_weight)} kg</span>
                                         <span>{formatDate(record.submitted_at)}</span>
                                       </div>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {renderVarianceBadge(record.variance_level)}
-                                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                                      Processed
+                                    <Badge variant="outline" className={
+                                      record.for_coldroom && record.status === 'pending_coldroom' 
+                                        ? "bg-green-50 text-green-700 border-green-200"
+                                        : record.status === 'completed'
+                                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                                        : "bg-gray-50 text-gray-700 border-gray-200"
+                                    }>
+                                      {record.for_coldroom && record.status === 'pending_coldroom' 
+                                        ? 'Ready for Cold Room'
+                                        : record.status === 'completed'
+                                        ? 'Loaded to Cold Room'
+                                        : 'Pending'}
                                     </Badge>
                                   </div>
                                 </div>
@@ -2549,26 +2016,32 @@ export default function WarehousePage() {
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div className="bg-black-50 p-3 rounded border">
                                       <div className="text-gray-500">Intake Weight</div>
-                                      <div className="font-bold text-lg">{record.total_intake_weight} kg</div>
+                                      <div className="font-bold text-lg">{record.total_weight} kg</div>
                                     </div>
                                     <div className="bg-black-50 p-3 rounded border">
                                       <div className="text-gray-500">Counted Weight</div>
                                       <div className="font-bold text-lg">{safeToFixed(record.total_counted_weight)} kg</div>
                                     </div>
                                     <div className="bg-black-50 p-3 rounded border">
-                                      <div className="text-gray-500">Rejected Weight</div>
-                                      <div className="font-bold text-lg">{safeToFixed(record.total_rejected_weight)} kg</div>
-                                    </div>
-                                    <div className={`p-3 rounded border ${
-                                      Math.abs(record.weight_variance) < 10 ? 'bg-black-50' : 
-                                      Math.abs(record.weight_variance) <= 20 ? 'bg-black-50' : 'bg-black-50'
-                                    }`}>
-                                      <div className="text-gray-500">Weight Variance</div>
+                                      <div className="text-gray-500">Status</div>
                                       <div className={`font-bold text-lg ${
-                                        Math.abs(record.weight_variance) < 10 ? 'text-green-700' : 
-                                        Math.abs(record.weight_variance) <= 20 ? 'text-yellow-700' : 'text-red-700'
+                                        record.for_coldroom && record.status === 'pending_coldroom' 
+                                          ? 'text-green-700'
+                                          : record.status === 'completed'
+                                          ? 'text-blue-700'
+                                          : 'text-gray-700'
                                       }`}>
-                                        {safeToFixed(record.weight_variance)} kg
+                                        {record.for_coldroom && record.status === 'pending_coldroom' 
+                                          ? 'Ready for Cold Room'
+                                          : record.status === 'completed'
+                                          ? 'Loaded to Cold Room'
+                                          : record.status}
+                                      </div>
+                                    </div>
+                                    <div className="bg-black-50 p-3 rounded border">
+                                      <div className="text-gray-500">Cold Room Ready</div>
+                                      <div className="font-bold text-lg">
+                                        {record.for_coldroom ? 'Yes' : 'No'}
                                       </div>
                                     </div>
                                   </div>
@@ -2613,65 +2086,73 @@ export default function WarehousePage() {
                                       {boxesSummary.fuerte_4kg > 0 && (
                                         <div className="grid grid-cols-4 gap-2 text-sm py-1 border-t">
                                           <div className="font-medium">Fuerte 4kg</div>
-                                          <div>{parseCountingTotals(record.counting_totals).fuerte_4kg_class1 || 0}</div>
-                                          <div>{parseCountingTotals(record.counting_totals).fuerte_4kg_class2 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).fuerte_4kg_class1 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).fuerte_4kg_class2 || 0}</div>
                                           <div className="font-bold">{boxesSummary.fuerte_4kg}</div>
                                         </div>
                                       )}
                                       {boxesSummary.fuerte_10kg > 0 && (
                                         <div className="grid grid-cols-4 gap-2 text-sm py-1 border-t">
                                           <div className="font-medium">Fuerte 10kg</div>
-                                          <div>{parseCountingTotals(record.counting_totals).fuerte_10kg_class1 || 0}</div>
-                                          <div>{parseCountingTotals(record.counting_totals).fuerte_10kg_class2 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).fuerte_10kg_class1 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).fuerte_10kg_class2 || 0}</div>
                                           <div className="font-bold">{boxesSummary.fuerte_10kg}</div>
                                         </div>
                                       )}
                                       {boxesSummary.hass_4kg > 0 && (
                                         <div className="grid grid-cols-4 gap-2 text-sm py-1 border-t">
                                           <div className="font-medium">Hass 4kg</div>
-                                          <div>{parseCountingTotals(record.counting_totals).hass_4kg_class1 || 0}</div>
-                                          <div>{parseCountingTotals(record.counting_totals).hass_4kg_class2 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).hass_4kg_class1 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).hass_4kg_class2 || 0}</div>
                                           <div className="font-bold">{boxesSummary.hass_4kg}</div>
                                         </div>
                                       )}
                                       {boxesSummary.hass_10kg > 0 && (
                                         <div className="grid grid-cols-4 gap-2 text-sm py-1 border-t">
                                           <div className="font-medium">Hass 10kg</div>
-                                          <div>{parseCountingTotals(record.counting_totals).hass_10kg_class1 || 0}</div>
-                                          <div>{parseCountingTotals(record.counting_totals).hass_10kg_class2 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).hass_10kg_class1 || 0}</div>
+                                          <div>{parseCountingTotals(record.totals).hass_10kg_class2 || 0}</div>
                                           <div className="font-bold">{boxesSummary.hass_10kg}</div>
                                         </div>
                                       )}
                                     </div>
                                   </div>
 
-                                  {safeArray(record.crates).length > 0 && (
-                                    <div>
-                                      <div className="text-gray-500 mb-2">Rejected Crates</div>
-                                      <div className="bg-black-50 p-3 rounded border">
-                                        <div className="grid grid-cols-4 gap-2 text-sm mb-2 font-medium">
-                                          <div>Type</div>
-                                          <div>Class</div>
-                                          <div>Quantity</div>
-                                          <div>Total Weight</div>
-                                        </div>
-                                        {safeArray(record.crates).map((crate, idx) => (
-                                          <div key={idx} className="grid grid-cols-4 gap-2 text-sm py-1 border-t">
-                                            <div>{crate.box_type.replace('_', ' ')}</div>
-                                            <div>{crate.class_type}</div>
-                                            <div>{crate.quantity}</div>
-                                            <div>{safeToFixed(crate.total_weight)} kg</div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
                                   {record.notes && (
                                     <div>
                                       <div className="text-gray-500 mb-2">Notes</div>
                                       <div className="bg-gray-50 p-3 rounded border text-sm">
                                         {record.notes}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {record.for_coldroom && record.status === 'pending_coldroom' && (
+                                    <div className="bg-green-50 p-3 rounded border border-green-200">
+                                      <div className="flex justify-between items-center">
+                                        <div>
+                                          <div className="font-medium text-green-800">Ready for Cold Room</div>
+                                          <div className="text-sm text-green-600">This record can be loaded to cold room</div>
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => {
+                                            window.open('/cold-room', '_blank');
+                                            localStorage.setItem('coldRoomSupplierData', JSON.stringify({
+                                              id: record.id,
+                                              supplier_name: record.supplier_name,
+                                              pallet_id: record.pallet_id,
+                                              region: record.region,
+                                              counting_data: record.counting_data,
+                                              counting_totals: record.totals,
+                                              total_weight: record.total_weight,
+                                              total_counted_weight: record.total_counted_weight
+                                            }));
+                                          }}
+                                          className="bg-green-600 hover:bg-green-700"
+                                        >
+                                          Load to Cold Room
+                                        </Button>
                                       </div>
                                     </div>
                                   )}

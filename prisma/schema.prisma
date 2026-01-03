@@ -1,3 +1,4 @@
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -351,6 +352,7 @@ model quality_checks {
   @@map("quality_checks")
 }
 
+// UPDATED: CountingRecord model with all fields for cold room integration
 model CountingRecord {
   id                    String          @id @default(cuid())
   supplier_id           String?
@@ -359,6 +361,9 @@ model CountingRecord {
   region                String?
   pallet_id             String
   total_weight          Float
+  total_counted_weight  Float?
+  
+  // Individual box count fields
   fuerte_4kg_class1     Int             @default(0)
   fuerte_4kg_class2     Int             @default(0)
   fuerte_4kg_total      Int             @default(0)
@@ -371,52 +376,40 @@ model CountingRecord {
   hass_10kg_class1      Int             @default(0)
   hass_10kg_class2      Int             @default(0)
   hass_10kg_total       Int             @default(0)
+  
+  // JSON data fields
   counting_data         String          @db.LongText
+  totals                String?         @db.LongText
+  
+  // Status and tracking
+  status                String?         @default("pending_coldroom")
+  for_coldroom          Boolean?        @default(true)
+  
+  // Metadata
   submitted_at          DateTime        @default(now())
   processed_by          String
   notes                 String?
-  for_coldroom          Boolean?        @default(false)
+  driver_name           String?         @db.VarChar(255)
+  vehicle_plate         String?         @db.VarChar(50)
+  
+  // Cold room tracking
   loaded_to_coldroom_at DateTime?
-  status                String?         @default("pending")
-  total_counted_weight  Float?
-  totals                String?         @db.LongText
+  cold_room_loaded_to   String?         @db.VarChar(50)
+  
+  // Relations
   weight_entry          weight_entries? @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
+  cold_room_boxes       cold_room_boxes[]
 
   @@index([supplier_id])
   @@index([pallet_id])
   @@index([submitted_at])
   @@index([supplier_name])
+  @@index([for_coldroom])
+  @@index([status])
+  @@index([loaded_to_coldroom_at])
   @@map("counting_records")
 }
 
-model RejectionRecord {
-  id                    String   @id @default(cuid())
-  supplier_id           String?
-  supplier_name         String
-  pallet_id             String
-  region                String?
-  total_intake_weight   Float
-  total_counted_weight  Float
-  total_rejected_weight Float
-  weight_variance       Float
-  variance_level        String
-  crates                String?  @db.LongText
-  notes                 String?
-  counting_data         String?  @db.LongText
-  counting_totals       String?  @db.LongText
-  submitted_at          DateTime @default(now())
-  processed_by          String
-  original_counting_id  String?
-  status                String?  @default("pending_coldroom")
-
-  @@index([supplier_name])
-  @@index([pallet_id])
-  @@index([submitted_at])
-  @@index([status])
-  @@map("rejection_records")
-}
-
-// UPDATED UTILITY READINGS MODEL WITH ALL NEW FIELDS
 model utility_readings {
   id           Int      @id @default(autoincrement())
   date         DateTime @default(now())
@@ -459,23 +452,34 @@ model utility_readings {
   @@map("utility_readings")
 }
 
+// UPDATED: Cold room boxes with proper relations
 model cold_room_boxes {
-  id                 String   @id @default(cuid())
-  variety            String
-  box_type           String
-  size               String
-  grade              String
+  id                 String          @id @default(cuid())
+  variety            String          @db.VarChar(50)
+  box_type           String          @db.VarChar(10)
+  size               String          @db.VarChar(20)
+  grade              String          @db.VarChar(20)
   quantity           Int
-  cold_room_id       String
+  cold_room_id       String          @db.VarChar(50)
+  
+  // Supplier information
+  supplier_name      String?         @db.VarChar(255)
+  pallet_id          String?         @db.VarChar(100)
+  region             String?         @db.VarChar(100)
+  
+  // Link to counting record
   counting_record_id String?
-  supplier_name      String?
-  pallet_id          String?
-  region             String?
-  created_at         DateTime @default(now())
+  counting_record    CountingRecord? @relation(fields: [counting_record_id], references: [id], onDelete: Cascade)
+  
+  // Metadata
+  created_at         DateTime        @default(now())
+  updated_at         DateTime        @default(now()) @updatedAt 
 
   @@index([cold_room_id])
   @@index([counting_record_id])
   @@index([supplier_name])
+  @@index([pallet_id])
+  @@index([created_at])
   @@map("cold_room_boxes")
 }
 
@@ -686,7 +690,6 @@ model UserRole {
   @@map("user_roles")
 }
 
-// NEW: Utility rates table for configurable pricing
 model utility_rates {
   id             Int      @id @default(autoincrement())
   utility_type   String   @db.VarChar(50)  // 'electricity', 'water', 'diesel'
@@ -702,7 +705,6 @@ model utility_rates {
   @@map("utility_rates")
 }
 
-// NEW: Internet costs tracking
 model internet_costs {
   id                 Int      @id @default(autoincrement())
   provider           String   @db.VarChar(100)  // 'Safaricom', '5G Internet', 'Syokinet'
@@ -719,7 +721,6 @@ model internet_costs {
   @@map("internet_costs")
 }
 
-// NEW: Daily utility notifications
 model utility_notifications {
   id                  Int      @id @default(autoincrement())
   user_id             String?  @db.VarChar(255)
@@ -734,7 +735,6 @@ model utility_notifications {
   @@map("utility_notifications")
 }
 
-// NEW: Utility area consumption (for detailed breakdown)
 model utility_area_consumption {
   id             Int      @id @default(autoincrement())
   reading_id     Int?                       // Reference to utility_readings
@@ -750,7 +750,6 @@ model utility_area_consumption {
   @@map("utility_area_consumption")
 }
 
-// NEW: Water meter details
 model water_meters {
   id           Int      @id @default(autoincrement())
   meter_number String   @unique @db.VarChar(50)
@@ -765,7 +764,6 @@ model water_meters {
   @@map("water_meters")
 }
 
-// NEW: Generator details
 model generator_details {
   id            Int      @id @default(autoincrement())
   generator_code String  @unique @db.VarChar(50)
@@ -782,7 +780,6 @@ model generator_details {
   @@map("generator_details")
 }
 
-// NEW: Equipment temperature monitoring
 model equipment_temperatures {
   id            Int      @id @default(autoincrement())
   equipment_type String  @db.VarChar(50)  // 'coldroom1', 'coldroom2', 'machine'

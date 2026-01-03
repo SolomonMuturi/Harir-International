@@ -46,26 +46,18 @@ import {
   Search,
   FileText,
   Filter,
-  Download
+  Download,
+  // Pallet is not exported from lucide-react - using Boxes instead
+  ChevronDown,
+  ChevronUp,
+  Grid,
+  // Additional icons that might be needed
+  Boxes,
+  Package2,
+  Archive,
+  AlertCircle,
+  Info
 } from 'lucide-react';
-
-interface CountingHistoryItem {
-  variety: 'fuerte' | 'hass';
-  boxType: '4kg' | '10kg';
-  size: string;
-  grade: 'class1' | 'class2';
-  quantity: number;
-  supplierName?: string;
-  palletId?: string;
-  region?: string;
-  weightEntryId?: string;
-  countingRecordId?: string;
-}
-
-interface SelectedBox extends CountingHistoryItem {
-  selected: boolean;
-  coldRoomId: string;
-}
 
 interface ColdRoomBox {
   id: string;
@@ -76,10 +68,11 @@ interface ColdRoomBox {
   quantity: number;
   cold_room_id: string;
   created_at: string;
-  cold_room_name?: string;
+  updated_at: string;
   supplier_name?: string;
   pallet_id?: string;
   region?: string;
+  counting_record_id?: string;
 }
 
 interface ColdRoomPallet {
@@ -144,6 +137,25 @@ interface ColdRoomStats {
   recentRepacking: RepackingRecord[];
 }
 
+interface CountingRecord {
+  id: string;
+  supplier_name: string;
+  pallet_id: string;
+  region: string;
+  total_weight: number;
+  total_counted_weight: number;
+  fuerte_4kg_total: number;
+  fuerte_10kg_total: number;
+  hass_4kg_total: number;
+  hass_10kg_total: number;
+  counting_data: any;
+  totals: any;
+  for_coldroom: boolean;
+  status: string;
+  submitted_at: string;
+  processed_by: string;
+}
+
 interface RepackingBoxForm {
   variety: 'fuerte' | 'hass';
   boxType: '4kg' | '10kg';
@@ -152,81 +164,67 @@ interface RepackingBoxForm {
   quantity: number;
 }
 
-// Warehouse history record interface
-interface WarehouseHistoryRecord {
-  id: string;
-  supplier_id: string;
-  supplier_name: string;
-  pallet_id: string;
-  region: string;
-  total_intake_weight: number;
-  total_counted_weight: number;
-  total_rejected_weight: number;
-  weight_variance: number;
-  variance_level: 'low' | 'medium' | 'high';
-  crates: Array<{
-    id: string;
-    box_type: string;
-    class_type: string;
+interface SizeGroup {
+  size: string;
+  variety: 'fuerte' | 'hass';
+  boxType: '4kg' | '10kg';
+  grade: 'class1' | 'class2';
+  totalQuantity: number;
+  coldRoomId: string;
+  supplierName?: string;
+  palletId?: string;
+  region?: string;
+  countingRecordId?: string;
+  selectedForLoading: boolean;
+  loadingQuantity: number;
+  targetColdRoom: string;
+  // NEW: Track loaded and remaining quantities
+  loadedQuantity: number;
+  remainingQuantity: number;
+  // Track loading history
+  loadingHistory: Array<{
     quantity: number;
-    weight_per_crate: number;
-    total_weight: number;
+    targetColdRoom: string;
+    timestamp: string;
   }>;
-  notes: string;
-  counting_data: any;
-  counting_totals: {
-    fuerte_4kg_total: number;
-    fuerte_10kg_total: number;
-    hass_4kg_total: number;
-    hass_10kg_total: number;
-    [key: string]: number;
-  };
-  submitted_at: string;
-  processed_by: string;
-  original_counting_id: string;
 }
 
-// History record interface
-interface LoadingHistoryRecord {
+interface ManualPalletBox {
   id: string;
-  box_id?: string;
-  supplier_name: string;
-  pallet_id: string;
-  region?: string;
   variety: 'fuerte' | 'hass';
-  box_type: '4kg' | '10kg';
+  boxType: '4kg' | '10kg';
   size: string;
   grade: 'class1' | 'class2';
   quantity: number;
-  cold_room_id: string;
-  loaded_by: string;
-  loading_date: string;
-  created_at: string;
+  availableQuantity: number;
 }
 
-// Available sizes
+interface ManualPallet {
+  boxes: ManualPalletBox[];
+  totalBoxes: number;
+  boxesPerPallet: number;
+  coldRoomId: string;
+  palletName: string;
+}
+
 const BOX_SIZES = [
   'size12', 'size14', 'size16', 'size18', 'size20',
   'size22', 'size24', 'size26', 'size28', 'size30'
 ];
 
-// Helper to format size for display
 const formatSize = (size: string) => {
   return size.replace('size', 'Size ');
 };
 
-// Utility function to safely format numbers
 const safeToFixed = (value: any, decimals: number = 1): string => {
   const num = Number(value);
   return isNaN(num) ? '0.'.padEnd(decimals + 2, '0') : num.toFixed(decimals);
 };
 
-// Safe array access utility
 const safeArray = <T,>(array: T[] | undefined | null): T[] => {
   return Array.isArray(array) ? array : [];
 };
 
-// Safe date formatting
 const formatDate = (dateString: string) => {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
@@ -239,180 +237,11 @@ const formatDate = (dateString: string) => {
   });
 };
 
-// Safe date formatting for input
 const formatDateForInput = (dateString: string) => {
   if (!dateString) return '';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return '';
   return date.toISOString().split('T')[0];
-};
-
-// CSV Export utility function
-const exportToCSV = (data: LoadingHistoryRecord[], filename: string = 'coldroom-loading-history') => {
-  if (!data || data.length === 0) {
-    return;
-  }
-
-  // Define CSV headers
-  const headers = [
-    'Loading Date',
-    'Supplier Name',
-    'Pallet ID',
-    'Region',
-    'Variety',
-    'Box Type',
-    'Size',
-    'Grade',
-    'Quantity',
-    'Weight Per Box (kg)',
-    'Total Weight (kg)',
-    'Cold Room',
-    'Loaded By',
-    'Created At'
-  ];
-
-  // Convert data to CSV rows
-  const rows = data.map(record => {
-    const boxWeight = record.box_type === '4kg' ? 4 : 10;
-    const totalWeight = (record.quantity || 0) * boxWeight;
-    const loadingDate = record.loading_date ? new Date(record.loading_date).toLocaleDateString() : '';
-    const createdDate = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
-    
-    return [
-      `"${loadingDate}"`,
-      `"${record.supplier_name || 'Unknown'}"`,
-      `"${record.pallet_id || ''}"`,
-      `"${record.region || ''}"`,
-      `"${record.variety === 'fuerte' ? 'Fuerte' : 'Hass'}"`,
-      `"${record.box_type}"`,
-      `"${formatSize(record.size)}"`,
-      `"${record.grade === 'class1' ? 'Class 1' : 'Class 2'}"`,
-      `"${record.quantity || 0}"`,
-      `"${boxWeight}"`,
-      `"${totalWeight}"`,
-      `"${record.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
-      `"${record.loaded_by || 'Warehouse Staff'}"`,
-      `"${createdDate}"`
-    ].join(',');
-  });
-
-  // Combine headers and rows
-  const csvContent = [
-    headers.join(','),
-    ...rows
-  ].join('\n');
-
-  // Create blob and download link
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
-  link.style.visibility = 'hidden';
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  URL.revokeObjectURL(url);
-};
-
-// Export filtered data with summary
-const exportFilteredHistoryToCSV = (
-  data: LoadingHistoryRecord[], 
-  filters: any,
-  summary: any,
-  filename: string = 'coldroom-filtered-history'
-) => {
-  if (!data || data.length === 0) {
-    return;
-  }
-
-  // Create summary section
-  const summarySection = [
-    ['COLD ROOM LOADING HISTORY REPORT'],
-    ['Generated on:', new Date().toLocaleString()],
-    [''],
-    ['FILTER CRITERIA:'],
-    [`Date Range: ${filters.dateFrom || 'Any'} to ${filters.dateTo || 'Any'}`],
-    [`Supplier: ${filters.supplierName || 'Any'}`],
-    [`Cold Room: ${filters.coldRoomId === 'all' ? 'All' : filters.coldRoomId === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}`],
-    [''],
-    ['REPORT SUMMARY:'],
-    [`Total Records: ${summary.totalRecords || 0}`],
-    [`Total Boxes Loaded: ${summary.totalBoxesLoaded?.toLocaleString() || 0}`],
-    [`Total Weight: ${safeToFixed(summary.totalWeight || 0)} kg`],
-    [`Unique Suppliers: ${summary.uniqueSuppliers || 0}`],
-    [''],
-    ['DETAILED RECORDS:'],
-    [''] // Empty line before headers
-  ];
-
-  // Define CSV headers
-  const headers = [
-    'Loading Date',
-    'Supplier Name',
-    'Pallet ID',
-    'Region',
-    'Variety',
-    'Box Type',
-    'Size',
-    'Grade',
-    'Quantity',
-    'Weight Per Box (kg)',
-    'Total Weight (kg)',
-    'Cold Room',
-    'Loaded By',
-    'Created At'
-  ];
-
-  // Convert data to CSV rows
-  const rows = data.map(record => {
-    const boxWeight = record.box_type === '4kg' ? 4 : 10;
-    const totalWeight = (record.quantity || 0) * boxWeight;
-    const loadingDate = record.loading_date ? new Date(record.loading_date).toLocaleDateString() : '';
-    const createdDate = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
-    
-    return [
-      `"${loadingDate}"`,
-      `"${record.supplier_name || 'Unknown'}"`,
-      `"${record.pallet_id || ''}"`,
-      `"${record.region || ''}"`,
-      `"${record.variety === 'fuerte' ? 'Fuerte' : 'Hass'}"`,
-      `"${record.box_type}"`,
-      `"${formatSize(record.size)}"`,
-      `"${record.grade === 'class1' ? 'Class 1' : 'Class 2'}"`,
-      `"${record.quantity || 0}"`,
-      `"${boxWeight}"`,
-      `"${totalWeight}"`,
-      `"${record.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
-      `"${record.loaded_by || 'Warehouse Staff'}"`,
-      `"${createdDate}"`
-    ].join(',');
-  });
-
-  // Combine all sections
-  const csvContent = [
-    ...summarySection.map(row => Array.isArray(row) ? row.join(',') : row),
-    headers.join(','),
-    ...rows
-  ].join('\n');
-
-  // Create blob and download link
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
-  link.style.visibility = 'hidden';
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  URL.revokeObjectURL(url);
 };
 
 export default function ColdRoomPage() {
@@ -427,12 +256,6 @@ export default function ColdRoomPage() {
     occupied: number;
   }>>([]);
   
-  // State for warehouse history records
-  const [warehouseHistory, setWarehouseHistory] = useState<WarehouseHistoryRecord[]>([]);
-  
-  // State for counting history (converted from warehouse history)
-  const [countingHistory, setCountingHistory] = useState<CountingHistoryItem[]>([]);
-  
   // State for cold room contents
   const [coldRoomBoxes, setColdRoomBoxes] = useState<ColdRoomBox[]>([]);
   const [coldRoomPallets, setColdRoomPallets] = useState<ColdRoomPallet[]>([]);
@@ -444,55 +267,24 @@ export default function ColdRoomPage() {
     coldroom2: ColdRoomStats;
   } | null>(null);
   
-  // State for loading history
-  const [loadingHistory, setLoadingHistory] = useState<LoadingHistoryRecord[]>([]);
+  // State for counting records ready for cold room
+  const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
+  const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   
-  // State for loading
+  // Loading states
   const [isLoading, setIsLoading] = useState({
     coldRooms: true,
-    warehouseHistory: true,
-    counting: true,
     boxes: true,
     pallets: true,
     temperature: true,
     repacking: true,
     stats: true,
-    countingRecords: false,
-    loadingHistory: false,
+    countingRecords: true,
   });
-  
-  // State for counting boxes from database
-  const [countingBoxes, setCountingBoxes] = useState<Array<{
-    variety: 'fuerte' | 'hass';
-    boxType: '4kg' | '10kg';
-    size: string;
-    grade: 'class1' | 'class2';
-    quantity: number;
-    supplierName: string;
-    palletId: string;
-    region: string;
-    countingRecordId: string;
-    selected: boolean;
-    coldRoomId: string;
-    boxWeight: number;
-    totalWeight: number;
-    statusBadge: string;
-    status: string;
-    forColdroom: boolean;
-  }>>([]);
-  
-  // NEW: State to track if boxes have been loaded
-  const [boxesLoaded, setBoxesLoaded] = useState<boolean>(false);
   
   // State for forms
   const [selectedColdRoom, setSelectedColdRoom] = useState<string>('coldroom1');
   const [temperature, setTemperature] = useState<string>('');
-  
-  // State for load boxes selection
-  const [selectedBoxes, setSelectedBoxes] = useState<SelectedBox[]>([]);
-  
-  // State for data source tracking
-  const [dataSource, setDataSource] = useState<'warehouse' | 'local' | 'api' | null>(null);
   
   // State for repacking form
   const [repackingForm, setRepackingForm] = useState<{
@@ -505,12 +297,17 @@ export default function ColdRoomPage() {
     notes: '',
   });
   
-  // State for history search
-  const [historySearch, setHistorySearch] = useState({
-    dateFrom: '',
-    dateTo: '',
-    supplierName: '',
-    coldRoomId: 'all',
+  // State for size groups (for loading by size) - UPDATED WITH BALANCE TRACKING
+  const [sizeGroups, setSizeGroups] = useState<SizeGroup[]>([]);
+  
+  // State for manual pallet creation
+  const [manualPallets, setManualPallets] = useState<ManualPallet[]>([]);
+  const [newPallet, setNewPallet] = useState<ManualPallet>({
+    boxes: [],
+    totalBoxes: 0,
+    boxesPerPallet: 288, // Default for 4kg
+    coldRoomId: 'coldroom1',
+    palletName: `PALLET-${Date.now().toString().slice(-6)}`
   });
   
   // Active tab state
@@ -547,7 +344,6 @@ export default function ColdRoomPage() {
       }
       
       const data = await response.json();
-      console.log('Cold rooms API response:', data);
       
       const calculateOccupiedPallets = (coldRoomId: string) => {
         const boxesInRoom = safeArray(coldRoomBoxes).filter(box => box.cold_room_id === coldRoomId);
@@ -571,7 +367,6 @@ export default function ColdRoomPage() {
         }));
         setColdRooms(updatedRooms);
       } else {
-        console.warn('Unexpected cold rooms response format, using defaults:', data);
         setColdRooms([
           {
             id: 'coldroom1',
@@ -616,8 +411,6 @@ export default function ColdRoomPage() {
   // Fetch cold room boxes and pallets
   const fetchColdRoomBoxes = async () => {
     try {
-      console.log('📦 Fetching cold room boxes and pallets...');
-      
       const [boxesResponse, palletsResponse] = await Promise.allSettled([
         fetch('/api/cold-room?action=boxes'),
         fetch('/api/cold-room?action=pallets'),
@@ -630,7 +423,6 @@ export default function ColdRoomPage() {
       if (boxesResponse.status === 'fulfilled' && boxesResponse.value.ok) {
         const result = await boxesResponse.value.json();
         if (result.success && Array.isArray(result.data)) {
-          console.log(`✅ Loaded ${result.data.length} boxes from cold room`);
           boxesData = result.data.map((box: any) => ({
             id: box.id,
             variety: box.variety,
@@ -640,18 +432,17 @@ export default function ColdRoomPage() {
             quantity: Number(box.quantity) || 0,
             cold_room_id: box.cold_room_id,
             created_at: box.created_at,
-            cold_room_name: box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
+            updated_at: box.updated_at,
             supplier_name: box.supplier_name,
             pallet_id: box.pallet_id,
-            region: box.region
+            region: box.region,
+            counting_record_id: box.counting_record_id
           }));
           setColdRoomBoxes(boxesData);
         } else {
-          console.warn('No boxes data returned from API');
           setColdRoomBoxes([]);
         }
       } else {
-        console.error('Failed to fetch boxes:', boxesResponse);
         setColdRoomBoxes([]);
       }
       
@@ -659,7 +450,6 @@ export default function ColdRoomPage() {
       if (palletsResponse.status === 'fulfilled' && palletsResponse.value.ok) {
         const result = await palletsResponse.value.json();
         if (result.success && Array.isArray(result.data)) {
-          console.log(`✅ Loaded ${result.data.length} pallets from cold room`);
           palletsData = result.data.map((pallet: any) => ({
             id: pallet.id,
             variety: pallet.variety,
@@ -673,16 +463,14 @@ export default function ColdRoomPage() {
           }));
           setColdRoomPallets(palletsData);
         } else {
-          console.warn('No pallets data returned from API');
           setColdRoomPallets([]);
         }
       } else {
-        console.error('Failed to fetch pallets:', palletsResponse);
         setColdRoomPallets([]);
       }
       
     } catch (error) {
-      console.error('❌ Error fetching cold room boxes:', error);
+      console.error('Error fetching cold room boxes:', error);
       setColdRoomBoxes([]);
       setColdRoomPallets([]);
     } finally {
@@ -693,19 +481,16 @@ export default function ColdRoomPage() {
   // Fetch temperature logs
   const fetchTemperatureLogs = async () => {
     try {
-      console.log('🌡️ Fetching temperature logs...');
       const response = await fetch('/api/cold-room?action=temperature');
       const result = await response.json();
       
       if (result.success) {
-        console.log(`✅ Loaded ${Array.isArray(result.data) ? result.data.length : 0} temperature logs`);
         setTemperatureLogs(result.data || []);
       } else {
-        console.warn('No temperature logs returned from API');
         setTemperatureLogs([]);
       }
     } catch (error) {
-      console.error('❌ Error fetching temperature logs:', error);
+      console.error('Error fetching temperature logs:', error);
       setTemperatureLogs([]);
     } finally {
       setIsLoading(prev => ({ ...prev, temperature: false }));
@@ -715,19 +500,16 @@ export default function ColdRoomPage() {
   // Fetch repacking records
   const fetchRepackingRecords = async () => {
     try {
-      console.log('🔄 Fetching repacking records...');
       const response = await fetch('/api/cold-room?action=repacking');
       const result = await response.json();
       
       if (result.success) {
-        console.log(`✅ Loaded ${Array.isArray(result.data) ? result.data.length : 0} repacking records`);
         setRepackingRecords(result.data || []);
       } else {
-        console.warn('No repacking records returned from API');
         setRepackingRecords([]);
       }
     } catch (error) {
-      console.error('❌ Error fetching repacking records:', error);
+      console.error('Error fetching repacking records:', error);
       setRepackingRecords([]);
     } finally {
       setIsLoading(prev => ({ ...prev, repacking: false }));
@@ -737,787 +519,102 @@ export default function ColdRoomPage() {
   // Fetch cold room statistics
   const fetchColdRoomStats = async () => {
     try {
-      console.log('📊 Fetching cold room statistics...');
       const response = await fetch('/api/cold-room?action=stats');
       const result = await response.json();
       
       if (result.success) {
-        console.log('✅ Loaded cold room statistics');
         setColdRoomStats(result.data);
       } else {
-        console.warn('No cold room stats returned from API');
         setColdRoomStats(null);
       }
     } catch (error) {
-      console.error('❌ Error fetching cold room stats:', error);
+      console.error('Error fetching cold room stats:', error);
       setColdRoomStats(null);
     } finally {
       setIsLoading(prev => ({ ...prev, stats: false }));
     }
   };
   
-  // Fetch loading history from the new loading_history table
-  const fetchLoadingHistory = async () => {
-    setIsLoading(prev => ({ ...prev, loadingHistory: true }));
+  // Fetch counting records ready for cold room
+  const fetchCountingRecords = async () => {
+    setIsLoading(prev => ({ ...prev, countingRecords: true }));
     try {
-      console.log('📜 Fetching loading history from database...');
+      // Fetch counting records with status 'pending_coldroom' and for_coldroom = true
+      const response = await fetch('/api/counting?action=coldroom');
+      const result = await response.json();
       
-      const response = await fetch('/api/cold-room?action=loading-history');
-      
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          console.log(`✅ Loaded ${Array.isArray(result.data) ? result.data.length : 0} history records`);
-          
-          const historyData: LoadingHistoryRecord[] = safeArray(result.data).map((item: any) => ({
-            id: item.id || '',
-            box_id: item.box_id || item.id || '',
-            supplier_name: item.supplier_name || 'Unknown Supplier',
-            pallet_id: item.pallet_id || `PAL-${item.id || Date.now()}`,
-            region: item.region || '',
-            variety: item.variety || 'fuerte',
-            box_type: item.box_type || item.boxType || '4kg',
-            size: item.size || 'size24',
-            grade: item.grade || 'class1',
-            quantity: Number(item.quantity) || 0,
-            cold_room_id: item.cold_room_id || item.coldRoomId || 'coldroom1',
-            loaded_by: item.loaded_by || 'Warehouse Staff',
-            loading_date: item.loading_date || item.created_at || new Date().toISOString(),
-            created_at: item.created_at || item.loading_date || new Date().toISOString()
-          }));
-          
-          setLoadingHistory(historyData);
-        } else {
-          setLoadingHistory([]);
-        }
-      } else {
-        setLoadingHistory([]);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching loading history:', error);
-      setLoadingHistory([]);
-    } finally {
-      setIsLoading(prev => ({ ...prev, loadingHistory: false }));
-    }
-  };
-
-  // Search loading history
-  const searchLoadingHistory = async () => {
-    setIsLoading(prev => ({ ...prev, loadingHistory: true }));
-    try {
-      console.log('🔍 Searching loading history...');
-      const response = await fetch('/api/cold-room', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'search-history',
-          dateFrom: historySearch.dateFrom,
-          dateTo: historySearch.dateTo,
-          supplierName: historySearch.supplierName,
-          coldRoomId: historySearch.coldRoomId === 'all' ? '' : historySearch.coldRoomId,
-        }),
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          console.log(`✅ Found ${Array.isArray(result.data) ? result.data.length : 0} records`);
-          
-          const historyData: LoadingHistoryRecord[] = safeArray(result.data).map((item: any) => ({
-            id: item.id || '',
-            box_id: item.box_id || item.id || '',
-            supplier_name: item.supplier_name || 'Unknown Supplier',
-            pallet_id: item.pallet_id || `PAL-${item.id || Date.now()}`,
-            region: item.region || '',
-            variety: item.variety || 'fuerte',
-            box_type: item.box_type || item.boxType || '4kg',
-            size: item.size || 'size24',
-            grade: item.grade || 'class1',
-            quantity: Number(item.quantity) || 0,
-            cold_room_id: item.cold_room_id || item.coldRoomId || 'coldroom1',
-            loaded_by: item.loaded_by || 'Warehouse Staff',
-            loading_date: item.loading_date || item.created_at || new Date().toISOString(),
-            created_at: item.created_at || item.loading_date || new Date().toISOString()
-          }));
-          
-          setLoadingHistory(historyData);
-        } else {
-          setLoadingHistory([]);
-        }
-      } else {
-        setLoadingHistory([]);
-      }
-    } catch (error) {
-      console.error('❌ Error searching loading history:', error);
-      setLoadingHistory([]);
-    } finally {
-      setIsLoading(prev => ({ ...prev, loadingHistory: false }));
-    }
-  };
-  
-  // Enhanced fetchCountingHistory function - now focused on warehouse history
-  const fetchCountingHistory = async () => {
-    setIsLoading(prev => ({ ...prev, counting: true }));
-    
-    try {
-      console.log('🔄 Checking for warehouse history data...');
-      
-      // STEP 1: Check localStorage for direct supplier data
-      const coldRoomSupplierDataStr = localStorage.getItem('coldRoomSupplierData');
-      
-      if (coldRoomSupplierDataStr) {
-        try {
-          const supplierData = JSON.parse(coldRoomSupplierDataStr);
-          console.log('✅ Found cold room supplier data:', supplierData.supplier_name);
-          
-          const transformedData: CountingHistoryItem[] = [];
-          const countingData = supplierData.counting_data || {};
-          
-          Object.keys(countingData).forEach(key => {
-            if (!key) return;
-            
-            if ((key.includes('fuerte_') || key.includes('hass_')) && 
-                (key.includes('_4kg_') || key.includes('_10kg_'))) {
-              
-              const parts = key.split('_');
-              if (parts.length >= 4) {
-                const variety = parts[0] as 'fuerte' | 'hass';
-                const boxType = parts[1] as '4kg' | '10kg';
-                const grade = parts[2] as 'class1' | 'class2';
-                const size = parts.slice(3).join('_').replace(/_/g, '');
-                const quantity = Number(countingData[key]) || 0;
-                
-                if (quantity > 0 && size) {
-                  const cleanSize = size.startsWith('size') ? size : `size${size}`;
-                  
-                  transformedData.push({
-                    variety,
-                    boxType,
-                    size: cleanSize,
-                    grade,
-                    quantity,
-                    supplierName: supplierData.supplier_name,
-                    palletId: supplierData.pallet_id,
-                    region: supplierData.region,
-                    countingRecordId: supplierData.id
-                  });
-                }
-              }
-            }
-          });
-          
-          const filteredData = transformedData.filter(item => item.quantity > 0);
-          
-          if (filteredData.length > 0) {
-            console.log(`✅ Loaded ${filteredData.length} boxes from supplier data`);
-            setCountingHistory(filteredData);
-            setDataSource('local');
-            
-            const initialSelectedBoxes = filteredData.map(item => ({
-              ...item,
-              selected: true,
-              coldRoomId: 'coldroom1'
-            }));
-            setSelectedBoxes(initialSelectedBoxes);
-            
-            localStorage.removeItem('coldRoomSupplierData');
-            
-            toast({
-              title: "✅ Supplier Loaded Directly!",
-              description: `${supplierData.supplier_name}'s boxes are ready to load`,
-            });
-            
-            setIsLoading(prev => ({ ...prev, counting: false }));
-            return;
-          }
-        } catch (error) {
-          console.error('❌ Error parsing cold room supplier data:', error);
-          localStorage.removeItem('coldRoomSupplierData');
-        }
-      }
-      
-      // STEP 2: Fetch warehouse history from API
-      const loadedFromHistory = await fetchWarehouseHistory();
-      
-      if (loadedFromHistory) {
-        setIsLoading(prev => ({ ...prev, counting: false }));
-        return;
-      }
-      
-      // STEP 3: Fallback - check for warehouse data in localStorage
-      const warehouseDataStr = localStorage.getItem('warehouseCountingData');
-      
-      if (warehouseDataStr) {
-        try {
-          const warehouseData = JSON.parse(warehouseDataStr);
-          console.log('✅ Found warehouse counting data in localStorage');
-          
-          const transformedData: CountingHistoryItem[] = [];
-          
-          if (warehouseData.counting_data) {
-            const countingData = warehouseData.counting_data;
-            
-            Object.keys(countingData).forEach(key => {
-              if (!key) return;
-              
-              if ((key.includes('fuerte_') || key.includes('hass_')) && 
-                  (key.includes('_4kg_') || key.includes('_10kg_'))) {
-                
-                const parts = key.split('_');
-                if (parts.length >= 4) {
-                  const variety = parts[0] as 'fuerte' | 'hass';
-                  const boxType = parts[1] as '4kg' | '10kg';
-                  const grade = parts[2] as 'class1' | 'class2';
-                  const size = parts.slice(3).join('_').replace(/_/g, '');
-                  const quantity = Number(countingData[key]) || 0;
-                  
-                  if (quantity > 0 && size) {
-                    const cleanSize = size.startsWith('size') ? size : `size${size}`;
-                    
-                    transformedData.push({
-                      variety,
-                      boxType,
-                      size: cleanSize,
-                      grade,
-                      quantity,
-                      supplierName: warehouseData.supplier_name,
-                      countingRecordId: warehouseData.id
-                    });
-                  }
-                }
-              }
-            });
-          }
-          
-          const filteredData = transformedData.filter(item => item.quantity > 0);
-          
-          if (filteredData.length > 0) {
-            console.log(`✅ Loaded ${filteredData.length} boxes from localStorage`);
-            setCountingHistory(filteredData);
-            setDataSource('local');
-            
-            const initialSelectedBoxes = filteredData.map(item => ({
-              ...item,
-              selected: true,
-              coldRoomId: 'coldroom1'
-            }));
-            setSelectedBoxes(initialSelectedBoxes);
-            
-            localStorage.removeItem('warehouseCountingData');
-            
-            toast({
-              title: "📦 Boxes Loaded from Local Storage",
-              description: `Loaded ${filteredData.length} box types`,
-            });
-            
-            setIsLoading(prev => ({ ...prev, counting: false }));
-            return;
-          }
-        } catch (error) {
-          console.error('❌ Error parsing warehouse data:', error);
-          localStorage.removeItem('warehouseCountingData');
-        }
-      }
-      
-      // STEP 4: Final fallback - fetch from counting API
-      console.log('📡 Fetching from counting API as fallback...');
-      try {
-        const response = await fetch('/api/counting');
+      if (result.success) {
+        const records = safeArray(result.data).filter((record: any) => 
+          record.for_coldroom === true && 
+          record.status === 'pending_coldroom'
+        );
         
-        if (response.ok) {
-          const result = await response.json();
-          
-          if (result.success && Array.isArray(result.data)) {
-            const transformedData: CountingHistoryItem[] = [];
-            
-            safeArray(result.data).forEach((record: any) => {
-              const countingData = record.counting_data || {};
-              
-              Object.keys(countingData).forEach(key => {
-                if (!key) return;
-                
-                if ((key.includes('fuerte_') || key.includes('hass_')) && 
-                    (key.includes('_4kg_') || key.includes('_10kg_'))) {
-                  
-                  const parts = key.split('_');
-                  if (parts.length >= 4) {
-                    const variety = parts[0] as 'fuerte' | 'hass';
-                    const boxType = parts[1] as '4kg' | '10kg';
-                    const grade = parts[2] as 'class1' | 'class2';
-                    const size = parts.slice(3).join('_').replace(/_/g, '');
-                    const quantity = Number(countingData[key]) || 0;
-                    
-                    if (quantity > 0 && size) {
-                      const cleanSize = size.startsWith('size') ? size : `size${size}`;
-                      
-                      transformedData.push({
-                        variety,
-                        boxType,
-                        size: cleanSize,
-                        grade,
-                        quantity,
-                        supplierName: record.supplier_name,
-                        countingRecordId: record.id
-                      });
-                    }
-                  }
-                }
-              });
-            });
-            
-            const filteredData = transformedData.filter(item => item.quantity > 0);
-            
-            if (filteredData.length > 0) {
-              console.log(`✅ Loaded ${filteredData.length} boxes from API`);
-              setCountingHistory(filteredData);
-              setDataSource('api');
-              
-              const initialSelectedBoxes = filteredData.map(item => ({
-                ...item,
-                selected: true,
-                coldRoomId: 'coldroom1'
-              }));
-              setSelectedBoxes(initialSelectedBoxes);
-              
-              toast({
-                title: "📦 Counting Records Found",
-                description: `Loaded ${filteredData.length} box types from saved records`,
-              });
-            } else {
-              setCountingHistory([]);
-              setSelectedBoxes([]);
-              setDataSource(null);
+        // Process records to ensure counting_data and totals are properly parsed
+        const processedRecords = records.map((record: any) => {
+          let counting_data = record.counting_data;
+          if (typeof counting_data === 'string') {
+            try {
+              counting_data = JSON.parse(counting_data);
+            } catch (e) {
+              counting_data = {};
             }
-          } else {
-            setCountingHistory([]);
-            setSelectedBoxes([]);
-            setDataSource(null);
           }
-        } else {
-          setCountingHistory([]);
-          setSelectedBoxes([]);
-          setDataSource(null);
-        }
-      } catch (apiError) {
-        console.error('❌ Counting API fetch failed:', apiError);
-        setCountingHistory([]);
-        setSelectedBoxes([]);
-        setDataSource(null);
-      }
-      
-    } catch (error) {
-      console.error('❌ Error in fetchCountingHistory:', error);
-      toast({
-        title: 'Error Loading Data',
-        description: 'Could not load counting history from warehouse',
-        variant: 'destructive',
-      });
-      setCountingHistory([]);
-      setSelectedBoxes([]);
-      setDataSource(null);
-    } finally {
-      setIsLoading(prev => ({ ...prev, counting: false }));
-    }
-  };
-  
-  // Fetch warehouse history records from API
-  const fetchWarehouseHistory = async () => {
-    setIsLoading(prev => ({ ...prev, warehouseHistory: true }));
-    
-    try {
-      console.log('📊 Fetching warehouse history records...');
-      const response = await fetch('/api/counting?action=history');
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('📊 Warehouse history API response:', result);
+          
+          let totals = record.totals;
+          if (typeof totals === 'string') {
+            try {
+              totals = JSON.parse(totals);
+            } catch (e) {
+              totals = {};
+            }
+          }
+          
+          return {
+            ...record,
+            counting_data,
+            totals
+          };
+        });
         
-        if (result.success && Array.isArray(result.data)) {
-          const historyData = result.data as WarehouseHistoryRecord[];
-          console.log(`✅ Loaded ${historyData.length} warehouse history records`);
-          setWarehouseHistory(historyData);
-          
-          processWarehouseHistory(historyData);
-        } else {
-          console.error('❌ Unexpected response format from warehouse history API');
-          setWarehouseHistory([]);
-          setCountingHistory([]);
-          setSelectedBoxes([]);
-          setDataSource(null);
-        }
-      } else {
-        console.error('❌ Failed to fetch warehouse history');
-        setWarehouseHistory([]);
-        setCountingHistory([]);
-        setSelectedBoxes([]);
-        setDataSource(null);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching warehouse history:', error);
-      setWarehouseHistory([]);
-      setCountingHistory([]);
-      setSelectedBoxes([]);
-      setDataSource(null);
-    } finally {
-      setIsLoading(prev => ({ ...prev, warehouseHistory: false }));
-    }
-  };
-  
-// Process warehouse history into counting items safely
-const processWarehouseHistory = (history: WarehouseHistoryRecord[]) => {
-  console.log('🔄 Processing warehouse history into boxes...');
-
-  const transformedData: CountingHistoryItem[] = [];
-
-  safeArray(history).forEach(record => {
-    const supplierName = record.supplier_name || 'Unknown Supplier';
-    const palletId = record.pallet_id || `WH-${record.id || Date.now()}`;
-    const region = record.region || '';
-
-    const countingData = record.counting_data ?? {};
-    const countingTotals = record.counting_totals ?? {};
-
-    console.log(`🔄 Processing record for ${supplierName}:`, {
-      countingDataKeys: Object.keys(countingData).length,
-      countingTotals
-    });
-
-    let extractedFromCountingData = false;
-
-    if (countingData && typeof countingData === 'object') {
-      Object.keys(countingData).forEach(key => {
-        if (!key) return;
-
-        if ((key.includes('fuerte_') || key.includes('hass_')) &&
-            (key.includes('_4kg_') || key.includes('_10kg_')) &&
-            (key.includes('_class1_') || key.includes('_class2_'))) {
-
-          const parts = key.split('_');
-          if (parts.length >= 4) {
-            const variety = parts[0] as 'fuerte' | 'hass';
-            const boxType = parts[1] as '4kg' | '10kg';
-            const grade = parts[2] as 'class1' | 'class2';
-            const size = parts.slice(3).join('_').replace(/_/g, '');
-            const quantity = Number(countingData[key]) || 0;
-
-            if (quantity > 0 && size) {
-              const cleanSize = size.startsWith('size') ? size : `size${size}`;
-
-              transformedData.push({
-                variety,
-                boxType,
-                size: cleanSize,
-                grade,
-                quantity,
-                supplierName,
-                palletId,
-                region,
-                countingRecordId: record.id
-              });
-
-              extractedFromCountingData = true;
-            }
-          }
-        }
-      });
-    }
-
-    if (!extractedFromCountingData && countingTotals && typeof countingTotals === 'object') {
-      console.log(`📊 Using totals for ${supplierName}:`, countingTotals);
-
-      const sizes = ['size12', 'size14', 'size16', 'size18', 'size20', 'size22', 'size24', 'size26'];
-
-      const processTotal = (variety: 'fuerte' | 'hass', boxType: '4kg' | '10kg', total: number) => {
-        if (total > 0) {
-          const boxesPerSize = Math.max(1, Math.floor(total / sizes.length));
-
-          sizes.forEach(size => {
-            if (boxesPerSize > 0) {
-              transformedData.push({
-                variety,
-                boxType,
-                size,
-                grade: 'class1',
-                quantity: Math.max(1, Math.floor(boxesPerSize * 0.7)),
-                supplierName,
-                palletId,
-                region,
-                countingRecordId: record.id
-              });
-
-              transformedData.push({
-                variety,
-                boxType,
-                size,
-                grade: 'class2',
-                quantity: Math.max(1, Math.floor(boxesPerSize * 0.3)),
-                supplierName,
-                palletId,
-                region,
-                countingRecordId: record.id
-              });
-            }
+        setCountingRecords(processedRecords);
+        
+        if (processedRecords.length > 0) {
+          toast({
+            title: "📦 Counting Records Found",
+            description: `Found ${processedRecords.length} records ready for cold room loading`,
           });
         }
-      };
-
-      processTotal('fuerte', '4kg', countingTotals.fuerte_4kg_total ?? 0);
-      processTotal('fuerte', '10kg', countingTotals.fuerte_10kg_total ?? 0);
-      processTotal('hass', '4kg', countingTotals.hass_4kg_total ?? 0);
-      processTotal('hass', '10kg', countingTotals.hass_10kg_total ?? 0);
-    }
-  });
-
-  const filteredData = transformedData.filter(item => item.quantity > 0);
-
-  if (filteredData.length > 0) {
-    console.log(`✅ Created ${filteredData.length} box items from ${history.length} warehouse history records`);
-
-    const suppliers = new Set(filteredData.map(item => item.supplierName).filter(Boolean));
-
-    setCountingHistory(filteredData);
-    setDataSource('warehouse');
-
-    const initialSelectedBoxes = filteredData.map(item => ({
-      ...item,
-      selected: true,
-      coldRoomId: 'coldroom1'
-    }));
-
-    setSelectedBoxes(initialSelectedBoxes);
-
-    toast({
-      title: "📦 Warehouse Boxes Loaded",
-      description: (
-        <div>
-          <p>Loaded {filteredData.length} box types from {suppliers.size} suppliers</p>
-          <div className="mt-1 text-sm text-gray-600">
-            Total boxes: {filteredData.reduce((sum, item) => sum + item.quantity, 0).toLocaleString()}
-          </div>
-        </div>
-      ),
-    });
-
-    return true;
-  } else {
-    console.warn('⚠️ No valid box data found in warehouse history');
-    setCountingHistory([]);
-    setSelectedBoxes([]);
-    setDataSource(null);
-    return false;
-  }
-};
-
-// Replace the existing fetchCountingRecordsForColdRoom function with this:
-
-const fetchCountingRecordsForColdRoom = async () => {
-  setIsLoading(prev => ({ ...prev, countingRecords: true }));
-  try {
-    console.log('📦 Fetching records from REJECTION RECORDS (final history)...');
-    
-    // CHANGE 1: Fetch from REJECTION RECORDS instead of counting_records
-    const countingResponse = await fetch('/api/counting?action=history');
-    const countingResult = await countingResponse.json();
-    
-    if (!countingResult.success) {
-      throw new Error(countingResult.error || 'Failed to fetch rejection records');
-    }
-    
-    console.log(`✅ Found ${countingResult.data?.length || 0} rejection records from database`);
-    
-    // 2. Get boxes already in cold rooms
-    const coldRoomResponse = await fetch('/api/cold-room?action=boxes');
-    const coldRoomResult = await coldRoomResponse.json();
-    
-    const coldRoomBoxes = coldRoomResult.success ? coldRoomResult.data : [];
-    console.log(`📊 Found ${coldRoomBoxes.length} boxes already in cold rooms`);
-    
-    // 3. Create a set of already-loaded box identifiers for fast lookup
-    const alreadyLoadedBoxes = new Set<string>();
-    
-    coldRoomBoxes.forEach((box: any) => {
-      const key = `${box.variety}_${box.boxType || box.box_type}_${box.size}_${box.grade}_${box.supplier_name || 'unknown'}_${box.pallet_id || 'unknown'}`;
-      alreadyLoadedBoxes.add(key.toLowerCase());
-    });
-    
-    console.log(`📊 Created ${alreadyLoadedBoxes.size} unique identifiers for already loaded boxes`);
-    
-    if (Array.isArray(countingResult.data) && countingResult.data.length > 0) {
-      const boxes: any[] = [];
-      const filteredRecords = [];
-      
-      // 4. Process REJECTION RECORDS (these are the final records after variance)
-      for (const record of countingResult.data) {
-        const supplierName = record.supplier_name || 'Unknown Supplier';
-        const palletId = record.pallet_id || `WH-${record.id}`;
-        const region = record.region || '';
-        const status = 'completed'; // Rejection records are always completed
-        const forColdroom = true; // These are ready for cold room
-        
-        // CHANGE 2: Use counting_totals instead of counting_data
-        const countingTotals = record.counting_totals || {};
-        
-        let hasUnloadedBoxes = false;
-        
-        console.log(`🔄 Processing rejection record for ${supplierName}:`, countingTotals);
-        
-        // Process each variety and box type from counting_totals
-        const processTotals = (variety: 'fuerte' | 'hass', boxType: '4kg' | '10kg', total: number) => {
-          if (total > 0) {
-            const sizes = ['size12', 'size14', 'size16', 'size18', 'size20', 'size22', 'size24', 'size26'];
-            const boxesPerSize = Math.max(1, Math.floor(total / sizes.length));
-            
-            sizes.forEach(size => {
-              if (boxesPerSize > 0) {
-                // Create Class 1 boxes
-                const class1Quantity = Math.max(1, Math.floor(boxesPerSize * 0.7));
-                const class1Identifier = `${variety}_${boxType}_${size}_class1_${supplierName}_${palletId}`.toLowerCase();
-                
-                if (!alreadyLoadedBoxes.has(class1Identifier)) {
-                  boxes.push({
-                    variety,
-                    boxType,
-                    size,
-                    grade: 'class1',
-                    quantity: class1Quantity,
-                    supplierName,
-                    palletId,
-                    region,
-                    status,
-                    forColdroom,
-                    countingRecordId: record.original_counting_id || record.id,
-                    selected: true,
-                    coldRoomId: 'coldroom1',
-                    boxWeight: boxType === '4kg' ? 4 : 10,
-                    totalWeight: class1Quantity * (boxType === '4kg' ? 4 : 10),
-                    alreadyLoaded: false
-                  });
-                  hasUnloadedBoxes = true;
-                }
-                
-                // Create Class 2 boxes
-                const class2Quantity = Math.max(1, Math.floor(boxesPerSize * 0.3));
-                const class2Identifier = `${variety}_${boxType}_${size}_class2_${supplierName}_${palletId}`.toLowerCase();
-                
-                if (!alreadyLoadedBoxes.has(class2Identifier)) {
-                  boxes.push({
-                    variety,
-                    boxType,
-                    size,
-                    grade: 'class2',
-                    quantity: class2Quantity,
-                    supplierName,
-                    palletId,
-                    region,
-                    status,
-                    forColdroom,
-                    countingRecordId: record.original_counting_id || record.id,
-                    selected: true,
-                    coldRoomId: 'coldroom1',
-                    boxWeight: boxType === '4kg' ? 4 : 10,
-                    totalWeight: class2Quantity * (boxType === '4kg' ? 4 : 10),
-                    alreadyLoaded: false
-                  });
-                  hasUnloadedBoxes = true;
-                }
-              }
-            });
-          }
-        };
-        
-        // Process all totals from counting_totals
-        processTotals('fuerte', '4kg', countingTotals.fuerte_4kg_total || 0);
-        processTotals('fuerte', '10kg', countingTotals.fuerte_10kg_total || 0);
-        processTotals('hass', '4kg', countingTotals.hass_4kg_total || 0);
-        processTotals('hass', '10kg', countingTotals.hass_10kg_total || 0);
-        
-        if (hasUnloadedBoxes) {
-          filteredRecords.push(record);
-          console.log(`✅ Added ${supplierName} (has unloaded boxes from rejection records)`);
-        } else {
-          console.log(`⏭️ Skipping ${supplierName} (all boxes already loaded or no data)`);
-        }
-      }
-      
-      console.log(`📦 Created ${boxes.length} unloaded box items from ${filteredRecords.length} rejection records`);
-      
-      const boxesWithStatus = boxes.map(box => ({
-        ...box,
-        statusBadge: 'Ready for Cold Room',
-        isNew: true
-      }));
-      
-      setCountingBoxes(boxesWithStatus);
-      setBoxesLoaded(false);
-      
-      if (boxes.length > 0) {
-        toast({
-          title: "📦 Rejection Records Found",
-          description: (
-            <div>
-              <p>Loaded {boxes.length} box types from {filteredRecords.length} final records</p>
-              <div className="mt-1 text-sm text-gray-600">
-                These are complete records after variance processing
-              </div>
-            </div>
-          ),
-        });
       } else {
-        toast({
-          title: "✅ All boxes loaded",
-          description: "All rejection records have already been loaded to cold rooms",
-          variant: "default",
-        });
+        setCountingRecords([]);
       }
-      
-    } else {
-      setCountingBoxes([]);
-      toast({
-        title: "No rejection records found",
-        description: "No completed records available to load",
-        variant: "default",
-      });
+    } catch (error) {
+      console.error('Error fetching counting records:', error);
+      setCountingRecords([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, countingRecords: false }));
     }
-  } catch (error: any) {
-    console.error('❌ Error fetching rejection records:', error);
-    toast({
-      title: "Error",
-      description: error.message || "Failed to load rejection records from database",
-      variant: "destructive",
-    });
-    setCountingBoxes([]);
-  } finally {
-    setIsLoading(prev => ({ ...prev, countingRecords: false }));
-  }
-};
-
+  };
+  
   // Fetch all data
   const fetchAllData = async () => {
     try {
       setIsLoading({
         coldRooms: true,
-        warehouseHistory: true,
-        counting: true,
         boxes: true,
         pallets: true,
         temperature: true,
         repacking: true,
         stats: true,
         countingRecords: true,
-        loadingHistory: false,
       });
       
       await Promise.allSettled([
         fetchColdRooms(),
-        fetchCountingHistory(),
         fetchColdRoomBoxes(),
         fetchTemperatureLogs(),
         fetchRepackingRecords(),
         fetchColdRoomStats(),
-        fetchCountingRecordsForColdRoom(),
-        fetchLoadingHistory(),
+        fetchCountingRecords(),
       ]);
       
     } catch (error) {
@@ -1530,81 +627,194 @@ const fetchCountingRecordsForColdRoom = async () => {
     }
   };
   
-  // Selection handlers for counting boxes
-  const handleToggleBoxSelection = (index: number) => {
-    setCountingBoxes(prev => {
-      const updated = [...prev];
-      updated[index].selected = !updated[index].selected;
-      return updated;
-    });
-  };
-  
-  const handleColdRoomSelectionForBox = (index: number, coldRoomId: string) => {
-    setCountingBoxes(prev => {
-      const updated = [...prev];
-      updated[index].coldRoomId = coldRoomId;
-      return updated;
-    });
-  };
-  
-  const handleSelectAllBoxes = () => {
-    setCountingBoxes(prev => 
-      prev.map(box => ({ ...box, selected: true }))
-    );
-  };
-  
-  const handleDeselectAllBoxes = () => {
-    setCountingBoxes(prev => 
-      prev.map(box => ({ ...box, selected: false }))
-    );
-  };
-  
-  // Load boxes to cold room
-  const handleLoadToColdRoom = async () => {
-    const boxesToLoad = countingBoxes.filter(box => box.selected);
+  // Process counting records into size groups - UPDATED WITH BALANCE TRACKING
+  const processSizeGroups = () => {
+    if (countingRecords.length === 0) {
+      setSizeGroups([]);
+      return;
+    }
     
-    if (boxesToLoad.length === 0) {
+    const selectedRecordIds = Array.from(selectedRecords);
+    const selectedRecordsData = countingRecords.filter(record => selectedRecordIds.includes(record.id));
+    
+    const sizeGroupMap: Record<string, SizeGroup> = {};
+    
+    selectedRecordsData.forEach(record => {
+      const countingData = record.counting_data || {};
+      const totals = record.totals || {};
+      
+      // Extract box data from counting_data
+      Object.keys(countingData).forEach(key => {
+        if ((key.includes('fuerte_') || key.includes('hass_')) && 
+            (key.includes('_4kg_') || key.includes('_10kg_'))) {
+          
+          const parts = key.split('_');
+          if (parts.length >= 4) {
+            const variety = parts[0] as 'fuerte' | 'hass';
+            const boxType = parts[1] as '4kg' | '10kg';
+            const grade = parts[2] as 'class1' | 'class2';
+            const size = parts.slice(3).join('_').replace(/_/g, '');
+            const quantity = Number(countingData[key]) || 0;
+            
+            if (quantity > 0) {
+              const cleanSize = size.startsWith('size') ? size : `size${size}`;
+              const groupKey = `${variety}-${boxType}-${cleanSize}-${grade}`;
+              
+              if (!sizeGroupMap[groupKey]) {
+                sizeGroupMap[groupKey] = {
+                  size: cleanSize,
+                  variety,
+                  boxType,
+                  grade,
+                  totalQuantity: 0,
+                  coldRoomId: '',
+                  supplierName: record.supplier_name,
+                  palletId: record.pallet_id,
+                  region: record.region,
+                  countingRecordId: record.id,
+                  selectedForLoading: false,
+                  loadingQuantity: 0,
+                  targetColdRoom: 'coldroom1',
+                  // Initialize balance tracking
+                  loadedQuantity: 0,
+                  remainingQuantity: 0,
+                  loadingHistory: []
+                };
+              }
+              
+              sizeGroupMap[groupKey].totalQuantity += quantity;
+              // Initialize remaining quantity as total quantity (none loaded yet)
+              sizeGroupMap[groupKey].remainingQuantity = sizeGroupMap[groupKey].totalQuantity;
+            }
+          }
+        }
+      });
+    });
+    
+    // Convert map to array
+    const sizeGroupsArray = Object.values(sizeGroupMap);
+    setSizeGroups(sizeGroupsArray);
+  };
+  
+  // Update when selected records change
+  useEffect(() => {
+    processSizeGroups();
+  }, [selectedRecords, countingRecords]);
+  
+  // Handle counting record selection
+  const handleToggleRecordSelection = (recordId: string) => {
+    const newSelected = new Set(selectedRecords);
+    if (newSelected.has(recordId)) {
+      newSelected.delete(recordId);
+    } else {
+      newSelected.add(recordId);
+    }
+    setSelectedRecords(newSelected);
+  };
+  
+  const handleSelectAllRecords = () => {
+    const allIds = new Set(countingRecords.map(record => record.id));
+    setSelectedRecords(allIds);
+  };
+  
+  const handleDeselectAllRecords = () => {
+    setSelectedRecords(new Set());
+  };
+  
+  // Handle size group selection - UPDATED WITH BALANCE VALIDATION
+  const handleToggleSizeGroupSelection = (index: number) => {
+    const updatedGroups = [...sizeGroups];
+    const group = updatedGroups[index];
+    
+    // If we're selecting a group that has no remaining quantity, don't allow selection
+    if (!group.selectedForLoading && group.remainingQuantity === 0) {
       toast({
-        title: 'No boxes selected',
-        description: 'Please select at least one box to load',
+        title: 'No boxes available',
+        description: `No remaining boxes for ${formatSize(group.size)} ${group.variety} ${group.boxType}`,
         variant: 'destructive',
       });
       return;
     }
-
-    try {
-      const boxesData = boxesToLoad.map(box => ({
-        variety: box.variety,
-        boxType: box.boxType,
-        size: box.size,
-        grade: box.grade,
-        quantity: box.quantity,
-        coldRoomId: box.coldRoomId,
-        supplierName: box.supplierName || 'Unknown Supplier',
-        palletId: box.palletId || `PAL-${box.countingRecordId || Date.now()}`,
-        region: box.region || '',
-        countingRecordId: box.countingRecordId,
-        boxWeight: box.boxWeight,
-        totalWeight: box.totalWeight,
-        loadedBy: 'Warehouse Staff'
-      }));
-      
-      const countingRecordIds = [...new Set(boxesToLoad
-        .map(box => box.countingRecordId)
-        .filter(id => id))];
-
-      console.log('📤 Sending boxes to cold room:', {
-        boxesCount: boxesData.length,
-        boxesData: boxesData.map(b => ({
-          supplierName: b.supplierName,
-          palletId: b.palletId,
-          variety: b.variety,
-          quantity: b.quantity,
-          coldRoomId: b.coldRoomId
-        })),
-        countingRecordIds
+    
+    group.selectedForLoading = !group.selectedForLoading;
+    // Set loading quantity to available balance, but max 100
+    group.loadingQuantity = group.selectedForLoading ? 
+      Math.min(group.remainingQuantity, 100) : 0;
+    setSizeGroups(updatedGroups);
+  };
+  
+  const handleSizeGroupQuantityChange = (index: number, quantity: number) => {
+    const updatedGroups = [...sizeGroups];
+    const group = updatedGroups[index];
+    
+    // Cannot load more than remaining quantity
+    const maxQuantity = group.remainingQuantity;
+    
+    if (quantity >= 0 && quantity <= maxQuantity) {
+      group.loadingQuantity = quantity;
+    } else if (quantity > maxQuantity) {
+      group.loadingQuantity = maxQuantity;
+      toast({
+        title: 'Quantity adjusted',
+        description: `Cannot load more than ${maxQuantity} remaining boxes`,
+        variant: 'destructive',
       });
-
+    }
+    
+    setSizeGroups(updatedGroups);
+  };
+  
+  const handleSizeGroupTargetChange = (index: number, coldRoomId: string) => {
+    const updatedGroups = [...sizeGroups];
+    updatedGroups[index].targetColdRoom = coldRoomId;
+    setSizeGroups(updatedGroups);
+  };
+  
+  // Load selected size groups to cold room - UPDATED WITH BALANCE TRACKING
+  const handleLoadSizeGroups = async () => {
+    const selectedGroups = sizeGroups.filter(group => group.selectedForLoading && group.loadingQuantity > 0);
+    
+    if (selectedGroups.length === 0) {
+      toast({
+        title: 'No boxes selected',
+        description: 'Please select at least one size group with quantity to load',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      // Prepare boxes data from selected size groups
+      const boxesData: any[] = [];
+      const countingRecordIds = new Set<string>();
+      
+      selectedGroups.forEach(group => {
+        if (group.loadingQuantity > 0 && group.loadingQuantity <= group.remainingQuantity) {
+          boxesData.push({
+            variety: group.variety,
+            boxType: group.boxType,
+            size: group.size,
+            grade: group.grade,
+            quantity: group.loadingQuantity,
+            coldRoomId: group.targetColdRoom,
+            supplierName: group.supplierName || 'Unknown Supplier',
+            palletId: group.palletId || `PAL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            region: group.region || '',
+            countingRecordId: group.countingRecordId,
+            loadedBy: 'Warehouse Staff'
+          });
+          
+          if (group.countingRecordId) {
+            countingRecordIds.add(group.countingRecordId);
+          }
+        }
+      });
+      
+      console.log('📤 Loading size groups to cold room:', {
+        groupsCount: selectedGroups.length,
+        totalBoxes: selectedGroups.reduce((sum, group) => sum + group.loadingQuantity, 0)
+      });
+      
       const response = await fetch('/api/cold-room', {
         method: 'POST',
         headers: {
@@ -1613,48 +823,75 @@ const fetchCountingRecordsForColdRoom = async () => {
         body: JSON.stringify({
           action: 'load-boxes',
           boxesData: boxesData,
-          countingRecordIds: countingRecordIds,
+          countingRecordIds: Array.from(countingRecordIds),
         }),
       });
-
+      
       const result = await response.json();
       
       if (result.success) {
-        // In the handleLoadToColdRoom function, update the toast message to show which records were loaded:
-toast({
-  title: '✅ Boxes Loaded Successfully!',
-  description: (
-    <div className="space-y-2">
-      <p>Loaded {boxesToLoad.length} box types ({totalSelectedBoxes.toLocaleString()} boxes)</p>
-      <div className="text-sm text-gray-600">
-        Cold Room 1: {coldRoom1TotalBoxes.toLocaleString()} boxes<br/>
-        Cold Room 2: {coldRoom2TotalBoxes.toLocaleString()} boxes
-      </div>
-      <p className="text-xs text-green-600 mt-1">
-        Updated {countingRecordIds.length} counting record(s)
-      </p>
-      <p className="text-xs text-blue-600 mt-1">
-        ✅ Saved to loading history
-      </p>
-      {boxesToLoad.length > 0 && boxesToLoad[0].countingRecordId && (
-        <p className="text-xs text-gray-500 mt-1">
-          These boxes won't appear again for loading
-        </p>
-      )}
-    </div>
-  ),
-});        
-        setCountingBoxes([]);
-        setBoxesLoaded(true);
+        const totalBoxes = selectedGroups.reduce((sum, group) => sum + group.loadingQuantity, 0);
         
+        // Update size groups with loaded quantities and track balance
+        const updatedGroups = [...sizeGroups];
+        selectedGroups.forEach(group => {
+          const groupIndex = updatedGroups.findIndex(g => 
+            g.size === group.size && 
+            g.variety === group.variety && 
+            g.boxType === group.boxType && 
+            g.grade === group.grade
+          );
+          
+          if (groupIndex !== -1) {
+            const loadedQty = group.loadingQuantity;
+            updatedGroups[groupIndex].loadedQuantity += loadedQty;
+            updatedGroups[groupIndex].remainingQuantity -= loadedQty;
+            
+            // Add to loading history
+            updatedGroups[groupIndex].loadingHistory.push({
+              quantity: loadedQty,
+              targetColdRoom: group.targetColdRoom,
+              timestamp: new Date().toISOString()
+            });
+            
+            // Reset selection for this group
+            updatedGroups[groupIndex].selectedForLoading = false;
+            updatedGroups[groupIndex].loadingQuantity = 0;
+          }
+        });
+        
+        setSizeGroups(updatedGroups);
+        
+        toast({
+          title: '✅ Boxes Loaded Successfully!',
+          description: (
+            <div className="space-y-2">
+              <p>Loaded {selectedGroups.length} size groups ({totalBoxes.toLocaleString()} boxes)</p>
+              <div className="text-sm text-gray-600">
+                Distributed to different cold rooms as selected
+              </div>
+              <p className="text-xs text-green-600 mt-1">
+                Updated {countingRecordIds.size} counting record(s)
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Remaining boxes: {updatedGroups.reduce((sum, group) => sum + group.remainingQuantity, 0).toLocaleString()}
+              </p>
+            </div>
+          ),
+        });
+        
+        // Refresh cold room data
         await Promise.all([
           fetchColdRoomBoxes(),
           fetchColdRoomStats(),
-          fetchLoadingHistory(),
           fetchColdRooms(),
         ]);
         
-        setActiveTab('history');
+        // Only clear selected records if all quantities have been loaded
+        const hasRemainingBoxes = updatedGroups.some(group => group.remainingQuantity > 0);
+        if (!hasRemainingBoxes) {
+          setSelectedRecords(new Set());
+        }
         
       } else {
         console.error('API Error:', result);
@@ -1670,50 +907,15 @@ toast({
     }
   };
   
-  // Calculation functions for counting boxes
-  const selectedBoxesCount = countingBoxes.filter(box => box.selected).length;
-  const totalSelectedBoxes = countingBoxes
-    .filter(box => box.selected)
-    .reduce((sum, box) => sum + box.quantity, 0);
-  
-  const totalSelectedWeight = countingBoxes
-    .filter(box => box.selected)
-    .reduce((sum, box) => sum + box.totalWeight, 0);
-  
-  const calculateTotalPallets = () => {
-    return countingBoxes
-      .filter(box => box.selected)
-      .reduce((sum, box) => {
-        const boxesPerPallet = box.boxType === '4kg' ? 288 : 120;
-        return sum + Math.floor(box.quantity / boxesPerPallet);
-      }, 0);
-  };
-  
-  const coldRoom1BoxTypes = countingBoxes.filter(box => box.selected && box.coldRoomId === 'coldroom1').length;
-  const coldRoom1TotalBoxes = countingBoxes
-    .filter(box => box.selected && box.coldRoomId === 'coldroom1')
-    .reduce((sum, box) => sum + box.quantity, 0);
-  const coldRoom1TotalWeight = countingBoxes
-    .filter(box => box.selected && box.coldRoomId === 'coldroom1')
-    .reduce((sum, box) => sum + box.totalWeight, 0);
-  
-  const coldRoom2BoxTypes = countingBoxes.filter(box => box.selected && box.coldRoomId === 'coldroom2').length;
-  const coldRoom2TotalBoxes = countingBoxes
-    .filter(box => box.selected && box.coldRoomId === 'coldroom2')
-    .reduce((sum, box) => sum + box.quantity, 0);
-  const coldRoom2TotalWeight = countingBoxes
-    .filter(box => box.selected && box.coldRoomId === 'coldroom2')
-    .reduce((sum, box) => sum + box.totalWeight, 0);
-  
-  
   // Set up polling and initial load
   useEffect(() => {
     fetchAllData();
     
+    // Refresh counting records when localStorage indicates new data
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'coldRoomSupplierData' || e.key === 'warehouseCountingData') {
-        console.log('🔄 Storage change detected, refreshing counting history...');
-        fetchCountingHistory();
+      if (e.key === 'refreshColdRoom') {
+        console.log('🔄 Storage change detected, refreshing cold room data...');
+        fetchCountingRecords();
       }
     };
     
@@ -1724,171 +926,7 @@ toast({
     };
   }, []);
   
-  // Handle box selection toggle (for original selectedBoxes)
-  const handleBoxSelection = (index: number) => {
-    setSelectedBoxes(prev => {
-      const updated = [...prev];
-      updated[index].selected = !updated[index].selected;
-      return updated;
-    });
-  };
-  
-  // Handle cold room selection for a box (for original selectedBoxes)
-  const handleColdRoomSelection = (index: number, coldRoomId: string) => {
-    setSelectedBoxes(prev => {
-      const updated = [...prev];
-      updated[index].coldRoomId = coldRoomId;
-      return updated;
-    });
-  };
-  
-  // Select all boxes (for original selectedBoxes)
-  const handleSelectAll = () => {
-    setSelectedBoxes(prev => 
-      prev.map(box => ({ ...box, selected: true }))
-    );
-  };
-  
-  // Deselect all boxes (for original selectedBoxes)
-  const handleDeselectAll = () => {
-    setSelectedBoxes(prev => 
-      prev.map(box => ({ ...box, selected: false }))
-    );
-  };
-  
-  // Handle load boxes (for original selectedBoxes)
-  const handleLoadBoxes = async () => {
-    const boxesToLoad = selectedBoxes.filter(box => box.selected);
-    
-    if (boxesToLoad.length === 0) {
-      toast({
-        title: 'No boxes selected',
-        description: 'Please select at least one box to load',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    const invalidBoxes = boxesToLoad.filter(box => !box.coldRoomId);
-    if (invalidBoxes.length > 0) {
-      toast({
-        title: 'Missing cold room selection',
-        description: 'Please select a cold room for all selected boxes',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    const supplierGroups: { [key: string]: SelectedBox[] } = {};
-    
-    boxesToLoad.forEach(box => {
-      const key = box.countingRecordId || box.supplierName || 'unknown';
-      if (!supplierGroups[key]) {
-        supplierGroups[key] = [];
-      }
-      supplierGroups[key].push(box);
-    });
-    
-    const totalSuppliers = Object.keys(supplierGroups).length;
-    
-    try {
-      const response = await fetch('/api/cold-room', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'load-boxes',
-          boxesData: boxesToLoad.map(box => ({
-            variety: box.variety,
-            boxType: box.boxType,
-            size: box.size,
-            grade: box.grade,
-            quantity: box.quantity,
-            coldRoomId: box.coldRoomId,
-            supplierName: box.supplierName,
-            palletId: box.palletId,
-            region: box.region,
-            countingRecordId: box.countingRecordId,
-          })),
-          supplierCount: totalSuppliers,
-        }),
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        const coldroom1Boxes = boxesToLoad
-          .filter(b => b.coldRoomId === 'coldroom1')
-          .reduce((sum, box) => sum + box.quantity, 0);
-        const coldroom2Boxes = boxesToLoad
-          .filter(b => b.coldRoomId === 'coldroom2')
-          .reduce((sum, box) => sum + box.quantity, 0);
-        
-        const coldroom1Pallets = boxesToLoad
-          .filter(b => b.coldRoomId === 'coldroom1')
-          .reduce((sum, box) => sum + calculatePallets(box.quantity, box.boxType), 0);
-        const coldroom2Pallets = boxesToLoad
-          .filter(b => b.coldRoomId === 'coldroom2')
-          .reduce((sum, box) => sum + calculatePallets(box.quantity, box.boxType), 0);
-        
-        toast({
-          title: '✅ Boxes Loaded Successfully!',
-          description: (
-            <div className="space-y-3">
-              <p>Loaded boxes from {totalSuppliers} supplier(s) to Cold Rooms:</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-blue-50 p-3 rounded border">
-                  <div className="font-semibold text-blue-700">Cold Room 1</div>
-                  <div className="text-sm mt-1">
-                    <div>📦 {coldroom1Boxes.toLocaleString()} boxes</div>
-                    <div>📊 {coldroom1Pallets} pallets</div>
-                  </div>
-                </div>
-                <div className="bg-gray-50 p-3 rounded border">
-                  <div className="font-semibold text-gray-700">Cold Room 2</div>
-                  <div className="text-sm mt-1">
-                    <div>📦 {coldroom2Boxes.toLocaleString()} boxes</div>
-                    <div>📊 {coldroom2Pallets} pallets</div>
-                  </div>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Inventory has been updated. Check the Live Inventory tab.
-              </p>
-              <p className="text-xs text-blue-600 mt-1">
-                ✅ Saved to loading history
-              </p>
-            </div>
-          ),
-        });
-        
-        setSelectedBoxes([]);
-        setCountingHistory([]);
-        setDataSource(null);
-        
-        fetchColdRoomBoxes();
-        fetchColdRooms();
-        fetchColdRoomStats();
-        fetchLoadingHistory();
-        
-        localStorage.removeItem('coldRoomSupplierData');
-        localStorage.removeItem('warehouseCountingData');
-        
-        setActiveTab('history');
-        
-      } else {
-        throw new Error(result.error || 'Failed to load boxes');
-      }
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to load boxes',
-        variant: 'destructive',
-      });
-    }
-  };
-  
+  // Handle record temperature
   const handleRecordTemperature = async () => {
     if (!temperature) {
       toast({
@@ -1937,6 +975,7 @@ toast({
     }
   };
   
+  // Handle repacking form operations
   const handleAddRemovedBox = () => {
     setRepackingForm(prev => ({
       ...prev,
@@ -2005,7 +1044,7 @@ toast({
     }));
   };
   
-  // NEW: Handle repacking as inventory update
+  // Handle repacking as inventory update
   const handleRecordRepacking = async () => {
     const invalidRemovedBoxes = safeArray(repackingForm.removedBoxes).filter(box => 
       box.quantity <= 0 || 
@@ -2098,14 +1137,6 @@ toast({
     }
   };
   
-  const getRemainingBoxes = (quantity: number, boxType: '4kg' | '10kg'): number => {
-    if (boxType === '4kg') {
-      return quantity % 288;
-    } else {
-      return quantity % 120;
-    }
-  };
-  
   // Get stats for selected cold room
   const getSelectedRoomStats = () => {
     if (!coldRoomStats) return null;
@@ -2114,222 +1145,297 @@ toast({
   
   const selectedRoomStats = getSelectedRoomStats();
   
-  // Calculate total boxes summary (for original selectedBoxes)
-  const calculateTotalSummary = () => {
-    if (selectedBoxes.length === 0) return { totalBoxes: 0, totalPallets: 0 };
+  // Calculate summary for selected counting records
+  const calculateSelectedSummary = () => {
+    const selected = countingRecords.filter(record => selectedRecords.has(record.id));
     
-    const totalBoxes = selectedBoxes
-      .filter(box => box.selected)
-      .reduce((sum, box) => sum + box.quantity, 0);
-    
-    const totalPallets = selectedBoxes
-      .filter(box => box.selected)
-      .reduce((sum, box) => sum + calculatePallets(box.quantity, box.boxType), 0);
-    
-    return { totalBoxes, totalPallets };
-  };
-  
-  const { totalBoxes, totalPallets } = calculateTotalSummary();
-  
-  // Calculate warehouse history summary
-  const calculateWarehouseHistorySummary = () => {
-    const totalSuppliers = new Set(safeArray(warehouseHistory).map(record => record.supplier_name).filter(Boolean)).size;
-    const totalWeight = safeArray(warehouseHistory).reduce((sum, record) => sum + (record.total_counted_weight || 0), 0);
-    const totalRecords = safeArray(warehouseHistory).length;
-    
-    return {
-      totalSuppliers,
-      totalWeight,
-      totalRecords
-    };
-  };
-  
-  const warehouseSummary = calculateWarehouseHistorySummary();
-  
-  // Calculate loading history summary
-  const calculateLoadingHistorySummary = () => {
-    const totalBoxesLoaded = safeArray(loadingHistory).reduce((sum, record) => sum + (record.quantity || 0), 0);
-    const uniqueSuppliers = new Set(safeArray(loadingHistory).map(record => record.supplier_name).filter(Boolean)).size;
-    const totalWeight = safeArray(loadingHistory).reduce((sum, record) => {
-      const boxWeight = record.box_type === '4kg' ? 4 : 10;
-      return sum + ((record.quantity || 0) * boxWeight);
+    const totalBoxes = selected.reduce((sum, record) => {
+      const totals = record.totals || {};
+      return sum + (totals.fuerte_4kg_total || 0) + (totals.fuerte_10kg_total || 0) + 
+                    (totals.hass_4kg_total || 0) + (totals.hass_10kg_total || 0);
     }, 0);
     
+    const totalWeight = selected.reduce((sum, record) => sum + (record.total_counted_weight || 0), 0);
+    const totalSuppliers = new Set(selected.map(record => record.supplier_name)).size;
+    
+    return { totalRecords: selected.length, totalBoxes, totalWeight, totalSuppliers };
+  };
+  
+  const selectedSummary = calculateSelectedSummary();
+  
+  // Calculate size group summary - UPDATED WITH BALANCE INFORMATION
+  const calculateSizeGroupSummary = () => {
+    const selectedGroups = sizeGroups.filter(group => group.selectedForLoading && group.loadingQuantity > 0);
+    const allGroups = sizeGroups.filter(group => group.remainingQuantity > 0);
+    
+    const totalBoxes = selectedGroups.reduce((sum, group) => sum + group.loadingQuantity, 0);
+    const totalWeight = selectedGroups.reduce((sum, group) => {
+      const boxWeight = group.boxType === '4kg' ? 4 : 10;
+      return sum + (group.loadingQuantity * boxWeight);
+    }, 0);
+    
+    const coldroom1Boxes = selectedGroups
+      .filter(group => group.targetColdRoom === 'coldroom1')
+      .reduce((sum, group) => sum + group.loadingQuantity, 0);
+    
+    const coldroom2Boxes = selectedGroups
+      .filter(group => group.targetColdRoom === 'coldroom2')
+      .reduce((sum, group) => sum + group.loadingQuantity, 0);
+    
+    // Calculate overall balance
+    const totalAvailable = sizeGroups.reduce((sum, group) => sum + group.remainingQuantity, 0);
+    const totalLoaded = sizeGroups.reduce((sum, group) => sum + group.loadedQuantity, 0);
+    
     return {
-      totalBoxesLoaded,
-      uniqueSuppliers,
-      totalWeight
+      totalGroups: selectedGroups.length,
+      totalBoxes,
+      totalWeight,
+      coldroom1Boxes,
+      coldroom2Boxes,
+      totalAvailable,
+      totalLoaded,
+      remainingGroups: allGroups.length
     };
   };
   
-  const loadingHistorySummary = calculateLoadingHistorySummary();
+  const sizeGroupSummary = calculateSizeGroupSummary();
   
-  // Clear search filters
-  const clearSearchFilters = () => {
-    setHistorySearch({
-      dateFrom: '',
-      dateTo: '',
-      supplierName: '',
-      coldRoomId: 'all',
-    });
-    fetchLoadingHistory(); 
-  };
-  
-  // Render loading history table
-  const renderLoadingHistoryTable = () => {
-    const sortedHistory = [...safeArray(loadingHistory)].sort((a, b) => {
-      const dateA = a.loading_date ? new Date(a.loading_date).getTime() : 0;
-      const dateB = b.loading_date ? new Date(b.loading_date).getTime() : 0;
-      return dateB - dateA;
-    });
-    
-    return (
-      <ScrollArea className="h-[500px] border rounded">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Loading Date</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Pallet ID</TableHead>
-              <TableHead>Variety</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Grade</TableHead>
-              <TableHead className="text-right">Quantity</TableHead>
-              <TableHead>Cold Room</TableHead>
-              <TableHead>Loaded By</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedHistory.map((record) => {
-              const boxWeight = record.box_type === '4kg' ? 4 : 10;
-              const totalWeight = (record.quantity || 0) * boxWeight;
-              
-              return (
-                <TableRow key={record.id}>
-                  <TableCell>
-                    <div className="font-medium">{formatDate(record.loading_date)}</div>
-                    <div className="text-xs text-gray-500">
-                      {formatDateForInput(record.loading_date)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="max-w-[120px] truncate" title={record.supplier_name}>
-                      {record.supplier_name || 'Unknown'}
-                    </div>
-                    {record.region && (
-                      <div className="text-xs text-gray-500">{record.region}</div>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-mono text-xs" title={record.pallet_id}>
-                      {record.pallet_id?.substring(0, 8)}...
-                    </div>
-                  </TableCell>
-                  <TableCell className="capitalize">
-                    {record.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                  </TableCell>
-                  <TableCell>{record.box_type}</TableCell>
-                  <TableCell>{formatSize(record.size)}</TableCell>
-                  <TableCell>
-                    <Badge variant={record.grade === 'class1' ? 'default' : 'secondary'}>
-                      {record.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="font-medium">{(record.quantity || 0).toLocaleString()}</div>
-                    <div className="text-xs text-gray-500">
-                      {safeToFixed(totalWeight)} kg total
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Snowflake className="w-3 h-3" />
-                      {record.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">{record.loaded_by || 'Warehouse Staff'}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </ScrollArea>
+  // Manual pallet creation functions
+  const addBoxToPallet = (box: ColdRoomBox) => {
+    const existingBoxIndex = newPallet.boxes.findIndex(b => 
+      b.variety === box.variety && 
+      b.boxType === box.box_type && 
+      b.size === box.size && 
+      b.grade === box.grade
     );
-  };
-
-  // Handle CSV download
-  const handleDownloadCSV = () => {
-    if (loadingHistory.length === 0) {
-      toast({
-        title: 'No data to export',
-        description: 'There is no loading history data to download',
-        variant: 'destructive',
-      });
-      return;
-    }
     
-    try {
-      exportToCSV(loadingHistory, 'coldroom-loading-history');
+    if (existingBoxIndex > -1) {
+      // Update existing box
+      const updatedBoxes = [...newPallet.boxes];
+      updatedBoxes[existingBoxIndex].quantity += 1;
+      updatedBoxes[existingBoxIndex].availableQuantity = Math.max(0, updatedBoxes[existingBoxIndex].availableQuantity - 1);
+      setNewPallet(prev => ({
+        ...prev,
+        boxes: updatedBoxes,
+        totalBoxes: prev.totalBoxes + 1
+      }));
+    } else {
+      // Add new box
+      const manualBox: ManualPalletBox = {
+        id: box.id,
+        variety: box.variety,
+        boxType: box.box_type,
+        size: box.size,
+        grade: box.grade,
+        quantity: 1,
+        availableQuantity: box.quantity - 1
+      };
       
-      toast({
-        title: 'CSV Export Started',
-        description: `Downloading ${loadingHistory.length} records as CSV file`,
-      });
-    } catch (error) {
-      console.error('Error exporting CSV:', error);
-      toast({
-        title: 'Export Failed',
-        description: 'Could not generate CSV file. Please try again.',
-        variant: 'destructive',
-      });
+      setNewPallet(prev => ({
+        ...prev,
+        boxes: [...prev.boxes, manualBox],
+        totalBoxes: prev.totalBoxes + 1
+      }));
     }
   };
-
-  // Handle filtered CSV download with summary
-  const handleDownloadFilteredCSV = () => {
-    if (loadingHistory.length === 0) {
-      toast({
-        title: 'No data to export',
-        description: 'There is no loading history data to download',
-        variant: 'destructive',
-      });
-      return;
-    }
+  
+  const removeBoxFromPallet = (index: number) => {
+    const updatedBoxes = [...newPallet.boxes];
+    const removedBox = updatedBoxes[index];
     
-    try {
-      const filteredData = [...loadingHistory].sort((a, b) => {
-        const dateA = a.loading_date ? new Date(a.loading_date).getTime() : 0;
-        const dateB = b.loading_date ? new Date(b.loading_date).getTime() : 0;
-        return dateB - dateA;
-      });
-      
-      exportFilteredHistoryToCSV(
-        filteredData, 
-        historySearch, 
-        loadingHistorySummary,
-        `coldroom-history-${historySearch.dateFrom || 'all'}-${historySearch.dateTo || 'all'}`
+    // Restore available quantity
+    const originalBox = coldRoomBoxes.find(b => b.id === removedBox.id);
+    if (originalBox) {
+      // Update available quantity for similar boxes
+      const similarBoxes = coldRoomBoxes.filter(b => 
+        b.variety === removedBox.variety && 
+        b.box_type === removedBox.boxType && 
+        b.size === removedBox.size && 
+        b.grade === removedBox.grade
       );
       
+      const totalAvailable = similarBoxes.reduce((sum, b) => sum + b.quantity, 0);
+      
+      // Find and update the box in newPallet
+      const boxInPallet = newPallet.boxes.find(b => 
+        b.variety === removedBox.variety && 
+        b.boxType === removedBox.boxType && 
+        b.size === removedBox.size && 
+        b.grade === removedBox.grade
+      );
+      
+      if (boxInPallet) {
+        boxInPallet.availableQuantity = totalAvailable - boxInPallet.quantity;
+      }
+    }
+    
+    updatedBoxes.splice(index, 1);
+    
+    setNewPallet(prev => ({
+      ...prev,
+      boxes: updatedBoxes,
+      totalBoxes: prev.totalBoxes - removedBox.quantity
+    }));
+  };
+  
+  const updateBoxQuantity = (index: number, quantity: number) => {
+    const updatedBoxes = [...newPallet.boxes];
+    const oldQuantity = updatedBoxes[index].quantity;
+    const maxAvailable = updatedBoxes[index].availableQuantity + oldQuantity;
+    
+    if (quantity >= 1 && quantity <= maxAvailable) {
+      updatedBoxes[index].quantity = quantity;
+      updatedBoxes[index].availableQuantity = maxAvailable - quantity;
+      
+      setNewPallet(prev => ({
+        ...prev,
+        boxes: updatedBoxes,
+        totalBoxes: prev.totalBoxes - oldQuantity + quantity
+      }));
+    }
+  };
+  
+  const createManualPallet = async () => {
+    if (newPallet.boxes.length === 0) {
       toast({
-        title: 'CSV Export with Summary',
-        description: (
-          <div>
-            <p>Downloading {filteredData.length} filtered records</p>
-            <div className="text-xs text-gray-600 mt-1">
-              Includes search criteria and report summary
-            </div>
-          </div>
-        ),
+        title: 'Empty pallet',
+        description: 'Please add boxes to the pallet',
+        variant: 'destructive',
       });
-    } catch (error) {
-      console.error('Error exporting filtered CSV:', error);
+      return;
+    }
+    
+    if (newPallet.totalBoxes < newPallet.boxesPerPallet) {
       toast({
-        title: 'Export Failed',
-        description: 'Could not generate CSV file. Please try again.',
+        title: 'Insufficient boxes',
+        description: `A pallet requires ${newPallet.boxesPerPallet} boxes for ${newPallet.boxesPerPallet === 288 ? '4kg' : '10kg'} boxes`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      // Create pallet record
+      const palletId = `PAL-MANUAL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      const response = await fetch('/api/cold-room', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create-manual-pallet',
+          palletId: palletId,
+          palletName: newPallet.palletName,
+          coldRoomId: newPallet.coldRoomId,
+          boxes: newPallet.boxes,
+          boxesPerPallet: newPallet.boxesPerPallet,
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: '✅ Pallet Created Successfully!',
+          description: `Created pallet "${newPallet.palletName}" with ${newPallet.totalBoxes} boxes`,
+        });
+        
+        // Add to manual pallets list
+        setManualPallets(prev => [...prev, { ...newPallet }]);
+        
+        // Reset new pallet
+        setNewPallet({
+          boxes: [],
+          totalBoxes: 0,
+          boxesPerPallet: newPallet.boxesPerPallet,
+          coldRoomId: newPallet.coldRoomId,
+          palletName: `PALLET-${Date.now().toString().slice(-6)}`
+        });
+        
+        // Refresh data
+        fetchColdRoomBoxes();
+        fetchColdRoomPallets();
+        
+      } else {
+        throw new Error(result.error || 'Failed to create pallet');
+      }
+    } catch (error: any) {
+      console.error('❌ Error creating pallet:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create pallet',
         variant: 'destructive',
       });
     }
+  };
+  
+  // Export CSV functionality for cold_room_boxes
+  const exportColdRoomBoxesToCSV = (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
+    if (!data || data.length === 0) {
+      return;
+    }
+
+    const headers = [
+      'Box ID',
+      'Added Date',
+      'Supplier Name',
+      'Pallet ID',
+      'Region',
+      'Variety',
+      'Box Type',
+      'Size',
+      'Grade',
+      'Quantity',
+      'Weight Per Box (kg)',
+      'Total Weight (kg)',
+      'Cold Room',
+      'Counting Record ID',
+      'Created At'
+    ];
+
+    const rows = data.map(box => {
+      const boxWeight = box.box_type === '4kg' ? 4 : 10;
+      const totalWeight = (box.quantity || 0) * boxWeight;
+      const addedDate = box.created_at ? new Date(box.created_at).toLocaleDateString() : '';
+      
+      return [
+        `"${box.id || ''}"`,
+        `"${addedDate}"`,
+        `"${box.supplier_name || 'Unknown'}"`,
+        `"${box.pallet_id || ''}"`,
+        `"${box.region || ''}"`,
+        `"${box.variety === 'fuerte' ? 'Fuerte' : 'Hass'}"`,
+        `"${box.box_type}"`,
+        `"${formatSize(box.size)}"`,
+        `"${box.grade === 'class1' ? 'Class 1' : 'Class 2'}"`,
+        `"${box.quantity || 0}"`,
+        `"${boxWeight}"`,
+        `"${totalWeight}"`,
+        `"${box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
+        `"${box.counting_record_id || ''}"`,
+        `"${box.created_at || ''}"`
+      ].join(',');
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -2360,12 +1466,6 @@ toast({
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {dataSource && (
-                <Badge variant="outline" className="mr-2">
-                  {dataSource === 'warehouse' ? 'Warehouse History' : 
-                   dataSource === 'local' ? 'Supplier Data' : 'Counting Records'}
-                </Badge>
-              )}
               <Button
                 onClick={fetchAllData}
                 disabled={Object.values(isLoading).some(loading => loading)}
@@ -2377,55 +1477,6 @@ toast({
               </Button>
             </div>
           </div>
-          
-          {/* Warehouse History Summary Card */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <History className="w-5 h-5" />
-                Warehouse History Summary
-              </CardTitle>
-              <CardDescription>
-                Data loaded from warehouse processing history
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-black-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Total History Records</div>
-                    <History className="w-4 h-4 text-blue-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-blue-700">
-                    {warehouseSummary.totalRecords}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">Processed suppliers</div>
-                </div>
-                
-                <div className="bg-black-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Total Suppliers</div>
-                    <Truck className="w-4 h-4 text-green-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-green-700">
-                    {warehouseSummary.totalSuppliers}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">Unique suppliers</div>
-                </div>
-                
-                <div className="bg-black-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Total Weight</div>
-                    <Weight className="w-4 h-4 text-purple-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-purple-700">
-                    {safeToFixed(warehouseSummary.totalWeight)} kg
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">Counted weight</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
           
           {/* Cold Room Selection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2471,430 +1522,528 @@ toast({
               <TabsTrigger value="inventory">Live Inventory</TabsTrigger>
               <TabsTrigger value="temperature">Temperature Control</TabsTrigger>
               <TabsTrigger value="repacking">Repacking</TabsTrigger>
-              <TabsTrigger value="history">Loading History</TabsTrigger>
+              <TabsTrigger value="history">Current Inventory</TabsTrigger>
             </TabsList>
             
-            {/* Load Boxes Tab - Fixed with proper safeArray usage */}
+            {/* Load Boxes Tab - UPDATED FOR BALANCE TRACKING */}
             <TabsContent value="loading" className="space-y-6 mt-6">
-              {!boxesLoaded && safeArray(countingBoxes).length > 0 ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Warehouse className="w-5 h-5" />
-                      Load Boxes to Cold Room
-                      <Badge variant="outline" className="ml-2">
-                        From Counting Records
-                      </Badge>
-                    </CardTitle>
-                    <CardDescription>
-                      Select boxes from counting records and load them into cold rooms
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-medium">Available Boxes from Counting</h3>
-                          <p className="text-sm text-muted-foreground">
-                            Boxes with status 'pending_coldroom' are ready to load
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => fetchCountingRecordsForColdRoom()}
-                            variant="outline"
-                            size="sm"
-                            disabled={isLoading.countingRecords}
-                          >
-                            <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.countingRecords ? 'animate-spin' : ''}`} />
-                            Refresh Counting Records
-                          </Button>
-                          <Button
-                            onClick={handleSelectAllBoxes}
-                            variant="outline"
-                            size="sm"
-                            disabled={safeArray(countingBoxes).length === 0}
-                          >
-                            <Check className="w-4 h-4 mr-1" />
-                            Select All
-                          </Button>
-                          <Button
-                            onClick={handleDeselectAllBoxes}
-                            variant="outline"
-                            size="sm"
-                            disabled={safeArray(countingBoxes).length === 0}
-                          >
-                            <X className="w-4 h-4 mr-1" />
-                            Deselect All
-                          </Button>
-                        </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Warehouse className="w-5 h-5" />
+                    Load Boxes to Cold Room - By Size Groups
+                  </CardTitle>
+                  <CardDescription>
+                    Select counting records and load boxes by size to different cold rooms
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-medium">Available Counting Records</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Records with status 'pending_coldroom' are ready to load
+                        </p>
                       </div>
-                      
-                      {/* Loading State */}
-                      {isLoading.countingRecords ? (
-                        <div className="text-center py-8">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                          <p className="text-muted-foreground">Loading counting records...</p>
-                        </div>
-                      ) : (
-                        <>
-                          {/* Boxes Table */}
-                          <div>
-                            <div className="flex items-center justify-between mb-4">
-                              <Label>Available Boxes ({safeArray(countingBoxes).length} types)</Label>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline">
-                                  {selectedBoxesCount} selected
-                                </Badge>
-                                <Badge variant="secondary">
-                                  {totalSelectedBoxes.toLocaleString()} boxes
-                                </Badge>
-                              </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => fetchCountingRecords()}
+                          variant="outline"
+                          size="sm"
+                          disabled={isLoading.countingRecords}
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.countingRecords ? 'animate-spin' : ''}`} />
+                          Refresh Records
+                        </Button>
+                        <Button
+                          onClick={handleSelectAllRecords}
+                          variant="outline"
+                          size="sm"
+                          disabled={countingRecords.length === 0}
+                        >
+                          <Check className="w-4 h-4 mr-1" />
+                          Select All
+                        </Button>
+                        <Button
+                          onClick={handleDeselectAllRecords}
+                          variant="outline"
+                          size="sm"
+                          disabled={countingRecords.length === 0}
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          Deselect All
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {/* Loading State */}
+                    {isLoading.countingRecords ? (
+                      <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                        <p className="text-muted-foreground">Loading counting records...</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Counting Records Table */}
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <Label>Available Records ({countingRecords.length})</Label>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline">
+                                {selectedRecords.size} selected
+                              </Badge>
                             </div>
-                            
-                            <ScrollArea className="h-[400px] border rounded">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead className="w-12">Select</TableHead>
-                                    <TableHead>Supplier</TableHead>
-                                    <TableHead>Pallet ID</TableHead>
-                                    <TableHead>Variety</TableHead>
-                                    <TableHead>Box Type</TableHead>
-                                    <TableHead>Size</TableHead>
-                                    <TableHead>Grade</TableHead>
-                                    <TableHead className="text-right">Quantity</TableHead>
-                                    <TableHead>Cold Room</TableHead>
-                                    <TableHead className="text-right">Weight</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {safeArray(countingBoxes).map((item, index) => (
+                          </div>
+                          
+                          <ScrollArea className="h-[300px] border rounded">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-12">Select</TableHead>
+                                  <TableHead>Supplier</TableHead>
+                                  <TableHead>Pallet ID</TableHead>
+                                  <TableHead>Region</TableHead>
+                                  <TableHead>Total Weight</TableHead>
+                                  <TableHead>Counted Weight</TableHead>
+                                  <TableHead>Box Types</TableHead>
+                                  <TableHead>Submitted</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {countingRecords.map((record) => {
+                                  const totals = record.totals || {};
+                                  const totalBoxes = (totals.fuerte_4kg_total || 0) + (totals.fuerte_10kg_total || 0) + 
+                                                    (totals.hass_4kg_total || 0) + (totals.hass_10kg_total || 0);
+                                  const boxTypes = [
+                                    totals.fuerte_4kg_total > 0 && 'Fuerte 4kg',
+                                    totals.fuerte_10kg_total > 0 && 'Fuerte 10kg',
+                                    totals.hass_4kg_total > 0 && 'Hass 4kg',
+                                    totals.hass_10kg_total > 0 && 'Hass 10kg'
+                                  ].filter(Boolean).join(', ');
+                                  
+                                  return (
                                     <TableRow 
-                                      key={`${item?.countingRecordId || ''}-${item?.variety || ''}-${item?.boxType || ''}-${item?.size || ''}-${item?.grade || ''}`}
-                                      className={item?.selected ? "bg-black-50" : ""}
+                                      key={record.id}
+                                      className={selectedRecords.has(record.id) ? "bg-blue-50" : ""}
                                     >
                                       <TableCell>
                                         <input
                                           type="checkbox"
-                                          checked={item?.selected || false}
-                                          onChange={() => handleToggleBoxSelection(index)}
+                                          checked={selectedRecords.has(record.id)}
+                                          onChange={() => handleToggleRecordSelection(record.id)}
                                           className="h-4 w-4 rounded border-gray-300"
                                         />
                                       </TableCell>
                                       <TableCell>
-                                        <div className="max-w-[120px] truncate" title={item?.supplierName || 'Unknown'}>
-                                          {item?.supplierName || 'Unknown'}
+                                        <div className="font-medium">{record.supplier_name}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-mono text-sm">{record.pallet_id}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{record.region || 'N/A'}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-medium">{safeToFixed(record.total_weight)} kg</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-medium text-green-600">{safeToFixed(record.total_counted_weight)} kg</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{boxTypes || 'No boxes'}</div>
+                                        <div className="text-xs text-gray-500">Total: {totalBoxes} boxes</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{formatDate(record.submitted_at)}</div>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                          
+                          {countingRecords.length === 0 && (
+                            <div className="text-center py-8 border rounded">
+                              <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                              <p className="text-gray-500 font-medium">No counting records available</p>
+                              <p className="text-sm text-gray-400 mt-1">
+                                Counting records with status 'pending_coldroom' will appear here
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Size Groups Table - UPDATED WITH BALANCE COLUMNS */}
+                        {selectedRecords.size > 0 && (
+                          <div className="mt-6">
+                            <div className="flex items-center justify-between mb-4">
+                              <div>
+                                <h3 className="font-medium">Size Groups from Selected Records</h3>
+                                <p className="text-sm text-muted-foreground">
+                                  Select sizes and quantities to load to different cold rooms
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <Badge variant="outline">
+                                  {sizeGroups.length} size groups
+                                </Badge>
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                                  {sizeGroupSummary.totalAvailable.toLocaleString()} boxes available
+                                </Badge>
+                              </div>
+                            </div>
+                            
+                            {/* Balance Summary Card */}
+                            <Card className="mb-4 bg-blue-50 border-blue-200">
+                              <CardContent className="py-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <Info className="w-5 h-5 text-blue-600" />
+                                    <div>
+                                      <p className="text-sm font-medium text-blue-800">Balance Tracking</p>
+                                      <p className="text-xs text-blue-600">
+                                        Track remaining boxes after each load
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-4">
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-500">Total Available</p>
+                                      <p className="text-lg font-bold text-blue-700">
+                                        {sizeGroupSummary.totalAvailable.toLocaleString()}
+                                      </p>
+                                    </div>
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-500">Already Loaded</p>
+                                      <p className="text-lg font-bold text-green-700">
+                                        {sizeGroupSummary.totalLoaded.toLocaleString()}
+                                      </p>
+                                    </div>
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-500">Selected to Load</p>
+                                      <p className="text-lg font-bold text-orange-700">
+                                        {sizeGroupSummary.totalBoxes.toLocaleString()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                            
+                            <ScrollArea className="h-[400px] border rounded">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="bg-gray-50">
+                                    <TableHead className="w-12">Load</TableHead>
+                                    <TableHead>Size</TableHead>
+                                    <TableHead>Variety</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead>Grade</TableHead>
+                                    <TableHead className="text-right">Available</TableHead>
+                                    <TableHead className="text-right">Remaining</TableHead>
+                                    <TableHead className="text-right">Already Loaded</TableHead>
+                                    <TableHead>Quantity</TableHead>
+                                    <TableHead>Cold Room</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {sizeGroups.map((group, index) => (
+                                    <TableRow 
+                                      key={`${group.variety}-${group.boxType}-${group.size}-${group.grade}`}
+                                      className={group.selectedForLoading ? "bg-blue-50" : ""}
+                                    >
+                                      <TableCell>
+                                        <input
+                                          type="checkbox"
+                                          checked={group.selectedForLoading}
+                                          onChange={() => handleToggleSizeGroupSelection(index)}
+                                          disabled={group.remainingQuantity === 0}
+                                          className="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
+                                        />
+                                      </TableCell>
+                                      <TableCell className="font-medium">
+                                        {formatSize(group.size)}
+                                      </TableCell>
+                                      <TableCell className="capitalize">
+                                        {group.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                      </TableCell>
+                                      <TableCell>{group.boxType}</TableCell>
+                                      <TableCell>
+                                        <Badge variant={group.grade === 'class1' ? 'default' : 'secondary'}>
+                                          {group.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right font-medium">
+                                        {group.totalQuantity.toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className={`font-medium ${group.remainingQuantity === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                          {group.remainingQuantity.toLocaleString()}
                                         </div>
-                                        {item?.region && (
-                                          <div className="text-xs text-gray-500">{item.region}</div>
+                                        {group.remainingQuantity === 0 && (
+                                          <div className="text-xs text-red-500">All loaded</div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className={`font-medium ${group.loadedQuantity > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                          {group.loadedQuantity.toLocaleString()}
+                                        </div>
+                                        {group.loadedQuantity > 0 && (
+                                          <div className="text-xs text-green-500">
+                                            {Math.round((group.loadedQuantity / group.totalQuantity) * 100)}%
+                                          </div>
                                         )}
                                       </TableCell>
                                       <TableCell>
-                                        <div className="font-mono text-xs" title={item?.palletId}>
-                                          {item?.palletId?.substring(0, 10)}...
+                                        <div className="flex items-center gap-2">
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            max={group.remainingQuantity}
+                                            value={group.loadingQuantity}
+                                            onChange={(e) => handleSizeGroupQuantityChange(index, parseInt(e.target.value) || 0)}
+                                            disabled={!group.selectedForLoading || group.remainingQuantity === 0}
+                                            className="w-24"
+                                          />
+                                          <div className="text-xs text-gray-500 w-8">
+                                            max: {group.remainingQuantity}
+                                          </div>
                                         </div>
                                       </TableCell>
-                                      <TableCell className="font-medium capitalize">
-                                        {item?.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                                      </TableCell>
-                                      <TableCell>{item?.boxType}</TableCell>
-                                      <TableCell>{formatSize(item?.size || '')}</TableCell>
-                                      <TableCell className="capitalize">
-                                        <Badge variant={item?.grade === 'class1' ? 'default' : 'secondary'}>
-                                          {item?.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell className="text-right">{(item?.quantity || 0).toLocaleString()}</TableCell>
                                       <TableCell>
                                         <Select
-                                          value={item?.coldRoomId || 'coldroom1'}
-                                          onValueChange={(value) => handleColdRoomSelectionForBox(index, value)}
-                                          disabled={!item?.selected}
+                                          value={group.targetColdRoom}
+                                          onValueChange={(value) => handleSizeGroupTargetChange(index, value)}
+                                          disabled={!group.selectedForLoading || group.remainingQuantity === 0}
                                         >
                                           <SelectTrigger className="w-32">
                                             <SelectValue />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value="coldroom1">
-                                              <div className="flex items-center gap-2">
-                                                <Snowflake className="w-3 h-3" />
-                                                Cold Room 1
-                                              </div>
-                                            </SelectItem>
-                                            <SelectItem value="coldroom2">
-                                              <div className="flex items-center gap-2">
-                                                <Snowflake className="w-3 h-3" />
-                                                Cold Room 2
-                                              </div>
-                                            </SelectItem>
+                                            <SelectItem value="coldroom1">Cold Room 1</SelectItem>
+                                            <SelectItem value="coldroom2">Cold Room 2</SelectItem>
                                           </SelectContent>
                                         </Select>
-                                      </TableCell>
-                                      <TableCell className="text-right">
-                                        <div className="font-medium">
-                                          {safeToFixed(item?.boxWeight)} kg
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          {(item?.boxType === '4kg' ? '4kg' : '10kg')} each
-                                        </div>
                                       </TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>
                               </Table>
                             </ScrollArea>
+                            
+                            {/* Size Group Summary - UPDATED WITH BALANCE INFO */}
+                            {sizeGroupSummary.totalGroups > 0 && (
+                              <Card className="mt-4">
+                                <CardHeader className="py-3">
+                                  <CardTitle className="text-sm font-medium">Load Summary</CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-0">
+                                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                    <div className="border rounded p-4 bg-blue-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Box className="w-5 h-5 text-blue-600" />
+                                        <div>
+                                          <span className="font-medium">Selected Sizes</span>
+                                          <p className="text-xs text-blue-600">Ready for loading</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Size Groups:</span>
+                                          <span className="font-medium">
+                                            {sizeGroupSummary.totalGroups}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Boxes to Load:</span>
+                                          <span className="font-medium">
+                                            {sizeGroupSummary.totalBoxes.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Remaining Groups:</span>
+                                          <span className="font-medium">
+                                            {sizeGroupSummary.remainingGroups}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="border rounded p-4 bg-green-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Weight className="w-5 h-5 text-green-600" />
+                                        <div>
+                                          <span className="font-medium">Weight Summary</span>
+                                          <p className="text-xs text-green-600">Total weight to load</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Total Weight:</span>
+                                          <span className="font-medium">
+                                            {safeToFixed(sizeGroupSummary.totalWeight)} kg
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Average per Box:</span>
+                                          <span className="font-medium">
+                                            {safeToFixed(sizeGroupSummary.totalWeight / Math.max(1, sizeGroupSummary.totalBoxes))} kg
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="border rounded p-4 bg-purple-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Snowflake className="w-5 h-5 text-purple-600" />
+                                        <div>
+                                          <span className="font-medium">Cold Room 1</span>
+                                          <p className="text-xs text-purple-600">Boxes allocated</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Boxes:</span>
+                                          <span className="font-medium">
+                                            {sizeGroupSummary.coldroom1Boxes.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Percentage:</span>
+                                          <span className="font-medium">
+                                            {Math.round((sizeGroupSummary.coldroom1Boxes / Math.max(1, sizeGroupSummary.totalBoxes)) * 100)}%
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="border rounded p-4 bg-orange-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Snowflake className="w-5 h-5 text-orange-600" />
+                                        <div>
+                                          <span className="font-medium">Cold Room 2</span>
+                                          <p className="text-xs text-orange-600">Boxes allocated</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Boxes:</span>
+                                          <span className="font-medium">
+                                            {sizeGroupSummary.coldroom2Boxes.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Percentage:</span>
+                                          <span className="font-medium">
+                                            {Math.round((sizeGroupSummary.coldroom2Boxes / Math.max(1, sizeGroupSummary.totalBoxes)) * 100)}%
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="border rounded p-4 bg-red-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <AlertCircle className="w-5 h-5 text-red-600" />
+                                        <div>
+                                          <span className="font-medium">Balance Info</span>
+                                          <p className="text-xs text-red-600">After this load</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Will Remain:</span>
+                                          <span className="font-medium">
+                                            {(sizeGroupSummary.totalAvailable - sizeGroupSummary.totalBoxes).toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm">Total Loaded:</span>
+                                          <span className="font-medium text-green-600">
+                                            {(sizeGroupSummary.totalLoaded + sizeGroupSummary.totalBoxes).toLocaleString()}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            )}
+                            
+                            {/* Load Button */}
+                            <div className="flex gap-3 mt-4">
+                              <Button
+                                onClick={handleLoadSizeGroups}
+                                className="flex-1"
+                                size="lg"
+                                disabled={sizeGroupSummary.totalGroups === 0}
+                              >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Load Selected Sizes to Cold Rooms
+                                <span className="ml-2">
+                                  ({sizeGroupSummary.totalGroups} sizes, {sizeGroupSummary.totalBoxes} boxes)
+                                </span>
+                              </Button>
+                            </div>
+                            
+                            {/* Loading History Section */}
+                            {sizeGroups.some(group => group.loadingHistory.length > 0) && (
+                              <Card className="mt-6">
+                                <CardHeader className="py-3">
+                                  <CardTitle className="text-sm font-medium">Loading History for Selected Records</CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-0">
+                                  <ScrollArea className="h-[200px] border rounded">
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Size</TableHead>
+                                          <TableHead>Variety</TableHead>
+                                          <TableHead>Type</TableHead>
+                                          <TableHead>Loaded Qty</TableHead>
+                                          <TableHead>Cold Room</TableHead>
+                                          <TableHead>Time</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {sizeGroups
+                                          .filter(group => group.loadingHistory.length > 0)
+                                          .flatMap(group => 
+                                            group.loadingHistory.map((history, idx) => (
+                                              <TableRow key={`${group.size}-${group.variety}-${idx}`}>
+                                                <TableCell>{formatSize(group.size)}</TableCell>
+                                                <TableCell className="capitalize">{group.variety}</TableCell>
+                                                <TableCell>{group.boxType}</TableCell>
+                                                <TableCell className="font-medium">
+                                                  {history.quantity.toLocaleString()}
+                                                </TableCell>
+                                                <TableCell>
+                                                  {history.targetColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                                </TableCell>
+                                                <TableCell className="text-sm">
+                                                  {formatDate(history.timestamp)}
+                                                </TableCell>
+                                              </TableRow>
+                                            ))
+                                          )}
+                                      </TableBody>
+                                    </Table>
+                                  </ScrollArea>
+                                </CardContent>
+                              </Card>
+                            )}
                           </div>
-                          
-                          {/* Load Summary */}
-                          <Card>
-                            <CardHeader className="py-3">
-                              <CardTitle className="text-sm font-medium">Load Summary</CardTitle>
-                            </CardHeader>
-                            <CardContent className="pt-0">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="border rounded p-4 bg-black-50">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <Snowflake className="w-5 h-5 text-blue-600" />
-                                    <div>
-                                      <span className="font-medium">Cold Room 1</span>
-                                      <p className="text-xs text-blue-600">5°C (Fresh Storage)</p>
-                                    </div>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-sm">Box Types:</span>
-                                      <span className="font-medium">
-                                        {coldRoom1BoxTypes}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-sm">Total Boxes:</span>
-                                      <span className="font-medium">
-                                        {coldRoom1TotalBoxes.toLocaleString()}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-sm">Total Weight:</span>
-                                      <span className="font-medium">
-                                        {safeToFixed(coldRoom1TotalWeight)} kg
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                <div className="border rounded p-4 bg-black-50">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <Snowflake className="w-5 h-5 text-gray-600" />
-                                    <div>
-                                      <span className="font-medium">Cold Room 2</span>
-                                      <p className="text-xs text-gray-600">5°C (Fresh Storage)</p>
-                                    </div>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-sm">Box Types:</span>
-                                      <span className="font-medium">
-                                        {coldRoom2BoxTypes}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-sm">Total Boxes:</span>
-                                      <span className="font-medium">
-                                        {coldRoom2TotalBoxes.toLocaleString()}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-sm">Total Weight:</span>
-                                      <span className="font-medium">
-                                        {safeToFixed(coldRoom2TotalWeight)} kg
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              {/* Overall Summary */}
-                              <div className="mt-4 pt-4 border-t">
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <span className="font-medium">Total to Load:</span>
-                                    <p className="text-sm text-gray-500">
-                                      {selectedBoxesCount} box types, {totalSelectedBoxes.toLocaleString()} boxes
-                                    </p>
-                                  </div>
-                                  <div className="text-right">
-                                    <div className="text-lg font-bold">
-                                      {safeToFixed(totalSelectedWeight)} kg total weight
-                                    </div>
-                                    <div className="text-sm text-gray-500">
-                                      {calculateTotalPallets()} pallets
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                          
-                          {/* Load Button */}
-                          <div className="flex gap-3">
-                            <Button
-                              onClick={handleLoadToColdRoom}
-                              className="flex-1"
-                              size="lg"
-                              disabled={selectedBoxesCount === 0}
-                            >
-                              <Upload className="w-4 h-4 mr-2" />
-                              Load Selected Boxes to Cold Room
-                              <span className="ml-2">
-                                ({selectedBoxesCount} types, {totalSelectedBoxes.toLocaleString()} boxes)
-                              </span>
-                            </Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : boxesLoaded ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-green-600">
-                      <Check className="w-5 h-5" />
-                      Boxes Successfully Loaded!
-                    </CardTitle>
-                    <CardDescription>
-                      All selected boxes have been loaded to cold rooms. Check the History tab to view loading records.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8">
-                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Check className="w-8 h-8 text-green-600" />
-                      </div>
-                      <h3 className="text-lg font-semibold mb-2">Loading Complete</h3>
-                      <p className="text-gray-600 mb-6">
-                        The boxes have been successfully transferred to cold room storage.
-                      </p>
-                      <div className="flex gap-3 justify-center">
-                        <Button
-                          onClick={() => {
-                            setBoxesLoaded(false);
-                            fetchCountingRecordsForColdRoom();
-                          }}
-                          variant="outline"
-                        >
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Load More Boxes
-                        </Button>
-                        <Button
-                          onClick={() => setActiveTab('history')}
-                        >
-                          <History className="w-4 h-4 mr-2" />
-                          View Loading History
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Warehouse className="w-5 h-5" />
-                      Load Boxes to Cold Room
-                      <Badge variant="outline" className="ml-2">
-                        From Counting Records
-                      </Badge>
-                    </CardTitle>
-                    <CardDescription>
-                      Select boxes from counting records and load them into cold rooms
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8">
-                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Package className="w-8 h-8 text-gray-400" />
-                      </div>
-                      <h3 className="text-lg font-semibold mb-2">No Boxes Available</h3>
-                      <p className="text-gray-600 mb-6">
-                        Loading records with status 'pending_coldroom' will appear here.
-                      </p>
-                      <div className="flex gap-3 justify-center">
-                        <Button
-                          onClick={() => fetchCountingRecordsForColdRoom()}
-                        >
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Fetch Counting Records
-                        </Button>
-                        <Button
-                          onClick={() => window.open('/warehouse', '_blank')}
-                          variant="outline"
-                        >
-                          <Warehouse className="w-4 h-4 mr-2" />
-                          Go to Warehouse
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-            
-            {/* Live Inventory Tab */}
-            <TabsContent value="inventory" className="space-y-6 mt-6">
-              {/* Detailed Statistics */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
-                    Detailed Inventory Statistics
-                  </CardTitle>
-                  <CardDescription>
-                    {selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'} - Detailed Breakdown
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {isLoading.stats ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                      <p className="text-muted-foreground">Loading statistics...</p>
-                    </div>
-                  ) : !coldRoomStats ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                      <p className="text-muted-foreground">Loading statistics...</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                      {['total4kgBoxes', 'total10kgBoxes', 'total4kgPallets', 'total10kgPallets', 
-                        'fuerteClass14kg', 'fuerteClass24kg', 'fuerteClass110kg', 'fuerteClass210kg',
-                        'hassClass14kg', 'hassClass24kg', 'hassClass110kg', 'hassClass210kg'].map((statKey) => {
-                        const roomStats = selectedColdRoom === 'coldroom1' ? coldRoomStats.coldroom1 : coldRoomStats.coldroom2;
-                        const value = (roomStats as any)[statKey] || 0;
-                        const label = statKey
-                          .replace(/([A-Z])/g, ' $1')
-                          .replace(/^./, str => str.toUpperCase())
-                          .replace(/Class (\d)/g, 'Class $1')
-                          .replace(/Kg/g, 'kg');
-                        
-                        return (
-                          <Card key={statKey}>
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-sm font-medium">{label}</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="text-2xl font-bold">{value.toLocaleString()}</div>
-                              <div className="text-xs text-muted-foreground mt-1">{label.toLowerCase()}</div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )}
+                        )}
+                      </>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
-              
+            </TabsContent>
+            
+            {/* Live Inventory Tab - WITH MANUAL PALLET CREATION */}
+            <TabsContent value="inventory" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Boxes Table */}
                 <Card>
@@ -2926,12 +2075,14 @@ toast({
                         <Table>
                           <TableHeader>
                             <TableRow>
+                              <TableHead>Supplier</TableHead>
                               <TableHead>Variety</TableHead>
                               <TableHead>Type</TableHead>
                               <TableHead>Size</TableHead>
                               <TableHead>Grade</TableHead>
                               <TableHead className="text-right">Quantity</TableHead>
                               <TableHead className="text-right">Date In</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -2940,6 +2091,11 @@ toast({
                               .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                               .map((box) => (
                                 <TableRow key={box.id}>
+                                  <TableCell className="font-medium">
+                                    <div className="max-w-[120px] truncate" title={box.supplier_name}>
+                                      {box.supplier_name || 'Unknown'}
+                                    </div>
+                                  </TableCell>
                                   <TableCell className="font-medium capitalize">
                                     {box.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
                                   </TableCell>
@@ -2956,6 +2112,17 @@ toast({
                                   <TableCell className="text-right text-sm">
                                     {formatDate(box.created_at)}
                                   </TableCell>
+                                  <TableCell className="text-right">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => addBoxToPallet(box)}
+                                      disabled={box.quantity <= 0}
+                                    >
+                                      <Plus className="w-3 h-3 mr-1" />
+                                      Add to Pallet
+                                    </Button>
+                                  </TableCell>
                                 </TableRow>
                               ))}
                           </TableBody>
@@ -2964,251 +2131,266 @@ toast({
                     )}
                   </CardContent>
                 </Card>
-                          
-          {/* Pallets Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="w-5 h-5" />
-                Pallet Conversion Summary
-              </CardTitle>
-              <CardDescription>
-                Converted pallets from boxes in {selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoading.boxes ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                  <p className="text-muted-foreground">Loading boxes data...</p>
-                </div>
-              ) : (
-                <ScrollArea className="h-[400px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Variety</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Size</TableHead>
-                        <TableHead>Grade</TableHead>
-                        <TableHead className="text-right">Box Count</TableHead>
-                        <TableHead className="text-right">Pallet Count</TableHead>
-                        <TableHead className="text-right">Remaining</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(() => {
-                        const boxesInRoom = safeArray(coldRoomBoxes)
-                          .filter(box => box.cold_room_id === selectedColdRoom);
+                
+                {/* Manual Pallet Creation */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Boxes className="w-5 h-5" /> {/* Using Boxes icon instead of Pallet */}
+                      Manual Pallet Creation
+                    </CardTitle>
+                    <CardDescription>
+                      Create custom pallets by mixing different sizes from inventory
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {/* Pallet Configuration */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="palletName">Pallet Name</Label>
+                          <Input
+                            id="palletName"
+                            value={newPallet.palletName}
+                            onChange={(e) => setNewPallet(prev => ({ ...prev, palletName: e.target.value }))}
+                            placeholder="Enter pallet name"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="boxesPerPallet">Boxes per Pallet</Label>
+                          <Select
+                            value={newPallet.boxesPerPallet.toString()}
+                            onValueChange={(value) => setNewPallet(prev => ({ 
+                              ...prev, 
+                              boxesPerPallet: parseInt(value) 
+                            }))}
+                          >
+                            <SelectTrigger id="boxesPerPallet">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="288">288 boxes (4kg)</SelectItem>
+                              <SelectItem value="120">120 crates (10kg)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="palletColdRoom">Cold Room</Label>
+                        <Select
+                          value={newPallet.coldRoomId}
+                          onValueChange={(value) => setNewPallet(prev => ({ 
+                            ...prev, 
+                            coldRoomId: value 
+                          }))}
+                        >
+                          <SelectTrigger id="palletColdRoom">
+                            <SelectValue placeholder="Select cold room" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="coldroom1">Cold Room 1</SelectItem>
+                            <SelectItem value="coldroom2">Cold Room 2</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      {/* Current Pallet Contents */}
+                      <div className="border rounded p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <Label className="font-medium">Pallet Contents</Label>
+                          <Badge variant="outline">
+                            {newPallet.totalBoxes}/{newPallet.boxesPerPallet} boxes
+                          </Badge>
+                        </div>
                         
-                        if (boxesInRoom.length === 0) {
-                          return (
-                            <TableRow>
-                              <TableCell colSpan={7} className="text-center py-8">
-                                <div className="flex flex-col items-center">
-                                  <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                                  <p className="text-gray-500 font-medium">No boxes in cold room</p>
-                                  <p className="text-sm text-gray-400 mt-1">
-                                    Load boxes from counting records to get started
-                                  </p>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        }
-                        
-                        // Group boxes
-                        const groupedBoxes: Record<string, {
-                          variety: string;
-                          box_type: string;
-                          size: string;
-                          grade: string;
-                          totalBoxes: number;
-                        }> = {};
-                        
-                        boxesInRoom.forEach(box => {
-                          const key = `${box.variety}-${box.box_type}-${box.size}-${box.grade}`;
-                          
-                          if (!groupedBoxes[key]) {
-                            groupedBoxes[key] = {
-                              variety: box.variety,
-                              box_type: box.box_type,
-                              size: box.size,
-                              grade: box.grade,
-                              totalBoxes: 0
-                            };
-                          }
-                          groupedBoxes[key].totalBoxes += box.quantity;
-                        });
-                        
-                        // Convert to array and calculate pallets
-                        const palletData = Object.values(groupedBoxes).map(data => {
-                          const boxesPerPallet = data.size === '4kg' ? 288 : 120;
-                          const palletCount = Math.floor(data.totalBoxes / boxesPerPallet);
-                          const remainingBoxes = data.totalBoxes % boxesPerPallet;
-                          
-                          return {
-                            ...data,
-                            palletCount,
-                            remainingBoxes,
-                            boxesPerPallet
-                          };
-                        }).filter(item => item.palletCount > 0); // Only show if there are complete pallets
-                        
-                        // Also show items with boxes but no complete pallets
-                        const noPalletData = Object.values(groupedBoxes).filter(data => {
-                          const boxesPerPallet = data.size === '4kg' ? 288 : 120;
-                          return Math.floor(data.totalBoxes / boxesPerPallet) === 0;
-                        });
-                        
-                        if (palletData.length === 0 && noPalletData.length === 0) {
-                          return (
-                            <TableRow>
-                              <TableCell colSpan={7} className="text-center py-8">
-                                <div className="flex flex-col items-center">
-                                  <Package className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                                  <p className="text-sm text-gray-500">No boxes found</p>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        }
-                        
-                        if (palletData.length === 0 && noPalletData.length > 0) {
-                          return (
-                            <>
-                              <TableRow>
-                                <TableCell colSpan={7} className="text-center py-4 bg-muted/30">
-                                  <div className="flex flex-col items-center">
-                                    <Package className="w-6 h-6 mx-auto text-gray-400 mb-1" />
-                                    <p className="text-sm text-gray-500">No complete pallets yet</p>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                      Boxes are accumulating but thresholds not met
-                                    </p>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                              {noPalletData.map((item, index) => {
-                                const boxesPerPallet = item.size === '4kg' ? 288 : 120;
-                                
-                                return (
-                                  <TableRow key={`no-pallet-${index}`} className="opacity-70">
-                                    <TableCell className="capitalize">
-                                      {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                                    </TableCell>
-                                    <TableCell>{item.box_type}</TableCell>
-                                    <TableCell>{formatSize(item.size)}</TableCell>
+                        {newPallet.boxes.length === 0 ? (
+                          <div className="text-center py-4 text-gray-500 text-sm">
+                            No boxes added to pallet yet
+                          </div>
+                        ) : (
+                          <ScrollArea className="h-[200px]">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Size</TableHead>
+                                  <TableHead>Variety</TableHead>
+                                  <TableHead>Type</TableHead>
+                                  <TableHead>Grade</TableHead>
+                                  <TableHead className="text-right">Quantity</TableHead>
+                                  <TableHead className="text-right">Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {newPallet.boxes.map((box, index) => (
+                                  <TableRow key={`${box.variety}-${box.boxType}-${box.size}-${box.grade}`}>
+                                    <TableCell>{formatSize(box.size)}</TableCell>
+                                    <TableCell className="capitalize">{box.variety}</TableCell>
+                                    <TableCell>{box.boxType}</TableCell>
                                     <TableCell>
-                                      <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
-                                        {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                      <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'}>
+                                        {box.grade === 'class1' ? 'Class 1' : 'Class 2'}
                                       </Badge>
                                     </TableCell>
-                                    <TableCell className="text-right font-medium">
-                                      {item.totalBoxes.toLocaleString()}
+                                    <TableCell className="text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => updateBoxQuantity(index, box.quantity - 1)}
+                                          disabled={box.quantity <= 1}
+                                          className="h-6 w-6 p-0"
+                                        >
+                                          <Minus className="w-3 h-3" />
+                                        </Button>
+                                        <span className="font-medium w-8 text-center">{box.quantity}</span>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => updateBoxQuantity(index, box.quantity + 1)}
+                                          disabled={box.quantity >= box.availableQuantity + box.quantity}
+                                          className="h-6 w-6 p-0"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                        </Button>
+                                      </div>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                      <span className="text-muted-foreground">0</span>
-                                    </TableCell>
-                                    <TableCell className="text-right text-sm text-muted-foreground">
-                                      {item.totalBoxes} boxes
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => removeBoxFromPallet(index)}
+                                        className="h-6 w-6 p-0 text-red-500"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </Button>
                                     </TableCell>
                                   </TableRow>
-                                );
-                              })}
-                            </>
-                          );
-                        }
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                        )}
                         
-                        // Show complete pallets first
-                        return (
-                          <>
-                            {palletData.map((item, index) => (
-                              <TableRow key={`pallet-${index}`}>
-                                <TableCell className="capitalize">
-                                  {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                                </TableCell>
-                                <TableCell>{item.box_type}</TableCell>
-                                <TableCell>{formatSize(item.size)}</TableCell>
-                                <TableCell>
-                                  <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
-                                    {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-right font-medium">
-                                  {item.totalBoxes.toLocaleString()}
-                                </TableCell>
-                                <TableCell className="text-right font-bold">
-                                  <div className="flex items-center justify-end gap-1">
-                                    <Truck className="w-4 h-4 text-primary" />
-                                    <span className="text-primary">{item.palletCount}</span>
+                        {/* Progress Bar */}
+                        <div className="mt-4">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>Pallet Progress</span>
+                            <span>{newPallet.totalBoxes}/{newPallet.boxesPerPallet} boxes</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2.5">
+                            <div 
+                              className={`h-2.5 rounded-full ${newPallet.totalBoxes >= newPallet.boxesPerPallet ? 'bg-green-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min((newPallet.totalBoxes / newPallet.boxesPerPallet) * 100, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Create Pallet Button */}
+                      <Button
+                        onClick={createManualPallet}
+                        className="w-full"
+                        disabled={newPallet.totalBoxes < newPallet.boxesPerPallet}
+                      >
+                        <Boxes className="w-4 h-4 mr-2" /> {/* Using Boxes icon */}
+                        Create Manual Pallet
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              
+              {/* Pallet Conversion Summary */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Truck className="w-5 h-5" />
+                    Pallet Conversion Summary
+                  </CardTitle>
+                  <CardDescription>
+                    Converted pallets from boxes in {selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isLoading.pallets ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                      <p className="text-muted-foreground">Loading pallet data...</p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[300px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Pallet Name</TableHead>
+                            <TableHead>Variety</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Cold Room</TableHead>
+                            <TableHead className="text-right">Pallet Count</TableHead>
+                            <TableHead className="text-right">Created</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {safeArray(coldRoomPallets)
+                            .filter(pallet => pallet.cold_room_id === selectedColdRoom)
+                            .map((pallet) => (
+                              <TableRow key={pallet.id}>
+                                <TableCell className="font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <Boxes className="w-4 h-4" /> {/* Using Boxes icon */}
+                                    {pallet.id.substring(0, 12)}...
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right text-sm text-muted-foreground">
-                                  {item.remainingBoxes} boxes
+                                <TableCell className="capitalize">
+                                  {pallet.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                </TableCell>
+                                <TableCell>{pallet.box_type}</TableCell>
+                                <TableCell>
+                                  {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                </TableCell>
+                                <TableCell className="text-right font-bold">
+                                  {pallet.pallet_count}
+                                </TableCell>
+                                <TableCell className="text-right text-sm">
+                                  {formatDate(pallet.created_at)}
                                 </TableCell>
                               </TableRow>
                             ))}
-                            
-                            {/* Show items with no complete pallets */}
-                            {noPalletData.length > 0 && (
-                              <>
-                                <TableRow className="border-t">
-                                  <TableCell colSpan={7} className="py-2 bg-muted/20">
-                                    <p className="text-xs text-center text-muted-foreground">
-                                      Items accumulating boxes (no complete pallets yet)
-                                    </p>
-                                  </TableCell>
-                                </TableRow>
-                                {noPalletData.map((item, index) => {
-                                  const boxesPerPallet = item.size === '4kg' ? 288 : 120;
-                                  const progress = (item.totalBoxes / boxesPerPallet) * 100;
-                                  
-                                  return (
-                                    <TableRow key={`accumulating-${index}`} className="opacity-70">
-                                      <TableCell className="capitalize">
-                                        {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
-                                      </TableCell>
-                                      <TableCell>{item.box_type}</TableCell>
-                                      <TableCell>{formatSize(item.size)}</TableCell>
-                                      <TableCell>
-                                        <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
-                                          {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell className="text-right font-medium">
-                                        {item.totalBoxes.toLocaleString()}
-                                      </TableCell>
-                                      <TableCell className="text-right">
-                                        <span className="text-muted-foreground">0</span>
-                                      </TableCell>
-                                      <TableCell className="text-right">
-                                        <div className="flex flex-col items-end">
-                                          <span className="text-sm text-muted-foreground">
-                                            {item.totalBoxes}/{boxesPerPallet} boxes
-                                          </span>
-                                          <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden mt-1">
-                                            <div 
-                                              className="h-full bg-primary/50" 
-                                              style={{ width: `${Math.min(progress, 100)}%` }}
-                                            />
-                                          </div>
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-            </div>
+                          
+                          {/* Manual Pallets */}
+                          {manualPallets
+                            .filter(pallet => pallet.coldRoomId === selectedColdRoom)
+                            .map((pallet, index) => (
+                              <TableRow key={`manual-${index}`} className="bg-blue-50">
+                                <TableCell className="font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <Boxes className="w-4 h-4" /> {/* Using Boxes icon */}
+                                    {pallet.palletName}
+                                    <Badge variant="outline" className="ml-2">Manual</Badge>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="capitalize">
+                                  Mixed
+                                </TableCell>
+                                <TableCell>Mixed</TableCell>
+                                <TableCell>
+                                  {pallet.coldRoomId === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                </TableCell>
+                                <TableCell className="text-right font-bold">
+                                  {Math.floor(pallet.totalBoxes / pallet.boxesPerPallet)}
+                                </TableCell>
+                                <TableCell className="text-right text-sm">
+                                  Manual Creation
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
             
             {/* Temperature Control Tab */}
@@ -3485,7 +2667,7 @@ toast({
                           </div>
                         ) : (
                           safeArray(repackingForm.removedBoxes).map((box, index) => (
-                            <div key={index} className="border rounded p-3 mb-3 bg-black-50">
+                            <div key={index} className="border rounded p-3 mb-3 bg-blue-50">
                               <div className="flex justify-between items-center mb-2">
                                 <span className="font-medium text-red-700">Remove Box #{index + 1}</span>
                                 <Button
@@ -3616,7 +2798,7 @@ toast({
                           </div>
                         ) : (
                           safeArray(repackingForm.returnedBoxes).map((box, index) => (
-                            <div key={index} className="border rounded p-3 mb-3 bg-black-50">
+                            <div key={index} className="border rounded p-3 mb-3 bg-blue-50">
                               <div className="flex justify-between items-center mb-2">
                                 <span className="font-medium text-green-700">Return Box #{index + 1}</span>
                                 <Button
@@ -3755,183 +2937,201 @@ toast({
               </div>
             </TabsContent>
             
-            {/* Loading History Tab */}
+            {/* Current Inventory Tab - SHOWING COLD_ROOM_BOXES */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <History className="w-5 h-5" />
-                    Loading History
+                    Current Cold Room Inventory
                   </CardTitle>
                   <CardDescription>
-                    History of all boxes loaded into cold rooms
+                    Live inventory of boxes currently stored in cold rooms
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="bg-black-50 p-4 rounded-lg border">
+                      <div className="bg-blue-50 p-4 rounded-lg border">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm text-gray-500">Total Boxes Loaded</div>
+                          <div className="text-sm text-gray-500">Current Boxes</div>
                           <Package className="w-4 h-4 text-blue-500" />
                         </div>
                         <div className="text-2xl font-bold text-blue-700">
-                          {loadingHistorySummary.totalBoxesLoaded.toLocaleString()}
+                          {coldRoomBoxes.reduce((sum, box) => sum + (box.quantity || 0), 0).toLocaleString()}
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">All time</div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {coldRoomBoxes.filter(b => b.cold_room_id === 'coldroom1').length} in CR1, 
+                          {coldRoomBoxes.filter(b => b.cold_room_id === 'coldroom2').length} in CR2
+                        </div>
                       </div>
                       
-                      <div className="bg-black-50 p-4 rounded-lg border">
+                      <div className="bg-blue-50 p-4 rounded-lg border">
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-sm text-gray-500">Unique Suppliers</div>
                           <Truck className="w-4 h-4 text-green-500" />
                         </div>
                         <div className="text-2xl font-bold text-green-700">
-                          {loadingHistorySummary.uniqueSuppliers}
+                          {new Set(coldRoomBoxes.map(box => box.supplier_name).filter(Boolean)).size}
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">Suppliers loaded</div>
+                        <div className="text-xs text-gray-400 mt-1">Active suppliers in inventory</div>
                       </div>
                       
-                      <div className="bg-black-50 p-4 rounded-lg border">
+                      <div className="bg-blue-50 p-4 rounded-lg border">
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-sm text-gray-500">Total Weight</div>
                           <Weight className="w-4 h-4 text-purple-500" />
                         </div>
                         <div className="text-2xl font-bold text-purple-700">
-                          {safeToFixed(loadingHistorySummary.totalWeight)} kg
+                          {safeToFixed(coldRoomBoxes.reduce((sum, box) => {
+                            const boxWeight = box.box_type === '4kg' ? 4 : 10;
+                            return sum + ((box.quantity || 0) * boxWeight);
+                          }, 0))} kg
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">Total loaded weight</div>
+                        <div className="text-xs text-gray-400 mt-1">Current stored weight</div>
                       </div>
                     </div>
                     
-                    {/* Search Filters */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm font-medium">Search Filters</CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          <div>
-                            <Label htmlFor="dateFrom">From Date</Label>
-                            <Input
-                              id="dateFrom"
-                              type="date"
-                              value={historySearch.dateFrom}
-                              onChange={(e) => setHistorySearch(prev => ({ ...prev, dateFrom: e.target.value }))}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="dateTo">To Date</Label>
-                            <Input
-                              id="dateTo"
-                              type="date"
-                              value={historySearch.dateTo}
-                              onChange={(e) => setHistorySearch(prev => ({ ...prev, dateTo: e.target.value }))}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="supplierName">Supplier Name</Label>
-                            <Input
-                              id="supplierName"
-                              value={historySearch.supplierName}
-                              onChange={(e) => setHistorySearch(prev => ({ ...prev, supplierName: e.target.value }))}
-                              placeholder="Search by supplier"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="coldRoomId">Cold Room</Label>
-                            <Select
-                              value={historySearch.coldRoomId}
-                              onValueChange={(value) => setHistorySearch(prev => ({ ...prev, coldRoomId: value }))}
-                            >
-                              <SelectTrigger id="coldRoomId">
-                                <SelectValue placeholder="All Cold Rooms" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="all">All Cold Rooms</SelectItem>
-                                <SelectItem value="coldroom1">Cold Room 1</SelectItem>
-                                <SelectItem value="coldroom2">Cold Room 2</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 mt-4">
-                          <Button
-                            onClick={searchLoadingHistory}
-                            disabled={isLoading.loadingHistory}
-                            className="flex-1"
-                          >
-                            <Search className="w-4 h-4 mr-2" />
-                            Search History
-                          </Button>
-                          <Button
-                            onClick={clearSearchFilters}
-                            variant="outline"
-                          >
-                            <Filter className="w-4 h-4 mr-2" />
-                            Clear Filters
-                          </Button>
-                          <Button
-                            onClick={() => fetchLoadingHistory()}
-                            variant="outline"
-                            disabled={isLoading.loadingHistory}
-                          >
-                            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading.loadingHistory ? 'animate-spin' : ''}`} />
-                            Refresh
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    
-                    {/* Export Buttons */}
-                    <div className="flex justify-end gap-3">
+                    {/* Export Button */}
+                    <div className="flex justify-end">
                       <Button
-                        onClick={handleDownloadCSV}
+                        onClick={() => {
+                          if (coldRoomBoxes.length === 0) {
+                            toast({
+                              title: 'No data to export',
+                              description: 'There is no inventory data to download',
+                              variant: 'destructive',
+                            });
+                            return;
+                          }
+                          
+                          try {
+                            exportColdRoomBoxesToCSV(coldRoomBoxes, 'cold-room-inventory');
+                            
+                            toast({
+                              title: 'CSV Export Started',
+                              description: `Downloading ${coldRoomBoxes.length} inventory records as CSV file`,
+                            });
+                          } catch (error) {
+                            console.error('Error exporting CSV:', error);
+                            toast({
+                              title: 'Export Failed',
+                              description: 'Could not generate CSV file. Please try again.',
+                              variant: 'destructive',
+                            });
+                          }
+                        }}
                         variant="outline"
-                        disabled={loadingHistory.length === 0}
+                        disabled={coldRoomBoxes.length === 0}
                         className="flex items-center gap-2"
                       >
                         <Download className="w-4 h-4" />
-                        Export All to CSV
-                      </Button>
-                      <Button
-                        onClick={handleDownloadFilteredCSV}
-                        disabled={loadingHistory.length === 0}
-                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Export Filtered with Summary
+                        Export Inventory to CSV
                       </Button>
                     </div>
                     
-                    {/* History Table */}
+                    {/* Inventory Table */}
                     <div>
                       <div className="flex items-center justify-between mb-4">
-                        <Label>Loading History ({loadingHistory.length} records)</Label>
+                        <Label>Current Inventory ({coldRoomBoxes.length} boxes)</Label>
                         <Badge variant="outline">
-                          {new Set(loadingHistory.map(record => {
-                            const date = record.loading_date || record.created_at || '';
+                          {new Set(coldRoomBoxes.map(box => {
+                            const date = box.created_at || '';
                             return date ? date.split('T')[0] : '';
-                          }).filter(Boolean)).size} days
+                          }).filter(Boolean)).size} days of inventory
                         </Badge>
                       </div>
                       
-                      {isLoading.loadingHistory ? (
+                      {isLoading.boxes ? (
                         <div className="text-center py-8">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                          <p className="text-muted-foreground">Loading history...</p>
+                          <p className="text-muted-foreground">Loading inventory...</p>
                         </div>
-                      ) : loadingHistory.length === 0 ? (
+                      ) : coldRoomBoxes.length === 0 ? (
                         <div className="text-center py-8 border rounded">
                           <FileText className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                          <p className="text-gray-500 font-medium">No loading history found</p>
+                          <p className="text-gray-500 font-medium">No inventory found</p>
                           <p className="text-sm text-gray-400 mt-1">
-                            Load boxes to cold rooms to see history here
+                            Load boxes to cold rooms to see inventory here
                           </p>
                         </div>
                       ) : (
-                        renderLoadingHistoryTable()
+                        <ScrollArea className="h-[500px] border rounded">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Added Date</TableHead>
+                                <TableHead>Supplier</TableHead>
+                                <TableHead>Pallet ID</TableHead>
+                                <TableHead>Variety</TableHead>
+                                <TableHead>Type</TableHead>
+                                <TableHead>Size</TableHead>
+                                <TableHead>Grade</TableHead>
+                                <TableHead className="text-right">Quantity</TableHead>
+                                <TableHead>Cold Room</TableHead>
+                                <TableHead>Last Updated</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {[...coldRoomBoxes]
+                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                .map((box) => {
+                                  const boxWeight = box.box_type === '4kg' ? 4 : 10;
+                                  const totalWeight = (box.quantity || 0) * boxWeight;
+                                  
+                                  return (
+                                    <TableRow key={box.id}>
+                                      <TableCell>
+                                        <div className="font-medium">{formatDate(box.created_at)}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {formatDateForInput(box.created_at)}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="max-w-[120px] truncate" title={box.supplier_name}>
+                                          {box.supplier_name || 'Unknown'}
+                                        </div>
+                                        {box.region && (
+                                          <div className="text-xs text-gray-500">{box.region}</div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-mono text-xs" title={box.pallet_id}>
+                                          {box.pallet_id ? `${box.pallet_id?.substring(0, 8)}...` : 'N/A'}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="capitalize">
+                                        {box.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                      </TableCell>
+                                      <TableCell>{box.box_type}</TableCell>
+                                      <TableCell>{formatSize(box.size)}</TableCell>
+                                      <TableCell>
+                                        <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'}>
+                                          {box.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="font-medium">{(box.quantity || 0).toLocaleString()}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {safeToFixed(totalWeight)} kg total
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1">
+                                          <Snowflake className="w-3 h-3" />
+                                          {box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-sm">
+                                        {box.updated_at ? formatDate(box.updated_at) : 'N/A'}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                            </TableBody>
+                          </Table>
+                        </ScrollArea>
                       )}
                     </div>
                   </div>

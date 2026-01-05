@@ -1625,7 +1625,7 @@ export default function ColdRoomPage() {
                                   return (
                                     <TableRow 
                                       key={record.id}
-                                      className={selectedRecords.has(record.id) ? "bg-blue-50" : ""}
+                                      className={selectedRecords.has(record.id) ? "bg-black-50" : ""}
                                     >
                                       <TableCell>
                                         <input

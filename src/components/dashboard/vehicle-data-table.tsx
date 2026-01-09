@@ -137,7 +137,7 @@ export function VehicleDataTable({
             <TableHeader className="sticky top-0 bg-card border-b">
               <TableRow>
                 <TableHead className="font-semibold">Driver & Vehicle</TableHead>
-                <TableHead className="font-semibold">Company / Cargo</TableHead>
+                <TableHead className="font-semibold"> Supplier</TableHead>
                 <TableHead className="font-semibold">Registration</TableHead>
                 <TableHead className="font-semibold">Expected</TableHead>
                 <TableHead className="font-semibold">Check-in</TableHead>

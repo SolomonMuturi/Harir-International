@@ -8,12 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Scale, Package, Truck, User, Phone, MapPin, Camera, Plus, X, CheckCircle, Building, CreditCard, Trash2, ChevronDown, ChevronRight, Calendar, FileText, BarChart, RefreshCw, CheckCheck, Clock, AlertCircle } from 'lucide-react';
+import { Loader2, Scale, Package, Truck, User, Phone, MapPin, Camera, Plus, X, CheckCircle, Building, CreditCard, Trash2, ChevronDown, ChevronRight, Calendar, FileText, BarChart, RefreshCw, CheckCheck, Clock, AlertCircle, Apple } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ImageUpload } from './image-upload';
 import { ScrollArea } from '../ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 
 interface CheckedInSupplier {
   id: string;
@@ -35,27 +34,28 @@ interface FruitVariety {
   crates: number;
 }
 
+interface PerVarietyItem {
+  id: string;
+  variety: string;
+  weight: string;
+  crates: string;
+}
+
 interface WeightCaptureFormData {
-  // From selected supplier (auto-filled)
   supplier_id: string;
   driver_name: string;
   driver_phone: string;
   vehicle_plate: string;
   driver_id_number: string;
-  
-  // Supplier details (to be filled manually)
   supplier_name: string;
   supplier_phone: string;
   region: string;
-  
-  // Fruit varieties with weights
-  fruit_varieties: FruitVariety[];
-  
-  // Weight information (auto-generated)
+  fuerte_weight: string;
+  fuerte_crates: string;
+  hass_weight: string;
+  hass_crates: string;
   pallet_id: string;
   product: string;
-  
-  // Additional
   image_url: string;
   notes: string;
 }
@@ -67,6 +67,10 @@ interface SupplierIntakeRecord {
   driver_name: string;
   vehicle_plate: string;
   total_weight: number;
+  fuerte_weight: number;
+  fuerte_crates: number;
+  hass_weight: number;
+  hass_crates: number;
   fruit_varieties: FruitVariety[];
   region: string;
   timestamp: string;
@@ -78,16 +82,27 @@ interface WeightCaptureProps {
   isLoading: boolean;
   onRefreshSuppliers?: () => void;
   processedSupplierIds?: Set<string>;
+  selectedSupplier: any;
+  onClearSelectedSupplier: () => void;
+  palletCounter: number;
 }
 
-export function WeightCapture({ onAddWeight, isLoading, onRefreshSuppliers, processedSupplierIds = new Set() }: WeightCaptureProps) {
+export function WeightCapture({ 
+  onAddWeight, 
+  isLoading, 
+  onRefreshSuppliers, 
+  processedSupplierIds = new Set(), 
+  selectedSupplier,
+  onClearSelectedSupplier,
+  palletCounter 
+}: WeightCaptureProps) {
   const { toast } = useToast();
-  const [selectedSupplier, setSelectedSupplier] = useState<CheckedInSupplier | null>(null);
   const [checkedInSuppliers, setCheckedInSuppliers] = useState<CheckedInSupplier[]>([]);
   const [suppliersLoading, setSuppliersLoading] = useState(true);
   const [supplierIntakeRecords, setSupplierIntakeRecords] = useState<SupplierIntakeRecord[]>([]);
   const [intakeLoading, setIntakeLoading] = useState(true);
   const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
+  
   const [formData, setFormData] = useState<WeightCaptureFormData>({
     supplier_id: '',
     driver_name: '',
@@ -97,48 +112,43 @@ export function WeightCapture({ onAddWeight, isLoading, onRefreshSuppliers, proc
     supplier_name: '',
     supplier_phone: '',
     region: '',
-    fruit_varieties: [],
+    fuerte_weight: '',
+    fuerte_crates: '',
+    hass_weight: '',
+    hass_crates: '',
     pallet_id: '',
     product: '',
     image_url: '',
     notes: '',
   });
-  const [currentFruitName, setCurrentFruitName] = useState('');
-  const [currentFruitWeight, setCurrentFruitWeight] = useState('');
-  const [currentFruitCrates, setCurrentFruitCrates] = useState('');
+  
   const [isUploading, setIsUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Generate pallet ID
   const generatePalletId = () => {
     const today = new Date();
-    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
-    const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `SUP${randomNum}/${dateStr}`;
+    const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const palletNum = palletCounter.toString().padStart(3, '0');
+    return `PAL-${palletNum}/${dateStr}`;
   };
 
-  // Fetch checked-in suppliers on component mount
   useEffect(() => {
     fetchCheckedInSuppliers();
     fetchSupplierIntakeRecords();
   }, []);
 
-  // Update supplier list when processedSupplierIds changes
-// Update supplier list when processedSupplierIds changes
-useEffect(() => {
-  if (checkedInSuppliers.length > 0) {
-    // Only update if there are actually suppliers to filter
-    const pendingSuppliers = checkedInSuppliers.filter(supplier => 
-      !processedSupplierIds.has(supplier.id)
-    );
-    
-    // Only update if the filtered list is different
-    if (pendingSuppliers.length !== checkedInSuppliers.length) {
-      setCheckedInSuppliers(pendingSuppliers);
+  useEffect(() => {
+    if (checkedInSuppliers.length > 0) {
+      const pendingSuppliers = checkedInSuppliers.filter(supplier => 
+        !processedSupplierIds.has(supplier.id)
+      );
+      
+      if (pendingSuppliers.length !== checkedInSuppliers.length) {
+        setCheckedInSuppliers(pendingSuppliers);
+      }
     }
-  }
-}, [processedSupplierIds, checkedInSuppliers]);
-  // Auto-fill form when supplier is selected
+  }, [processedSupplierIds, checkedInSuppliers]);
+
   useEffect(() => {
     if (selectedSupplier) {
       const palletId = generatePalletId();
@@ -151,24 +161,26 @@ useEffect(() => {
         vehicle_plate: selectedSupplier.vehicle_plate,
         driver_id_number: selectedSupplier.id_number,
         pallet_id: palletId,
-        // Pre-fill supplier name from company name
         supplier_name: selectedSupplier.company_name,
-        // Pre-fill region
         region: selectedSupplier.region,
+        // Reset weights for new supplier
+        fuerte_weight: '',
+        fuerte_crates: '',
+        hass_weight: '',
+        hass_crates: ''
       }));
     }
   }, [selectedSupplier]);
 
-  // Update pallet ID when region changes
   useEffect(() => {
     if (formData.region) {
       const today = new Date();
-      const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
-      const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      const palletNum = palletCounter.toString().padStart(3, '0');
       const regionCode = formData.region.substring(0, 3).toUpperCase();
       setFormData(prev => ({
         ...prev,
-        pallet_id: `SUP${randomNum}/${dateStr}/${regionCode}`,
+        pallet_id: `PAL-${palletNum}/${dateStr}/${regionCode}`,
       }));
     }
   }, [formData.region]);
@@ -185,12 +197,10 @@ useEffect(() => {
       
       const data: CheckedInSupplier[] = await response.json();
       
-      // Filter out suppliers that have already been weighed
       const pendingSuppliers = data.filter(supplier => 
         !processedSupplierIds.has(supplier.id)
       );
       
-      // Set only pending suppliers with 'pending' status
       const suppliersWithStatus = pendingSuppliers.map(supplier => ({
         ...supplier,
         status: 'pending' as const
@@ -214,7 +224,6 @@ useEffect(() => {
     try {
       setIntakeLoading(true);
       
-      // Fetch recent weight entries from the API
       const response = await fetch('/api/weights?limit=100&order=desc');
       
       if (!response.ok) {
@@ -223,95 +232,41 @@ useEffect(() => {
       
       const weightEntries = await response.json();
       
-      // Transform weight entries into supplier intake records
       const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => {
-        // Extract fruit varieties from the API response
-        let fruitVarieties: FruitVariety[] = [];
-        let totalWeightFromVarieties = 0;
+        const fuerteWeight = Number(entry.fuerte_weight) || 0;
+        const fuerteCrates = Number(entry.fuerte_crates) || 0;
+        const hassWeight = Number(entry.hass_weight) || 0;
+        const hassCrates = Number(entry.hass_crates) || 0;
         
-        // First try to parse fruit_variety from the API
-        if (entry.fruit_variety) {
-          try {
-            if (typeof entry.fruit_variety === 'string') {
-              // Try to parse JSON string
-              const parsed = JSON.parse(entry.fruit_variety);
-              if (Array.isArray(parsed)) {
-                if (typeof parsed[0] === 'string') {
-                  // Array of strings
-                  fruitVarieties = parsed.map((name: string) => ({ 
-                    name, 
-                    weight: 0, 
-                    crates: 0 
-                  }));
-                } else if (typeof parsed[0] === 'object') {
-                  // Array of objects with weight property
-                  fruitVarieties = parsed.map((item: any) => ({
-                    name: item.name || item.product || 'Unknown',
-                    weight: item.weight || 0,
-                    crates: item.crates || 0
-                  }));
-                  totalWeightFromVarieties = fruitVarieties.reduce((sum, v) => sum + v.weight, 0);
-                }
-              }
-            } else if (Array.isArray(entry.fruit_variety)) {
-              // Already an array
-              if (typeof entry.fruit_variety[0] === 'string') {
-                fruitVarieties = entry.fruit_variety.map((name: string) => ({ 
-                  name, 
-                  weight: 0, 
-                  crates: 0 
-                }));
-              } else if (typeof entry.fruit_variety[0] === 'object') {
-                fruitVarieties = entry.fruit_variety.map((item: any) => ({
-                  name: item.name || item.product || 'Unknown',
-                  weight: item.weight || 0,
-                  crates: item.crates || 0
-                }));
-                totalWeightFromVarieties = fruitVarieties.reduce((sum, v) => sum + v.weight, 0);
-              }
-            }
-          } catch (parseError) {
-            console.error('Error parsing fruit_variety:', parseError);
-            // Fallback to product field
-            fruitVarieties = [{
-              name: entry.product || 'Unknown',
-              weight: 0,
-              crates: 0
-            }];
-          }
-        } else if (entry.product) {
-          // Fallback to product field
-          fruitVarieties = [{
-            name: entry.product,
-            weight: 0,
-            crates: 0
-          }];
+        const totalWeight = fuerteWeight + hassWeight;
+        
+        const fruitVarieties: FruitVariety[] = [];
+        if (fuerteWeight > 0) {
+          fruitVarieties.push({
+            name: 'Fuerte',
+            weight: fuerteWeight,
+            crates: fuerteCrates
+          });
         }
-        
-        // Calculate the total weight - prioritize in this order:
-        // 1. Total weight from fruit varieties (if they have weights)
-        // 2. net_weight from API
-        // 3. netWeight from API
-        // 4. weight from API
-        let totalWeight = 0;
-        
-        if (totalWeightFromVarieties > 0) {
-          totalWeight = totalWeightFromVarieties;
-        } else if (entry.net_weight !== undefined && entry.net_weight !== null) {
-          totalWeight = typeof entry.net_weight === 'number' ? entry.net_weight : parseFloat(entry.net_weight) || 0;
-        } else if (entry.netWeight !== undefined && entry.netWeight !== null) {
-          totalWeight = typeof entry.netWeight === 'number' ? entry.netWeight : parseFloat(entry.netWeight) || 0;
-        } else if (entry.weight !== undefined && entry.weight !== null) {
-          totalWeight = typeof entry.weight === 'number' ? entry.weight : parseFloat(entry.weight) || 0;
+        if (hassWeight > 0) {
+          fruitVarieties.push({
+            name: 'Hass',
+            weight: hassWeight,
+            crates: hassCrates
+          });
         }
         
         return {
           id: entry.id,
-          pallet_id: entry.pallet_id || entry.palletId || '',
+          pallet_id: entry.pallet_id || '',
           supplier_name: entry.supplier || entry.supplier_name || 'Unknown Supplier',
-          driver_name: entry.driver_name || entry.driverId || entry.driver_id || '',
-          vehicle_plate: entry.vehicle_plate || entry.truck_id || entry.truckId || '',
+          driver_name: entry.driver_name || '',
+          vehicle_plate: entry.vehicle_plate || entry.truck_id || '',
           total_weight: totalWeight,
+          fuerte_weight: fuerteWeight,
+          fuerte_crates: fuerteCrates,
+          hass_weight: hassWeight,
+          hass_crates: hassCrates,
           fruit_varieties: fruitVarieties,
           region: entry.region || '',
           timestamp: entry.timestamp || entry.created_at,
@@ -326,7 +281,6 @@ useEffect(() => {
         title: 'Info',
         description: 'Could not load intake records. Showing sample data.',
       });
-      // Fallback to sample data
       setSupplierIntakeRecords(getSampleIntakeRecords());
     } finally {
       setIntakeLoading(false);
@@ -346,9 +300,13 @@ useEffect(() => {
         driver_name: 'John Kamau',
         vehicle_plate: 'KDA 123A',
         total_weight: 450.5,
+        fuerte_weight: 250,
+        fuerte_crates: 25,
+        hass_weight: 200.5,
+        hass_crates: 20,
         fruit_varieties: [
-          { name: 'Avocados', weight: 250, crates: 25 },
-          { name: 'Mangoes', weight: 200.5, crates: 20 }
+          { name: 'Fuerte', weight: 250, crates: 25 },
+          { name: 'Hass', weight: 200.5, crates: 20 }
         ],
         region: 'Central',
         timestamp: today.toISOString(),
@@ -361,9 +319,13 @@ useEffect(() => {
         driver_name: 'Jane Wanjiku',
         vehicle_plate: 'KDB 456B',
         total_weight: 320.75,
+        fuerte_weight: 150.25,
+        fuerte_crates: 15,
+        hass_weight: 170.5,
+        hass_crates: 17,
         fruit_varieties: [
-          { name: 'Blueberries', weight: 150.25, crates: 15 },
-          { name: 'Strawberries', weight: 170.5, crates: 17 }
+          { name: 'Fuerte', weight: 150.25, crates: 15 },
+          { name: 'Hass', weight: 170.5, crates: 17 }
         ],
         region: 'Rift Valley',
         timestamp: today.toISOString(),
@@ -376,9 +338,13 @@ useEffect(() => {
         driver_name: 'Mohammed Ali',
         vehicle_plate: 'KDC 789C',
         total_weight: 280.3,
+        fuerte_weight: 150,
+        fuerte_crates: 15,
+        hass_weight: 130.3,
+        hass_crates: 13,
         fruit_varieties: [
-          { name: 'Pineapples', weight: 150, crates: 15 },
-          { name: 'Coconuts', weight: 130.3, crates: 13 }
+          { name: 'Fuerte', weight: 150, crates: 15 },
+          { name: 'Hass', weight: 130.3, crates: 13 }
         ],
         region: 'Coast',
         timestamp: yesterday.toISOString(),
@@ -397,7 +363,6 @@ useEffect(() => {
     setExpandedSuppliers(newExpanded);
   };
 
-  // Group intake records by supplier
   const groupedIntakeRecords = supplierIntakeRecords.reduce((acc, record) => {
     if (!acc[record.supplier_name]) {
       acc[record.supplier_name] = [];
@@ -406,27 +371,31 @@ useEffect(() => {
     return acc;
   }, {} as Record<string, SupplierIntakeRecord[]>);
 
-  // Calculate totals for each supplier
   const supplierTotals = Object.entries(groupedIntakeRecords).map(([supplierName, records]) => {
     const totalWeight = records.reduce((sum, record) => sum + record.total_weight, 0);
+    const totalFuerteWeight = records.reduce((sum, record) => sum + record.fuerte_weight, 0);
+    const totalFuerteCrates = records.reduce((sum, record) => sum + record.fuerte_crates, 0);
+    const totalHassWeight = records.reduce((sum, record) => sum + record.hass_weight, 0);
+    const totalHassCrates = records.reduce((sum, record) => sum + record.hass_crates, 0);
     const totalDeliveries = records.length;
     const lastDelivery = records[0]?.timestamp || '';
     
     return {
       supplier_name: supplierName,
       total_weight: totalWeight,
+      total_fuerte_weight: totalFuerteWeight,
+      total_fuerte_crates: totalFuerteCrates,
+      total_hass_weight: totalHassWeight,
+      total_hass_crates: totalHassCrates,
       total_deliveries: totalDeliveries,
       last_delivery: lastDelivery,
       records: records
     };
   });
 
-  // Sort suppliers by total weight (descending)
-  supplierTotals.sort((a, b) => b.total_weight - a.total_weight);
+  supplierTotals.sort((a, b) => b.total_weight - a.totalWeight);
 
   const handleSupplierSelect = (supplier: CheckedInSupplier) => {
-    // Since weighed suppliers are now filtered out, this check is redundant
-    // but kept as a safety measure
     if (processedSupplierIds.has(supplier.id)) {
       toast({
         title: "Supplier Already Processed",
@@ -436,102 +405,21 @@ useEffect(() => {
       return;
     }
     
-    setSelectedSupplier(supplier);
+    setFormData(prev => ({
+      ...prev,
+      supplier_id: supplier.id,
+      driver_name: supplier.driver_name,
+      driver_phone: supplier.phone_number,
+      vehicle_plate: supplier.vehicle_plate,
+      driver_id_number: supplier.id_number,
+      supplier_name: supplier.company_name,
+      region: supplier.region,
+    }));
+    
     toast({
       title: "Supplier Selected",
       description: `${supplier.driver_name}'s details have been loaded`,
     });
-  };
-
-  const handleAddFruitVariety = () => {
-    if (currentFruitName.trim() && currentFruitWeight) {
-      // Check if fruit already exists
-      const exists = formData.fruit_varieties.some(v => v.name.toLowerCase() === currentFruitName.trim().toLowerCase());
-      
-      if (!exists) {
-        const newVariety: FruitVariety = {
-          name: currentFruitName.trim(),
-          weight: parseFloat(currentFruitWeight) || 0,
-          crates: parseInt(currentFruitCrates) || 0
-        };
-        
-        setFormData(prev => ({
-          ...prev,
-          fruit_varieties: [...prev.fruit_varieties, newVariety],
-        }));
-        
-        // Clear inputs
-        setCurrentFruitName('');
-        setCurrentFruitWeight('');
-        setCurrentFruitCrates('');
-        
-        toast({
-          title: "Fruit Variety Added",
-          description: `${newVariety.name} added with ${newVariety.weight}kg`,
-        });
-      } else {
-        toast({
-          title: "Duplicate Fruit",
-          description: `${currentFruitName.trim()} is already in the list`,
-          variant: "destructive",
-        });
-      }
-    } else {
-      toast({
-        title: "Incomplete Information",
-        description: "Please enter fruit name and weight",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleRemoveFruitVariety = (index: number) => {
-    const removedVariety = formData.fruit_varieties[index];
-    setFormData(prev => ({
-      ...prev,
-      fruit_varieties: prev.fruit_varieties.filter((_, i) => i !== index),
-    }));
-    
-    toast({
-      title: "Fruit Variety Removed",
-      description: `${removedVariety.name} removed from list`,
-    });
-  };
-
-  const handleFruitWeightChange = (index: number, value: string) => {
-    const newVarieties = [...formData.fruit_varieties];
-    newVarieties[index] = {
-      ...newVarieties[index],
-      weight: parseFloat(value) || 0
-    };
-    
-    setFormData(prev => ({
-      ...prev,
-      fruit_varieties: newVarieties
-    }));
-  };
-
-  const handleFruitCratesChange = (index: number, value: string) => {
-    const newVarieties = [...formData.fruit_varieties];
-    newVarieties[index] = {
-      ...newVarieties[index],
-      crates: parseInt(value) || 0
-    };
-    
-    setFormData(prev => ({
-      ...prev,
-      fruit_varieties: newVarieties
-    }));
-  };
-
-  // Calculate total weight from fruit varieties
-  const calculateTotalFruitWeight = () => {
-    return formData.fruit_varieties.reduce((total, variety) => total + variety.weight, 0);
-  };
-
-  // Calculate total crates from fruit varieties
-  const calculateTotalCrates = () => {
-    return formData.fruit_varieties.reduce((total, variety) => total + variety.crates, 0);
   };
 
   const handleImageUpload = async (file: File) => {
@@ -572,16 +460,19 @@ useEffect(() => {
     e.preventDefault();
     
     try {
-      // Validate required fields
-      if (!formData.pallet_id) {
-        toast({
-          title: "Validation Error",
-          description: "Pallet ID is required",
-          variant: "destructive",
-        });
-        return;
-      }
-
+      console.log('=== FORM SUBMISSION STARTED ===');
+      
+      // Debug form data
+      console.log('📝 Form Data:', {
+        fuerte_weight: formData.fuerte_weight,
+        fuerte_crates: formData.fuerte_crates,
+        hass_weight: formData.hass_weight,
+        hass_crates: formData.hass_crates,
+        supplier_name: formData.supplier_name,
+        supplier_phone: formData.supplier_phone,
+      });
+      
+      // Basic validation
       if (!formData.supplier_name || !formData.supplier_phone) {
         toast({
           title: "Supplier Details Required",
@@ -600,85 +491,135 @@ useEffect(() => {
         return;
       }
 
-      // Validate fruit varieties
-      if (formData.fruit_varieties.length === 0) {
-        toast({
-          title: "Fruit Varieties Required",
-          description: "Please add at least one fruit variety with weight",
-          variant: "destructive",
-        });
-        return;
-      }
+      // Parse values
+      const fuerteWeight = parseFloat(formData.fuerte_weight) || 0;
+      const fuerteCrates = parseInt(formData.fuerte_crates) || 0;
+      const hassWeight = parseFloat(formData.hass_weight) || 0;
+      const hassCrates = parseInt(formData.hass_crates) || 0;
+      
+      const totalWeight = fuerteWeight + hassWeight;
+      const totalCrates = fuerteCrates + hassCrates;
 
-      // Check if all varieties have weight
-      const hasZeroWeight = formData.fruit_varieties.some(v => v.weight <= 0);
-      if (hasZeroWeight) {
+      console.log('🧮 Parsed values:', {
+        fuerteWeight,
+        fuerteCrates,
+        hassWeight,
+        hassCrates,
+        totalWeight,
+        totalCrates
+      });
+
+      if (totalWeight <= 0) {
         toast({
           title: "Weight Required",
-          description: "Please enter weight for all fruit varieties",
+          description: "Please enter weight for at least one variety (Fuerte or Hass)",
           variant: "destructive",
         });
         return;
       }
 
-      // Calculate totals
-      const totalFruitWeight = calculateTotalFruitWeight();
-      const totalCrates = calculateTotalCrates();
+      if (totalCrates <= 0) {
+        toast({
+          title: "Crates Required",
+          description: "Please enter number of crates for at least one variety",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      // Prepare data for API
+      // Create product description
+      const productDesc = [];
+      if (fuerteWeight > 0) productDesc.push('Fuerte');
+      if (hassWeight > 0) productDesc.push('Hass');
+
+      // Create fruit variety array for API
+      const fruitVarieties = [];
+      if (fuerteWeight > 0) fruitVarieties.push('Fuerte');
+      if (hassWeight > 0) fruitVarieties.push('Hass');
+
+      // Prepare data for API - FIXED VERSION
       const weightData = {
-        pallet_id: formData.pallet_id,
-        product: formData.product || formData.fruit_varieties.map(v => v.name).join(', ') || 'Fresh Produce',
-        weight: totalFruitWeight, // Send as main weight field
-        unit: 'kg' as const,
+        // Pallet and product info
+        pallet_id: formData.pallet_id || generatePalletId(),
+        product: productDesc.join(', '),
+        unit: 'kg',
         timestamp: new Date().toISOString(),
+        
+        // Individual fruit weights (as strings for backend parsing)
+        fuerte_weight: formData.fuerte_weight || "0",
+        fuerte_crates: formData.fuerte_crates || "0",
+        hass_weight: formData.hass_weight || "0",
+        hass_crates: formData.hass_crates || "0",
+        
+        // Fruit variety data - ADD THIS!
+        fruit_variety: JSON.stringify(fruitVarieties),
+        number_of_crates: totalCrates,
         
         // Supplier details
         supplier: formData.supplier_name,
+        supplier_name: formData.supplier_name,
         supplier_id: formData.supplier_id,
         supplier_phone: formData.supplier_phone,
-        // Send fruit varieties as JSON string
-        fruit_variety: JSON.stringify(formData.fruit_varieties.map(v => ({
-          name: v.name,
-          weight: v.weight,
-          crates: v.crates
-        }))),
-        number_of_crates: totalCrates,
-        region: formData.region,
-        image_url: formData.image_url,
         
-        // Driver/vehicle details (from check-in)
+        // Region
+        region: formData.region,
+        
+        // Driver/vehicle details
         driver_name: formData.driver_name,
         driver_phone: formData.driver_phone,
         driver_id_number: formData.driver_id_number,
         vehicle_plate: formData.vehicle_plate,
-        truck_id: formData.vehicle_plate, // Map vehicle_plate to truck_id for consistency
+        truck_id: formData.vehicle_plate,
+        driver_id: formData.driver_id_number,
         
-        // Weight fields for compatibility
-        gross_weight: totalFruitWeight,
-        net_weight: totalFruitWeight,
-        declared_weight: totalFruitWeight,
+        // Weight totals - IMPORTANT: These should be numbers
+        weight: totalWeight,
+        net_weight: totalWeight,
+        gross_weight: totalWeight,
+        declared_weight: totalWeight,
+        tare_weight: 0,
+        rejected_weight: 0,
         
-        notes: formData.notes,
+        // Optional fields
+        image_url: formData.image_url || '',
+        notes: formData.notes || '',
+        
+        // Per variety weights (optional, but API might expect it)
+        perVarietyWeights: JSON.stringify([
+          ...(fuerteWeight > 0 ? [{ variety: 'Fuerte', weight: fuerteWeight, crates: fuerteCrates }] : []),
+          ...(hassWeight > 0 ? [{ variety: 'Hass', weight: hassWeight, crates: hassCrates }] : [])
+        ]),
       };
+
+      console.log('🚀 SENDING TO API ===');
+      console.log('📦 Payload:', {
+        fuerte_weight: weightData.fuerte_weight,
+        hass_weight: weightData.hass_weight,
+        fuerte_crates: weightData.fuerte_crates,
+        hass_crates: weightData.hass_crates,
+        fruit_variety: weightData.fruit_variety,
+        weight: weightData.weight,
+        net_weight: weightData.net_weight,
+      });
+      console.log('📄 Full Payload:', JSON.stringify(weightData, null, 2));
 
       // Call the parent handler
       onAddWeight(weightData);
       
-      // Refresh intake records after successful submission
+      // Refresh data
       setTimeout(() => {
         fetchSupplierIntakeRecords();
-        fetchCheckedInSuppliers(); // This will refresh and filter out the weighed supplier
+        fetchCheckedInSuppliers();
       }, 1500);
       
-      // Call the refresh suppliers callback if provided
       if (onRefreshSuppliers) {
         setTimeout(() => {
           onRefreshSuppliers();
         }, 1000);
       }
       
-      // Reset form
+      // Reset form - keep the pallet_id generation
+      const newPalletId = generatePalletId();
       setFormData({
         supplier_id: '',
         driver_name: '',
@@ -688,20 +629,28 @@ useEffect(() => {
         supplier_name: '',
         supplier_phone: '',
         region: '',
-        fruit_varieties: [],
-        pallet_id: generatePalletId(),
+        fuerte_weight: '',
+        fuerte_crates: '',
+        hass_weight: '',
+        hass_crates: '',
+        pallet_id: newPalletId,
         product: '',
         image_url: '',
         notes: '',
       });
-      setSelectedSupplier(null);
+      
+      onClearSelectedSupplier();
       
       toast({
         title: "Weight Entry Submitted",
-        description: "Supplier intake has been recorded successfully and moved to intake records",
+        description: `Supplier intake recorded: ${totalWeight.toFixed(1)}kg (Fuerte: ${fuerteWeight.toFixed(1)}kg, Hass: ${hassWeight.toFixed(1)}kg)`,
       });
       
     } catch (error: any) {
+      console.error('=== SUBMISSION ERROR ===');
+      console.error('Error:', error);
+      console.error('Error message:', error.message);
+      
       toast({
         title: "Submission Error",
         description: error.message || "Failed to submit weight data",
@@ -710,7 +659,6 @@ useEffect(() => {
     }
   };
 
-  // Filter suppliers based on search - only show pending suppliers
   const filteredSuppliers = checkedInSuppliers.filter(supplier =>
     (supplier.driver_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     supplier.vehicle_plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -718,11 +666,14 @@ useEffect(() => {
     supplier.supplier_code.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // Calculate totals for display
-  const totalFruitWeight = calculateTotalFruitWeight();
-  const totalCrates = calculateTotalCrates();
+  // Calculate values for display
+  const fuerteWeight = parseFloat(formData.fuerte_weight || '0');
+  const fuerteCrates = parseInt(formData.fuerte_crates || '0');
+  const hassWeight = parseFloat(formData.hass_weight || '0');
+  const hassCrates = parseInt(formData.hass_crates || '0');
+  const totalWeight = fuerteWeight + hassWeight;
+  const totalCrates = fuerteCrates + hassCrates;
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -733,13 +684,11 @@ useEffect(() => {
     });
   };
 
-  // Count suppliers by status
   const pendingSuppliersCount = checkedInSuppliers.filter(s => s.status === 'pending').length;
-  const weighedSuppliersCount = supplierIntakeRecords.length; // Now only from intake records
+  const weighedSuppliersCount = supplierIntakeRecords.length;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Left Column: Supplier Selection & Intake Tracking */}
       <div className="lg:col-span-2 space-y-6">
         <Tabs defaultValue="suppliers">
           <TabsList className="grid grid-cols-2">
@@ -763,7 +712,6 @@ useEffect(() => {
             </TabsTrigger>
           </TabsList>
           
-          {/* Checked-in Suppliers Tab */}
           <TabsContent value="suppliers" className="space-y-4 pt-4">
             <Card>
               <CardHeader>
@@ -832,7 +780,7 @@ useEffect(() => {
                         <div
                           key={supplier.id}
                           className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                            selectedSupplier?.id === supplier.id
+                            formData.supplier_id === supplier.id
                               ? 'ring-2 ring-primary/20' 
                               : 'hover:border-primary'
                           } border-blue-200 bg-black-50 hover:bg-black-100`}
@@ -842,7 +790,7 @@ useEffect(() => {
                             <div className="space-y-2">
                               <div className="flex items-center gap-2">
                                 <div className="font-semibold">{supplier.driver_name}</div>
-                                {selectedSupplier?.id === supplier.id ? (
+                                {formData.supplier_id === supplier.id ? (
                                   <Badge className="bg-blue-100 text-blue-800 border-blue-200">
                                     <CheckCircle className="w-3 h-3 mr-1" />
                                     Selected
@@ -932,8 +880,7 @@ useEffect(() => {
               </CardContent>
             </Card>
             
-            {/* Selected Supplier Summary */}
-            {selectedSupplier && (
+            {formData.driver_name && (
               <Card className="border-blue-200 bg-black-50">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
@@ -945,25 +892,34 @@ useEffect(() => {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <div className="font-medium text-gray-500">Driver Name</div>
-                      <div className="font-semibold">{selectedSupplier.driver_name}</div>
+                      <div className="font-semibold">{formData.driver_name}</div>
                     </div>
                     <div>
                       <div className="font-medium text-gray-500">Vehicle Plate</div>
-                      <div className="font-semibold">{selectedSupplier.vehicle_plate}</div>
+                      <div className="font-semibold">{formData.vehicle_plate}</div>
                     </div>
                     <div>
                       <div className="font-medium text-gray-500">ID Number</div>
-                      <div className="font-mono text-xs">{selectedSupplier.id_number}</div>
+                      <div className="font-mono text-xs">{formData.driver_id_number}</div>
                     </div>
                     <div>
                       <div className="font-medium text-gray-500">Phone</div>
-                      <div>{selectedSupplier.phone_number}</div>
+                      <div>{formData.driver_phone}</div>
                     </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setSelectedSupplier(null)}
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        supplier_id: '',
+                        driver_name: '',
+                        driver_phone: '',
+                        vehicle_plate: '',
+                        driver_id_number: '',
+                      }));
+                    }}
                     className="mt-2 text-xs text-gray-500 hover:text-gray-700"
                   >
                     <X className="w-3 h-3 mr-1" />
@@ -974,7 +930,6 @@ useEffect(() => {
             )}
           </TabsContent>
           
-          {/* Supplier Intake Records Tab */}
           <TabsContent value="intake" className="space-y-4 pt-4">
             <Card>
               <CardHeader>
@@ -983,7 +938,7 @@ useEffect(() => {
                   Supplier Intake Records
                 </CardTitle>
                 <CardDescription>
-                  Track weight intake records by supplier with detailed breakdown
+                  Track weight intake records by supplier with detailed Fuerte and Hass breakdown
                 </CardDescription>
                 <div className="flex items-center gap-2">
                   <Button
@@ -1044,12 +999,16 @@ useEffect(() => {
                                       {supplier.total_weight.toFixed(2)} kg total
                                     </span>
                                     <span className="flex items-center gap-1">
-                                      <Truck className="w-3 h-3" />
-                                      {supplier.total_deliveries} delivery{supplier.total_deliveries !== 1 ? 's' : ''}
+                                      <Apple className="w-3 h-3 text-green-400" />
+                                      Fuerte: {supplier.total_fuerte_weight.toFixed(2)}kg
                                     </span>
                                     <span className="flex items-center gap-1">
-                                      <Calendar className="w-3 h-3" />
-                                      {formatDate(supplier.last_delivery)}
+                                      <Apple className="w-3 h-3 text-purple-400" />
+                                      Hass: {supplier.total_hass_weight.toFixed(2)}kg
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <Truck className="w-3 h-3" />
+                                      {supplier.total_deliveries} delivery{supplier.total_deliveries !== 1 ? 's' : ''}
                                     </span>
                                   </div>
                                 </div>
@@ -1073,7 +1032,9 @@ useEffect(() => {
                                         <th className="text-left py-2 px-3 font-medium text-gray-400">Pallet ID</th>
                                         <th className="text-left py-2 px-3 font-medium text-gray-400">Driver</th>
                                         <th className="text-left py-2 px-3 font-medium text-gray-400">Vehicle</th>
-                                        <th className="text-left py-2 px-3 font-medium text-gray-400">Weight</th>
+                                        <th className="text-left py-2 px-3 font-medium text-gray-400">Fuerte</th>
+                                        <th className="text-left py-2 px-3 font-medium text-gray-400">Hass</th>
+                                        <th className="text-left py-2 px-3 font-medium text-gray-400">Total</th>
                                         <th className="text-left py-2 px-3 font-medium text-gray-400">Date</th>
                                         <th className="text-left py-2 px-3 font-medium text-gray-400">Status</th>
                                       </tr>
@@ -1084,6 +1045,18 @@ useEffect(() => {
                                           <td className="py-2 px-3 font-mono">{record.pallet_id}</td>
                                           <td className="py-2 px-3">{record.driver_name}</td>
                                           <td className="py-2 px-3 font-mono">{record.vehicle_plate}</td>
+                                          <td className="py-2 px-3">
+                                            <div className="flex flex-col">
+                                              <span className="font-medium text-green-300">{record.fuerte_weight.toFixed(2)} kg</span>
+                                              <span className="text-xs text-gray-400">{record.fuerte_crates} crates</span>
+                                            </div>
+                                          </td>
+                                          <td className="py-2 px-3">
+                                            <div className="flex flex-col">
+                                              <span className="font-medium text-purple-300">{record.hass_weight.toFixed(2)} kg</span>
+                                              <span className="text-xs text-gray-400">{record.hass_crates} crates</span>
+                                            </div>
+                                          </td>
                                           <td className="py-2 px-3">
                                             <span className="font-bold text-white">{record.total_weight.toFixed(2)}</span> kg
                                           </td>
@@ -1106,39 +1079,54 @@ useEffect(() => {
                                 </div>
                               </div>
                               
-                              <div className="mb-4">
-                                <h5 className="font-medium text-sm text-gray-300 mb-2">Fruit Varieties Summary</h5>
-                                <div className="grid grid-cols-2 gap-3">
-                                  {supplier.records.flatMap(record => record.fruit_varieties).reduce((acc, variety) => {
-                                    const existing = acc.find(v => v.name === variety.name);
-                                    if (existing) {
-                                      existing.weight += variety.weight;
-                                    } else {
-                                      acc.push({ ...variety });
-                                    }
-                                    return acc;
-                                  }, [] as FruitVariety[]).map((variety, index) => (
-                                    <div key={index} className="border border-gray-800 rounded p-3 bg-gray-900">
-                                      <div className="flex items-center justify-between">
-                                        <span className="font-medium text-white">{variety.name}</span>
-                                        <span className="font-bold text-blue-400">{variety.weight.toFixed(2)} kg</span>
-                                      </div>
-                                      {variety.crates > 0 && (
-                                        <div className="text-sm text-gray-400 mt-1">
-                                          {variety.crates} crate{variety.crates !== 1 ? 's' : ''}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
+                              <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div className="border border-green-800 rounded p-3 bg-green-900/20">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h6 className="font-medium text-green-300 flex items-center gap-2">
+                                      <Apple className="w-4 h-4" />
+                                      Fuerte Total
+                                    </h6>
+                                    <span className="font-bold text-green-200">{supplier.total_fuerte_weight.toFixed(2)} kg</span>
+                                  </div>
+                                  <div className="text-sm text-green-400">
+                                    {supplier.total_fuerte_crates} crates across {supplier.total_deliveries} deliveries
+                                  </div>
+                                  <div className="mt-2 text-xs text-gray-400">
+                                    Avg: {(supplier.total_fuerte_weight / supplier.total_deliveries).toFixed(2)} kg per delivery
+                                  </div>
+                                </div>
+                                
+                                <div className="border border-purple-800 rounded p-3 bg-purple-900/20">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h6 className="font-medium text-purple-300 flex items-center gap-2">
+                                      <Apple className="w-4 h-4" />
+                                      Hass Total
+                                    </h6>
+                                    <span className="font-bold text-purple-200">{supplier.total_hass_weight.toFixed(2)} kg</span>
+                                  </div>
+                                  <div className="text-sm text-purple-400">
+                                    {supplier.total_hass_crates} crates across {supplier.total_deliveries} deliveries
+                                  </div>
+                                  <div className="mt-2 text-xs text-gray-400">
+                                    Avg: {(supplier.total_hass_weight / supplier.total_deliveries).toFixed(2)} kg per delivery
+                                  </div>
                                 </div>
                               </div>
                               
-                              <div className="mt-4 pt-4 border-t border-gray-800 text-sm text-gray-400">
-                                <div className="flex justify-between">
-                                  <span>Average weight per delivery:</span>
-                                  <span className="font-semibold text-white">
-                                    {(supplier.total_weight / supplier.total_deliveries).toFixed(2)} kg
-                                  </span>
+                              <div className="mt-4 pt-4 border-t border-gray-800">
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <div className="text-gray-400">Total Weight</div>
+                                    <div className="font-bold text-xl text-white">{supplier.total_weight.toFixed(2)} kg</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-gray-400">Total Crates</div>
+                                    <div className="font-bold text-xl text-white">{supplier.total_fuerte_crates + supplier.total_hass_crates}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-gray-400">Avg per Delivery</div>
+                                    <div className="font-bold text-xl text-white">{(supplier.total_weight / supplier.total_deliveries).toFixed(2)} kg</div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -1154,7 +1142,6 @@ useEffect(() => {
         </Tabs>
       </div>
       
-      {/* Right Column: Weight Capture Form */}
       <div className="lg:col-span-1">
         <Card>
           <CardHeader>
@@ -1163,7 +1150,7 @@ useEffect(() => {
               Weight Capture Form
             </CardTitle>
             <CardDescription>
-              Fill in supplier details and weight information
+              Enter Fuerte and Hass weights separately
             </CardDescription>
           </CardHeader>
           
@@ -1175,9 +1162,7 @@ useEffect(() => {
                   <TabsTrigger value="weight">Weight Information</TabsTrigger>
                 </TabsList>
                 
-                {/* Supplier Details Tab */}
                 <TabsContent value="supplier" className="space-y-4 pt-4">
-                  {/* Auto-filled driver details (read-only) */}
                   <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
                     <Label className="text-sm font-medium mb-3 block">Auto-filled Driver Details</Label>
                     <div className="grid grid-cols-2 gap-4">
@@ -1200,7 +1185,6 @@ useEffect(() => {
                     </div>
                   </div>
                   
-                  {/* Supplier details to be filled manually */}
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -1239,168 +1223,224 @@ useEffect(() => {
                   </div>
                 </TabsContent>
                 
-                {/* Weight Information Tab */}
                 <TabsContent value="weight" className="space-y-4 pt-4">
-                  {/* Auto-generated pallet ID */}
                   <div className="space-y-2">
                     <Label htmlFor="pallet_id">Pallet ID (Auto-generated) *</Label>
                     <Input
                       id="pallet_id"
-                      value={formData.pallet_id}
+                      value={formData.pallet_id || generatePalletId()}
                       readOnly
                       className="bg-black text-white font-mono font-bold"
                     />
-                    <div className="text-xs text-black-900">
-                    </div>
                   </div>
                   
-                  {/* Fruit Varieties with Weight */}
                   <div className="space-y-4">
                     <div>
                       <Label className="flex items-center gap-2 mb-3">
-                        <Package className="w-4 h-4" />
-                        Fruit Varieties with Weight *
+                        <Apple className="w-4 h-4 text-green-500" />
+                        Fuerte Avocado Details
                       </Label>
                       
-                      {/* Add new fruit variety */}
-                      <div className="bg-black-50 p-4 rounded-lg mb-4">
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="space-y-1">
-                            <Label htmlFor="fruit-name" className="text-xs">Fruit Variety</Label>
+                      <div className="border rounded-lg p-4 bg-black-50 border-green-200">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="fuerte_weight" className="text-sm">
+                              Weight (kg) *
+                            </Label>
                             <Input
-                              id="fruit-name"
-                              value={currentFruitName}
-                              onChange={(e) => setCurrentFruitName(e.target.value)}
-                              placeholder=""
-                              className="h-8"
-                            />
-                          </div>
-                          
-                          <div className="space-y-1">
-                            <Label htmlFor="fruit-weight" className="text-xs">Weight (kg)</Label>
-                            <Input
-                              id="fruit-weight"
+                              id="fuerte_weight"
                               type="number"
                               step="0.01"
                               min="0"
-                              value={currentFruitWeight}
-                              onChange={(e) => setCurrentFruitWeight(e.target.value)}
-                              placeholder=""
-                              className="h-8"
+                              value={formData.fuerte_weight}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // Only allow numbers and decimal points
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                  setFormData(prev => ({ 
+                                    ...prev, 
+                                    fuerte_weight: value 
+                                  }));
+                                }
+                              }}
+                              placeholder="0.00"
+                              className="h-10"
                             />
                           </div>
                           
-                          <div className="space-y-1">
-                            <Label htmlFor="fruit-crates" className="text-xs">Crates in</Label>
+                          <div className="space-y-2">
+                            <Label htmlFor="fuerte_crates" className="text-sm">
+                              Number of Crates *
+                            </Label>
                             <Input
-                              id="fruit-crates"
+                              id="fuerte_crates"
                               type="number"
                               min="0"
-                              value={currentFruitCrates}
-                              onChange={(e) => setCurrentFruitCrates(e.target.value)}
-                              placeholder=""
-                              className="h-8"
+                              value={formData.fuerte_crates}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // Only allow whole numbers
+                                if (value === '' || /^\d*$/.test(value)) {
+                                  setFormData(prev => ({ 
+                                    ...prev, 
+                                    fuerte_crates: value 
+                                  }));
+                                }
+                              }}
+                              placeholder="0"
+                              className="h-10"
                             />
                           </div>
                         </div>
-                        <Button
-                          type="button"
-                          onClick={handleAddFruitVariety}
-                          size="sm"
-                          className="mt-3 gap-1"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Add Fruit Variety
-                        </Button>
+                        
+                        {parseFloat(formData.fuerte_weight || '0') > 0 && (
+                          <div className="mt-3 text-sm text-green-700 flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>
+                              Fuerte: 
+                              <span className="font-bold ml-1">
+                                {parseFloat(formData.fuerte_weight || '0').toFixed(2)} kg
+                              </span> 
+                              in 
+                              <span className="font-bold ml-1">
+                                {parseInt(formData.fuerte_crates || '0')} 
+                              </span> 
+                              crates
+                            </span>
+                          </div>
+                        )}
                       </div>
+                    </div>
+                    
+                    <div>
+                      <Label className="flex items-center gap-2 mb-3">
+                        <Apple className="w-4 h-4 text-purple-500" />
+                        Hass Avocado Details
+                      </Label>
                       
-                      {/* Display added fruit varieties */}
-                      {formData.fruit_varieties.length > 0 ? (
-                        <div className="space-y-3">
-                          {/* Summary */}
-                          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                              <div>
-                                <span className="text-gray-700">Total Fruit Weight:</span>
-                                <span className="font-bold ml-2 text-blue-700">{totalFruitWeight.toFixed(2)} kg</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-700">Total Crates:</span>
-                                <span className="font-bold ml-2 text-blue-700">{totalCrates}</span>
-                              </div>
-                            </div>
+                      <div className="border rounded-lg p-4 bg-black-50 border-purple-200">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="hass_weight" className="text-sm">
+                              Weight (kg) *
+                            </Label>
+                            <Input
+                              id="hass_weight"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={formData.hass_weight}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                  setFormData(prev => ({ 
+                                    ...prev, 
+                                    hass_weight: value 
+                                  }));
+                                }
+                              }}
+                              placeholder="0.00"
+                              className="h-10"
+                            />
                           </div>
                           
-                          {/* Fruit Varieties List */}
                           <div className="space-y-2">
-                            {formData.fruit_varieties.map((variety, index) => (
-                              <div key={index} className="border rounded-lg p-3 bg-back">
-                                <div className="flex items-center justify-between mb-3">
-                                  <div className="font-medium flex items-center gap-2">
-                                    <Package className="w-4 h-4 text-primary" />
-                                    {variety.name}
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleRemoveFruitVariety(index)}
-                                    className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-1">
-                                    <Label htmlFor={`fruit-weight-${index}`} className="text-xs">
-                                      Weight (kg)
-                                    </Label>
-                                    <Input
-                                      id={`fruit-weight-${index}`}
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={variety.weight || ''}
-                                      onChange={(e) => handleFruitWeightChange(index, e.target.value)}
-                                      required
-                                      placeholder="0.00"
-                                      className="h-8"
-                                    />
-                                  </div>
-                                  
-                                  <div className="space-y-1">
-                                    <Label htmlFor={`fruit-crates-${index}`} className="text-xs">
-                                      Number of Crates
-                                    </Label>
-                                    <Input
-                                      id={`fruit-crates-${index}`}
-                                      type="number"
-                                      min="0"
-                                      value={variety.crates || ''}
-                                      onChange={(e) => handleFruitCratesChange(index, e.target.value)}
-                                      placeholder="0"
-                                      className="h-8"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
+                            <Label htmlFor="hass_crates" className="text-sm">
+                              Number of Crates *
+                            </Label>
+                            <Input
+                              id="hass_crates"
+                              type="number"
+                              min="0"
+                              value={formData.hass_crates}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d*$/.test(value)) {
+                                  setFormData(prev => ({ 
+                                    ...prev, 
+                                    hass_crates: value 
+                                  }));
+                                }
+                              }}
+                              placeholder="0"
+                              className="h-10"
+                            />
                           </div>
                         </div>
-                      ) : (
-                        <div className="text-center py-6 border-2 border-dashed border-black-200 rounded-lg">
-                          <Package className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                          <p className="text-gray-500">No fruit varieties added yet</p>
-                          <p className="text-sm text-gray-400 mt-1">
-                            Add fruit varieties above with their weights
-                          </p>
+                        
+                        {parseFloat(formData.hass_weight || '0') > 0 && (
+                          <div className="mt-3 text-sm text-purple-700 flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>
+                              Hass: 
+                              <span className="font-bold ml-1">
+                                {parseFloat(formData.hass_weight || '0').toFixed(2)} kg
+                              </span> 
+                              in 
+                              <span className="font-bold ml-1">
+                                {parseInt(formData.hass_crates || '0')} 
+                              </span> 
+                              crates
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm font-medium text-blue-700 mb-1">Total Fruit Weight</div>
+                          <div className="text-2xl font-bold text-blue-800">
+                            {(
+                              parseFloat(formData.fuerte_weight || '0') + 
+                              parseFloat(formData.hass_weight || '0')
+                            ).toFixed(2)} kg
+                          </div>
+                          <div className="text-xs text-blue-600 mt-1">
+                            Fuerte: {parseFloat(formData.fuerte_weight || '0').toFixed(2)}kg + 
+                            Hass: {parseFloat(formData.hass_weight || '0').toFixed(2)}kg
+                          </div>
                         </div>
-                      )}
+                        
+                        <div>
+                          <div className="text-sm font-medium text-blue-700 mb-1">Total Crates</div>
+                          <div className="text-2xl font-bold text-blue-800">
+                            {parseInt(formData.fuerte_crates || '0') + parseInt(formData.hass_crates || '0')}
+                          </div>
+                          <div className="text-xs text-blue-600 mt-1">
+                            Fuerte: {parseInt(formData.fuerte_crates || '0')} + 
+                            Hass: {parseInt(formData.hass_crates || '0')}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-blue-200">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Variety Breakdown:</span>
+                          <div className="flex gap-4">
+                            {parseFloat(formData.fuerte_weight || '0') > 0 && (
+                              <span className="text-green-700 font-medium">
+                                Fuerte: {(
+                                  (parseFloat(formData.fuerte_weight || '0') / 
+                                  (parseFloat(formData.fuerte_weight || '0') + parseFloat(formData.hass_weight || '0')) * 100) || 0
+                                ).toFixed(1)}%
+                              </span>
+                            )}
+                            {parseFloat(formData.hass_weight || '0') > 0 && (
+                              <span className="text-purple-700 font-medium">
+                                Hass: {(
+                                  (parseFloat(formData.hass_weight || '0') / 
+                                  (parseFloat(formData.fuerte_weight || '0') + parseFloat(formData.hass_weight || '0')) * 100) || 0
+                                ).toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
-                  {/* Pictorial Evidence */}
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2">
                       <Camera className="w-4 h-4" />
@@ -1416,13 +1456,24 @@ useEffect(() => {
                         Image uploaded successfully
                       </div>
                     )}
-                  </div> 
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes (Optional)</Label>
+                    <Textarea
+                      id="notes"
+                      value={formData.notes}
+                      onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                      placeholder="Any additional notes or comments..."
+                      rows={3}
+                    />
+                  </div>
                 </TabsContent>
               </Tabs>
               
               <div className="flex justify-between items-center pt-4 border-t">
                 <div className="text-sm">
-                  {selectedSupplier ? (
+                  {formData.driver_name ? (
                     <div className="space-y-1">
                       <span className="flex items-center gap-2 text-blue-600">
                         <CheckCircle className="w-4 h-4" />
@@ -1436,11 +1487,7 @@ useEffect(() => {
                   ) : (
                     <div className="space-y-1">
                       <span className="text-amber-600 flex items-center gap-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10" />
-                          <line x1="12" y1="8" x2="12" y2="12" />
-                          <line x1="12" y1="16" x2="12.01" y2="16" />
-                        </svg>
+                        <AlertCircle className="w-4 h-4" />
                         Select a checked-in supplier from the left panel
                       </span>
                       <span className="text-gray-500 text-xs">
@@ -1452,7 +1499,15 @@ useEffect(() => {
                 
                 <Button
                   type="submit"
-                  disabled={isLoading || !formData.supplier_name || !formData.supplier_phone || !formData.region || !formData.pallet_id || formData.fruit_varieties.length === 0}
+                  disabled={
+                    isLoading || 
+                    !formData.supplier_name || 
+                    !formData.supplier_phone || 
+                    !formData.region || 
+                    !formData.pallet_id || 
+                    (parseFloat(formData.fuerte_weight || '0') <= 0 && parseFloat(formData.hass_weight || '0') <= 0) ||
+                    (parseInt(formData.fuerte_crates || '0') <= 0 && parseInt(formData.hass_crates || '0') <= 0)
+                  }
                   className="gap-2 bg-green-600 hover:bg-green-700"
                 >
                   {isLoading ? (
@@ -1465,7 +1520,8 @@ useEffect(() => {
               </div>
               
               <div className="text-xs text-gray-500 pt-2">
-                <p>* Required fields. All weight entries are logged and cannot be modified after submission.</p>
+                <p>* Required fields. Enter weight and crates for Fuerte and/or Hass varieties.</p>
+                <p className="mt-1">At least one variety must have weight &gt; 0 and crates &gt; 0</p>
               </div>
             </form>
           </CardContent>

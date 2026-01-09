@@ -160,6 +160,9 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'inventory.packaging', name: 'Manage Packaging', description: 'Manage packaging materials', category: 'Inventory' },
   { id: 'inventory.reports', name: 'Generate Reports', description: 'Generate inventory reports', category: 'Inventory' },
   
+  // Counting Permission - NEW
+  { id: 'counting.perform', name: 'Perform Counting', description: 'Perform warehouse counting operations', category: 'Inventory' },
+  
   // Utility Management
   { id: 'utilities.view', name: 'View Utilities', description: 'View utility consumption data', category: 'Utilities' },
   { id: 'utilities.record', name: 'Record Readings', description: 'Record utility meter readings', category: 'Utilities' },
@@ -248,6 +251,7 @@ const PREDEFINED_ROLES = [
       'inventory.manage',
       'inventory.packaging',
       'inventory.reports',
+      'counting.perform', // NEW: Added counting permission
       'utilities.view',
       'utilities.record',
       
@@ -279,6 +283,7 @@ const PREDEFINED_ROLES = [
       'cold_room.view',
       'cold_room.temperature',
       'inventory.view',
+      'counting.perform', // NEW: Added counting permission
       'shipments.view',
       
       // Employee Management Permissions (Limited)
@@ -414,6 +419,7 @@ const PREDEFINED_ROLES = [
       'cold_room.view',
       'qc.view',
       'inventory.view',
+      'counting.perform', // NEW: Added counting permission
     ]
   },
   {
@@ -429,7 +435,7 @@ const PREDEFINED_ROLES = [
       'loading.view',
       'suppliers.view',
       'customers.view',
-      'inventory.view',
+      'inventory.view', // Has inventory.view but NOT counting.perform
       'utilities.view',
       'employees.view',
       
@@ -1676,6 +1682,7 @@ const createNewUser = async () => {
                                 if (permission.id.includes('attendance')) return ListChecks;
                                 if (permission.id.includes('overview')) return BarChart;
                                 if (permission.id.includes('employees')) return Users;
+                                if (permission.id.includes('counting')) return ListChecks; // New icon for counting
                                 return Key;
                               };
                               
@@ -1762,6 +1769,7 @@ const createNewUser = async () => {
                                     if (permission.id.includes('employees.export')) return Download;
                                     if (permission.id.includes('employees.attendance')) return Clock;
                                     if (permission.id.includes('employees')) return UserCog;
+                                    if (permission.id.includes('counting')) return ListChecks; // New icon for counting
                                     return Key;
                                   };
                                   
@@ -1878,6 +1886,7 @@ const createNewUser = async () => {
                       if (permission.id.includes('attendance')) return ListChecks;
                       if (permission.id.includes('overview')) return BarChart;
                       if (permission.id.includes('employees')) return Users;
+                      if (permission.id.includes('counting')) return ListChecks; // New icon for counting
                       return Key;
                     };
                     
@@ -2012,6 +2021,7 @@ const createNewUser = async () => {
                       if (permission.id.includes('attendance')) return ListChecks;
                       if (permission.id.includes('overview')) return BarChart;
                       if (permission.id.includes('employees')) return Users;
+                      if (permission.id.includes('counting')) return ListChecks; // New icon for counting
                       return Key;
                     };
                     

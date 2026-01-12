@@ -32,7 +32,8 @@ import {
   BarChart3, Users, PackageOpen, TrendingUp, AlertTriangle, Check,
   Download, FileSpreadsheet, ChevronRight, Phone, Banknote, CreditCard,
   FileText, ClipboardList, Printer, FileDown, Eye, EyeOff, Info,
-  Wallet, Smartphone, Building, Fingerprint, Apple
+  Wallet, Smartphone, Building, Fingerprint, Apple, PieChart,
+  Grid3x3, Layers, BarChart, Table as TableIcon
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -100,6 +101,12 @@ interface CountingStats {
   recent_activity: {
     last_7_days: number;
     last_30_days: number;
+  };
+  weight_summary?: {
+    total_intake_weight: number;
+    total_counted_weight: number;
+    fuerte_total_weight: number;
+    hass_total_weight: number;
   };
 }
 
@@ -182,16 +189,49 @@ interface WeightEntry {
   pallet_id: string;
 }
 
+interface SizeStats {
+  variety: 'fuerte' | 'hass';
+  boxType: '4kg' | '10kg';
+  classType: 'class1' | 'class2';
+  size: string;
+  count: number;
+}
+
+interface VarietySizeStats {
+  variety: 'fuerte' | 'hass';
+  boxType: '4kg' | '10kg';
+  size12_class1: number;
+  size12_class2: number;
+  size14_class1: number;
+  size14_class2: number;
+  size16_class1: number;
+  size16_class2: number;
+  size18_class1: number;
+  size18_class2: number;
+  size20_class1: number;
+  size20_class2: number;
+  size22_class1: number;
+  size22_class2: number;
+  size24_class1: number;
+  size24_class2: number;
+  size26_class1: number;
+  size26_class2: number;
+  size28_class1?: number;
+  size28_class2?: number;
+  size30_class1?: number;
+  size30_class2?: number;
+  size32_class1?: number;
+  size32_class2?: number;
+}
+
 const extractFruitVarieties = (entry: any): Array<{name: string, weight: number, crates: number}> => {
   const varieties: Array<{name: string, weight: number, crates: number}> = [];
   
-  // Helper to safely parse numbers
   const parseNumber = (value: any): number => {
     const num = Number(value);
     return isNaN(num) ? 0 : num;
   };
   
-  // Extract from explicit fields first
   const fuerteWeight = parseNumber(entry.fuerte_weight);
   const hassWeight = parseNumber(entry.hass_weight);
   const fuerteCrates = parseNumber(entry.fuerte_crates);
@@ -213,7 +253,6 @@ const extractFruitVarieties = (entry: any): Array<{name: string, weight: number,
     });
   }
   
-  // Try to extract from fruit_varieties field (common in weight entries)
   if (entry.fruit_varieties && Array.isArray(entry.fruit_varieties)) {
     entry.fruit_varieties.forEach((variety: any) => {
       if (variety && typeof variety === 'object') {
@@ -226,7 +265,6 @@ const extractFruitVarieties = (entry: any): Array<{name: string, weight: number,
           });
         }
       } else if (typeof variety === 'string') {
-        // Handle string format like "Fuerte:100kg"
         const match = variety.match(/(\w+):\s*(\d+(?:\.\d+)?)/i);
         if (match) {
           varieties.push({
@@ -239,7 +277,6 @@ const extractFruitVarieties = (entry: any): Array<{name: string, weight: number,
     });
   }
   
-  // Fallback: check for product field
   if (!varieties.length && entry.product) {
     const totalWeight = parseNumber(entry.total_weight || entry.fuerte_weight || entry.hass_weight);
     if (totalWeight > 0) {
@@ -251,7 +288,6 @@ const extractFruitVarieties = (entry: any): Array<{name: string, weight: number,
     }
   }
   
-  // Final fallback: use total weight
   if (!varieties.length) {
     const totalWeight = parseNumber(entry.total_weight);
     if (totalWeight > 0) {
@@ -271,6 +307,7 @@ const processingStages = [
   { id: 'quality', name: 'Quality Control', icon: Scale, description: 'Quality assessment and packability checks.', tag: 'QC Assessment' },
   { id: 'counting', name: 'Counting', icon: Calculator, description: 'Box counting and size classification.', tag: 'Box Count Form' },
   { id: 'history', name: 'History', icon: History, description: 'Completed processing records.', tag: 'Finalized' },
+  { id: 'statistics', name: 'Statistics', icon: PieChart, description: 'Detailed box size statistics.', tag: 'Analytics' },
 ];
 
 const safeToFixed = (value: any, decimals: number = 1): string => {
@@ -351,7 +388,6 @@ const getSupplierInfoFromCountingData = (countingData: any) => {
   };
 };
 
-// Helper function to check if supplier has been counted
 const isSupplierCounted = (supplierId: string, countingRecords: CountingRecord[]): boolean => {
   return countingRecords.some(record => record.supplier_id === supplierId);
 };
@@ -362,14 +398,11 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const totals = record.totals || {};
     const today = new Date();
     
-    // Create PDF
     const doc = new jsPDF('p', 'mm', 'a4');
     
-    // =========== CENTERED LOGO AND TITLE ===========
     let hasLogo = false;
     let logoHeight = 0;
     
-    // Try to load logo from various paths
     try {
       const logoPaths = [
         '/Harirlogo.svg',
@@ -391,7 +424,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
               reader.readAsDataURL(blob);
             });
             
-            // Add centered logo (18x18mm)
             doc.addImage(base64String as string, 'PNG', 91, 6, 18, 18);
             hasLogo = true;
             logoHeight = 18;
@@ -405,9 +437,8 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       console.log('Logo loading failed:', error);
     }
     
-    // If no logo found, create a centered text logo
     if (!hasLogo) {
-      doc.setFillColor(34, 139, 34); // Green
+      doc.setFillColor(34, 139, 34);
       doc.circle(100, 15, 8, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(12);
@@ -416,23 +447,19 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       logoHeight = 16;
     }
     
-    // Company name - Centered
     const startY = 30;
-    doc.setTextColor(34, 139, 34); // Green text
+    doc.setTextColor(34, 139, 34);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.text('HARIR INTERNATIONAL', 105, startY, { align: 'center' });
     
-    // Division name
     doc.setFontSize(10);
     doc.text('FRESH PRODUCE EXPORTER', 105, startY + 6, { align: 'center' });
     
-    // Green line
     doc.setDrawColor(34, 139, 34);
     doc.setLineWidth(0.5);
     doc.line(10, startY + 10, 200, startY + 10);
     
-    // =========== GRN TITLE ===========
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
@@ -440,8 +467,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     let yPos = startY + 26;
     
-    // =========== GRN DETAILS ===========
-    doc.setFillColor(248, 249, 250); // Light gray
+    doc.setFillColor(248, 249, 250);
     doc.rect(10, yPos, 190, 12, 'F');
     
     doc.setFontSize(9);
@@ -457,8 +483,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     yPos += 16;
     
-    // =========== SUPPLIER INFORMATION ===========
-    doc.setFillColor(233, 236, 239); // Light gray
+    doc.setFillColor(233, 236, 239);
     doc.rect(10, yPos, 190, 20, 'F');
     
     doc.setFontSize(9);
@@ -477,15 +502,13 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     yPos += 24;
     
-    // =========== WEIGHT SUMMARY ===========
-    doc.setFillColor(220, 252, 231); // Light green
+    doc.setFillColor(220, 252, 231);
     doc.rect(10, yPos, 190, 15, 'F');
     
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.text('Weight Summary (kg)', 15, yPos + 5);
     
-    // Calculate weights
     const fuerte4kgWeight = (record.fuerte_4kg_total || 0) * 4;
     const fuerte10kgWeight = (record.fuerte_10kg_total || 0) * 10;
     const hass4kgWeight = (record.hass_4kg_total || 0) * 4;
@@ -501,8 +524,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     yPos += 19;
     
-    // =========== DETAILED BOX SIZES ===========
-    doc.setFillColor(52, 58, 64); // Dark gray header
+    doc.setFillColor(52, 58, 64);
     doc.rect(10, yPos, 190, 8, 'F');
     
     doc.setFontSize(9);
@@ -512,7 +534,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     yPos += 15;
     
-    // Helper function to extract size counts from counting data
     const getSizeCounts = (prefix: string, boxType: string) => {
       const sizes = boxType === '4kg' 
         ? ['12', '14', '16', '18', '20', '22', '24', '26']
@@ -538,22 +559,19 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       return sizeData;
     };
 
-    // Get all size data
     const fuerte4kgSizes = getSizeCounts('fuerte', '4kg');
     const fuerte10kgSizes = getSizeCounts('fuerte', '10kg');
     const hass4kgSizes = getSizeCounts('hass', '4kg');
     const hass10kgSizes = getSizeCounts('hass', '10kg');
     
-    // =========== FUERTE 4KG DETAILED SIZES ===========
     if (fuerte4kgSizes.length > 0) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(22, 101, 52); // Dark green
+      doc.setTextColor(22, 101, 52);
       doc.text('Fuerte 4kg Boxes - Size Breakdown:', 15, yPos);
       
       yPos += 3;
       
-      // Header for sizes table
       autoTable(doc, {
         startY: yPos,
         margin: { left: 15, right: 15 },
@@ -565,7 +583,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         ]),
         theme: 'grid',
         headStyles: { 
-          fillColor: [22, 101, 52], // Green header
+          fillColor: [22, 101, 52],
           textColor: [255, 255, 255],
           fontSize: 7,
           fontStyle: 'bold'
@@ -584,18 +602,16 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       
       yPos = (doc as any).lastAutoTable.finalY + 5;
       
-      // Subtotal
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.text(`Total Fuerte 4kg: ${record.fuerte_4kg_total || 0} boxes`, 15, yPos);
       yPos += 8;
     }
 
-    // =========== FUERTE 10KG DETAILED SIZES ===========
     if (fuerte10kgSizes.length > 0) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(22, 101, 52); // Dark green
+      doc.setTextColor(22, 101, 52);
       doc.text('Fuerte 10kg Crates - Size Breakdown:', 15, yPos);
       
       yPos += 3;
@@ -611,7 +627,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         ]),
         theme: 'grid',
         headStyles: { 
-          fillColor: [22, 101, 52], // Green header
+          fillColor: [22, 101, 52],
           textColor: [255, 255, 255],
           fontSize: 7,
           fontStyle: 'bold'
@@ -630,18 +646,16 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       
       yPos = (doc as any).lastAutoTable.finalY + 5;
       
-      // Subtotal
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.text(`Total Fuerte 10kg: ${record.fuerte_10kg_total || 0} crates`, 15, yPos);
       yPos += 8;
     }
 
-    // =========== HASS 4KG DETAILED SIZES ===========
     if (hass4kgSizes.length > 0) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(124, 58, 237); // Purple
+      doc.setTextColor(124, 58, 237);
       doc.text('Hass 4kg Boxes - Size Breakdown:', 15, yPos);
       
       yPos += 3;
@@ -657,7 +671,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         ]),
         theme: 'grid',
         headStyles: { 
-          fillColor: [124, 58, 237], // Purple header
+          fillColor: [124, 58, 237],
           textColor: [255, 255, 255],
           fontSize: 7,
           fontStyle: 'bold'
@@ -676,18 +690,16 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       
       yPos = (doc as any).lastAutoTable.finalY + 5;
       
-      // Subtotal
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.text(`Total Hass 4kg: ${record.hass_4kg_total || 0} boxes`, 15, yPos);
       yPos += 8;
     }
 
-    // =========== HASS 10KG DETAILED SIZES ===========
     if (hass10kgSizes.length > 0) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(124, 58, 237); // Purple
+      doc.setTextColor(124, 58, 237);
       doc.text('Hass 10kg Crates - Size Breakdown:', 15, yPos);
       
       yPos += 3;
@@ -703,7 +715,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         ]),
         theme: 'grid',
         headStyles: { 
-          fillColor: [124, 58, 237], // Purple header
+          fillColor: [124, 58, 237],
           textColor: [255, 255, 255],
           fontSize: 7,
           fontStyle: 'bold'
@@ -722,14 +734,13 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       
       yPos = (doc as any).lastAutoTable.finalY + 5;
       
-      // Subtotal
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.text(`Total Hass 10kg: ${record.hass_10kg_total || 0} crates`, 15, yPos);
       yPos += 8;
-    }    
-    // =========== SUMMARY BOX ===========
-    doc.setFillColor(240, 253, 244); // Light green
+    }
+    
+    doc.setFillColor(240, 253, 244);
     doc.rect(10, yPos, 190, 25, 'F');
     
     doc.setFontSize(9);
@@ -740,7 +751,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     
-    // Grand Total
     const totalBoxes = (record.fuerte_4kg_total || 0) + (record.fuerte_10kg_total || 0) + 
                       (record.hass_4kg_total || 0) + (record.hass_10kg_total || 0);
     const totalWeight = totalFuerteWeight + totalHassWeight;
@@ -752,9 +762,8 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     yPos += 30;
     
-    // =========== PAYMENT INFORMATION ===========
     if (record.bank_name || record.bank_account || record.kra_pin) {
-      doc.setFillColor(249, 250, 251); // Light gray
+      doc.setFillColor(249, 250, 251);
       doc.rect(10, yPos, 190, 15, 'F');
       
       doc.setFontSize(8);
@@ -771,9 +780,8 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       yPos += 20;
     }
     
-    // =========== NOTES SECTION ===========
     if (record.notes && record.notes.trim() !== '') {
-      doc.setFillColor(255, 248, 225); // Light yellow
+      doc.setFillColor(255, 248, 225);
       doc.rect(10, yPos, 190, 15, 'F');
       
       doc.setFontSize(8);
@@ -797,32 +805,27 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       yPos = notesY + 5;
     }
     
-    // =========== SIGNATURES ===========
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
     
-    // Counting Supervisor
     doc.line(20, yPos, 90, yPos);
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.text('Counting Supervisor', 55, yPos + 3, { align: 'center' });
     doc.text('Name & Signature', 55, yPos + 6, { align: 'center' });
     
-    // Warehouse Receiver
     doc.line(120, yPos, 190, yPos);
     doc.text('Warehouse Receiver', 155, yPos + 3, { align: 'center' });
     doc.text('Name & Signature', 155, yPos + 6, { align: 'center' });
     
     yPos += 12;
     
-    // =========== FOOTER ===========
     doc.setFontSize(6);
     doc.setTextColor(128, 128, 128);
     doc.text('Harir International - Warehouse Counting System', 105, yPos, { align: 'center' });
     doc.text(`Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()} • Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 105, yPos + 3, { align: 'center' });
     doc.text('This is a computer-generated document', 105, yPos + 6, { align: 'center' });
     
-    // =========== SAVE PDF ===========
     const fileName = `Warehouse_GRN_${record.supplier_name.replace(/\s+/g, '_')}_${record.pallet_id}_${format(today, 'yyyyMMdd_HHmm')}.pdf`;
     doc.save(fileName);
     
@@ -961,11 +964,180 @@ export default function WarehousePage() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // State for collapsible sections in counting form
   const [expandedFuerteClass2, setExpandedFuerteClass2] = useState(false);
   const [expandedFuerte10kg, setExpandedFuerte10kg] = useState(false);
   const [expandedHassClass2, setExpandedHassClass2] = useState(false);
   const [expandedHass10kg, setExpandedHass10kg] = useState(false);
+
+  const [sizeStatistics, setSizeStatistics] = useState<{
+    fuerte: {
+      '4kg': VarietySizeStats;
+      '10kg': VarietySizeStats;
+    };
+    hass: {
+      '4kg': VarietySizeStats;
+      '10kg': VarietySizeStats;
+    };
+  }>({
+    fuerte: {
+      '4kg': {
+        variety: 'fuerte',
+        boxType: '4kg',
+        size12_class1: 0,
+        size12_class2: 0,
+        size14_class1: 0,
+        size14_class2: 0,
+        size16_class1: 0,
+        size16_class2: 0,
+        size18_class1: 0,
+        size18_class2: 0,
+        size20_class1: 0,
+        size20_class2: 0,
+        size22_class1: 0,
+        size22_class2: 0,
+        size24_class1: 0,
+        size24_class2: 0,
+        size26_class1: 0,
+        size26_class2: 0,
+      },
+      '10kg': {
+        variety: 'fuerte',
+        boxType: '10kg',
+        size12_class1: 0,
+        size12_class2: 0,
+        size14_class1: 0,
+        size14_class2: 0,
+        size16_class1: 0,
+        size16_class2: 0,
+        size18_class1: 0,
+        size18_class2: 0,
+        size20_class1: 0,
+        size20_class2: 0,
+        size22_class1: 0,
+        size22_class2: 0,
+        size24_class1: 0,
+        size24_class2: 0,
+        size26_class1: 0,
+        size26_class2: 0,
+        size28_class1: 0,
+        size28_class2: 0,
+        size30_class1: 0,
+        size30_class2: 0,
+        size32_class1: 0,
+        size32_class2: 0,
+      }
+    },
+    hass: {
+      '4kg': {
+        variety: 'hass',
+        boxType: '4kg',
+        size12_class1: 0,
+        size12_class2: 0,
+        size14_class1: 0,
+        size14_class2: 0,
+        size16_class1: 0,
+        size16_class2: 0,
+        size18_class1: 0,
+        size18_class2: 0,
+        size20_class1: 0,
+        size20_class2: 0,
+        size22_class1: 0,
+        size22_class2: 0,
+        size24_class1: 0,
+        size24_class2: 0,
+        size26_class1: 0,
+        size26_class2: 0,
+      },
+      '10kg': {
+        variety: 'hass',
+        boxType: '10kg',
+        size12_class1: 0,
+        size12_class2: 0,
+        size14_class1: 0,
+        size14_class2: 0,
+        size16_class1: 0,
+        size16_class2: 0,
+        size18_class1: 0,
+        size18_class2: 0,
+        size20_class1: 0,
+        size20_class2: 0,
+        size22_class1: 0,
+        size22_class2: 0,
+        size24_class1: 0,
+        size24_class2: 0,
+        size26_class1: 0,
+        size26_class2: 0,
+        size28_class1: 0,
+        size28_class2: 0,
+        size30_class1: 0,
+        size30_class2: 0,
+        size32_class1: 0,
+        size32_class2: 0,
+      }
+    }
+  });
+
+  const calculateStatsFromRecords = (records: CountingRecord[]): CountingStats => {
+    const today = new Date();
+    const last7Days = new Date();
+    last7Days.setDate(today.getDate() - 7);
+    const last30Days = new Date();
+    last30Days.setDate(today.getDate() - 30);
+
+    const filteredRecords = records.filter(record => 
+      record.status === 'pending_coldroom' || record.status === 'completed'
+    );
+
+    const recentRecords = filteredRecords.filter(record => {
+      const recordDate = new Date(record.submitted_at);
+      return recordDate >= last30Days;
+    });
+
+    const last7DaysRecords = recentRecords.filter(record => {
+      const recordDate = new Date(record.submitted_at);
+      return recordDate >= last7Days;
+    });
+
+    // Calculate totals from all records
+    const totalFuerte4kg = filteredRecords.reduce((sum, record) => sum + (record.fuerte_4kg_total || 0), 0);
+    const totalFuerte10kg = filteredRecords.reduce((sum, record) => sum + (record.fuerte_10kg_total || 0), 0);
+    const totalHass4kg = filteredRecords.reduce((sum, record) => sum + (record.hass_4kg_total || 0), 0);
+    const totalHass10kg = filteredRecords.reduce((sum, record) => sum + (record.hass_10kg_total || 0), 0);
+
+    // Calculate weight summary
+    const totalIntakeWeight = filteredRecords.reduce((sum, record) => sum + (record.total_weight || 0), 0);
+    const totalCountedWeight = filteredRecords.reduce((sum, record) => sum + (record.total_counted_weight || 0), 0);
+    const fuerteTotalWeight = totalFuerte4kg * 4 + totalFuerte10kg * 10;
+    const hassTotalWeight = totalHass4kg * 4 + totalHass10kg * 10;
+
+    // Get unique suppliers
+    const uniqueSuppliers = new Set(filteredRecords.map(record => record.supplier_name));
+    
+    // Count pending coldroom
+    const pendingColdroom = records.filter(record => 
+      record.status === 'pending_coldroom' && record.for_coldroom
+    ).length;
+
+    return {
+      total_processed: filteredRecords.length,
+      pending_coldroom: pendingColdroom,
+      total_suppliers: uniqueSuppliers.size,
+      fuerte_4kg: totalFuerte4kg,
+      fuerte_10kg: totalFuerte10kg,
+      hass_4kg: totalHass4kg,
+      hass_10kg: totalHass10kg,
+      recent_activity: {
+        last_7_days: last7DaysRecords.length,
+        last_30_days: recentRecords.length,
+      },
+      weight_summary: {
+        total_intake_weight: totalIntakeWeight,
+        total_counted_weight: totalCountedWeight,
+        fuerte_total_weight: fuerteTotalWeight,
+        hass_total_weight: hassTotalWeight,
+      }
+    };
+  };
 
   const fetchIntakeRecords = async () => {
     try {
@@ -975,7 +1147,6 @@ export default function WarehousePage() {
       const weightEntries = await response.json();
       
       const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => {
-        // Extract fruit varieties properly
         const varieties = extractFruitVarieties(entry);
         
         return {
@@ -1049,7 +1220,6 @@ export default function WarehousePage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          // Process counting records
           const processedRecords = (result.data || []).map((record: any) => {
             let counting_data = record.counting_data;
             if (typeof counting_data === 'string') {
@@ -1082,10 +1252,21 @@ export default function WarehousePage() {
           });
           
           setCountingRecords(processedRecords);
+          
+          // Calculate statistics from records
+          const calculatedStats = calculateStatsFromRecords(processedRecords);
+          setStats(calculatedStats);
+          
+          // Calculate size statistics
+          calculateSizeStatistics(processedRecords);
+          
+          return processedRecords;
         }
       }
+      return [];
     } catch (err: any) {
       console.error('Error fetching counting records:', err);
+      return [];
     } finally {
       setIsLoading(prev => ({ ...prev, counting: false }));
     }
@@ -1098,11 +1279,255 @@ export default function WarehousePage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          setStats(result.data);
+          setStats(prev => ({
+            ...prev,
+            ...result.data
+          }));
         }
       }
     } catch (err: any) {
       console.error('Error fetching stats:', err);
+    } finally {
+      setIsLoading(prev => ({ ...prev, stats: false }));
+    }
+  };
+
+  const calculateSizeStatistics = (records: CountingRecord[]) => {
+    console.log('📊 Calculating size statistics from', records.length, 'records');
+    
+    const newStats = {
+      fuerte: {
+        '4kg': {
+          variety: 'fuerte' as const,
+          boxType: '4kg' as const,
+          size12_class1: 0,
+          size12_class2: 0,
+          size14_class1: 0,
+          size14_class2: 0,
+          size16_class1: 0,
+          size16_class2: 0,
+          size18_class1: 0,
+          size18_class2: 0,
+          size20_class1: 0,
+          size20_class2: 0,
+          size22_class1: 0,
+          size22_class2: 0,
+          size24_class1: 0,
+          size24_class2: 0,
+          size26_class1: 0,
+          size26_class2: 0,
+        },
+        '10kg': {
+          variety: 'fuerte' as const,
+          boxType: '10kg' as const,
+          size12_class1: 0,
+          size12_class2: 0,
+          size14_class1: 0,
+          size14_class2: 0,
+          size16_class1: 0,
+          size16_class2: 0,
+          size18_class1: 0,
+          size18_class2: 0,
+          size20_class1: 0,
+          size20_class2: 0,
+          size22_class1: 0,
+          size22_class2: 0,
+          size24_class1: 0,
+          size24_class2: 0,
+          size26_class1: 0,
+          size26_class2: 0,
+          size28_class1: 0,
+          size28_class2: 0,
+          size30_class1: 0,
+          size30_class2: 0,
+          size32_class1: 0,
+          size32_class2: 0,
+        }
+      },
+      hass: {
+        '4kg': {
+          variety: 'hass' as const,
+          boxType: '4kg' as const,
+          size12_class1: 0,
+          size12_class2: 0,
+          size14_class1: 0,
+          size14_class2: 0,
+          size16_class1: 0,
+          size16_class2: 0,
+          size18_class1: 0,
+          size18_class2: 0,
+          size20_class1: 0,
+          size20_class2: 0,
+          size22_class1: 0,
+          size22_class2: 0,
+          size24_class1: 0,
+          size24_class2: 0,
+          size26_class1: 0,
+          size26_class2: 0,
+        },
+        '10kg': {
+          variety: 'hass' as const,
+          boxType: '10kg' as const,
+          size12_class1: 0,
+          size12_class2: 0,
+          size14_class1: 0,
+          size14_class2: 0,
+          size16_class1: 0,
+          size16_class2: 0,
+          size18_class1: 0,
+          size18_class2: 0,
+          size20_class1: 0,
+          size20_class2: 0,
+          size22_class1: 0,
+          size22_class2: 0,
+          size24_class1: 0,
+          size24_class2: 0,
+          size26_class1: 0,
+          size26_class2: 0,
+          size28_class1: 0,
+          size28_class2: 0,
+          size30_class1: 0,
+          size30_class2: 0,
+          size32_class1: 0,
+          size32_class2: 0,
+        }
+      }
+    };
+
+    // FIXED: Better extraction of size data
+    records.forEach(record => {
+      const countingData = record.counting_data || {};
+      const totals = record.totals || {};
+      
+      // Helper to safely get a value from counting_data or fallback to totals
+      const getValue = (key: string): number => {
+        // First try counting_data
+        let value = countingData[key];
+        if (value !== undefined && value !== null && value !== '') {
+          const num = Number(value);
+          if (!isNaN(num)) return num;
+        }
+        
+        // Fallback to check if it's a totals key
+        if (key.includes('_class') && key.includes('_size')) {
+          // Extract size from key like "fuerte_4kg_class1_size12"
+          const parts = key.split('_');
+          if (parts.length >= 5) {
+            const variety = parts[0];
+            const boxType = parts[1];
+            const classType = parts[2];
+            const size = parts[4];
+            
+            // Try to find in totals structure
+            const totalsKey = `${variety}_${boxType}_${classType}_size${size}`;
+            const totalsValue = totals[totalsKey];
+            if (totalsValue !== undefined) {
+              const num = Number(totalsValue);
+              if (!isNaN(num)) return num;
+            }
+          }
+        }
+        
+        return 0;
+      };
+
+      // Debug: Log sample data
+      if (records.indexOf(record) === 0) {
+        console.log('Sample counting_data keys:', Object.keys(countingData).filter(k => k.includes('size')));
+        console.log('Sample totals keys:', Object.keys(totals).filter(k => k.includes('size')));
+      }
+
+      // Fuerte 4kg sizes
+      for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+        const class1Key = `fuerte_4kg_class1_size${size}`;
+        const class2Key = `fuerte_4kg_class2_size${size}`;
+        
+        const class1 = getValue(class1Key);
+        const class2 = getValue(class2Key);
+        
+        newStats.fuerte['4kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+        newStats.fuerte['4kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+      }
+
+      // Fuerte 10kg sizes
+      for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+        const class1Key = `fuerte_10kg_class1_size${size}`;
+        const class2Key = `fuerte_10kg_class2_size${size}`;
+        
+        const class1 = getValue(class1Key);
+        const class2 = getValue(class2Key);
+        
+        newStats.fuerte['10kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+        newStats.fuerte['10kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+      }
+
+      // Hass 4kg sizes
+      for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+        const class1Key = `hass_4kg_class1_size${size}`;
+        const class2Key = `hass_4kg_class2_size${size}`;
+        
+        const class1 = getValue(class1Key);
+        const class2 = getValue(class2Key);
+        
+        newStats.hass['4kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+        newStats.hass['4kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+      }
+
+      // Hass 10kg sizes
+      for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+        const class1Key = `hass_10kg_class1_size${size}`;
+        const class2Key = `hass_10kg_class2_size${size}`;
+        
+        const class1 = getValue(class1Key);
+        const class2 = getValue(class2Key);
+        
+        newStats.hass['10kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+        newStats.hass['10kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+      }
+    });
+
+    // Log the calculated statistics
+    console.log('Calculated size statistics:', {
+      fuerte_4kg_total: Object.values(newStats.fuerte['4kg']).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0),
+      fuerte_10kg_total: Object.values(newStats.fuerte['10kg']).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0),
+      hass_4kg_total: Object.values(newStats.hass['4kg']).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0),
+      hass_10kg_total: Object.values(newStats.hass['10kg']).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0),
+    });
+
+    setSizeStatistics(newStats);
+    return newStats;
+  };
+
+  const fetchSizeStatistics = async () => {
+    try {
+      setIsLoading(prev => ({ ...prev, stats: true }));
+      const response = await fetch('/api/counting?action=size-stats');
+      if (response.ok) {
+        const result = await response.json();
+        console.log('API Size Statistics Result:', result);
+        if (result.success && result.data) {
+          // Ensure we have proper data structure
+          if (result.data.fuerte && result.data.hass) {
+            setSizeStatistics(result.data);
+          } else {
+            // If data structure is different, try to parse it
+            console.log('Data structure mismatch, calculating from records');
+            await fetchCountingRecords();
+          }
+        } else {
+          // Fallback to calculating from local records
+          calculateSizeStatistics(countingRecords);
+        }
+      } else {
+        // Fallback to calculating from local records
+        calculateSizeStatistics(countingRecords);
+      }
+      return sizeStatistics;
+    } catch (err: any) {
+      console.error('Error fetching size statistics:', err);
+      // Fallback to calculating from local records
+      calculateSizeStatistics(countingRecords);
+      return sizeStatistics;
     } finally {
       setIsLoading(prev => ({ ...prev, stats: false }));
     }
@@ -1135,7 +1560,7 @@ export default function WarehousePage() {
       fetchIntakeRecords(),
       fetchQualityChecks(),
       fetchCountingRecords(),
-      fetchStats()
+      fetchSizeStatistics()
     ]);
     setLastRefreshed(new Date());
   };
@@ -1171,7 +1596,6 @@ export default function WarehousePage() {
     } else {
       newExpanded.add(recordId);
       
-      // Fetch supplier details when expanding
       const record = countingRecords.find(r => r.id === recordId);
       if (record?.supplier_id) {
         await fetchSupplierDetails(record.supplier_id);
@@ -1193,7 +1617,6 @@ export default function WarehousePage() {
     setSelectedSupplier(supplier);
     setSelectedQC(qc);
     
-    // Fetch supplier details
     const details = await fetchSupplierDetails(supplier.id);
     
     setCountingForm(prev => ({
@@ -1338,14 +1761,12 @@ export default function WarehousePage() {
       localStorage.setItem('refreshColdRoom', 'true');
       console.log('✅ Set refreshColdRoom flag for cold room');
 
-      // Add the new counting record to state IMMEDIATELY
       setCountingRecords(prev => [result.data, ...prev]);
       
       setSelectedSupplier(null);
       setSelectedQC(null);
       setSelectedSupplierDetails(null);
       
-      // Reset counting form
       const resetForm: CountingFormData = {
         supplier_id: '',
         supplier_name: '',
@@ -1434,7 +1855,6 @@ export default function WarehousePage() {
         kra_pin: '',
       };
       
-      // Reset collapsible sections
       setExpandedFuerteClass2(false);
       setExpandedFuerte10kg(false);
       setExpandedHassClass2(false);
@@ -1442,7 +1862,7 @@ export default function WarehousePage() {
       
       setCountingForm(resetForm);
       
-      fetchStats();
+      fetchAllData();
       setActiveTab('history');
       
       toast({
@@ -1614,7 +2034,6 @@ export default function WarehousePage() {
 
   const downloadWarehouseGRN = async (record: CountingRecord) => {
     try {
-      // Just generate the GRN directly from the counting record
       await generateWarehouseGRN(record);
       
       toast({
@@ -1717,7 +2136,7 @@ export default function WarehousePage() {
     );
   };
 
-const renderBoxesBreakdown = (record: CountingRecord) => {
+  const renderBoxesBreakdown = (record: CountingRecord) => {
     const countingData = record.counting_data || {};
     
     const renderSizeTable = (variety: string, boxType: '4kg' | '10kg') => {
@@ -1771,90 +2190,70 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
     );
   };
 
-  const safeToFixed = (value: any, decimals: number = 2): string => {
-    const num = Number(value);
-    return isNaN(num) ? '0.'.padEnd(decimals + 2, '0') : num.toFixed(decimals);
+  const calculateTotalsFromSizeStats = () => {
+    const totals = {
+      fuerte: {
+        '4kg': {
+          class1: 0,
+          class2: 0,
+          total: 0
+        },
+        '10kg': {
+          class1: 0,
+          class2: 0,
+          total: 0
+        },
+        overall: 0
+      },
+      hass: {
+        '4kg': {
+          class1: 0,
+          class2: 0,
+          total: 0
+        },
+        '10kg': {
+          class1: 0,
+          class2: 0,
+          total: 0
+        },
+        overall: 0
+      },
+      grandTotal: 0
+    };
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+      totals.fuerte['4kg'].class1 += sizeStatistics.fuerte['4kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+      totals.fuerte['4kg'].class2 += sizeStatistics.fuerte['4kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+    }
+    totals.fuerte['4kg'].total = totals.fuerte['4kg'].class1 + totals.fuerte['4kg'].class2;
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+      totals.fuerte['10kg'].class1 += sizeStatistics.fuerte['10kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+      totals.fuerte['10kg'].class2 += sizeStatistics.fuerte['10kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+    }
+    totals.fuerte['10kg'].total = totals.fuerte['10kg'].class1 + totals.fuerte['10kg'].class2;
+    totals.fuerte.overall = totals.fuerte['4kg'].total + totals.fuerte['10kg'].total;
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+      totals.hass['4kg'].class1 += sizeStatistics.hass['4kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+      totals.hass['4kg'].class2 += sizeStatistics.hass['4kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+    }
+    totals.hass['4kg'].total = totals.hass['4kg'].class1 + totals.hass['4kg'].class2;
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+      totals.hass['10kg'].class1 += sizeStatistics.hass['10kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+      totals.hass['10kg'].class2 += sizeStatistics.hass['10kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+    }
+    totals.hass['10kg'].total = totals.hass['10kg'].class1 + totals.hass['10kg'].class2;
+    totals.hass.overall = totals.hass['4kg'].total + totals.hass['10kg'].total;
+
+    totals.grandTotal = totals.fuerte.overall + totals.hass.overall;
+
+    return totals;
   };
 
-  // Then update the renderWeightBreakdown function to use safeToFixed:
-  const renderWeightBreakdown = (record: CountingRecord) => {
-    const weightEntry = selectedSupplierDetails?.weight_entry;
-    const qualityCheck = selectedSupplierDetails?.quality_check;
-    
-    if (!weightEntry) return null;
-    
-    // Safely parse weight values with fallback to 0
-    const fuerteIntakeWeight = Number(weightEntry?.fuerte_weight) || 0;
-    const hassIntakeWeight = Number(weightEntry?.hass_weight) || 0;
-    
-    // Safely calculate counted weights with fallback to 0
-    const fuerteCountedWeight = ((record.fuerte_4kg_total || 0) + (record.fuerte_10kg_total || 0)) * ((record.fuerte_4kg_total || 0) > 0 ? 4 : 10);
-    const hassCountedWeight = ((record.hass_4kg_total || 0) + (record.hass_10kg_total || 0)) * ((record.hass_4kg_total || 0) > 0 ? 4 : 10);
-    
-    // Safely calculate rejected weights with fallback to 0
-    const fuerteRejectedWeight = qualityCheck?.fuerte_class2 ? (fuerteIntakeWeight * (Number(qualityCheck.fuerte_class2) / 100)) : 0;
-    const hassRejectedWeight = qualityCheck?.hass_class2 ? (hassIntakeWeight * (Number(qualityCheck.hass_class2) / 100)) : 0;
-    
-    // Safely get record weights with fallback to 0
-    const recordTotalWeight = Number(record.total_weight) || 0;
-    const recordTotalCountedWeight = Number(record.total_counted_weight) || 0;
-    
-    return (
-      <div className="space-y-4">
-        <div className="bg-black-50 p-4 rounded-lg">
-          <h4 className="font-semibold text-blue-800 mb-3">Weight Breakdown</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h5 className="font-medium text-green-700 mb-2">Fuerte Avocado</h5>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm">Intake Weight:</span>
-                  <span className="font-bold">{safeToFixed(fuerteIntakeWeight, 2)} kg</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Counted Weight:</span>
-                  <span className="font-bold">{safeToFixed(fuerteCountedWeight, 2)} kg</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Rejected Weight:</span>
-                  <span className="font-bold text-red-600">{safeToFixed(fuerteRejectedWeight, 2)} kg</span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <h5 className="font-medium text-purple-700 mb-2">Hass Avocado</h5>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm">Intake Weight:</span>
-                  <span className="font-bold">{safeToFixed(hassIntakeWeight, 2)} kg</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Counted Weight:</span>
-                  <span className="font-bold">{safeToFixed(hassCountedWeight, 2)} kg</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Rejected Weight:</span>
-                  <span className="font-bold text-red-600">{safeToFixed(hassRejectedWeight, 2)} kg</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-blue-200">
-            <div className="flex justify-between items-center">
-              <span className="font-bold">Total Intake Weight:</span>
-              <span className="font-bold text-lg">{safeToFixed(recordTotalWeight, 2)} kg</span>
-            </div>
-            <div className="flex justify-between items-center mt-2">
-              <span className="font-bold">Total Counted Weight:</span>
-              <span className="font-bold text-lg">{safeToFixed(recordTotalCountedWeight, 2)} kg</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const sizeTotals = calculateTotalsFromSizeStats();
 
-  // Calculate statistics
   const today = new Date();
   const todayIntakeRecords = supplierIntakeRecords.filter(record => {
     const recordDate = new Date(record.timestamp);
@@ -1935,87 +2334,158 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
             </div>
           </div>
 
-          {/* Updated Statistics with Proper Variety Display */}
+          {/* UPDATED Statistics Section - Now shows real data from counting records */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5" />
-                Today's Intake Statistics
+                Warehouse Statistics Summary
               </CardTitle>
               <CardDescription>
-                Real-time overview of today's warehouse processing activities
+                Real-time statistics from counting history and today's activities
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Total Intake Weight</div>
-                    <Scale className="w-4 h-4 text-blue-500" />
+                    <div className="text-sm text-gray-500">Total Processed</div>
+                    <History className="w-4 h-4 text-blue-500" />
                   </div>
                   <div className="text-2xl font-bold text-blue-700">
-                    {((todayFuerteWeight + todayHassWeight) / 1000).toFixed(1)} t
+                    {stats.total_processed}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                      Fuerte: {(todayFuerteWeight / 1000).toFixed(1)} t
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                      Hass: {(todayHassWeight / 1000).toFixed(1)} t
-                    </div>
+                    {stats.recent_activity.last_7_days} in last 7 days
                   </div>
                 </div>
 
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Crates Received</div>
+                    <div className="text-sm text-gray-500">Pending Cold Room</div>
                     <Package className="w-4 h-4 text-orange-500" />
                   </div>
                   <div className="text-2xl font-bold text-orange-700">
-                    {todayFuerteCrates + todayHassCrates}
+                    {stats.pending_coldroom}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                      Fuerte: {todayFuerteCrates}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                      Hass: {todayHassCrates}
-                    </div>
+                    Ready for cold room loading
                   </div>
                 </div>
 
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Suppliers Today</div>
+                    <div className="text-sm text-gray-500">Unique Suppliers</div>
                     <Users className="w-4 h-4 text-green-500" />
                   </div>
                   <div className="text-2xl font-bold text-green-700">
-                    {new Set(todayIntakeRecords.map(r => r.supplier_name)).size}
+                    {stats.total_suppliers}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    {todayIntakeRecords.length} pallets processed
+                    Processed suppliers
                   </div>
                 </div>
 
                 <div className="bg-black-50 p-4 rounded-lg border">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Pending QC</div>
-                    <Scale className="w-4 h-4 text-red-500" />
+                    <div className="text-sm text-gray-500">Today's Intake</div>
+                    <Truck className="w-4 h-4 text-purple-500" />
                   </div>
-                  <div className="text-2xl font-bold text-red-700">
-                    {todayIntakeRecords.filter(record => 
-                      !qualityChecks.some(qc => qc.weight_entry_id === record.id)
-                    ).length}
+                  <div className="text-2xl font-bold text-purple-700">
+                    {todayIntakeRecords.length}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Waiting for quality control
+                    {todayFuerteWeight + todayHassWeight} kg received
                   </div>
                 </div>
               </div>
+
+              {/* Box Totals */}
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-green-800">Fuerte Avocado Boxes</h4>
+                    <Apple className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-gray-600">4kg Boxes</div>
+                      <div className="text-2xl font-bold text-green-700">{stats.fuerte_4kg}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">10kg Crates</div>
+                      <div className="text-2xl font-bold text-green-700">{stats.fuerte_10kg}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-green-900">Total Fuerte:</span>
+                      <span className="font-bold text-lg text-green-900">
+                        {stats.fuerte_4kg + stats.fuerte_10kg} boxes
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-purple-800">Hass Avocado Boxes</h4>
+                    <Apple className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-gray-600">4kg Boxes</div>
+                      <div className="text-2xl font-bold text-purple-700">{stats.hass_4kg}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">10kg Crates</div>
+                      <div className="text-2xl font-bold text-purple-700">{stats.hass_10kg}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-purple-200">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-purple-900">Total Hass:</span>
+                      <span className="font-bold text-lg text-purple-900">
+                        {stats.hass_4kg + stats.hass_10kg} boxes
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weight Summary */}
+              {stats.weight_summary && (
+                <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                    <Scale className="w-5 h-5" />
+                    Weight Summary
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-sm text-gray-600">Total Intake Weight</div>
+                      <div className="text-xl font-bold text-blue-700">
+                        {safeToFixed(stats.weight_summary.total_intake_weight, 1)} kg
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">Total Counted Weight</div>
+                      <div className="text-xl font-bold text-blue-700">
+                        {safeToFixed(stats.weight_summary.total_counted_weight, 1)} kg
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">Weight Variance</div>
+                      <div className={`text-xl font-bold ${
+                        (stats.weight_summary.total_intake_weight - stats.weight_summary.total_counted_weight) > 0 
+                          ? 'text-red-600' 
+                          : 'text-green-600'
+                      }`}>
+                        {safeToFixed(stats.weight_summary.total_intake_weight - stats.weight_summary.total_counted_weight, 1)} kg
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -2041,11 +2511,12 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
           </Card>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-4">
+            <TabsList className="grid grid-cols-5">
               <TabsTrigger value="intake">Intake</TabsTrigger>
               <TabsTrigger value="quality">Quality Control</TabsTrigger>
               <TabsTrigger value="counting">Counting</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
+              <TabsTrigger value="statistics">Statistics</TabsTrigger>
             </TabsList>
 
             {/* Intake Tab */}
@@ -2146,7 +2617,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                   </div>
                                 </div>
                                 
-                                {/* Variety Details */}
                                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                                   {hasFuerte && (
                                     <div className="bg-black-50 p-3 rounded border">
@@ -2197,7 +2667,7 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
               </Card>
             </TabsContent>
 
-            {/* Quality Control Tab - UPDATED TO FILTER OUT COUNTED SUPPLIERS */}
+            {/* Quality Control Tab */}
             <TabsContent value="quality" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -2231,10 +2701,7 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                       <div className="space-y-3">
                         {qualityChecks
                           .filter(qc => {
-                            // Check if this supplier has been counted
                             const alreadyCounted = isSupplierCounted(qc.weight_entry_id, countingRecords);
-                            
-                            // Only show if: approved AND not already counted
                             return qc.overall_status === 'approved' && !alreadyCounted;
                           })
                           .map((qc) => {
@@ -2288,7 +2755,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                 </CollapsibleTrigger>
                                 <CollapsibleContent className="p-4 bg-black border-t">
                                   <div className="space-y-4">
-                                    {/* Supplier Intake Info */}
                                     {supplierIntake && (
                                       <div className="bg-black-50 p-3 rounded">
                                         <div className="font-medium text-gray-700 mb-2">Intake Details</div>
@@ -2321,7 +2787,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                       </div>
                                     )}
                                     
-                                    {/* Quality Check Results */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                       {hasFuerteQC && (
                                         <div className="bg-green-50 p-4 rounded border border-green-200">
@@ -2380,7 +2845,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                       )}
                                     </div>
                                     
-                                    {/* Action Button for Accepted Suppliers */}
                                     {qc.overall_status === 'approved' && supplierIntake && !alreadyCounted && (
                                       <div className="pt-4 border-t">
                                         <Button
@@ -2398,7 +2862,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                       </div>
                                     )}
 
-                                    {/* Show message if already counted */}
                                     {alreadyCounted && (
                                       <div className="pt-4 border-t">
                                         <div className="text-center p-3 bg-blue-50 rounded-lg">
@@ -2457,7 +2920,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                           </div>
                         </div>
                         
-                        {/* Variety Details */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {selectedSupplier.fuerte_weight > 0 && (
                             <div className="bg-black-50 p-3 rounded border">
@@ -2516,7 +2978,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                           </div>
                         )}
                                                 
-                        {/* Supplier Payment Details */}
                         <div className="pt-4 border-t">
                           <h4 className="font-semibold mb-3 flex items-center gap-2">
                             <Wallet className="w-4 h-4" />
@@ -2578,7 +3039,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                           </div>
                         </div>
                         
-                        {/* Supplier Information Dropdown */}
                         <Collapsible className="mt-4 border rounded-lg overflow-hidden">
                           <CollapsibleTrigger asChild>
                             <div className="flex items-center justify-between p-3 bg-black-50 hover:bg-black-100 cursor-pointer">
@@ -2652,11 +3112,9 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                   <CardContent>
                     <form onSubmit={handleSubmitCountingForm} className="space-y-6">
                       <ScrollArea className="h-[500px] pr-4">
-                        {/* Fuerte Section */}
                         <div className="mb-6">
                           <h3 className="font-semibold text-lg mb-4 text-green-700 border-b pb-2">Fuerte Avocado</h3>
                           
-                          {/* Fuerte 4kg Class 1 - DEFAULT VISIBLE */}
                           <div className="mb-6">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="font-medium text-green-600">4kg Boxes - Class 1</h4>
@@ -2671,7 +3129,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                             </div>
                           </div>
 
-                          {/* Fuerte 4kg Class 2 - COLLAPSIBLE */}
                           {renderCollapsibleSection(
                             "Fuerte 4kg Boxes - Class 2",
                             expandedFuerteClass2,
@@ -2686,13 +3143,11 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                             "Secondary quality boxes"
                           )}
 
-                          {/* Fuerte 10kg - COLLAPSIBLE */}
                           {renderCollapsibleSection(
                             "Fuerte 10kg Crates",
                             expandedFuerte10kg,
                             () => setExpandedFuerte10kg(!expandedFuerte10kg),
                             <>
-                              {/* Fuerte 10kg Class 1 */}
                               <div className="mb-4">
                                 <h5 className="font-medium mb-2">Class 1</h5>
                                 {renderSizeGrid('fuerte', '10kg', 'class1')}
@@ -2702,7 +3157,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                 </div>
                               </div>
                               
-                              {/* Fuerte 10kg Class 2 */}
                               <div className="mb-4">
                                 <h5 className="font-medium mb-2">Class 2</h5>
                                 {renderSizeGrid('fuerte', '10kg', 'class2')}
@@ -2715,7 +3169,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                             "Large crates (Class 1 & Class 2)"
                           )}
 
-                          {/* Fuerte Total Summary */}
                           <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
                             <div className="flex justify-between items-center">
                               <span className="font-semibold text-green-800">Fuerte Total 4kg:</span>
@@ -2736,11 +3189,9 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                           </div>
                         </div>
 
-                        {/* Hass Section */}
                         <div className="mb-6">
                           <h3 className="font-semibold text-lg mb-4 text-purple-700 border-b pb-2">Hass Avocado</h3>
                           
-                          {/* Hass 4kg Class 1 - DEFAULT VISIBLE */}
                           <div className="mb-6">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="font-medium text-purple-600">4kg Boxes - Class 1</h4>
@@ -2755,7 +3206,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                             </div>
                           </div>
 
-                          {/* Hass 4kg Class 2 - COLLAPSIBLE */}
                           {renderCollapsibleSection(
                             "Hass 4kg Boxes - Class 2",
                             expandedHassClass2,
@@ -2770,13 +3220,11 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                             "Secondary quality boxes"
                           )}
 
-                          {/* Hass 10kg - COLLAPSIBLE */}
                           {renderCollapsibleSection(
                             "Hass 10kg Crates",
                             expandedHass10kg,
                             () => setExpandedHass10kg(!expandedHass10kg),
                             <>
-                              {/* Hass 10kg Class 1 */}
                               <div className="mb-4">
                                 <h5 className="font-medium mb-2">Class 1</h5>
                                 {renderSizeGrid('hass', '10kg', 'class1')}
@@ -2786,7 +3234,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                 </div>
                               </div>
                               
-                              {/* Hass 10kg Class 2 */}
                               <div className="mb-4">
                                 <h5 className="font-medium mb-2">Class 2</h5>
                                 {renderSizeGrid('hass', '10kg', 'class2')}
@@ -2799,7 +3246,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                             "Large crates (Class 1 & Class 2)"
                           )}
 
-                          {/* Hass Total Summary */}
                           <div className="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
                             <div className="flex justify-between items-center">
                               <span className="font-semibold text-purple-800">Hass Total 4kg:</span>
@@ -2820,7 +3266,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                           </div>
                         </div>
 
-                        {/* Overall Summary */}
                         <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
                           <h4 className="font-semibold text-blue-800 mb-3">Overall Summary</h4>
                           <div className="grid grid-cols-2 gap-4 text-sm">
@@ -2852,7 +3297,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                           </div>
                         </div>
 
-                        {/* Notes */}
                         <div className="mt-6">
                           <Label htmlFor="notes" className="mb-2">Notes</Label>
                           <Input
@@ -3083,7 +3527,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                               </CollapsibleTrigger>
                               <CollapsibleContent className="p-4 bg-black border-t">
                                 <div className="space-y-4">
-                                  {/* Supplier Information */}
                                   <div className="bg-black p-4 rounded-lg">
                                     <h4 className="font-semibold mb-3">Supplier Information</h4>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -3121,7 +3564,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                       </div>
                                     </div>
                                     
-                                    {/* Payment Details */}
                                     <div className="mt-4 pt-4 border-t border-gray-200">
                                       <h5 className="font-semibold mb-2 text-gray-700">Payment Details</h5>
                                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -3141,7 +3583,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                     </div>
                                   </div>
 
-                                  {/* Weight Information */}
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div className="bg-black-50 p-3 rounded border">
                                       <div className="text-gray-500">Intake Weight</div>
@@ -3175,7 +3616,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                     </div>
                                   </div>
 
-                                  {/* Variety Breakdown */}
                                   <div className="bg-black-50 p-4 rounded-lg">
                                     <h4 className="font-semibold mb-3">Variety Breakdown</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3225,12 +3665,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                     </div>
                                   </div>
 
-                                  {/* Weight Breakdown (if expanded) */}
-                                  {isExpanded && selectedSupplierDetails && (
-                                    renderWeightBreakdown(record)
-                                  )}
-
-                                  {/* Boxes Breakdown */}
                                   {isExpanded && (
                                     <div>
                                       <h4 className="font-semibold mb-3">Detailed Box Breakdown</h4>
@@ -3247,7 +3681,6 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                                     </div>
                                   )}
 
-                                  {/* Action Buttons */}
                                   <div className="flex justify-between pt-4 border-t">
                                     <Button
                                       onClick={async () => {
@@ -3267,6 +3700,411 @@ const renderBoxesBreakdown = (record: CountingRecord) => {
                       </div>
                     )}
                   </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Statistics Tab - UPDATED TO SHOW REAL DATA */}
+            <TabsContent value="statistics" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PieChart className="w-5 h-5" />
+                    Box Size Statistics
+                  </CardTitle>
+                  <CardDescription>
+                    Detailed breakdown of all box sizes and classes from {countingRecords.length} counting records
+                    {isLoading.stats && <span className="ml-2">(Loading...)</span>}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-8">
+                    {/* Summary Statistics */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm text-gray-500">Total Fuerte Boxes</div>
+                          <Apple className="w-4 h-4 text-green-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-green-700">{sizeTotals.fuerte.overall}</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          <div className="flex justify-between">
+                            <span>4kg: {sizeTotals.fuerte['4kg'].total}</span>
+                            <span>10kg: {sizeTotals.fuerte['10kg'].total}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm text-gray-500">Total Hass Boxes</div>
+                          <Apple className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-purple-700">{sizeTotals.hass.overall}</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          <div className="flex justify-between">
+                            <span>4kg: {sizeTotals.hass['4kg'].total}</span>
+                            <span>10kg: {sizeTotals.hass['10kg'].total}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm text-gray-500">Class 1 Boxes</div>
+                          <CheckCircle className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-blue-700">
+                          {sizeTotals.fuerte['4kg'].class1 + sizeTotals.fuerte['10kg'].class1 + 
+                           sizeTotals.hass['4kg'].class1 + sizeTotals.hass['10kg'].class1}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">Premium Quality</div>
+                      </div>
+
+                      <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm text-gray-500">Class 2 Boxes</div>
+                          <Package className="w-4 h-4 text-yellow-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-yellow-700">
+                          {sizeTotals.fuerte['4kg'].class2 + sizeTotals.fuerte['10kg'].class2 + 
+                           sizeTotals.hass['4kg'].class2 + sizeTotals.hass['10kg'].class2}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">Standard Quality</div>
+                      </div>
+                    </div>
+
+                    {/* Fuerte Avocado Statistics */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-green-800 flex items-center gap-2">
+                        <Apple className="w-5 h-5" />
+                        Fuerte Avocado Statistics
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Fuerte 4kg Table */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="bg-green-100 p-3 border-b">
+                            <h4 className="font-semibold text-green-800">Fuerte 4kg Boxes</h4>
+                            <div className="text-sm text-green-700">
+                              Total: {sizeTotals.fuerte['4kg'].total} boxes (Class 1: {sizeTotals.fuerte['4kg'].class1}, Class 2: {sizeTotals.fuerte['4kg'].class2})
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[100px]">Size</TableHead>
+                                  <TableHead className="text-center">Class 1</TableHead>
+                                  <TableHead className="text-center">Class 2</TableHead>
+                                  <TableHead className="text-center">Total</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {['12', '14', '16', '18', '20', '22', '24', '26'].map(size => {
+                                  const class1 = sizeStatistics.fuerte['4kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+                                  const class2 = sizeStatistics.fuerte['4kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+                                  const total = class1 + class2;
+                                  
+                                  return (
+                                    <TableRow key={size}>
+                                      <TableCell className="font-medium">Size {size}</TableCell>
+                                      <TableCell className="text-center">
+                                        {class1 > 0 ? (
+                                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                                            {class1}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {class2 > 0 ? (
+                                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+                                            {class2}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center font-bold">
+                                        {total > 0 ? total : '-'}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+
+                        {/* Fuerte 10kg Table */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="bg-green-100 p-3 border-b">
+                            <h4 className="font-semibold text-green-800">Fuerte 10kg Crates</h4>
+                            <div className="text-sm text-green-700">
+                              Total: {sizeTotals.fuerte['10kg'].total} crates (Class 1: {sizeTotals.fuerte['10kg'].class1}, Class 2: {sizeTotals.fuerte['10kg'].class2})
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[100px]">Size</TableHead>
+                                  <TableHead className="text-center">Class 1</TableHead>
+                                  <TableHead className="text-center">Class 2</TableHead>
+                                  <TableHead className="text-center">Total</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'].map(size => {
+                                  const class1 = sizeStatistics.fuerte['10kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+                                  const class2 = sizeStatistics.fuerte['10kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+                                  const total = class1 + class2;
+                                  
+                                  return (
+                                    <TableRow key={size}>
+                                      <TableCell className="font-medium">Size {size}</TableCell>
+                                      <TableCell className="text-center">
+                                        {class1 > 0 ? (
+                                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                                            {class1}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {class2 > 0 ? (
+                                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+                                            {class2}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center font-bold">
+                                        {total > 0 ? total : '-'}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hass Avocado Statistics */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-purple-800 flex items-center gap-2">
+                        <Apple className="w-5 h-5" />
+                        Hass Avocado Statistics
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Hass 4kg Table */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="bg-purple-100 p-3 border-b">
+                            <h4 className="font-semibold text-purple-800">Hass 4kg Boxes</h4>
+                            <div className="text-sm text-purple-700">
+                              Total: {sizeTotals.hass['4kg'].total} boxes (Class 1: {sizeTotals.hass['4kg'].class1}, Class 2: {sizeTotals.hass['4kg'].class2})
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[100px]">Size</TableHead>
+                                  <TableHead className="text-center">Class 1</TableHead>
+                                  <TableHead className="text-center">Class 2</TableHead>
+                                  <TableHead className="text-center">Total</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {['12', '14', '16', '18', '20', '22', '24', '26'].map(size => {
+                                  const class1 = sizeStatistics.hass['4kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+                                  const class2 = sizeStatistics.hass['4kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+                                  const total = class1 + class2;
+                                  
+                                  return (
+                                    <TableRow key={size}>
+                                      <TableCell className="font-medium">Size {size}</TableCell>
+                                      <TableCell className="text-center">
+                                        {class1 > 0 ? (
+                                          <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                            {class1}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {class2 > 0 ? (
+                                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+                                            {class2}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center font-bold">
+                                        {total > 0 ? total : '-'}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+
+                        {/* Hass 10kg Table */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="bg-purple-100 p-3 border-b">
+                            <h4 className="font-semibold text-purple-800">Hass 10kg Crates</h4>
+                            <div className="text-sm text-purple-700">
+                              Total: {sizeTotals.hass['10kg'].total} crates (Class 1: {sizeTotals.hass['10kg'].class1}, Class 2: {sizeTotals.hass['10kg'].class2})
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[100px]">Size</TableHead>
+                                  <TableHead className="text-center">Class 1</TableHead>
+                                  <TableHead className="text-center">Class 2</TableHead>
+                                  <TableHead className="text-center">Total</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'].map(size => {
+                                  const class1 = sizeStatistics.hass['10kg'][`size${size}_class1` as keyof VarietySizeStats] || 0;
+                                  const class2 = sizeStatistics.hass['10kg'][`size${size}_class2` as keyof VarietySizeStats] || 0;
+                                  const total = class1 + class2;
+                                  
+                                  return (
+                                    <TableRow key={size}>
+                                      <TableCell className="font-medium">Size {size}</TableCell>
+                                      <TableCell className="text-center">
+                                        {class1 > 0 ? (
+                                          <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                            {class1}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {class2 > 0 ? (
+                                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+                                            {class2}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-gray-400">0</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-center font-bold">
+                                        {total > 0 ? total : '-'}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Debug Information */}
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <h4 className="font-semibold text-gray-800 mb-3">Data Information</h4>
+                      <div className="text-sm text-gray-600">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="font-medium">Total Counting Records:</div>
+                            <div>{countingRecords.length}</div>
+                          </div>
+                          <div>
+                            <div className="font-medium">Last Updated:</div>
+                            <div>{lastRefreshed ? format(lastRefreshed, 'PPpp') : 'Never'}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <Button
+                            onClick={() => {
+                              console.log('Debug Size Statistics:', {
+                                countingRecords: countingRecords.length,
+                                sizeStatistics,
+                                sampleRecord: countingRecords[0]?.counting_data
+                                  ? Object.keys(countingRecords[0].counting_data).filter(k => k.includes('size'))
+                                  : 'No counting_data'
+                              });
+                              toast({
+                                title: 'Debug Info Logged',
+                                description: 'Check console for size statistics details',
+                              });
+                            }}
+                            size="sm"
+                            variant="outline"
+                            className="mt-2"
+                          >
+                            Debug Size Data
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Export Button */}
+                    <div className="flex justify-center">
+                      <Button
+                        onClick={() => {
+                          const statsData = {
+                            summary: {
+                              total_records: countingRecords.length,
+                              total_fuerte_boxes: sizeTotals.fuerte.overall,
+                              total_hass_boxes: sizeTotals.hass.overall,
+                              total_class1: sizeTotals.fuerte['4kg'].class1 + sizeTotals.fuerte['10kg'].class1 + 
+                                         sizeTotals.hass['4kg'].class1 + sizeTotals.hass['10kg'].class1,
+                              total_class2: sizeTotals.fuerte['4kg'].class2 + sizeTotals.fuerte['10kg'].class2 + 
+                                         sizeTotals.hass['4kg'].class2 + sizeTotals.hass['10kg'].class2,
+                              grand_total: sizeTotals.grandTotal,
+                              generated_at: new Date().toISOString()
+                            },
+                            fuerte_4kg: sizeStatistics.fuerte['4kg'],
+                            fuerte_10kg: sizeStatistics.fuerte['10kg'],
+                            hass_4kg: sizeStatistics.hass['4kg'],
+                            hass_10kg: sizeStatistics.hass['10kg'],
+                            totals: sizeTotals,
+                            sample_size_data: countingRecords.length > 0 
+                              ? Object.keys(countingRecords[0].counting_data || {}).filter(k => k.includes('size')).slice(0, 5)
+                              : []
+                          };
+
+                          const dataStr = JSON.stringify(statsData, null, 2);
+                          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                          const url = URL.createObjectURL(dataBlob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `box_size_statistics_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.json`;
+                          link.click();
+                          URL.revokeObjectURL(url);
+
+                          toast({
+                            title: 'Statistics Exported',
+                            description: 'Box size statistics have been downloaded as JSON',
+                          });
+                        }}
+                        className="gap-2"
+                        disabled={countingRecords.length === 0}
+                      >
+                        <Download className="w-4 h-4" />
+                        Export Statistics (JSON)
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

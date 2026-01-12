@@ -10,157 +10,426 @@ export async function GET(request: NextRequest) {
     
     console.log('📡 GET /api/counting?action=', action);
     
-    if (action === 'history') {
-      // Handle history GET request - get completed records
-      const search = searchParams.get('search') || '';
-      const startDate = searchParams.get('startDate');
-      const endDate = searchParams.get('endDate');
-
-      let query = `SELECT * FROM counting_records WHERE 1=1`;
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      if (search) {
-        query += ` AND (supplier_name LIKE ? OR pallet_id LIKE ? OR region LIKE ?)`;
-        const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
-      }
-
-      if (startDate) {
-        query += ` AND DATE(submitted_at) >= ?`;
-        params.push(startDate);
-      }
-
-      if (endDate) {
-        query += ` AND DATE(submitted_at) <= ?`;
-        params.push(endDate);
-      }
-
-      query += ` ORDER BY submitted_at DESC LIMIT 100`;
-
-      const filteredRecords = await prisma.$queryRawUnsafe(query, ...params);
-      
-      // Process records to ensure counting_data and totals are properly parsed
-      const processedRecords = Array.isArray(filteredRecords) ? filteredRecords.map((record: any) => {
-        let countingData = record.counting_data;
-        if (typeof countingData === 'string') {
-          try {
-            countingData = JSON.parse(countingData);
-          } catch (e) {
-            countingData = {};
-          }
-        }
-        
-        let totals = record.totals;
-        if (typeof totals === 'string') {
-          try {
-            totals = JSON.parse(totals);
-          } catch (e) {
-            totals = {};
-          }
-        }
-        
-        return {
-          ...record,
-          counting_data: countingData,
-          totals: totals,
-          // Ensure all required fields exist
-          total_counted_weight: record.total_counted_weight || 0,
-          for_coldroom: record.for_coldroom !== undefined ? Boolean(record.for_coldroom) : true,
-          status: record.status || 'pending_coldroom',
-          driver_name: record.driver_name || '',
-          vehicle_plate: record.vehicle_plate || '',
-          bank_name: record.bank_name || '',
-          bank_account: record.bank_account || '',
-          kra_pin: record.kra_pin || ''
-        };
-      }) : [];
-      
-      return NextResponse.json({
-        success: true,
-        data: processedRecords || []
-      });
-      
-    } else if (action === 'stats') {
-      // Handle stats GET request
+    if (action === 'size-stats') {
+      // FIXED: Enhanced size statistics endpoint
       try {
-        // Get total processed records (completed status)
-        const totalProcessedResult = await prisma.$queryRaw`
-          SELECT COUNT(*) as total FROM counting_records 
+        console.log('📊 Fetching detailed size statistics...');
+        
+        // Get all counting records with valid data
+        const allRecords = await prisma.$queryRaw`
+          SELECT * FROM counting_records 
           WHERE status IN ('pending_coldroom', 'completed')
+          ORDER BY submitted_at DESC
         `;
         
-        // Get pending coldroom records
-        const pendingColdroomResult = await prisma.$queryRaw`
-          SELECT COUNT(*) as total FROM counting_records 
-          WHERE status = 'pending_coldroom' AND for_coldroom = true
-        `;
+        console.log(`Found ${Array.isArray(allRecords) ? allRecords.length : 0} records for size stats`);
         
-        // Get unique suppliers
-        const uniqueSuppliersResult = await prisma.$queryRaw`
-          SELECT COUNT(DISTINCT supplier_name) as total FROM counting_records 
-          WHERE status IN ('pending_coldroom', 'completed')
-        `;
-        
-        // Get box totals from individual columns (now we have these columns)
-        const boxTotalsResult = await prisma.$queryRaw`
-          SELECT 
-            SUM(fuerte_4kg_total) as fuerte_4kg,
-            SUM(fuerte_10kg_total) as fuerte_10kg,
-            SUM(hass_4kg_total) as hass_4kg,
-            SUM(hass_10kg_total) as hass_10kg
-          FROM counting_records 
-          WHERE status IN ('pending_coldroom', 'completed')
-        `;
-        
-        // Get recent activity (last 7 and 30 days)
-        const recentActivityResult = await prisma.$queryRaw`
-          SELECT 
-            COUNT(CASE WHEN DATE(submitted_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 END) as last_7_days,
-            COUNT(CASE WHEN DATE(submitted_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 END) as last_30_days
-          FROM counting_records
-          WHERE status IN ('pending_coldroom', 'completed')
-        `;
+        if (!Array.isArray(allRecords) || allRecords.length === 0) {
+          return NextResponse.json({
+            success: true,
+            data: {
+              fuerte: {
+                '4kg': {
+                  variety: 'fuerte',
+                  boxType: '4kg',
+                  size12_class1: 0,
+                  size12_class2: 0,
+                  size14_class1: 0,
+                  size14_class2: 0,
+                  size16_class1: 0,
+                  size16_class2: 0,
+                  size18_class1: 0,
+                  size18_class2: 0,
+                  size20_class1: 0,
+                  size20_class2: 0,
+                  size22_class1: 0,
+                  size22_class2: 0,
+                  size24_class1: 0,
+                  size24_class2: 0,
+                  size26_class1: 0,
+                  size26_class2: 0,
+                },
+                '10kg': {
+                  variety: 'fuerte',
+                  boxType: '10kg',
+                  size12_class1: 0,
+                  size12_class2: 0,
+                  size14_class1: 0,
+                  size14_class2: 0,
+                  size16_class1: 0,
+                  size16_class2: 0,
+                  size18_class1: 0,
+                  size18_class2: 0,
+                  size20_class1: 0,
+                  size20_class2: 0,
+                  size22_class1: 0,
+                  size22_class2: 0,
+                  size24_class1: 0,
+                  size24_class2: 0,
+                  size26_class1: 0,
+                  size26_class2: 0,
+                  size28_class1: 0,
+                  size28_class2: 0,
+                  size30_class1: 0,
+                  size30_class2: 0,
+                  size32_class1: 0,
+                  size32_class2: 0,
+                }
+              },
+              hass: {
+                '4kg': {
+                  variety: 'hass',
+                  boxType: '4kg',
+                  size12_class1: 0,
+                  size12_class2: 0,
+                  size14_class1: 0,
+                  size14_class2: 0,
+                  size16_class1: 0,
+                  size16_class2: 0,
+                  size18_class1: 0,
+                  size18_class2: 0,
+                  size20_class1: 0,
+                  size20_class2: 0,
+                  size22_class1: 0,
+                  size22_class2: 0,
+                  size24_class1: 0,
+                  size24_class2: 0,
+                  size26_class1: 0,
+                  size26_class2: 0,
+                },
+                '10kg': {
+                  variety: 'hass',
+                  boxType: '10kg',
+                  size12_class1: 0,
+                  size12_class2: 0,
+                  size14_class1: 0,
+                  size14_class2: 0,
+                  size16_class1: 0,
+                  size16_class2: 0,
+                  size18_class1: 0,
+                  size18_class2: 0,
+                  size20_class1: 0,
+                  size20_class2: 0,
+                  size22_class1: 0,
+                  size22_class2: 0,
+                  size24_class1: 0,
+                  size24_class2: 0,
+                  size26_class1: 0,
+                  size26_class2: 0,
+                  size28_class1: 0,
+                  size28_class2: 0,
+                  size30_class1: 0,
+                  size30_class2: 0,
+                  size32_class1: 0,
+                  size32_class2: 0,
+                }
+              }
+            },
+            totals: {
+              fuerte: {
+                '4kg': { class1: 0, class2: 0, total: 0 },
+                '10kg': { class1: 0, class2: 0, total: 0 },
+                overall: 0
+              },
+              hass: {
+                '4kg': { class1: 0, class2: 0, total: 0 },
+                '10kg': { class1: 0, class2: 0, total: 0 },
+                overall: 0
+              },
+              grandTotal: 0
+            },
+            recordCount: 0
+          });
+        }
 
-        const stats = {
-          total_processed: Array.isArray(totalProcessedResult) && totalProcessedResult[0]?.total ? parseInt(totalProcessedResult[0].total) : 0,
-          pending_coldroom: Array.isArray(pendingColdroomResult) && pendingColdroomResult[0]?.total ? parseInt(pendingColdroomResult[0].total) : 0,
-          total_suppliers: Array.isArray(uniqueSuppliersResult) && uniqueSuppliersResult[0]?.total ? parseInt(uniqueSuppliersResult[0].total) : 0,
-          fuerte_4kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.fuerte_4kg ? parseInt(boxTotalsResult[0].fuerte_4kg) : 0,
-          fuerte_10kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.fuerte_10kg ? parseInt(boxTotalsResult[0].fuerte_10kg) : 0,
-          hass_4kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.hass_4kg ? parseInt(boxTotalsResult[0].hass_4kg) : 0,
-          hass_10kg: Array.isArray(boxTotalsResult) && boxTotalsResult[0]?.hass_10kg ? parseInt(boxTotalsResult[0].hass_10kg) : 0,
-          recent_activity: {
-            last_7_days: Array.isArray(recentActivityResult) && recentActivityResult[0]?.last_7_days ? parseInt(recentActivityResult[0].last_7_days) : 0,
-            last_30_days: Array.isArray(recentActivityResult) && recentActivityResult[0]?.last_30_days ? parseInt(recentActivityResult[0].last_30_days) : 0,
+        // Initialize statistics
+        const sizeStats = {
+          fuerte: {
+            '4kg': {
+              variety: 'fuerte',
+              boxType: '4kg',
+              size12_class1: 0,
+              size12_class2: 0,
+              size14_class1: 0,
+              size14_class2: 0,
+              size16_class1: 0,
+              size16_class2: 0,
+              size18_class1: 0,
+              size18_class2: 0,
+              size20_class1: 0,
+              size20_class2: 0,
+              size22_class1: 0,
+              size22_class2: 0,
+              size24_class1: 0,
+              size24_class2: 0,
+              size26_class1: 0,
+              size26_class2: 0,
+            },
+            '10kg': {
+              variety: 'fuerte',
+              boxType: '10kg',
+              size12_class1: 0,
+              size12_class2: 0,
+              size14_class1: 0,
+              size14_class2: 0,
+              size16_class1: 0,
+              size16_class2: 0,
+              size18_class1: 0,
+              size18_class2: 0,
+              size20_class1: 0,
+              size20_class2: 0,
+              size22_class1: 0,
+              size22_class2: 0,
+              size24_class1: 0,
+              size24_class2: 0,
+              size26_class1: 0,
+              size26_class2: 0,
+              size28_class1: 0,
+              size28_class2: 0,
+              size30_class1: 0,
+              size30_class2: 0,
+              size32_class1: 0,
+              size32_class2: 0,
+            }
+          },
+          hass: {
+            '4kg': {
+              variety: 'hass',
+              boxType: '4kg',
+              size12_class1: 0,
+              size12_class2: 0,
+              size14_class1: 0,
+              size14_class2: 0,
+              size16_class1: 0,
+              size16_class2: 0,
+              size18_class1: 0,
+              size18_class2: 0,
+              size20_class1: 0,
+              size20_class2: 0,
+              size22_class1: 0,
+              size22_class2: 0,
+              size24_class1: 0,
+              size24_class2: 0,
+              size26_class1: 0,
+              size26_class2: 0,
+            },
+            '10kg': {
+              variety: 'hass',
+              boxType: '10kg',
+              size12_class1: 0,
+              size12_class2: 0,
+              size14_class1: 0,
+              size14_class2: 0,
+              size16_class1: 0,
+              size16_class2: 0,
+              size18_class1: 0,
+              size18_class2: 0,
+              size20_class1: 0,
+              size20_class2: 0,
+              size22_class1: 0,
+              size22_class2: 0,
+              size24_class1: 0,
+              size24_class2: 0,
+              size26_class1: 0,
+              size26_class2: 0,
+              size28_class1: 0,
+              size28_class2: 0,
+              size30_class1: 0,
+              size30_class2: 0,
+              size32_class1: 0,
+              size32_class2: 0,
+            }
           }
         };
 
-        console.log('📊 Counting statistics loaded:', stats);
+        // FIXED: Enhanced data extraction
+        allRecords.forEach((record: any, index: number) => {
+          // Parse counting_data
+          let countingData = record.counting_data;
+          if (typeof countingData === 'string') {
+            try {
+              countingData = JSON.parse(countingData);
+            } catch (e) {
+              console.error(`Error parsing counting_data for record ${index}:`, e);
+              countingData = {};
+            }
+          }
+          
+          // Parse totals
+          let totals = record.totals;
+          if (typeof totals === 'string') {
+            try {
+              totals = JSON.parse(totals);
+            } catch (e) {
+              console.error(`Error parsing totals for record ${index}:`, e);
+              totals = {};
+            }
+          }
 
-        return NextResponse.json({
-          success: true,
-          data: stats
+          // Debug first record
+          if (index === 0) {
+            console.log('First record counting_data keys:', Object.keys(countingData || {}).filter(k => k.includes('size')));
+            console.log('First record totals keys:', Object.keys(totals || {}).filter(k => k.includes('size')));
+          }
+
+          // Helper function to extract value from multiple sources
+          const extractValue = (key: string): number => {
+            // 1. Try counting_data first
+            if (countingData && countingData[key] !== undefined) {
+              const val = countingData[key];
+              if (typeof val === 'number') return val;
+              if (typeof val === 'string') {
+                const num = parseFloat(val);
+                if (!isNaN(num)) return num;
+              }
+            }
+            
+            // 2. Try totals
+            if (totals && totals[key] !== undefined) {
+              const val = totals[key];
+              if (typeof val === 'number') return val;
+              if (typeof val === 'string') {
+                const num = parseFloat(val);
+                if (!isNaN(num)) return num;
+              }
+            }
+            
+            // 3. Try to extract from database columns
+            const dbKey = key.replace(/_/g, '');
+            if (record[dbKey] !== undefined) {
+              const val = record[dbKey];
+              if (typeof val === 'number') return val;
+              if (typeof val === 'string') {
+                const num = parseFloat(val);
+                if (!isNaN(num)) return num;
+              }
+            }
+            
+            return 0;
+          };
+
+          // Aggregate Fuerte 4kg sizes
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+            const class1Key = `fuerte_4kg_class1_size${size}`;
+            const class2Key = `fuerte_4kg_class2_size${size}`;
+            
+            const class1 = extractValue(class1Key);
+            const class2 = extractValue(class2Key);
+            
+            sizeStats.fuerte['4kg'][`size${size}_class1`] += class1;
+            sizeStats.fuerte['4kg'][`size${size}_class2`] += class2;
+          }
+
+          // Aggregate Fuerte 10kg sizes
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+            const class1Key = `fuerte_10kg_class1_size${size}`;
+            const class2Key = `fuerte_10kg_class2_size${size}`;
+            
+            const class1 = extractValue(class1Key);
+            const class2 = extractValue(class2Key);
+            
+            sizeStats.fuerte['10kg'][`size${size}_class1`] += class1;
+            sizeStats.fuerte['10kg'][`size${size}_class2`] += class2;
+          }
+
+          // Aggregate Hass 4kg sizes
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+            const class1Key = `hass_4kg_class1_size${size}`;
+            const class2Key = `hass_4kg_class2_size${size}`;
+            
+            const class1 = extractValue(class1Key);
+            const class2 = extractValue(class2Key);
+            
+            sizeStats.hass['4kg'][`size${size}_class1`] += class1;
+            sizeStats.hass['4kg'][`size${size}_class2`] += class2;
+          }
+
+          // Aggregate Hass 10kg sizes
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+            const class1Key = `hass_10kg_class1_size${size}`;
+            const class2Key = `hass_10kg_class2_size${size}`;
+            
+            const class1 = extractValue(class1Key);
+            const class2 = extractValue(class2Key);
+            
+            sizeStats.hass['10kg'][`size${size}_class1`] += class1;
+            sizeStats.hass['10kg'][`size${size}_class2`] += class2;
+          }
         });
 
-      } catch (error) {
-        console.error('Error fetching stats:', error);
+        // Calculate totals
+        const totals = {
+          fuerte: {
+            '4kg': { class1: 0, class2: 0, total: 0 },
+            '10kg': { class1: 0, class2: 0, total: 0 },
+            overall: 0
+          },
+          hass: {
+            '4kg': { class1: 0, class2: 0, total: 0 },
+            '10kg': { class1: 0, class2: 0, total: 0 },
+            overall: 0
+          },
+          grandTotal: 0
+        };
+
+        // Calculate Fuerte totals
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+          totals.fuerte['4kg'].class1 += sizeStats.fuerte['4kg'][`size${size}_class1`] || 0;
+          totals.fuerte['4kg'].class2 += sizeStats.fuerte['4kg'][`size${size}_class2`] || 0;
+        }
+        totals.fuerte['4kg'].total = totals.fuerte['4kg'].class1 + totals.fuerte['4kg'].class2;
+        
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+          totals.fuerte['10kg'].class1 += sizeStats.fuerte['10kg'][`size${size}_class1`] || 0;
+          totals.fuerte['10kg'].class2 += sizeStats.fuerte['10kg'][`size${size}_class2`] || 0;
+        }
+        totals.fuerte['10kg'].total = totals.fuerte['10kg'].class1 + totals.fuerte['10kg'].class2;
+        totals.fuerte.overall = totals.fuerte['4kg'].total + totals.fuerte['10kg'].total;
+
+        // Calculate Hass totals
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+          totals.hass['4kg'].class1 += sizeStats.hass['4kg'][`size${size}_class1`] || 0;
+          totals.hass['4kg'].class2 += sizeStats.hass['4kg'][`size${size}_class2`] || 0;
+        }
+        totals.hass['4kg'].total = totals.hass['4kg'].class1 + totals.hass['4kg'].class2;
+        
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+          totals.hass['10kg'].class1 += sizeStats.hass['10kg'][`size${size}_class1`] || 0;
+          totals.hass['10kg'].class2 += sizeStats.hass['10kg'][`size${size}_class2`] || 0;
+        }
+        totals.hass['10kg'].total = totals.hass['10kg'].class1 + totals.hass['10kg'].class2;
+        totals.hass.overall = totals.hass['4kg'].total + totals.hass['10kg'].total;
+
+        totals.grandTotal = totals.fuerte.overall + totals.hass.overall;
+
+        console.log('📊 Detailed size statistics calculated:', {
+          recordCount: allRecords.length,
+          fuerteTotal: totals.fuerte.overall,
+          hassTotal: totals.hass.overall,
+          grandTotal: totals.grandTotal,
+          fuerte4kgSamples: {
+            size12_class1: sizeStats.fuerte['4kg'].size12_class1,
+            size14_class1: sizeStats.fuerte['4kg'].size14_class1,
+            size16_class1: sizeStats.fuerte['4kg'].size16_class1,
+          }
+        });
+
         return NextResponse.json({
           success: true,
           data: {
-            total_processed: 0,
-            pending_coldroom: 0,
-            total_suppliers: 0,
-            fuerte_4kg: 0,
-            fuerte_10kg: 0,
-            hass_4kg: 0,
-            hass_10kg: 0,
-            recent_activity: {
-              last_7_days: 0,
-              last_30_days: 0,
-            }
+            ...sizeStats,
+            totals,
+            recordCount: allRecords.length,
+            lastUpdated: new Date().toISOString()
           }
         });
+
+      } catch (error) {
+        console.error('❌ Error fetching size statistics:', error);
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to fetch size statistics: ' + (error as any).message
+        }, { status: 500 });
       }
       
     } else if (action === 'pending') {

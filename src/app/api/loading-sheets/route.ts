@@ -133,6 +133,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!body.billNumber) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Missing required field: billNumber is required' 
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!body.container) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Missing required field: container is required' 
+        },
+        { status: 400 }
+      );
+    }
+
     // Validate loading date
     const loadingDate = parseDate(body.loadingDate);
     if (!loadingDate) {
@@ -145,21 +165,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate pallets
+    if (!body.pallets || !Array.isArray(body.pallets) || body.pallets.length === 0) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'No pallets added to loading sheet' 
+        },
+        { status: 400 }
+      );
+    }
+
     // Create loading sheet with pallets in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Generate short ID (less than 20 characters)
+      // Generate short ID
       const loadingSheetId = generateShortId('ls');
       console.log('Generated loading sheet ID:', loadingSheetId, 'Length:', loadingSheetId.length);
       
       // Create the loading sheet
       const loadingSheet = await tx.loading_sheets.create({
         data: {
-          id: loadingSheetId, // Use our generated short ID
+          id: loadingSheetId,
           exporter: body.exporter,
           client: body.client || '',
           shipping_line: body.shippingLine || '',
-          bill_number: body.billNumber || `B${Date.now().toString(36).slice(-8)}`, // Short bill number
-          container: body.container || '',
+          bill_number: body.billNumber,
+          container: body.container,
           seal1: body.seal1 || '',
           seal2: body.seal2 || '',
           truck: body.truck || '',
@@ -179,37 +210,50 @@ export async function POST(request: NextRequest) {
 
       console.log(`✅ Created loading sheet: ${loadingSheet.id}`);
 
-      // Create pallet records if provided
-      if (body.pallets && Array.isArray(body.pallets) && body.pallets.length > 0) {
-        const palletData = body.pallets.map((pallet: any, index: number) => {
-          // Generate short pallet ID
-          const palletId = generateShortId('pl');
-          return {
-            id: palletId,
-            loading_sheet_id: loadingSheet.id,
-            pallet_no: pallet.palletNo || index + 1,
-            temp: pallet.temp?.toString() || '',
-            trace_code: pallet.traceCode?.toString() || '',
-            size12: Number(pallet.sizes?.size12) || 0,
-            size14: Number(pallet.sizes?.size14) || 0,
-            size16: Number(pallet.sizes?.size16) || 0,
-            size18: Number(pallet.sizes?.size18) || 0,
-            size20: Number(pallet.sizes?.size20) || 0,
-            size22: Number(pallet.sizes?.size22) || 0,
-            size24: Number(pallet.sizes?.size24) || 0,
-            size26: Number(pallet.sizes?.size26) || 0,
-            size28: Number(pallet.sizes?.size28) || 0,
-            size30: Number(pallet.sizes?.size30) || 0,
-            total: Number(pallet.total) || 0
-          };
-        });
+      // Create pallet records
+      const palletData = body.pallets.map((pallet: any, index: number) => {
+        // Get quantity from multiple possible fields
+        const quantity = Number(pallet.quantity) || 
+                        Number(pallet.totalBoxes) || 
+                        (pallet.boxes && Array.isArray(pallet.boxes) ? 
+                          pallet.boxes.reduce((sum: number, box: any) => sum + (Number(box.quantity) || 0), 0) : 
+                          0);
+        
+        // Generate short pallet ID
+        const palletId = generateShortId('pl');
+        
+        // Store cold room data in available fields
+        // temp field stores variety
+        // trace_code field stores box_type
+        // size24 field stores quantity (since it's the most common size)
+        // total field also stores quantity
+        return {
+          id: palletId,
+          loading_sheet_id: loadingSheet.id,
+          pallet_no: index + 1,
+          temp: pallet.variety || '', // Store variety in temp field
+          trace_code: pallet.box_type || '', // Store box_type in trace_code
+          size24: quantity, // Store quantity in size24
+          total: quantity, // Also store in total
+          
+          // Set other size fields to 0
+          size12: 0,
+          size14: 0,
+          size16: 0,
+          size18: 0,
+          size20: 0,
+          size22: 0,
+          size26: 0,
+          size28: 0,
+          size30: 0
+        };
+      });
 
-        await tx.loading_pallets.createMany({
-          data: palletData
-        });
+      await tx.loading_pallets.createMany({
+        data: palletData
+      });
 
-        console.log(`✅ Created ${palletData.length} pallet records`);
-      }
+      console.log(`✅ Created ${palletData.length} pallet records`);
 
       // Return the complete loading sheet with pallets
       const completeSheet = await tx.loading_sheets.findUnique({
@@ -241,6 +285,9 @@ export async function POST(request: NextRequest) {
       errorMessage = 'Database tables not set up. Please run migrations: npx prisma migrate dev';
     } else if (error.code === 'P2003') {
       errorMessage = 'Foreign key constraint failed. Please check your data.';
+    } else if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0] || 'field';
+      errorMessage = `Duplicate entry for ${field}. Bill number or ID must be unique.`;
     }
     
     return NextResponse.json(
@@ -312,25 +359,35 @@ export async function PUT(request: NextRequest) {
         // Create new pallets
         if (body.pallets.length > 0) {
           const palletData = body.pallets.map((pallet: any, index: number) => {
+            // Get quantity from multiple possible fields
+            const quantity = Number(pallet.quantity) || 
+                            Number(pallet.totalBoxes) || 
+                            (pallet.boxes && Array.isArray(pallet.boxes) ? 
+                              pallet.boxes.reduce((sum: number, box: any) => sum + (Number(box.quantity) || 0), 0) : 
+                              0);
+            
             // Generate short pallet ID
             const palletId = generateShortId('pl');
+            
             return {
               id: palletId,
               loading_sheet_id: id,
               pallet_no: pallet.palletNo || index + 1,
-              temp: pallet.temp?.toString() || '',
-              trace_code: pallet.traceCode?.toString() || '',
-              size12: Number(pallet.sizes?.size12) || 0,
-              size14: Number(pallet.sizes?.size14) || 0,
-              size16: Number(pallet.sizes?.size16) || 0,
-              size18: Number(pallet.sizes?.size18) || 0,
-              size20: Number(pallet.sizes?.size20) || 0,
-              size22: Number(pallet.sizes?.size22) || 0,
-              size24: Number(pallet.sizes?.size24) || 0,
-              size26: Number(pallet.sizes?.size26) || 0,
-              size28: Number(pallet.sizes?.size28) || 0,
-              size30: Number(pallet.sizes?.size30) || 0,
-              total: Number(pallet.total) || 0
+              temp: pallet.variety || '', // Store variety in temp field
+              trace_code: pallet.box_type || '', // Store box_type in trace_code
+              size24: quantity, // Store quantity in size24
+              total: quantity, // Also store in total
+              
+              // Set other size fields to 0
+              size12: 0,
+              size14: 0,
+              size16: 0,
+              size18: 0,
+              size20: 0,
+              size22: 0,
+              size26: 0,
+              size28: 0,
+              size30: 0
             };
           });
 
@@ -363,11 +420,18 @@ export async function PUT(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Error updating loading sheet:', error);
+    
+    let errorMessage = error.message;
+    if (error.code === 'P2025') {
+      errorMessage = 'Loading sheet not found';
+    }
+    
     return NextResponse.json(
       { 
         success: false,
         error: 'Failed to update loading sheet', 
-        details: error.message
+        details: errorMessage,
+        code: error.code
       },
       { status: 500 }
     );
@@ -400,11 +464,18 @@ export async function DELETE(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Error deleting loading sheet:', error);
+    
+    let errorMessage = error.message;
+    if (error.code === 'P2025') {
+      errorMessage = 'Loading sheet not found';
+    }
+    
     return NextResponse.json(
       { 
         success: false,
         error: 'Failed to delete loading sheet', 
-        details: error.message
+        details: errorMessage,
+        code: error.code
       },
       { status: 500 }
     );

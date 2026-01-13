@@ -355,6 +355,35 @@ model weight_entries {
   @@map("weight_entries")
 }
 
+model rejects {
+  id                     String    @id @default(cuid())
+  weight_entry_id        String?
+  pallet_id              String
+  supplier_name          String
+  driver_name            String?
+  vehicle_plate          String?
+  region                 String?
+  fuerte_weight          Decimal?  @db.Decimal(10, 2)
+  fuerte_crates          Int?      @default(0)
+  hass_weight            Decimal?  @db.Decimal(10, 2)
+  hass_crates            Int?      @default(0)
+  total_rejected_weight  Decimal?  @db.Decimal(10, 2)
+  total_rejected_crates  Int?      @default(0)
+  variance               Decimal?  @db.Decimal(10, 2)
+  reason                 String?
+  notes                  String?
+  rejected_at            DateTime  @default(now())
+  created_by             String
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  @@index([weight_entry_id])
+  @@index([pallet_id])
+  @@index([supplier_name])
+  @@index([rejected_at])
+  @@map("rejects")
+}
+
 model quality_checks {
   id                  String          @id @default(cuid()) @db.VarChar(20)
   shipment_id         String?         @db.VarChar(20)
@@ -652,6 +681,20 @@ model loading_pallets {
   id               String         @id @default(cuid()) @db.VarChar(255)
   loading_sheet_id String         @db.VarChar(255)
   pallet_no        Int
+  
+  // Cold room info (NEW FIELDS)
+  cold_room_id     String?        @db.VarChar(50)
+  original_pallet_id String?      @db.VarChar(255) // Original pallet ID from cold_room_pallets
+  variety          String?        @db.VarChar(50)
+  box_type         String?        @db.VarChar(10)
+  size             String?        @db.VarChar(20)
+  grade            String?        @db.VarChar(20)
+  quantity         Int            @default(0)
+  supplier_name    String?        @db.VarChar(255)
+  region           String?        @db.VarChar(100)
+  counting_record_id String?      @db.VarChar(255)
+  
+  // Legacy fields (keep for backward compatibility)
   temp             String?        @db.VarChar(50)
   trace_code       String?        @db.VarChar(100)
   size12           Int            @default(0)
@@ -665,9 +708,20 @@ model loading_pallets {
   size28           Int            @default(0)
   size30           Int            @default(0)
   total            Int            @default(0)
+  
+  // Timestamps
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @default(now()) @updatedAt
+  
   loading_sheets   loading_sheets @relation(fields: [loading_sheet_id], references: [id], onDelete: Cascade)
 
   @@index([loading_sheet_id], map: "loading_pallets_loading_sheet_id_fkey")
+  @@index([cold_room_id])
+  @@index([original_pallet_id])
+  @@index([counting_record_id])
+  @@index([supplier_name])
+  @@index([variety])
+  @@index([box_type])
   @@map("loading_pallets")
 }
 

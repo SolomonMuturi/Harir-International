@@ -4034,7 +4034,7 @@ export default function ColdRoomPage() {
                                               <span className="font-medium">{formatSize(size)}</span>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                              <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
+                                              <span className="font-bold text-black-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
                                                 {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
                                               </span>

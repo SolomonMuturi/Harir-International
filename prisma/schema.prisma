@@ -534,6 +534,7 @@ model cold_room_boxes {
   box_type     String @db.VarChar(10)
   size         String @db.VarChar(20)
   grade        String @db.VarChar(20)
+  loading_sheet_id     String?
   quantity     Int
   cold_room_id String @db.VarChar(50)
 

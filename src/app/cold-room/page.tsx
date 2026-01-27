@@ -22,12 +22,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
-import { 
-  Thermometer, 
-  Package, 
-  Truck, 
-  RefreshCw, 
-  Snowflake, 
+import {
+  Thermometer,
+  Package,
+  Truck,
+  RefreshCw,
+  Snowflake,
   Upload,
   AlertTriangle,
   BarChart3,
@@ -56,13 +56,17 @@ import {
   AlertCircle,
   Info,
   Palette,
-  Pallet,
   Combine,
   Trash2,
   Eye,
   EyeOff,
   ListTree,
-  Group
+  Group,
+  FileSpreadsheet,
+  CalendarDays,
+  Layers2,
+  GitBranch,
+  GitCommitVertical
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
@@ -83,6 +87,9 @@ interface ColdRoomBox {
   counting_record_id?: string;
   is_in_pallet?: boolean;
   converted_to_pallet_at?: string;
+  loading_sheet_id?: string | null;
+  converted_to_pallet_date?: string;
+  original_box_count?: number;
 }
 
 interface Pallet {
@@ -100,6 +107,9 @@ interface Pallet {
   boxes?: ColdRoomBox[];
   total_boxes?: number;
   boxes_per_pallet: number;
+  loading_sheet_id?: string | null;
+  conversion_date?: string;
+  original_box_ids?: string[];
 }
 
 interface TemperatureLog {
@@ -150,6 +160,8 @@ interface ColdRoomStats {
   hassClass210kg: number;
   lastTemperatureLogs: TemperatureLog[];
   recentRepacking: RepackingRecord[];
+  totalAvailableBoxes: number;
+  totalAssignedBoxes: number;
 }
 
 interface CountingRecord {
@@ -223,6 +235,41 @@ interface BoxSelection {
   supplier_name?: string;
   region?: string;
   is_selected: boolean;
+  loading_sheet_id?: string | null;
+  is_in_pallet?: boolean;
+}
+
+interface LoadingSheet {
+  id: string;
+  bill_number: string;
+  client: string;
+  container: string;
+  loading_date: string;
+  pallets: Array<{
+    pallet_id?: string;
+    quantity: number;
+    box_type: string;
+    variety: string;
+    size: string;
+    grade: string;
+  }>;
+  status: string;
+}
+
+interface PalletHistory {
+  id: string;
+  pallet_id: string;
+  pallet_name: string;
+  cold_room_id: string;
+  conversion_date: string;
+  box_type: string;
+  variety: string;
+  size: string;
+  grade: string;
+  boxes_converted: number;
+  original_box_ids: string[];
+  is_manual: boolean;
+  created_at: string;
 }
 
 const BOX_SIZES = [
@@ -336,7 +383,6 @@ const clearBalanceData = () => {
   localStorage.removeItem('coldRoomBalanceData');
 };
 
-// NEW FUNCTION: Check if boxes already exist in cold room
 const checkForExistingBoxes = async (
   variety: string,
   boxType: string,
@@ -362,18 +408,18 @@ const checkForExistingBoxes = async (
 export default function ColdRoomPage() {
   const { toast } = useToast();
   
-  // State for cold rooms
   const [coldRooms, setColdRooms] = useState<Array<{
     id: string;
     name: string;
     current_temperature: number;
     capacity: number;
     occupied: number;
+    available_capacity: number;
   }>>([]);
   
-  // State for cold room contents
   const [coldRoomBoxes, setColdRoomBoxes] = useState<ColdRoomBox[]>([]);
   const [pallets, setPallets] = useState<Pallet[]>([]);
+  const [palletHistory, setPalletHistory] = useState<PalletHistory[]>([]);
   const [temperatureLogs, setTemperatureLogs] = useState<TemperatureLog[]>([]);
   const [repackingRecords, setRepackingRecords] = useState<RepackingRecord[]>([]);
   const [coldRoomStats, setColdRoomStats] = useState<{
@@ -382,26 +428,26 @@ export default function ColdRoomPage() {
     coldroom2: ColdRoomStats;
   } | null>(null);
   
-  // State for counting records ready for cold room
   const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   
-  // Loading states
+  const [loadingSheets, setLoadingSheets] = useState<LoadingSheet[]>([]);
+  
   const [isLoading, setIsLoading] = useState({
     coldRooms: true,
     boxes: true,
     pallets: true,
+    palletHistory: true,
     temperature: true,
     repacking: true,
     stats: true,
     countingRecords: true,
+    loadingSheets: false,
   });
   
-  // State for forms
   const [selectedColdRoom, setSelectedColdRoom] = useState<string>('coldroom1');
   const [temperature, setTemperature] = useState<string>('');
   
-  // State for repacking form
   const [repackingForm, setRepackingForm] = useState<{
     removedBoxes: RepackingBoxForm[];
     returnedBoxes: RepackingBoxForm[];
@@ -412,10 +458,8 @@ export default function ColdRoomPage() {
     notes: '',
   });
   
-  // State for size groups
   const [sizeGroups, setSizeGroups] = useState<SizeGroup[]>([]);
   
-  // State for pallet creation
   const [palletCreation, setPalletCreation] = useState<{
     palletName: string;
     coldRoomId: string;
@@ -425,22 +469,14 @@ export default function ColdRoomPage() {
   }>({
     palletName: '',
     coldRoomId: 'coldroom1',
-    boxesPerPallet: 288, // 4kg boxes per pallet
+    boxesPerPallet: 288,
     selectedBoxes: [],
     showOnlyAvailable: true,
   });
 
-  // State for expanded pallets
   const [expandedPallets, setExpandedPallets] = useState<Set<string>>(new Set());
-  
-  // Active tab state
   const [activeTab, setActiveTab] = useState('loading');
 
-  // ===========================================
-  // DATA FETCHING FUNCTIONS
-  // ===========================================
-  
-  // Fetch cold rooms
   const fetchColdRooms = async () => {
     try {
       const response = await fetch('/api/cold-room');
@@ -453,14 +489,16 @@ export default function ColdRoomPage() {
             name: 'Cold Room 1',
             current_temperature: 5,
             capacity: 100,
-            occupied: 0
+            occupied: 0,
+            available_capacity: 0
           },
           {
             id: 'coldroom2',
             name: 'Cold Room 2',
             current_temperature: 5,
             capacity: 100,
-            occupied: 0
+            occupied: 0,
+            available_capacity: 0
           }
         ]);
         return;
@@ -479,14 +517,16 @@ export default function ColdRoomPage() {
             name: 'Cold Room 1',
             current_temperature: 5,
             capacity: 100,
-            occupied: 0
+            occupied: 0,
+            available_capacity: 0
           },
           {
             id: 'coldroom2',
             name: 'Cold Room 2',
             current_temperature: 5,
             capacity: 100,
-            occupied: 0
+            occupied: 0,
+            available_capacity: 0
           }
         ]);
       }
@@ -499,14 +539,16 @@ export default function ColdRoomPage() {
           name: 'Cold Room 1',
           current_temperature: 5,
           capacity: 100,
-          occupied: 0
+          occupied: 0,
+          available_capacity: 0
         },
         {
           id: 'coldroom2',
           name: 'Cold Room 2',
           current_temperature: 5,
           capacity: 100,
-          occupied: 0
+          occupied: 0,
+          available_capacity: 0
         }
       ]);
     } finally {
@@ -514,7 +556,6 @@ export default function ColdRoomPage() {
     }
   };
   
-  // Fetch cold room boxes
   const fetchColdRoomBoxes = async () => {
     try {
       const response = await fetch('/api/cold-room?action=boxes');
@@ -536,7 +577,10 @@ export default function ColdRoomPage() {
           region: box.region,
           counting_record_id: box.counting_record_id,
           is_in_pallet: box.is_in_pallet || false,
-          converted_to_pallet_at: box.converted_to_pallet_at
+          converted_to_pallet_at: box.converted_to_pallet_at,
+          loading_sheet_id: box.loading_sheet_id || null,
+          converted_to_pallet_date: box.converted_to_pallet_date,
+          original_box_count: box.original_box_count || 0
         }));
         setColdRoomBoxes(boxesData);
       } else {
@@ -550,7 +594,6 @@ export default function ColdRoomPage() {
     }
   };
 
-  // Fetch pallets with box details
   const fetchPallets = async () => {
     try {
       console.log('🔍 Fetching pallets with box details...');
@@ -562,7 +605,6 @@ export default function ColdRoomPage() {
       if (result.success && Array.isArray(result.data)) {
         const palletsData = await Promise.all(
           result.data.map(async (pallet: any) => {
-            // Fetch boxes for this pallet
             let boxes: ColdRoomBox[] = [];
             try {
               const boxesResponse = await fetch(`/api/cold-room?action=pallet-boxes&palletId=${pallet.id}`);
@@ -584,7 +626,10 @@ export default function ColdRoomPage() {
                   region: box.region,
                   counting_record_id: box.counting_record_id,
                   is_in_pallet: box.is_in_pallet || false,
-                  converted_to_pallet_at: box.converted_to_pallet_at
+                  converted_to_pallet_at: box.converted_to_pallet_at,
+                  loading_sheet_id: box.loading_sheet_id || null,
+                  converted_to_pallet_date: box.converted_to_pallet_date,
+                  original_box_count: box.original_box_count || 0
                 }));
               }
             } catch (error) {
@@ -607,7 +652,10 @@ export default function ColdRoomPage() {
               last_updated: pallet.last_updated,
               boxes: boxes,
               total_boxes: totalBoxes,
-              boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288)
+              boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
+              loading_sheet_id: pallet.loading_sheet_id || null,
+              conversion_date: pallet.conversion_date || pallet.created_at,
+              original_box_ids: pallet.original_box_ids || []
             };
           })
         );
@@ -626,7 +674,24 @@ export default function ColdRoomPage() {
     }
   };
 
-  // Fetch temperature logs
+  const fetchPalletHistory = async () => {
+    try {
+      const response = await fetch('/api/cold-room?action=pallet-history');
+      const result = await response.json();
+      
+      if (result.success && Array.isArray(result.data)) {
+        setPalletHistory(result.data);
+      } else {
+        setPalletHistory([]);
+      }
+    } catch (error) {
+      console.error('Error fetching pallet history:', error);
+      setPalletHistory([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, palletHistory: false }));
+    }
+  };
+
   const fetchTemperatureLogs = async () => {
     try {
       const response = await fetch('/api/cold-room?action=temperature');
@@ -645,7 +710,6 @@ export default function ColdRoomPage() {
     }
   };
   
-  // Fetch repacking records
   const fetchRepackingRecords = async () => {
     try {
       const response = await fetch('/api/cold-room?action=repacking');
@@ -664,7 +728,6 @@ export default function ColdRoomPage() {
     }
   };
   
-  // Fetch cold room statistics
   const fetchColdRoomStats = async () => {
     try {
       const response = await fetch('/api/cold-room?action=stats');
@@ -683,7 +746,6 @@ export default function ColdRoomPage() {
     }
   };
   
-  // Fetch counting records ready for cold room
   const fetchCountingRecords = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, countingRecords: true }));
     try {
@@ -775,23 +837,46 @@ export default function ColdRoomPage() {
     }
   }, [toast]);
   
-  // Fetch all data
+  const fetchLoadingSheets = async () => {
+    try {
+      setIsLoading(prev => ({ ...prev, loadingSheets: true }));
+      
+      const response = await fetch(`/api/loading-sheets?coldRoomId=${selectedColdRoom}&status=active`);
+      const result = await response.json();
+      
+      if (result.success && Array.isArray(result.data)) {
+        setLoadingSheets(result.data);
+        console.log(`📋 Loaded ${result.data.length} loading sheets with pallets from ${selectedColdRoom}`);
+      } else {
+        setLoadingSheets([]);
+      }
+    } catch (error) {
+      console.error('Error fetching loading sheets:', error);
+      setLoadingSheets([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, loadingSheets: false }));
+    }
+  };
+  
   const fetchAllData = async () => {
     try {
       setIsLoading({
         coldRooms: true,
         boxes: true,
         pallets: true,
+        palletHistory: true,
         temperature: true,
         repacking: true,
         stats: true,
         countingRecords: true,
+        loadingSheets: false,
       });
       
       await Promise.allSettled([
         fetchColdRooms(),
         fetchColdRoomBoxes(),
         fetchPallets(),
+        fetchPalletHistory(),
         fetchTemperatureLogs(),
         fetchRepackingRecords(),
         fetchColdRoomStats(),
@@ -808,7 +893,51 @@ export default function ColdRoomPage() {
     }
   };
   
-  // Process counting records into size groups
+  const calculateAvailableBoxes = (boxes: ColdRoomBox[]) => {
+    return boxes.filter(box => 
+      !box.loading_sheet_id && 
+      !box.is_in_pallet // NEW: Exclude boxes that are already in pallets
+    );
+  };
+
+  const calculateAvailablePallets = (pallets: Pallet[]) => {
+    return pallets.filter(pallet => !pallet.loading_sheet_id);
+  };
+
+  const calculateRealTimeStats = () => {
+    const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+    const availablePallets = calculateAvailablePallets(pallets);
+    
+    const totalAvailableBoxes = availableBoxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+    const totalAssignedBoxes = coldRoomBoxes
+      .filter(box => box.loading_sheet_id || box.is_in_pallet)
+      .reduce((sum, box) => sum + (box.quantity || 0), 0);
+    
+    // Calculate boxes in pallets
+    const boxesInPallets = coldRoomBoxes
+      .filter(box => box.is_in_pallet)
+      .reduce((sum, box) => sum + (box.quantity || 0), 0);
+    
+    // Calculate pallets assigned to loading sheets
+    const palletsAssigned = pallets.filter(pallet => pallet.loading_sheet_id).length;
+    
+    // Calculate boxes in pallets that are assigned to loading sheets
+    const boxesInAssignedPallets = pallets
+      .filter(pallet => pallet.loading_sheet_id)
+      .reduce((sum, pallet) => sum + (pallet.total_boxes || 0), 0);
+    
+    return {
+      totalAvailableBoxes,
+      totalAssignedBoxes,
+      availableBoxes,
+      availablePallets,
+      boxesInPallets,
+      palletsAssigned,
+      boxesInAssignedPallets,
+      totalBoxesInColdRoom: coldRoomBoxes.reduce((sum, box) => sum + (box.quantity || 0), 0)
+    };
+  };
+
   const processSizeGroups = useCallback(() => {
     if (countingRecords.length === 0) {
       setSizeGroups([]);
@@ -918,17 +1047,17 @@ export default function ColdRoomPage() {
     saveBalanceData(sizeGroupsArray);
     
   }, [selectedRecords, countingRecords]);
-  
-  // Update when selected records or counting records change
+
   useEffect(() => {
     processSizeGroups();
   }, [selectedRecords, countingRecords, processSizeGroups]);
 
-  // Initialize pallet creation boxes
   useEffect(() => {
     if (coldRoomBoxes.length > 0) {
-      const filteredBoxes = coldRoomBoxes.filter(box => 
-        !palletCreation.showOnlyAvailable || !box.is_in_pallet
+      const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+      
+      const filteredBoxes = availableBoxes.filter(box => 
+        !palletCreation.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id)
       );
       
       const boxSelections: BoxSelection[] = filteredBoxes.map(box => ({
@@ -943,7 +1072,9 @@ export default function ColdRoomPage() {
         cold_room_id: box.cold_room_id,
         supplier_name: box.supplier_name,
         region: box.region,
-        is_selected: false
+        is_selected: false,
+        loading_sheet_id: box.loading_sheet_id,
+        is_in_pallet: box.is_in_pallet
       }));
       
       setPalletCreation(prev => ({
@@ -952,12 +1083,13 @@ export default function ColdRoomPage() {
       }));
     }
   }, [coldRoomBoxes, palletCreation.showOnlyAvailable]);
-  
-  // ===========================================
-  // PALLET MANAGEMENT FUNCTIONS
-  // ===========================================
-  
-  // Toggle box selection for pallet creation
+
+  useEffect(() => {
+    if (activeTab === 'inventory' || activeTab === 'pallets') {
+      fetchLoadingSheets();
+    }
+  }, [selectedColdRoom, activeTab]);
+
   const handleToggleBoxSelection = (boxId: string) => {
     setPalletCreation(prev => {
       const updatedBoxes = prev.selectedBoxes.map(box => {
@@ -975,7 +1107,6 @@ export default function ColdRoomPage() {
     });
   };
 
-  // Update selected quantity for a box
   const handleBoxQuantityChange = (boxId: string, quantity: number) => {
     setPalletCreation(prev => {
       const updatedBoxes = prev.selectedBoxes.map(box => {
@@ -993,7 +1124,6 @@ export default function ColdRoomPage() {
     });
   };
 
-  // Calculate total boxes selected for pallet
   const calculateSelectedBoxesSummary = () => {
     const selectedBoxes = palletCreation.selectedBoxes.filter(box => box.is_selected && box.selectedQuantity > 0);
     
@@ -1005,8 +1135,6 @@ export default function ColdRoomPage() {
     
     const boxesPerPallet = palletCreation.boxesPerPallet;
     
-    // REMOVED: No more minimum requirement check
-    // Just show info about standard pallet sizes
     const suggestedPallets = Math.ceil(totalBoxes / boxesPerPallet);
     
     return {
@@ -1018,7 +1146,6 @@ export default function ColdRoomPage() {
     };
   };
 
-  // Create manual pallet
   const handleCreateManualPallet = async () => {
     const summary = calculateSelectedBoxesSummary();
     
@@ -1111,6 +1238,7 @@ export default function ColdRoomPage() {
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchPallets(),
+          fetchPalletHistory(),
           fetchColdRoomStats(),
         ]);
 
@@ -1127,13 +1255,22 @@ export default function ColdRoomPage() {
     }
   };
 
-  // Dissolve pallet
   const handleDissolvePallet = async (palletId: string, coldRoomId: string) => {
-    if (!confirm('Are you sure you want to dissolve this pallet? Boxes will be returned to available inventory.')) {
-      return;
-    }
-
     try {
+      const pallet = pallets.find(p => p.id === palletId);
+      if (pallet?.loading_sheet_id) {
+        toast({
+          title: 'Cannot dissolve pallet',
+          description: 'This pallet is assigned to a loading sheet. Remove it from the loading sheet first.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!confirm('Are you sure you want to dissolve this pallet? Boxes will be returned to available inventory.')) {
+        return;
+      }
+
       const response = await fetch('/api/cold-room', {
         method: 'POST',
         headers: {
@@ -1158,6 +1295,7 @@ export default function ColdRoomPage() {
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchPallets(),
+          fetchPalletHistory(),
           fetchColdRoomStats(),
         ]);
 
@@ -1174,7 +1312,6 @@ export default function ColdRoomPage() {
     }
   };
 
-  // Toggle pallet expansion
   const handleTogglePalletExpansion = (palletId: string) => {
     const newExpanded = new Set(expandedPallets);
     if (newExpanded.has(palletId)) {
@@ -1185,11 +1322,6 @@ export default function ColdRoomPage() {
     setExpandedPallets(newExpanded);
   };
 
-  // ===========================================
-  // COUNTING RECORDS FUNCTIONS
-  // ===========================================
-  
-  // Handle counting record selection
   const handleToggleRecordSelection = (recordId: string) => {
     const newSelected = new Set(selectedRecords);
     if (newSelected.has(recordId)) {
@@ -1209,7 +1341,6 @@ export default function ColdRoomPage() {
     setSelectedRecords(new Set());
   };
   
-  // Handle size group selection
   const handleToggleSizeGroupSelection = (index: number) => {
     const updatedGroups = [...sizeGroups];
     const group = updatedGroups[index];
@@ -1255,7 +1386,6 @@ export default function ColdRoomPage() {
     setSizeGroups(updatedGroups);
   };
   
-  // Load selected size groups to cold room - FIXED VERSION
   const handleLoadSizeGroups = async () => {
     const selectedGroups = sizeGroups.filter(group => group.selectedForLoading && group.loadingQuantity > 0);
     
@@ -1269,7 +1399,6 @@ export default function ColdRoomPage() {
     }
     
     try {
-      // NEW: Check for existing boxes to prevent duplicates
       const duplicateChecks = await Promise.all(
         selectedGroups.map(async (group) => {
           const existingCheck = await checkForExistingBoxes(
@@ -1289,7 +1418,6 @@ export default function ColdRoomPage() {
         })
       );
       
-      // Filter out groups that already exist in cold room
       const validGroups = duplicateChecks.filter(check => !check.isDuplicate);
       const duplicateGroups = duplicateChecks.filter(check => check.isDuplicate);
       
@@ -1327,7 +1455,9 @@ export default function ColdRoomPage() {
             palletId: null,
             region: group.region || '',
             countingRecordId: group.countingRecordId,
-            loadedBy: 'Warehouse Staff'
+            loadedBy: 'Warehouse Staff',
+            loading_sheet_id: null,
+            is_in_pallet: false
           });
           
           if (group.countingRecordId) {
@@ -1437,7 +1567,6 @@ export default function ColdRoomPage() {
     }
   };
 
-  // Reset balance for a specific size group
   const handleResetBalance = (uniqueKey: string) => {
     const updatedGroups = [...sizeGroups];
     const groupIndex = updatedGroups.findIndex(g => g.uniqueKey === uniqueKey);
@@ -1457,7 +1586,6 @@ export default function ColdRoomPage() {
     }
   };
   
-  // Clear all balance data
   const handleClearAllBalance = () => {
     const updatedGroups = [...sizeGroups];
     
@@ -1475,10 +1603,6 @@ export default function ColdRoomPage() {
       description: 'All loading history and balance tracking has been reset',
     });
   };
-  
-  // ===========================================
-  // TEMPERATURE FUNCTIONS
-  // ===========================================
   
   const handleRecordTemperature = async () => {
     if (!temperature) {
@@ -1527,10 +1651,6 @@ export default function ColdRoomPage() {
       });
     }
   };
-  
-  // ===========================================
-  // REPACKING FUNCTIONS
-  // ===========================================
   
   const handleAddRemovedBox = () => {
     setRepackingForm(prev => ({
@@ -1683,10 +1803,6 @@ export default function ColdRoomPage() {
     }
   };
   
-  // ===========================================
-  // UTILITY FUNCTIONS
-  // ===========================================
-  
   const getSelectedRoomStats = () => {
     if (!coldRoomStats) return null;
     return selectedColdRoom === 'coldroom1' ? coldRoomStats.coldroom1 : coldRoomStats.coldroom2;
@@ -1750,6 +1866,32 @@ export default function ColdRoomPage() {
   
   const sizeGroupSummary = calculateSizeGroupSummary();
   
+  const realTimeStats = calculateRealTimeStats();
+  
+  const getInventoryBreakdown = () => {
+    const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+    const breakdown: Record<string, any> = {};
+    
+    availableBoxes.forEach(box => {
+      const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.grade}_${box.size}`;
+      if (!breakdown[key]) {
+        breakdown[key] = {
+          cold_room_id: box.cold_room_id,
+          variety: box.variety,
+          box_type: box.box_type,
+          grade: box.grade,
+          size: box.size,
+          totalQuantity: 0,
+          boxes: []
+        };
+      }
+      breakdown[key].totalQuantity += box.quantity || 0;
+      breakdown[key].boxes.push(box);
+    });
+    
+    return Object.values(breakdown);
+  };
+  
   const exportColdRoomBoxesToCSV = (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
     if (!data || data.length === 0) {
       return;
@@ -1770,6 +1912,8 @@ export default function ColdRoomPage() {
       'Total Weight (kg)',
       'Cold Room',
       'Counting Record ID',
+      'Loading Sheet ID',
+      'Status',
       'Created At'
     ];
 
@@ -1777,6 +1921,7 @@ export default function ColdRoomPage() {
       const boxWeight = box.box_type === '4kg' ? 4 : 10;
       const totalWeight = (box.quantity || 0) * boxWeight;
       const addedDate = box.created_at ? new Date(box.created_at).toLocaleDateString() : '';
+      const status = box.loading_sheet_id ? 'Assigned to Loading Sheet' : box.is_in_pallet ? 'In Pallet' : 'Available in Cold Room';
       
       return [
         `"${box.id || ''}"`,
@@ -1793,6 +1938,8 @@ export default function ColdRoomPage() {
         `"${totalWeight}"`,
         `"${box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
         `"${box.counting_record_id || ''}"`,
+        `"${box.loading_sheet_id || 'Not Assigned'}"`,
+        `"${status}"`,
         `"${box.created_at || ''}"`
       ].join(',');
     });
@@ -1817,23 +1964,36 @@ export default function ColdRoomPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Set up polling and initial load
+  const handleViewLoadingSheet = (loadingSheetId: string) => {
+    window.open(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`, '_blank');
+  };
+
   useEffect(() => {
     fetchAllData();
     
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'refreshColdRoom') {
+      if (e.key === 'refreshColdRoom' || e.key === 'loadingSheetUpdated') {
         console.log('🔄 Storage change detected, refreshing cold room data...');
-        fetchCountingRecords();
+        fetchAllData();
+        fetchLoadingSheets();
       }
     };
     
     window.addEventListener('storage', handleStorageChange);
     
+    const interval = setInterval(() => {
+      if (activeTab === 'inventory' || activeTab === 'pallets') {
+        fetchColdRoomBoxes();
+        fetchPallets();
+        fetchLoadingSheets();
+      }
+    }, 30000);
+    
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
     };
-  }, [fetchCountingRecords]);
+  }, [fetchCountingRecords, activeTab]);
 
   return (
     <SidebarProvider>
@@ -1877,40 +2037,81 @@ export default function ColdRoomPage() {
           
           {/* Cold Room Selection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {safeArray(coldRooms).map(room => (
-              <Card 
-                key={room.id}
-                className={`cursor-pointer ${selectedColdRoom === room.id ? 'ring-2 ring-primary' : ''}`}
-                onClick={() => setSelectedColdRoom(room.id)}
-              >
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Snowflake className="w-5 h-5" />
-                      {room.name}
+            {safeArray(coldRooms).map(room => {
+              const roomAvailableBoxes = calculateAvailableBoxes(coldRoomBoxes)
+                .filter(box => box.cold_room_id === room.id)
+                .reduce((sum, box) => sum + (box.quantity || 0), 0);
+              
+              const roomTotalBoxes = coldRoomBoxes
+                .filter(box => box.cold_room_id === room.id)
+                .reduce((sum, box) => sum + (box.quantity || 0), 0);
+              
+              const roomBoxesInPallets = coldRoomBoxes
+                .filter(box => box.cold_room_id === room.id && box.is_in_pallet)
+                .reduce((sum, box) => sum + (box.quantity || 0), 0);
+              
+              return (
+                <Card 
+                  key={room.id}
+                  className={`cursor-pointer ${selectedColdRoom === room.id ? 'ring-2 ring-primary' : ''}`}
+                  onClick={() => setSelectedColdRoom(room.id)}
+                >
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Snowflake className="w-5 h-5" />
+                        {room.name}
+                      </div>
+                      <Badge variant="secondary">
+                        {roomAvailableBoxes} Available Boxes
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Current Temperature: {safeToFixed(room.current_temperature)}°C
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-1">
+                          <Thermometer className="w-4 h-4" />
+                          <span>{safeToFixed(room.current_temperature)}°C</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Package className="w-4 h-4" />
+                          <span>{roomAvailableBoxes} Available</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">Inventory Status:</span>
+                          <span className="font-medium">
+                            {roomAvailableBoxes} available / {roomTotalBoxes} total
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-green-500 h-2 rounded-full" 
+                            style={{ 
+                              width: `${roomTotalBoxes > 0 ? (roomAvailableBoxes / roomTotalBoxes) * 100 : 0}%` 
+                            }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-600">
+                            ✅ {roomAvailableBoxes} available
+                          </span>
+                          <span className="text-amber-600">
+                            📦 {roomBoxesInPallets} in pallets
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <Badge variant="secondary">
-                      {room.occupied} Boxes
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    Current Temperature: {safeToFixed(room.current_temperature)}°C
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-1">
-                      <Thermometer className="w-4 h-4" />
-                      <span>{safeToFixed(room.current_temperature)}°C</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Package className="w-4 h-4" />
-                      <span>{room.occupied} Boxes</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
           
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
@@ -1980,7 +2181,6 @@ export default function ColdRoomPage() {
                       </div>
                     </div>
                     
-                    {/* Loading State */}
                     {isLoading.countingRecords ? (
                       <div className="text-center py-8">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
@@ -1988,7 +2188,6 @@ export default function ColdRoomPage() {
                       </div>
                     ) : (
                       <>
-                        {/* Counting Records Table */}
                         <div>
                           <div className="flex items-center justify-between mb-4">
                             <Label>Available Records ({countingRecords.length})</Label>
@@ -2109,7 +2308,6 @@ export default function ColdRoomPage() {
                           )}
                         </div>
                         
-                        {/* Size Groups Table */}
                         {selectedRecords.size > 0 && (
                           <div className="mt-6">
                             <div className="flex items-center justify-between mb-4">
@@ -2138,7 +2336,6 @@ export default function ColdRoomPage() {
                               </div>
                             </div>
                             
-                            {/* Balance Summary Card */}
                             <Card className="mb-4 bg-gradient-to-r from-blue-50 to-blue-100 border-blue-300">
                               <CardContent className="py-4">
                                 <div className="flex items-center justify-between">
@@ -2239,9 +2436,22 @@ export default function ColdRoomPage() {
                                         </TableCell>
                                         <TableCell>{group.boxType}</TableCell>
                                         <TableCell>
-                                          <Badge variant={group.grade === 'class1' ? 'default' : 'secondary'}>
-                                            {group.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                          </Badge>
+                                          <Select
+                                            value={group.grade}
+                                            onValueChange={(value: 'class1' | 'class2') => {
+                                              const updatedGroups = [...sizeGroups];
+                                              updatedGroups[index].grade = value;
+                                              setSizeGroups(updatedGroups);
+                                            }}
+                                          >
+                                            <SelectTrigger className="w-24 h-6 text-xs">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="class1">Class 1</SelectItem>
+                                              <SelectItem value="class2">Class 2</SelectItem>
+                                            </SelectContent>
+                                          </Select>
                                         </TableCell>
                                         <TableCell className="text-right font-medium">
                                           {group.totalQuantity.toLocaleString()}
@@ -2328,7 +2538,6 @@ export default function ColdRoomPage() {
                               </Table>
                             </ScrollArea>
                             
-                            {/* Empty State when all groups are completed */}
                             {sizeGroups.length === 0 && (
                               <Card className="mt-4 border-green-200 bg-green-50">
                                 <CardContent className="py-8 text-center">
@@ -2359,7 +2568,6 @@ export default function ColdRoomPage() {
                               </Card>
                             )}
                             
-                            {/* Size Group Summary */}
                             {sizeGroupSummary.totalGroups > 0 && (
                               <Card className="mt-4 border-blue-200">
                                 <CardHeader className="py-3 bg-black-50">
@@ -2473,7 +2681,6 @@ export default function ColdRoomPage() {
                               </Card>
                             )}
                             
-                            {/* Load Button */}
                             <div className="flex gap-3 mt-6">
                               <Button
                                 onClick={handleLoadSizeGroups}
@@ -2489,7 +2696,6 @@ export default function ColdRoomPage() {
                               </Button>
                             </div>
                             
-                            {/* Loading History Section */}
                             {sizeGroups.some(group => group.loadingHistory.length > 0) && (
                               <Card className="mt-8">
                                 <CardHeader className="py-3 bg-black-50">
@@ -2554,7 +2760,6 @@ export default function ColdRoomPage() {
             {/* Pallets Tab */}
             <TabsContent value="pallets" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Create Pallet Section */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -2562,7 +2767,7 @@ export default function ColdRoomPage() {
                       Create Manual Pallet
                     </CardTitle>
                     <CardDescription>
-                      Combine individual boxes from cold room to create a complete pallet
+                      Combine available boxes from cold room to create a complete pallet
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -2617,7 +2822,7 @@ export default function ColdRoomPage() {
                         <div>
                           <h3 className="font-medium">Select Boxes for Pallet</h3>
                           <p className="text-sm text-muted-foreground">
-                            Choose boxes and adjust quantities to add to pallet
+                            Choose available boxes and adjust quantities to add to pallet
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -2640,10 +2845,9 @@ export default function ColdRoomPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              // Smart select all - selects all boxes with default quantity of 1
                               setPalletCreation(prev => {
                                 const updatedBoxes = prev.selectedBoxes.map(box => {
-                                  if (!prev.showOnlyAvailable || !box.is_in_pallet) {
+                                  if (!prev.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id)) {
                                     return {
                                       ...box,
                                       is_selected: box.maxQuantity > 0,
@@ -2663,7 +2867,6 @@ export default function ColdRoomPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              // Clear all selections
                               setPalletCreation(prev => {
                                 const updatedBoxes = prev.selectedBoxes.map(box => ({
                                   ...box,
@@ -2680,7 +2883,6 @@ export default function ColdRoomPage() {
                         </div>
                       </div>
                       
-                      {/* Selected Boxes Summary */}
                       {(() => {
                         const summary = calculateSelectedBoxesSummary();
                         if (summary.totalBoxes > 0) {
@@ -2710,7 +2912,6 @@ export default function ColdRoomPage() {
                         return null;
                       })()}
                       
-                      {/* Boxes Selection Table - UPDATED WITH QUANTITY CONTROLS */}
                       <div className="border rounded-lg overflow-hidden">
                         <ScrollArea className="h-[300px]">
                           <Table>
@@ -2728,108 +2929,137 @@ export default function ColdRoomPage() {
                             </TableHeader>
                             <TableBody>
                               {palletCreation.selectedBoxes
-                                .filter(box => !palletCreation.showOnlyAvailable || !box.is_in_pallet)
-                                .map((box) => (
-                                  <TableRow 
-                                    key={box.id}
-                                    className={box.is_selected || box.selectedQuantity > 0 ? "bg-black-50" : ""}
-                                  >
-                                    <TableCell>
-                                      <div className="flex justify-center">
-                                        <Checkbox
-                                          checked={box.is_selected || box.selectedQuantity > 0}
-                                          onCheckedChange={() => handleToggleBoxSelection(box.id)}
-                                          disabled={box.maxQuantity === 0}
-                                        />
-                                      </div>
-                                    </TableCell>
-                                    <TableCell>
-                                      <Badge variant="outline">{formatSize(box.size)}</Badge>
-                                    </TableCell>
-                                    <TableCell className="capitalize">
-                                      {box.variety === 'fuerte' ? (
-                                        <Badge className="bg-green-100 text-green-800 hover:bg-black-100 text-xs">Fuerte</Badge>
-                                      ) : (
-                                        <Badge className="bg-purple-100 text-purple-800 hover:bg-black-100 text-xs">Hass</Badge>
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="flex items-center gap-1">
-                                        {box.box_type === '4kg' ? (
-                                          <Box className="w-3 h-3 text-blue-500" />
-                                        ) : (
-                                          <Package2 className="w-3 h-3 text-orange-500" />
-                                        )}
-                                        <span className="text-sm">{box.box_type}</span>
-                                      </div>
-                                    </TableCell>
-                                    <TableCell>
-                                      <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'} className="text-xs">
-                                        {box.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="max-w-[100px] truncate text-sm" title={box.supplier_name}>
-                                        {box.supplier_name || 'Unknown'}
-                                      </div>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      <div className="font-medium">{box.maxQuantity.toLocaleString()}</div>
-                                      {box.is_in_pallet && (
-                                        <div className="text-xs text-red-500">In pallet</div>
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="flex items-center justify-end gap-2">
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-7 w-7 p-0"
-                                          onClick={() => handleBoxQuantityChange(box.id, box.selectedQuantity - 1)}
-                                          disabled={box.selectedQuantity <= 0}
-                                        >
-                                          <Minus className="w-3 h-3" />
-                                        </Button>
-                                        
-                                        <div className="relative w-20">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            max={box.maxQuantity}
-                                            value={box.selectedQuantity}
-                                            onChange={(e) => handleBoxQuantityChange(box.id, parseInt(e.target.value) || 0)}
-                                            className="text-center pr-7"
+                                .filter(box => !palletCreation.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id))
+                                .map((box) => {
+                                  const isAssignedToLoadingSheet = box.loading_sheet_id !== null;
+                                  
+                                  return (
+                                    <TableRow 
+                                      key={box.id}
+                                      className={
+                                        box.is_selected || box.selectedQuantity > 0 ? "bg-black-50" :
+                                        isAssignedToLoadingSheet ? "bg-amber-50" :
+                                        box.is_in_pallet ? "bg-gray-50" : ""
+                                      }
+                                    >
+                                      <TableCell>
+                                        <div className="flex justify-center">
+                                          <Checkbox
+                                            checked={box.is_selected || box.selectedQuantity > 0}
+                                            onCheckedChange={() => handleToggleBoxSelection(box.id)}
+                                            disabled={box.maxQuantity === 0 || isAssignedToLoadingSheet || box.is_in_pallet}
                                           />
-                                          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">
-                                            max
-                                          </div>
                                         </div>
-                                        
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-7 w-7 p-0"
-                                          onClick={() => handleBoxQuantityChange(box.id, box.selectedQuantity + 1)}
-                                          disabled={box.selectedQuantity >= box.maxQuantity}
-                                        >
-                                          <Plus className="w-3 h-3" />
-                                        </Button>
-                                      </div>
-                                      {(box.selectedQuantity > 0) && (
-                                        <div className="text-xs text-blue-600 text-right mt-1">
-                                          {box.selectedQuantity} box{box.selectedQuantity !== 1 ? 'es' : ''} selected
-                                          {box.maxQuantity > 0 && (
-                                            <span className="text-gray-400 ml-1">
-                                              ({box.maxQuantity - box.selectedQuantity} remaining)
-                                            </span>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline">{formatSize(box.size)}</Badge>
+                                      </TableCell>
+                                      <TableCell className="capitalize">
+                                        {box.variety === 'fuerte' ? (
+                                          <Badge className="bg-green-100 text-green-800 hover:bg-black-100 text-xs">Fuerte</Badge>
+                                        ) : (
+                                          <Badge className="bg-purple-100 text-purple-800 hover:bg-black-100 text-xs">Hass</Badge>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1">
+                                          {box.box_type === '4kg' ? (
+                                            <Box className="w-3 h-3 text-blue-500" />
+                                          ) : (
+                                            <Package2 className="w-3 h-3 text-orange-500" />
                                           )}
+                                          <span className="text-sm">{box.box_type}</span>
                                         </div>
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Select
+                                          value={box.grade}
+                                          onValueChange={(value: 'class1' | 'class2') => {
+                                            setPalletCreation(prev => {
+                                              const updatedBoxes = prev.selectedBoxes.map(b => 
+                                                b.id === box.id ? { ...b, grade: value } : b
+                                              );
+                                              return { ...prev, selectedBoxes: updatedBoxes };
+                                            });
+                                          }}
+                                          disabled={isAssignedToLoadingSheet || box.is_in_pallet}
+                                        >
+                                          <SelectTrigger className="w-24 h-6 text-xs">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="class1">Class 1</SelectItem>
+                                            <SelectItem value="class2">Class 2</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="max-w-[100px] truncate text-sm" title={box.supplier_name}>
+                                          {box.supplier_name || 'Unknown'}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="font-medium">{box.maxQuantity.toLocaleString()}</div>
+                                        {box.is_in_pallet && (
+                                          <div className="text-xs text-red-500">Already in pallet</div>
+                                        )}
+                                        {isAssignedToLoadingSheet && (
+                                          <div className="text-xs text-amber-500">Assigned to Loading Sheet</div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center justify-end gap-2">
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 w-7 p-0"
+                                            onClick={() => handleBoxQuantityChange(box.id, box.selectedQuantity - 1)}
+                                            disabled={box.selectedQuantity <= 0 || isAssignedToLoadingSheet || box.is_in_pallet}
+                                          >
+                                            <Minus className="w-3 h-3" />
+                                          </Button>
+                                          
+                                          <div className="relative w-20">
+                                            <Input
+                                              type="number"
+                                              min="0"
+                                              max={box.maxQuantity}
+                                              value={box.selectedQuantity}
+                                              onChange={(e) => handleBoxQuantityChange(box.id, parseInt(e.target.value) || 0)}
+                                              className="text-center pr-7"
+                                              disabled={isAssignedToLoadingSheet || box.is_in_pallet}
+                                            />
+                                            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">
+                                              max
+                                            </div>
+                                          </div>
+                                          
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 w-7 p-0"
+                                            onClick={() => handleBoxQuantityChange(box.id, box.selectedQuantity + 1)}
+                                            disabled={box.selectedQuantity >= box.maxQuantity || isAssignedToLoadingSheet || box.is_in_pallet}
+                                          >
+                                            <Plus className="w-3 h-3" />
+                                          </Button>
+                                        </div>
+                                        {(box.selectedQuantity > 0) && (
+                                          <div className="text-xs text-blue-600 text-right mt-1">
+                                            {box.selectedQuantity} box{box.selectedQuantity !== 1 ? 'es' : ''} selected
+                                            {box.maxQuantity > 0 && (
+                                              <span className="text-gray-400 ml-1">
+                                                ({box.maxQuantity - box.selectedQuantity} remaining)
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
                             </TableBody>
                           </Table>
                         </ScrollArea>
@@ -2861,18 +3091,17 @@ export default function ColdRoomPage() {
                   </CardContent>
                 </Card>
                 
-                {/* Existing Pallets Section */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <ListTree className="w-5 h-5" />
                       Existing Pallets
                       <Badge variant="outline" className="ml-2">
-                        {pallets.length} pallets
+                        {calculateAvailablePallets(pallets).length} available pallets
                       </Badge>
                     </CardTitle>
                     <CardDescription>
-                      View and manage pallets in cold rooms
+                      View and manage pallets in cold rooms. Pallets assigned to loading sheets are marked.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -2893,7 +3122,8 @@ export default function ColdRoomPage() {
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <div className="text-sm text-muted-foreground">
-                            Showing {pallets.length} pallet{pallets.length !== 1 ? 's' : ''}
+                            Showing {pallets.length} pallet{pallets.length !== 1 ? 's' : ''} 
+                            ({calculateAvailablePallets(pallets).length} available, {pallets.length - calculateAvailablePallets(pallets).length} assigned)
                           </div>
                           <Button
                             variant="outline"
@@ -2906,6 +3136,33 @@ export default function ColdRoomPage() {
                           </Button>
                         </div>
                         
+                        {loadingSheets.length > 0 && (
+                          <Card className="border-blue-200 bg-blue-50 mb-4">
+                            <CardContent className="py-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                                  <div>
+                                    <p className="font-medium text-blue-800">Loading Sheet Assignments</p>
+                                    <p className="text-sm text-blue-600">
+                                      {loadingSheets.length} loading sheet{loadingSheets.length !== 1 ? 's' : ''} contain pallets from this cold room
+                                    </p>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={fetchLoadingSheets}
+                                  disabled={isLoading.loadingSheets}
+                                >
+                                  <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.loadingSheets ? 'animate-spin' : ''}`} />
+                                  Refresh Sheets
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+                        
                         <ScrollArea className="h-[500px]">
                           <div className="space-y-4">
                             {pallets.map((pallet) => {
@@ -2915,9 +3172,10 @@ export default function ColdRoomPage() {
                               const boxWeight = boxTypes.includes('4kg') ? 4 : 10;
                               const totalWeight = totalBoxes * boxWeight;
                               const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
+                              const isAssigned = pallet.loading_sheet_id !== null;
                               
                               return (
-                                <Card key={pallet.id} className="overflow-hidden">
+                                <Card key={pallet.id} className={`overflow-hidden ${isAssigned ? 'border-amber-300 bg-black-50' : ''}`}>
                                   <div 
                                     className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
                                     onClick={() => handleTogglePalletExpansion(pallet.id)}
@@ -2938,13 +3196,19 @@ export default function ColdRoomPage() {
                                                 Manual
                                               </Badge>
                                             )}
+                                            {isAssigned && (
+                                              <Badge variant="outline" className="ml-2 bg-black-100 text-amber-800 text-xs">
+                                                <FileSpreadsheet className="w-3 h-3 mr-1" />
+                                                Assigned to Loading Sheet
+                                              </Badge>
+                                            )}
                                           </div>
                                           <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
                                             <Snowflake className="w-3 h-3" />
                                             {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
                                             <span className="mx-1">•</span>
                                             <Calendar className="w-3 h-3" />
-                                            {formatDate(pallet.created_at)}
+                                            {formatDate(pallet.conversion_date || pallet.created_at)}
                                           </div>
                                         </div>
                                       </div>
@@ -2963,6 +3227,8 @@ export default function ColdRoomPage() {
                                             handleDissolvePallet(pallet.id, pallet.cold_room_id);
                                           }}
                                           className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                          disabled={isAssigned}
+                                          title={isAssigned ? "Cannot dissolve pallet assigned to loading sheet" : "Dissolve pallet"}
                                         >
                                           <Trash2 className="w-4 h-4" />
                                         </Button>
@@ -2970,7 +3236,6 @@ export default function ColdRoomPage() {
                                     </div>
                                   </div>
                                   
-                                  {/* Expanded Content */}
                                   {isExpanded && (
                                     <div className="border-t">
                                       <div className="p-4 bg-black-50">
@@ -2995,7 +3260,19 @@ export default function ColdRoomPage() {
                                           </div>
                                         </div>
                                         
-                                        {/* Boxes in Pallet */}
+                                        {isAssigned && (
+                                          <div className="mb-4 p-3 border border-amber-300 rounded-lg bg-amber-50">
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <FileSpreadsheet className="w-5 h-5 text-amber-600" />
+                                              <span className="font-medium text-amber-800">Assigned to Loading Sheet</span>
+                                            </div>
+                                            <p className="text-sm text-amber-700">
+                                              This pallet is assigned to a loading sheet and cannot be modified.
+                                              To make changes, remove it from the loading sheet first.
+                                            </p>
+                                          </div>
+                                        )}
+                                        
                                         <div>
                                           <h4 className="font-medium mb-3 flex items-center gap-2">
                                             <Box className="w-4 h-4" />
@@ -3013,46 +3290,71 @@ export default function ColdRoomPage() {
                                                     <TableHead>Grade</TableHead>
                                                     <TableHead className="text-right">Quantity</TableHead>
                                                     <TableHead>Supplier</TableHead>
+                                                    <TableHead>Status</TableHead>
                                                   </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                  {pallet.boxes.map((box) => (
-                                                    <TableRow key={box.id}>
-                                                      <TableCell>
-                                                        <Badge variant="outline">{formatSize(box.size)}</Badge>
-                                                      </TableCell>
-                                                      <TableCell className="capitalize">
-                                                        {box.variety === 'fuerte' ? (
-                                                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">Fuerte</Badge>
-                                                        ) : (
-                                                          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-xs">Hass</Badge>
-                                                        )}
-                                                      </TableCell>
-                                                      <TableCell>
-                                                        <div className="flex items-center gap-1">
-                                                          {box.box_type === '4kg' ? (
-                                                            <Box className="w-3 h-3 text-blue-500" />
+                                                  {pallet.boxes.map((box) => {
+                                                    const isBoxAssigned = box.loading_sheet_id !== null;
+                                                    
+                                                    return (
+                                                      <TableRow key={box.id} className={isBoxAssigned ? 'bg-amber-50' : ''}>
+                                                        <TableCell>
+                                                          <Badge variant="outline">{formatSize(box.size)}</Badge>
+                                                        </TableCell>
+                                                        <TableCell className="capitalize">
+                                                          {box.variety === 'fuerte' ? (
+                                                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">Fuerte</Badge>
                                                           ) : (
-                                                            <Package2 className="w-3 h-3 text-orange-500" />
+                                                            <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-xs">Hass</Badge>
                                                           )}
-                                                          <span className="text-sm">{box.box_type}</span>
-                                                        </div>
-                                                      </TableCell>
-                                                      <TableCell>
-                                                        <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'} className="text-xs">
-                                                          {box.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                                        </Badge>
-                                                      </TableCell>
-                                                      <TableCell className="text-right font-medium">
-                                                        {box.quantity.toLocaleString()}
-                                                      </TableCell>
-                                                      <TableCell>
-                                                        <div className="text-sm truncate max-w-[120px]" title={box.supplier_name}>
-                                                          {box.supplier_name || 'Unknown'}
-                                                        </div>
-                                                      </TableCell>
-                                                    </TableRow>
-                                                  ))}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                          <div className="flex items-center gap-1">
+                                                            {box.box_type === '4kg' ? (
+                                                              <Box className="w-3 h-3 text-blue-500" />
+                                                            ) : (
+                                                              <Package2 className="w-3 h-3 text-orange-500" />
+                                                            )}
+                                                            <span className="text-sm">{box.box_type}</span>
+                                                          </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                          <Select
+                                                            value={box.grade}
+                                                            disabled
+                                                          >
+                                                            <SelectTrigger className="w-24 h-6 text-xs">
+                                                              <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                              <SelectItem value="class1">Class 1</SelectItem>
+                                                              <SelectItem value="class2">Class 2</SelectItem>
+                                                            </SelectContent>
+                                                          </Select>
+                                                        </TableCell>
+                                                        <TableCell className="text-right font-medium">
+                                                          {box.quantity.toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                          <div className="text-sm truncate max-w-[120px]" title={box.supplier_name}>
+                                                            {box.supplier_name || 'Unknown'}
+                                                          </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                          {isBoxAssigned ? (
+                                                            <Badge variant="outline" className="bg-amber-100 text-amber-800 text-xs">
+                                                              Assigned
+                                                            </Badge>
+                                                          ) : (
+                                                            <Badge variant="outline" className="bg-green-100 text-green-800 text-xs">
+                                                              In Pallet
+                                                            </Badge>
+                                                          )}
+                                                        </TableCell>
+                                                      </TableRow>
+                                                    );
+                                                  })}
                                                 </TableBody>
                                               </Table>
                                             </div>
@@ -3076,8 +3378,8 @@ export default function ColdRoomPage() {
                   </CardContent>
                 </Card>
               </div>
-            </TabsContent>            
-
+            </TabsContent>
+            
             {/* Temperature Control Tab */}
             <TabsContent value="temperature" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -3269,9 +3571,11 @@ export default function ColdRoomPage() {
                                               <span className="capitalize">{box.variety}</span>
                                               <span>{box.boxType}</span>
                                               <span>{formatSize(box.size)}</span>
-                                              <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'} className="h-4 text-xs">
-                                                {box.grade === 'class1' ? 'C1' : 'C2'}
-                                              </Badge>
+                                              <Select value={box.grade} disabled>
+                                                <SelectTrigger className="w-20 h-4 text-xs">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                              </Select>
                                             </div>
                                           </div>
                                         ))}
@@ -3287,9 +3591,11 @@ export default function ColdRoomPage() {
                                               <span className="capitalize">{box.variety}</span>
                                               <span>{box.boxType}</span>
                                               <span>{formatSize(box.size)}</span>
-                                              <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'} className="h-4 text-xs">
-                                                {box.grade === 'class1' ? 'C1' : 'C2'}
-                                              </Badge>
+                                              <Select value={box.grade} disabled>
+                                                <SelectTrigger className="w-20 h-4 text-xs">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                              </Select>
                                             </div>
                                           </div>
                                         ))}
@@ -3627,14 +3933,16 @@ export default function ColdRoomPage() {
                   <CardTitle className="flex items-center gap-2">
                     <History className="w-5 h-5" />
                     Current Cold Room Inventory
+                    <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
+                      ✅ Real-time Available Stock
+                    </Badge>
                   </CardTitle>
                   <CardDescription>
-                    Live inventory of boxes currently stored in cold rooms with detailed breakdowns
+                    Live inventory of AVAILABLE boxes currently stored in cold rooms. Boxes in pallets or assigned to loading sheets are excluded.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    {/* Cold Room Selection for Inventory View */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                       <div className="flex items-center gap-4">
                         <div>
@@ -3653,28 +3961,37 @@ export default function ColdRoomPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <Badge variant="outline" className="mt-7">
-                          {selectedColdRoom === 'all' ? 'Viewing All' : `Viewing ${selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}`}
-                        </Badge>
+                        <div className="flex gap-2 mt-7">
+                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                            ✅ {realTimeStats.totalAvailableBoxes.toLocaleString()} Available
+                          </Badge>
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                            📦 {realTimeStats.boxesInPallets.toLocaleString()} In Pallets
+                          </Badge>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                            📋 {realTimeStats.totalAssignedBoxes.toLocaleString()} Total Assigned
+                          </Badge>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button
                           onClick={() => {
-                            if (coldRoomBoxes.length === 0) {
+                            const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+                            if (availableBoxes.length === 0) {
                               toast({
                                 title: 'No data to export',
-                                description: 'There is no inventory data to download',
+                                description: 'There is no available inventory data to download',
                                 variant: 'destructive',
                               });
                               return;
                             }
                             
                             try {
-                              exportColdRoomBoxesToCSV(coldRoomBoxes, 'cold-room-inventory');
+                              exportColdRoomBoxesToCSV(availableBoxes, 'cold-room-available-inventory');
                               
                               toast({
                                 title: 'CSV Export Started',
-                                description: `Downloading ${coldRoomBoxes.length} inventory records as CSV file`,
+                                description: `Downloading ${availableBoxes.length} available inventory records as CSV file`,
                               });
                             } catch (error) {
                               console.error('Error exporting CSV:', error);
@@ -3686,99 +4003,233 @@ export default function ColdRoomPage() {
                             }
                           }}
                           variant="outline"
-                          disabled={coldRoomBoxes.length === 0}
+                          disabled={realTimeStats.totalAvailableBoxes === 0}
                           className="flex items-center gap-2"
                         >
                           <Download className="w-4 h-4" />
-                          Export to CSV
+                          Export Available to CSV
                         </Button>
                         <Button
-                          onClick={fetchColdRoomBoxes}
+                          onClick={() => {
+                            fetchColdRoomBoxes();
+                            fetchLoadingSheets();
+                            fetchPalletHistory();
+                          }}
                           variant="outline"
                           size="sm"
-                          disabled={isLoading.boxes}
+                          disabled={isLoading.boxes || isLoading.loadingSheets || isLoading.palletHistory}
                         >
-                          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.boxes ? 'animate-spin' : ''}`} />
+                          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.boxes || isLoading.loadingSheets ? 'animate-spin' : ''}`} />
                           Refresh
                         </Button>
                       </div>
                     </div>
 
-                    {/* Summary Statistics */}
+                    {/* Real-time Statistics */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 shadow-sm">
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium text-blue-700">Total Boxes</div>
-                          <Package className="w-5 h-5 text-blue-600" />
+                          <div className="text-sm font-medium text-green-700">Available Boxes</div>
+                          <Package className="w-5 h-5 text-green-600" />
                         </div>
-                        <div className="text-2xl font-bold text-blue-800">
-                          {coldRoomBoxes
-                            .filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom)
-                            .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                            .toLocaleString()}
+                        <div className="text-2xl font-bold text-green-800">
+                          {realTimeStats.totalAvailableBoxes.toLocaleString()}
                         </div>
-                        <div className="text-xs text-blue-600 mt-1">
-                          {selectedColdRoom === 'all' ? 'Across all cold rooms' : `In ${selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}`}
+                        <div className="text-xs text-green-600 mt-1">
+                          Ready for outbound loading
                         </div>
                       </div>
                       
-                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 shadow-sm">
+                      <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-lg border border-amber-200 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium text-green-700">Total Weight</div>
-                          <Weight className="w-5 h-5 text-green-600" />
+                          <div className="text-sm font-medium text-amber-700">Boxes in Pallets</div>
+                          <Palette className="w-5 h-5 text-amber-600" />
                         </div>
-                        <div className="text-2xl font-bold text-green-800">
-                          {safeToFixed(coldRoomBoxes
-                            .filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom)
-                            .reduce((sum, box) => {
-                              const boxWeight = box.box_type === '4kg' ? 4 : 10;
-                              return sum + ((box.quantity || 0) * boxWeight);
-                            }, 0))} kg
+                        <div className="text-2xl font-bold text-amber-800">
+                          {realTimeStats.boxesInPallets.toLocaleString()}
                         </div>
-                        <div className="text-xs text-green-600 mt-1">
-                          {selectedColdRoom === 'all' ? 'Combined weight' : `Stored weight`}
+                        <div className="text-xs text-amber-600 mt-1">
+                          Converted to pallets
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-blue-700">Assigned to Loading</div>
+                          <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-blue-800">
+                          {realTimeStats.boxesInAssignedPallets.toLocaleString()}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1">
+                          In loading sheets for dispatch
                         </div>
                       </div>
                       
                       <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium text-purple-700">Unique Sizes</div>
-                          <Layers className="w-5 h-5 text-purple-600" />
+                          <div className="text-sm font-medium text-purple-700">Total Boxes in Cold Room</div>
+                          <Warehouse className="w-5 h-5 text-purple-600" />
                         </div>
                         <div className="text-2xl font-bold text-purple-800">
-                          {new Set(coldRoomBoxes
-                            .filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom)
-                            .map(box => box.size)).size}
+                          {realTimeStats.totalBoxesInColdRoom.toLocaleString()}
                         </div>
-                        <div className="text-xs text-purple-600 mt-1">
-                          Different avocado sizes
-                        </div>
-                      </div>
-                      
-                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium text-orange-700">Unique Suppliers</div>
-                          <Truck className="w-5 h-5 text-orange-600" />
-                        </div>
-                        <div className="text-2xl font-bold text-orange-800">
-                          {new Set(coldRoomBoxes
-                            .filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom)
-                            .map(box => box.supplier_name)
-                            .filter(Boolean)).size}
-                        </div>
-                        <div className="text-xs text-orange-600 mt-1">Active suppliers</div>
+                        <div className="text-xs text-purple-600 mt-1">All boxes (available + in pallets)</div>
                       </div>
                     </div>
 
-                    {/* Variety and Size Breakdown */}
+                    {/* Pallet History Section */}
+                    <Card className="border-blue-200">
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <GitCommitVertical className="w-5 h-5 text-blue-600" />
+                          Pallet Conversion History
+                          <Badge variant="outline" className="ml-2">
+                            {palletHistory.length} conversions
+                          </Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        {isLoading.palletHistory ? (
+                          <div className="text-center py-4">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mb-2 mx-auto"></div>
+                            <p className="text-muted-foreground text-sm">Loading pallet history...</p>
+                          </div>
+                        ) : palletHistory.length === 0 ? (
+                          <div className="text-center py-6 border rounded">
+                            <CalendarDays className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                            <p className="text-gray-500">No pallet conversion history</p>
+                            <p className="text-sm text-gray-400 mt-1">
+                              Create pallets to see conversion history
+                            </p>
+                          </div>
+                        ) : (
+                          <ScrollArea className="h-[200px]">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Date</TableHead>
+                                  <TableHead>Pallet Name</TableHead>
+                                  <TableHead>Cold Room</TableHead>
+                                  <TableHead>Box Type</TableHead>
+                                  <TableHead>Variety</TableHead>
+                                  <TableHead>Size</TableHead>
+                                  <TableHead className="text-right">Boxes Converted</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {palletHistory
+                                  .filter(history => selectedColdRoom === 'all' || history.cold_room_id === selectedColdRoom)
+                                  .sort((a, b) => new Date(b.conversion_date).getTime() - new Date(a.conversion_date).getTime())
+                                  .map((history) => (
+                                    <TableRow key={history.id}>
+                                      <TableCell>
+                                        <div className="text-sm">{formatDate(history.conversion_date)}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-medium text-sm">{history.pallet_name}</div>
+                                        <div className="text-xs text-gray-500">{history.pallet_id?.substring(0, 8)}...</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline" className="text-xs">
+                                          {history.cold_room_id === 'coldroom1' ? 'CR1' : 'CR2'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{history.box_type}</div>
+                                      </TableCell>
+                                      <TableCell className="capitalize">
+                                        {history.variety === 'fuerte' ? (
+                                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">Fuerte</Badge>
+                                        ) : (
+                                          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-xs">Hass</Badge>
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline" className="text-xs">{formatSize(history.size)}</Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="font-bold text-blue-700">{history.boxes_converted.toLocaleString()}</div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Loading Sheets Summary */}
+                    {loadingSheets.length > 0 && (
+                      <Card className="border-blue-200">
+                        <CardHeader className="py-3">
+                          <CardTitle className="text-sm font-medium flex items-center gap-2">
+                            <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                            Loading Sheets with Cold Room Inventory
+                            <Badge variant="outline" className="ml-2">
+                              {loadingSheets.length} active
+                            </Badge>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <ScrollArea className="h-[150px]">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Loading Sheet</TableHead>
+                                  <TableHead>Bill Number</TableHead>
+                                  <TableHead>Client</TableHead>
+                                  <TableHead>Container</TableHead>
+                                  <TableHead>Loading Date</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead>Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {loadingSheets.map((sheet) => (
+                                  <TableRow key={sheet.id}>
+                                    <TableCell className="font-medium">
+                                      {sheet.id.substring(0, 8)}...
+                                    </TableCell>
+                                    <TableCell>{sheet.bill_number}</TableCell>
+                                    <TableCell>{sheet.client || 'N/A'}</TableCell>
+                                    <TableCell>{sheet.container}</TableCell>
+                                    <TableCell>
+                                      {new Date(sheet.loading_date).toLocaleDateString()}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant={sheet.status === 'active' ? 'default' : 'outline'}>
+                                        {sheet.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleViewLoadingSheet(sheet.id)}
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Available Inventory Breakdown */}
                     <Card>
                       <CardHeader className="pb-3">
                         <CardTitle className="text-lg flex items-center gap-2">
                           <Layers className="w-5 h-5" />
-                          Inventory Breakdown by Variety and Size
+                          Available Inventory Breakdown by Variety and Size
                         </CardTitle>
                         <CardDescription>
-                          Detailed breakdown of boxes stored in {selectedColdRoom === 'all' ? 'all cold rooms' : selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                          Detailed breakdown of AVAILABLE boxes in {selectedColdRoom === 'all' ? 'all cold rooms' : selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -3787,16 +4238,25 @@ export default function ColdRoomPage() {
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
                             <p className="text-muted-foreground">Loading breakdown...</p>
                           </div>
+                        ) : realTimeStats.totalAvailableBoxes === 0 ? (
+                          <div className="text-center py-8 border rounded">
+                            <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                            <p className="text-gray-500 font-medium">No available inventory found</p>
+                            <p className="text-sm text-gray-400 mt-1">
+                              All boxes may be in pallets or assigned to loading sheets. Check pallets or load more boxes from counting records.
+                            </p>
+                          </div>
                         ) : (
                           <div className="space-y-6">
-                            {/* Fuerte Breakdown */}
                             <div>
                               <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
                                 <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Fuerte</Badge>
-                                <span className="text-green-700">Avocado Inventory</span>
+                                <span className="text-green-700">Avocado Available Inventory</span>
+                                <span className="text-sm text-gray-500 ml-2">
+                                  ({getInventoryBreakdown().filter(item => item.variety === 'fuerte').reduce((sum, item) => sum + item.totalQuantity, 0)} boxes available)
+                                </span>
                               </h3>
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {/* Fuerte Class 1 - 4kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -3804,28 +4264,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="default">Class 1</Badge>
                                         <span>4kg Boxes</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'fuerte' && 
-                                                box.grade === 'class1' && 
-                                                box.box_type === '4kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} boxes
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class1' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -3838,31 +4295,32 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-green-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 1 4kg Fuerte boxes
+                                          No available Class 1 4kg Fuerte boxes
                                         </div>
                                       )}
                                     </div>
                                   </CardContent>
                                 </Card>
 
-                                {/* Fuerte Class 1 - 10kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -3870,28 +4328,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="default">Class 1</Badge>
                                         <span>10kg Crates</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'fuerte' && 
-                                                box.grade === 'class1' && 
-                                                box.box_type === '10kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} crates
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class1' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -3904,31 +4359,32 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-green-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 1 10kg Fuerte crates
+                                          No available Class 1 10kg Fuerte crates
                                         </div>
                                       )}
                                     </div>
                                   </CardContent>
                                 </Card>
 
-                                {/* Fuerte Class 2 - 4kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -3936,28 +4392,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="secondary">Class 2</Badge>
                                         <span>4kg Boxes</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'fuerte' && 
-                                                box.grade === 'class2' && 
-                                                box.box_type === '4kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} boxes
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class2' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -3970,31 +4423,32 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 2 4kg Fuerte boxes
+                                          No available Class 2 4kg Fuerte boxes
                                         </div>
                                       )}
                                     </div>
                                   </CardContent>
                                 </Card>
 
-                                {/* Fuerte Class 2 - 10kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -4002,28 +4456,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="secondary">Class 2</Badge>
                                         <span>10kg Crates</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'fuerte' && 
-                                                box.grade === 'class2' && 
-                                                box.box_type === '10kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} crates
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class2' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -4034,26 +4485,28 @@ export default function ColdRoomPage() {
                                               <span className="font-medium">{formatSize(size)}</span>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                              <span className="font-bold text-black-700">{totalQuantity.toLocaleString()}</span>
+                                              <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'fuerte' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 2 10kg Fuerte crates
+                                          No available Class 2 10kg Fuerte crates
                                         </div>
                                       )}
                                     </div>
@@ -4062,14 +4515,15 @@ export default function ColdRoomPage() {
                               </div>
                             </div>
 
-                            {/* Hass Breakdown */}
                             <div>
                               <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
                                 <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Hass</Badge>
-                                <span className="text-purple-700">Avocado Inventory</span>
+                                <span className="text-purple-700">Avocado Available Inventory</span>
+                                <span className="text-sm text-gray-500 ml-2">
+                                  ({getInventoryBreakdown().filter(item => item.variety === 'hass').reduce((sum, item) => sum + item.totalQuantity, 0)} boxes available)
+                                </span>
                               </h3>
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {/* Hass Class 1 - 4kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -4077,28 +4531,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="default">Class 1</Badge>
                                         <span>4kg Boxes</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'hass' && 
-                                                box.grade === 'class1' && 
-                                                box.box_type === '4kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} boxes
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class1' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -4111,31 +4562,32 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-purple-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 1 4kg Hass boxes
+                                          No available Class 1 4kg Hass boxes
                                         </div>
                                       )}
                                     </div>
                                   </CardContent>
                                 </Card>
 
-                                {/* Hass Class 1 - 10kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -4143,28 +4595,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="default">Class 1</Badge>
                                         <span>10kg Crates</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'hass' && 
-                                                box.grade === 'class1' && 
-                                                box.box_type === '10kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} crates
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class1' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -4177,31 +4626,32 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-purple-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class1' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 1 10kg Hass crates
+                                          No available Class 1 10kg Hass crates
                                         </div>
                                       )}
                                     </div>
                                   </CardContent>
                                 </Card>
 
-                                {/* Hass Class 2 - 4kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -4209,28 +4659,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="secondary">Class 2</Badge>
                                         <span>4kg Boxes</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'hass' && 
-                                                box.grade === 'class2' && 
-                                                box.box_type === '4kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} boxes
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class2' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -4243,31 +4690,32 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-pink-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '4kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 2 4kg Hass boxes
+                                          No available Class 2 4kg Hass boxes
                                         </div>
                                       )}
                                     </div>
                                   </CardContent>
                                 </Card>
 
-                                {/* Hass Class 2 - 10kg */}
                                 <Card>
                                   <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
                                     <CardTitle className="text-sm font-medium flex items-center justify-between">
@@ -4275,28 +4723,25 @@ export default function ColdRoomPage() {
                                         <Badge variant="secondary">Class 2</Badge>
                                         <span>10kg Crates</span>
                                       </div>
-                                      <Badge variant="outline">
-                                        {coldRoomBoxes
-                                          .filter(box => (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) && 
-                                                box.variety === 'hass' && 
-                                                box.grade === 'class2' && 
-                                                box.box_type === '10kg')
-                                          .reduce((sum, box) => sum + (box.quantity || 0), 0)
-                                          .toLocaleString()} crates
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class2' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
                                       </Badge>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-3">
                                     <div className="space-y-2">
                                       {BOX_SIZES.map(size => {
-                                        const boxes = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
                                         );
-                                        const totalQuantity = boxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
                                         
                                         if (totalQuantity === 0) return null;
                                         
@@ -4309,24 +4754,26 @@ export default function ColdRoomPage() {
                                             <div className="flex items-center gap-3">
                                               <span className="font-bold text-pink-700">{totalQuantity.toLocaleString()}</span>
                                               <span className="text-xs text-gray-500">
-                                                {boxes.length} {boxes.length === 1 ? 'batch' : 'batches'}
+                                                {availableItems.length} {availableItems.length === 1 ? 'batch' : 'batches'}
                                               </span>
                                             </div>
                                           </div>
                                         );
                                       })}
                                       {BOX_SIZES.every(size => {
-                                        const totalQuantity = coldRoomBoxes.filter(box => 
-                                          (selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom) &&
-                                          box.variety === 'hass' && 
-                                          box.grade === 'class2' && 
-                                          box.box_type === '10kg' && 
-                                          box.size === size
-                                        ).reduce((sum, box) => sum + (box.quantity || 0), 0);
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
                                         return totalQuantity === 0;
                                       }) && (
                                         <div className="text-center py-4 text-gray-400 text-sm">
-                                          No Class 2 10kg Hass crates
+                                          No available Class 2 10kg Hass crates
                                         </div>
                                       )}
                                     </div>
@@ -4339,20 +4786,18 @@ export default function ColdRoomPage() {
                       </CardContent>
                     </Card>
 
-                    {/* Detailed Inventory Table */}
+                    {/* Detailed Available Inventory Table */}
                     <Card>
                       <CardHeader className="pb-3">
                         <CardTitle className="text-lg flex items-center gap-2">
                           <Database className="w-5 h-5" />
-                          Detailed Inventory Records
-                          <Badge variant="outline" className="ml-2">
-                            {coldRoomBoxes
-                              .filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom)
-                              .length} records
+                          Detailed Available Inventory Records
+                          <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
+                            {realTimeStats.availableBoxes.length} available records
                           </Badge>
                         </CardTitle>
                         <CardDescription>
-                          Complete inventory records with dates, suppliers, and batch information
+                          Complete inventory records for AVAILABLE boxes with dates, suppliers, and batch information
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -4361,12 +4806,12 @@ export default function ColdRoomPage() {
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
                             <p className="text-muted-foreground">Loading inventory...</p>
                           </div>
-                        ) : coldRoomBoxes.filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom).length === 0 ? (
+                        ) : realTimeStats.availableBoxes.length === 0 ? (
                           <div className="text-center py-8 border rounded-lg bg-gradient-to-br from-black-50 to-black">
                             <FileText className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                            <p className="text-gray-500 font-medium">No inventory found</p>
+                            <p className="text-gray-500 font-medium">No available inventory found</p>
                             <p className="text-sm text-gray-400 mt-1">
-                              Load boxes to cold rooms to see inventory here
+                              Load boxes to cold rooms or check pallets for converted inventory
                             </p>
                           </div>
                         ) : (
@@ -4384,16 +4829,19 @@ export default function ColdRoomPage() {
                                     <TableHead className="font-semibold">Grade</TableHead>
                                     <TableHead className="font-semibold text-right">Quantity</TableHead>
                                     <TableHead className="font-semibold">Cold Room</TableHead>
+                                    <TableHead className="font-semibold">Status</TableHead>
                                     <TableHead className="font-semibold">Last Updated</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {[...coldRoomBoxes]
+                                  {[...realTimeStats.availableBoxes]
                                     .filter(box => selectedColdRoom === 'all' || box.cold_room_id === selectedColdRoom)
                                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                                     .map((box) => {
                                       const boxWeight = box.box_type === '4kg' ? 4 : 10;
                                       const totalWeight = (box.quantity || 0) * boxWeight;
+                                      const isAssigned = box.loading_sheet_id !== null;
+                                      const isInPallet = box.is_in_pallet;
                                       
                                       return (
                                         <TableRow key={box.id} className="hover:bg-black-50">
@@ -4439,9 +4887,15 @@ export default function ColdRoomPage() {
                                             <Badge variant="outline" className="text-xs">{formatSize(box.size)}</Badge>
                                           </TableCell>
                                           <TableCell>
-                                            <Badge variant={box.grade === 'class1' ? 'default' : 'secondary'} className="text-xs">
-                                              {box.grade === 'class1' ? 'Class 1' : 'Class 2'}
-                                            </Badge>
+                                            <Select value={box.grade} disabled>
+                                              <SelectTrigger className="w-24 h-6 text-xs">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="class1">Class 1</SelectItem>
+                                                <SelectItem value="class2">Class 2</SelectItem>
+                                              </SelectContent>
+                                            </Select>
                                           </TableCell>
                                           <TableCell className="text-right">
                                             <div className="font-medium text-blue-700">{(box.quantity || 0).toLocaleString()}</div>
@@ -4454,6 +4908,23 @@ export default function ColdRoomPage() {
                                               <Snowflake className="w-3 h-3 text-blue-500" />
                                               <span className="text-sm">{box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}</span>
                                             </div>
+                                          </TableCell>
+                                          <TableCell>
+                                            {isAssigned ? (
+                                              <Badge variant="outline" className="bg-amber-100 text-amber-800 text-xs">
+                                                <FileSpreadsheet className="w-3 h-3 mr-1" />
+                                                Assigned
+                                              </Badge>
+                                            ) : isInPallet ? (
+                                              <Badge variant="outline" className="bg-gray-100 text-gray-800 text-xs">
+                                                <Palette className="w-3 h-3 mr-1" />
+                                                In Pallet
+                                              </Badge>
+                                            ) : (
+                                              <Badge variant="outline" className="bg-green-100 text-green-800 text-xs">
+                                                ✅ Available
+                                              </Badge>
+                                            )}
                                           </TableCell>
                                           <TableCell className="text-sm">
                                             {box.updated_at ? formatDate(box.updated_at) : 'N/A'}

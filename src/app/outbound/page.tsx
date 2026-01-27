@@ -11,7 +11,7 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
@@ -47,6 +47,14 @@ import {
 import { toast } from 'sonner';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 // Define types based on your database schema
 interface DatabaseShipment {
@@ -247,6 +255,208 @@ function calculateDaysBetween(startDate: string, endDate: string): number {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
+// Pallet Details Modal Component
+function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingSheet }) {
+  const [open, setOpen] = useState(false);
+  const [pallets, setPallets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadPalletDetails = async () => {
+    if (!loadingSheet.id) return;
+    
+    try {
+      setLoading(true);
+      // Fetch pallet details for this loading sheet
+      const response = await fetch(`/api/loading-sheets/${loadingSheet.id}/pallets`);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setPallets(result.data || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading pallet details:', error);
+      toast.error('Failed to load pallet details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to safely get quantity
+  const getSafeQuantity = (pallet: any): number => {
+    return Number(pallet?.quantity) || 0;
+  };
+
+  // Helper function to safely get weight
+  const getSafeWeight = (pallet: any): number => {
+    const quantity = getSafeQuantity(pallet);
+    const boxType = pallet?.box_type === '10kg' ? 10 : 4;
+    return quantity * boxType;
+  };
+
+  // Format size for display
+  const formatSizeForDisplay = (size: string) => {
+    if (!size) return 'N/A';
+    return size.replace('size', 'Size ');
+  };
+
+  // Calculate totals
+  const totals = pallets.reduce(
+    (acc, pallet) => {
+      const quantity = getSafeQuantity(pallet);
+      const weight = getSafeWeight(pallet);
+      
+      acc.totalPallets += 1;
+      acc.totalBoxes += quantity;
+      acc.totalWeight += weight;
+      return acc;
+    },
+    { totalPallets: 0, totalBoxes: 0, totalWeight: 0 }
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button 
+          variant="ghost" 
+          size="sm"
+          onClick={() => {
+            setOpen(true);
+            loadPalletDetails();
+          }}
+          title="View pallet details"
+        >
+          <Eye className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Box className="h-5 w-5" />
+            Pallets in Loading Sheet
+          </DialogTitle>
+          <DialogDescription>
+            {loadingSheet.bill_number || loadingSheet.id} • {loadingSheet.client || 'No Client'}
+          </DialogDescription>
+        </DialogHeader>
+        
+        {loading ? (
+          <div className="flex items-center justify-center h-32">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <span>Loading pallet details...</span>
+          </div>
+        ) : pallets.length === 0 ? (
+          <div className="text-center py-8">
+            <Box className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500 font-medium">No pallet details found</p>
+            <p className="text-sm text-gray-400 mt-1">
+              This loading sheet doesn't have any pallet records.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-800">{totals.totalPallets}</div>
+                <div className="text-sm text-gray-600">Total Pallets</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{totals.totalBoxes.toLocaleString()}</div>
+                <div className="text-sm text-gray-600">Total Boxes</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{totals.totalWeight.toLocaleString()} kg</div>
+                <div className="text-sm text-gray-600">Total Weight</div>
+              </div>
+            </div>
+
+            {/* Pallets Table */}
+            <div className="border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Pallet No</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Variety</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Grade</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Weight</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pallets.map((pallet, index) => {
+                    const quantity = getSafeQuantity(pallet);
+                    const weight = getSafeWeight(pallet);
+                    const varietyDisplay = pallet.variety === 'fuerte' ? 'Fuerte' : 'Hass';
+                    const gradeDisplay = pallet.grade === 'class1' ? 'Class 1' : 'Class 2';
+                    
+                    return (
+                      <TableRow key={pallet.id || index}>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
+                        <TableCell>{pallet.supplier_name || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Badge className={varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : "bg-purple-100 text-purple-800"}>
+                            {varietyDisplay}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{pallet.box_type || 'N/A'}</Badge>
+                        </TableCell>
+                        <TableCell>{formatSizeForDisplay(pallet.size)}</TableCell>
+                        <TableCell>
+                          <Badge variant={pallet.grade === 'class1' ? 'default' : 'secondary'}>
+                            {gradeDisplay}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-bold">{quantity.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-bold text-blue-600">
+                          {weight.toLocaleString()} kg
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  
+                  {/* Totals Row */}
+                  <TableRow className="bg-gray-50">
+                    <TableCell colSpan={6} className="font-bold text-right">TOTAL</TableCell>
+                    <TableCell className="text-right font-bold">{totals.totalBoxes.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-bold text-blue-700">{totals.totalWeight.toLocaleString()} kg</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Variety Distribution */}
+            <div className="border rounded-lg p-4">
+              <h4 className="font-medium mb-3">Variety Distribution</h4>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(
+                  pallets.reduce((acc, pallet) => {
+                    const variety = pallet.variety === 'fuerte' ? 'Fuerte' : 'Hass';
+                    acc[variety] = (acc[variety] || 0) + 1;
+                    return acc;
+                  }, {} as { [key: string]: number })
+                ).map(([variety, count]) => (
+                  <Badge 
+                    key={variety} 
+                    variant="outline"
+                    className={variety === 'Fuerte' ? "bg-green-50 text-green-700" : "bg-purple-50 text-purple-700"}
+                  >
+                    {variety}: {count} pallets
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Loading Sheet Component
 function LoadingSheet() {
   const defaultData: LoadingSheetData = {
@@ -295,6 +505,9 @@ function LoadingSheet() {
   const [loadedBy, setLoadedBy] = useState('');
   const [checkedBy, setCheckedBy] = useState('');
   const [remarks, setRemarks] = useState('');
+
+  // Fetch assignments to filter out assigned loading sheets
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
 
   // Helper function to safely get quantity
   const getSafeQuantity = (pallet: ColdRoomPallet | PalletWithBoxes): number => {
@@ -441,7 +654,22 @@ function LoadingSheet() {
     }
   }, [selectedColdRoom]);
 
-  // Fetch existing loading sheets from database
+  // Fetch assignments to identify assigned loading sheets
+  const fetchAssignments = useCallback(async () => {
+    try {
+      const response = await fetch('/api/carrier-assignments');
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setAssignments(result.data || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+    }
+  }, []);
+
+  // Fetch existing loading sheets from database - FILTER OUT ASSIGNED SHEETS
   const fetchLoadingSheets = useCallback(async () => {
     try {
       setLoadingSheets(true);
@@ -452,8 +680,20 @@ function LoadingSheet() {
         const result = await response.json();
         
         if (result.success && result.data) {
-          setExistingSheets(result.data);
-          console.log('📋 Loaded', result.data.length, 'loading sheets from database');
+          const allSheets = result.data;
+          
+          // Get assigned loading sheet IDs
+          const assignedSheetIds = new Set(
+            assignments.map(assignment => assignment.loading_sheet_id)
+          );
+          
+          // Filter out assigned loading sheets - only show unassigned ones
+          const unassignedSheets = allSheets.filter((sheet: DatabaseLoadingSheet) => 
+            !assignedSheetIds.has(sheet.id)
+          );
+          
+          setExistingSheets(unassignedSheets);
+          console.log('📋 Loaded', unassignedSheets.length, 'UNASSIGNED loading sheets (filtered out', allSheets.length - unassignedSheets.length, 'assigned sheets)');
         } else {
           console.error('Error loading sheets:', result.error);
           toast.error(`Failed to load loading sheets: ${result.error}`);
@@ -468,12 +708,23 @@ function LoadingSheet() {
     } finally {
       setLoadingSheets(false);
     }
-  }, []);
+  }, [assignments]);
+
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
 
   useEffect(() => {
     fetchLoadingSheets();
     fetchColdRoomPallets();
   }, [fetchLoadingSheets, fetchColdRoomPallets]);
+
+  // Refetch when assignments change
+  useEffect(() => {
+    if (assignments.length > 0) {
+      fetchLoadingSheets();
+    }
+  }, [assignments, fetchLoadingSheets]);
 
   // Refetch pallets when cold room selection changes
   useEffect(() => {
@@ -707,6 +958,9 @@ const handleSave = async () => {
       // Refresh the list of existing sheets
       await fetchLoadingSheets();
       
+      // Refresh assignments
+      await fetchAssignments();
+      
       // Refresh available pallets (will now exclude the saved ones)
       await fetchColdRoomPallets();
       
@@ -913,9 +1167,9 @@ const handleLoadSheet = (sheetId: string) => {
               Complete loading sheet with pallets loaded from cold room
             </p>
             
-            {/* Loading sheet selector */}
+            {/* Loading sheet selector - NOW SHOWS ONLY UNASSIGNED SHEETS */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Label htmlFor="sheet-selector" className="text-xs font-medium">Load existing:</Label>
+              <Label htmlFor="sheet-selector" className="text-xs font-medium">Load existing UNASSIGNED sheet:</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-8 text-xs">
@@ -927,17 +1181,17 @@ const handleLoadSheet = (sheetId: string) => {
                     ) : (
                       <>
                         <ChevronDown className="h-3 w-3 mr-2" />
-                        Select sheet ({existingSheets.length})
+                        Select sheet ({existingSheets.length} unassigned)
                       </>
                     )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
-                  <DropdownMenuLabel>Saved Loading Sheets</DropdownMenuLabel>
+                  <DropdownMenuLabel>Unassigned Loading Sheets</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {existingSheets.length === 0 ? (
                     <DropdownMenuItem disabled>
-                      No saved sheets found
+                      No unassigned sheets found
                     </DropdownMenuItem>
                   ) : (
                     existingSheets.slice(0, 10).map(sheet => (
@@ -957,10 +1211,15 @@ const handleLoadSheet = (sheetId: string) => {
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem disabled>
-                        +{existingSheets.length - 10} more sheets
+                        +{existingSheets.length - 10} more unassigned sheets
                       </DropdownMenuItem>
                     </>
                   )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled className="text-xs">
+                    <EyeOff className="h-3 w-3 mr-2" />
+                    Assigned sheets are hidden from this list
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -1339,8 +1598,8 @@ const handleLoadSheet = (sheetId: string) => {
                           
                           return (
                             <TableRow key={pallet.id} className={
-                              isAdded ? "bg-green-50" : 
-                              isAssignedToOtherSheet ? "bg-amber-50" : 
+                              isAdded ? "bg-NA-50" : 
+                              isAssignedToOtherSheet ? "bg-NA-50" : 
                               "hover:bg-black-50"
                             }>
                               <TableCell>
@@ -1360,12 +1619,12 @@ const handleLoadSheet = (sheetId: string) => {
                               <TableCell className="font-medium">
                                 {pallet.pallet_no}
                                 {isAdded && (
-                                  <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 text-xs">
+                                  <Badge variant="outline" className="ml-2 bg-black-100 text-green-800 text-xs">
                                     In Current Sheet
                                   </Badge>
                                 )}
                                 {isAssignedToOtherSheet && !isAdded && (
-                                  <Badge variant="outline" className="ml-2 bg-amber-100 text-amber-800 text-xs">
+                                  <Badge variant="outline" className="ml-2 bg-black-100 text-amber-800 text-xs">
                                     Already Assigned
                                   </Badge>
                                 )}
@@ -1640,7 +1899,7 @@ function CarrierAssignmentForm() {
         }
       }
       
-      // Fetch loading sheets
+      // Fetch loading sheets - GET ALL SHEETS (including assigned ones for this form)
       const sheetsResponse = await fetch('/api/loading-sheets?limit=50');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
@@ -1743,7 +2002,7 @@ function CarrierAssignmentForm() {
     }
   };
 
-  // Filter loading sheets based on search
+  // Filter loading sheets based on search - SHOW ALL SHEETS (assigned ones too)
   const filteredLoadingSheets = loadingSheets.filter(sheet =>
     sheet.bill_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     sheet.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1856,16 +2115,26 @@ function CarrierAssignmentForm() {
                     <SelectValue placeholder="Choose a loading sheet" />
                   </SelectTrigger>
                   <SelectContent>
-                    {filteredLoadingSheets.map(sheet => (
-                      <SelectItem key={sheet.id} value={sheet.id}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{sheet.bill_number || 'No Bill Number'}</span>
-                          <span className="text-xs text-muted-foreground">
-                            Client: {sheet.client || 'N/A'} • Container: {sheet.container || 'N/A'}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {filteredLoadingSheets.map(sheet => {
+                      const isAssigned = assignments.some(a => a.loading_sheet_id === sheet.id);
+                      return (
+                        <SelectItem key={sheet.id} value={sheet.id}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{sheet.bill_number || 'No Bill Number'}</span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                Client: {sheet.client || 'N/A'}
+                              </span>
+                              {isAssigned && (
+                                <Badge className="ml-2 bg-amber-100 text-amber-800 text-xs">
+                                  Already Assigned
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 {selectedLoadingSheetId && (
@@ -2641,7 +2910,7 @@ function TransitManagement() {
   );
 }
 
-// History Component for downloading lists
+// History Component for downloading lists - UPDATED WITH PALLET VIEW MODAL
 function HistoryDownload() {
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -2960,7 +3229,7 @@ function HistoryDownload() {
         </CardContent>
       </Card>
 
-      {/* Loading Sheets Table */}
+      {/* Loading Sheets Table - UPDATED WITH PALLET VIEW MODAL */}
       <Card>
         <CardHeader>
           <CardTitle>Loading Sheets</CardTitle>
@@ -3009,13 +3278,11 @@ function HistoryDownload() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
+                          <PalletDetailsModal loadingSheet={sheet} />
                           <Button variant="ghost" size="sm" asChild>
                             <a href={`/api/loading-sheets/${sheet.id}/download`} target="_blank">
                               <Download className="h-4 w-4" />
                             </a>
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <Eye className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>

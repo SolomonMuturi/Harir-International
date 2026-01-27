@@ -853,34 +853,9 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       rightY += 8;
     }
     
-    // Use the maximum Y position from both columns
-    yPos = Math.max(leftY, rightY);
+
     
-    doc.setFillColor(240, 253, 244);
-    doc.rect(10, yPos, 190, 30, 'F');
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('Final Summary', 15, yPos + 6);
-    
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    
-    const totalBoxes = (record.fuerte_4kg_total || 0) + (record.fuerte_10kg_total || 0) + 
-                      (record.hass_4kg_total || 0) + (record.hass_10kg_total || 0);
-    const totalWeight = totalFuerteWeight + totalHassWeight;
-    
-    doc.text('Weight Summary:', 15, yPos + 14);
-    doc.text(`Counted Weight: ${safeToFixed(totalWeight, 2)} kg`, 60, yPos + 14);
-    doc.text(`Rejected Weight: ${safeToFixed(rejectedWeight, 2)} kg`, 120, yPos + 14);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Grand Total:', 15, yPos + 25);
-    doc.text(`${totalBoxes} boxes/crates`, 60, yPos + 25);
-    doc.text(`${safeToFixed(intakeWeight, 2)} kg intake`, 120, yPos + 25);
-    
-    yPos += 34;
+    yPos += 75;
     
     if (record.bank_name || record.bank_account || record.kra_pin) {
       doc.setFillColor(249, 250, 251);

@@ -1035,32 +1035,116 @@ export default function ColdRoomPage() {
       });
     });
     
-    const sizeGroupsArray = Object.values(sizeGroupMap).sort((a, b) => {
-      if (b.remainingQuantity !== a.remainingQuantity) {
-        return b.remainingQuantity - a.remainingQuantity;
+const sizeGroupsArray = Object.values(sizeGroupMap).sort((a, b) => {
+  if (b.remainingQuantity !== a.remainingQuantity) {
+    return b.remainingQuantity - a.remainingQuantity;
+  }
+  return a.size.localeCompare(b.size);
+});
+
+setSizeGroups(sizeGroupsArray);
+
+saveBalanceData(sizeGroupsArray);
+
+}, [selectedRecords, countingRecords]);
+
+useEffect(() => {
+  processSizeGroups();
+}, [selectedRecords, countingRecords, processSizeGroups]);
+
+useEffect(() => {
+  // Only run when switching to pallets tab AND we have no data
+  if (activeTab === 'pallets' && palletCreation.selectedBoxes.length === 0 && coldRoomBoxes.length > 0) {
+    // Initial load only
+    const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+    
+    const filteredBoxes = availableBoxes.filter(box => 
+      !palletCreation.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id)
+    );
+    
+    const boxSelections: BoxSelection[] = filteredBoxes.map(box => ({
+      id: box.id,
+      variety: box.variety,
+      box_type: box.box_type,
+      size: box.size,
+      grade: box.grade,
+      quantity: box.quantity,
+      maxQuantity: box.quantity,
+      selectedQuantity: 0,
+      cold_room_id: box.cold_room_id,
+      supplier_name: box.supplier_name,
+      region: box.region,
+      is_selected: false,
+      loading_sheet_id: box.loading_sheet_id,
+      is_in_pallet: box.is_in_pallet
+    }));
+    
+    setPalletCreation(prev => ({
+      ...prev,
+      selectedBoxes: boxSelections
+    }));
+  }
+}, [activeTab]); // Only depends on activeTab
+
+useEffect(() => {
+  if (activeTab === 'inventory' || activeTab === 'pallets') {
+    fetchLoadingSheets();
+  }
+}, [selectedColdRoom, activeTab]);
+
+const handleToggleBoxSelection = (boxId: string) => {
+  setPalletCreation(prev => {
+    const updatedBoxes = prev.selectedBoxes.map(box => {
+      if (box.id === boxId) {
+        const newSelected = !box.is_selected;
+        return {
+          ...box,
+          is_selected: newSelected,
+          selectedQuantity: newSelected ? 1 : 0
+        };
       }
-      return a.size.localeCompare(b.size);
+      return box;
     });
-    
-    setSizeGroups(sizeGroupsArray);
-    
-    saveBalanceData(sizeGroupsArray);
-    
-  }, [selectedRecords, countingRecords]);
+    return { ...prev, selectedBoxes: updatedBoxes };
+  });
+};
 
-  useEffect(() => {
-    processSizeGroups();
-  }, [selectedRecords, countingRecords, processSizeGroups]);
-
-  useEffect(() => {
-    if (coldRoomBoxes.length > 0) {
-      const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+const refreshPalletFormData = async () => {
+  try {
+    setIsLoading(prev => ({ ...prev, boxes: true }));
+    
+    // Fetch fresh data
+    await fetchColdRoomBoxes();
+    
+    // Get fresh available boxes
+    const freshAvailableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+    
+    // Filter based on showOnlyAvailable setting
+    const filteredBoxes = freshAvailableBoxes.filter(box => 
+      !palletCreation.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id)
+    );
+    
+    // Create a map of existing selections to preserve user choices
+    const existingSelectionsMap = new Map(
+      palletCreation.selectedBoxes
+        .filter(box => box.is_selected || box.selectedQuantity > 0)
+        .map(box => [box.id, box])
+    );
+    
+    const boxSelections: BoxSelection[] = filteredBoxes.map(box => {
+      const existingSelection = existingSelectionsMap.get(box.id);
       
-      const filteredBoxes = availableBoxes.filter(box => 
-        !palletCreation.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id)
-      );
+      if (existingSelection) {
+        // Preserve existing selection but update maxQuantity based on fresh data
+        return {
+          ...existingSelection,
+          quantity: box.quantity, // Update current available quantity
+          maxQuantity: box.quantity - (existingSelection.selectedQuantity || 0) // Calculate remaining available
+        };
+      }
       
-      const boxSelections: BoxSelection[] = filteredBoxes.map(box => ({
+      // Create new selection for unselected boxes
+      return {
         id: box.id,
         variety: box.variety,
         box_type: box.box_type,
@@ -1075,54 +1159,57 @@ export default function ColdRoomPage() {
         is_selected: false,
         loading_sheet_id: box.loading_sheet_id,
         is_in_pallet: box.is_in_pallet
-      }));
-      
-      setPalletCreation(prev => ({
-        ...prev,
-        selectedBoxes: boxSelections
-      }));
-    }
-  }, [coldRoomBoxes, palletCreation.showOnlyAvailable]);
-
-  useEffect(() => {
-    if (activeTab === 'inventory' || activeTab === 'pallets') {
-      fetchLoadingSheets();
-    }
-  }, [selectedColdRoom, activeTab]);
-
-  const handleToggleBoxSelection = (boxId: string) => {
-    setPalletCreation(prev => {
-      const updatedBoxes = prev.selectedBoxes.map(box => {
-        if (box.id === boxId) {
-          const newSelected = !box.is_selected;
-          return {
-            ...box,
-            is_selected: newSelected,
-            selectedQuantity: newSelected ? 1 : 0
-          };
-        }
-        return box;
-      });
-      return { ...prev, selectedBoxes: updatedBoxes };
+      };
     });
-  };
-
-  const handleBoxQuantityChange = (boxId: string, quantity: number) => {
-    setPalletCreation(prev => {
-      const updatedBoxes = prev.selectedBoxes.map(box => {
-        if (box.id === boxId) {
-          const validQuantity = Math.max(0, Math.min(quantity, box.maxQuantity));
-          return {
-            ...box,
-            selectedQuantity: validQuantity,
-            is_selected: validQuantity > 0
-          };
-        }
-        return box;
-      });
-      return { ...prev, selectedBoxes: updatedBoxes };
+    
+    setPalletCreation(prev => ({
+      ...prev,
+      selectedBoxes: boxSelections
+    }));
+    
+    toast({
+      title: "Form refreshed",
+      description: "Pallet form has been updated with latest inventory data.",
     });
-  };
+    
+  } catch (error) {
+    console.error('Error refreshing pallet form:', error);
+    toast({
+      title: "Refresh failed",
+      description: "Could not refresh inventory data. Please try again.",
+      variant: "destructive",
+    });
+  } finally {
+    setIsLoading(prev => ({ ...prev, boxes: false }));
+  }
+};
+
+const handleBoxQuantityChange = (boxId: string, quantity: number) => {
+  setPalletCreation(prev => {
+    const updatedBoxes = prev.selectedBoxes.map(box => {
+      if (box.id === boxId) {
+        // Calculate available quantity (total minus already selected across all pallets)
+        const currentSelectedQuantity = box.selectedQuantity || 0;
+        const requestedChange = quantity - currentSelectedQuantity;
+        
+        // Ensure we don't go below 0 or above max available
+        const newSelectedQuantity = Math.max(0, Math.min(quantity, box.maxQuantity));
+        
+        // Calculate new maxQuantity (available minus selected)
+        const newMaxQuantity = Math.max(0, box.quantity - newSelectedQuantity);
+        
+        return {
+          ...box,
+          selectedQuantity: newSelectedQuantity,
+          maxQuantity: newMaxQuantity,
+          is_selected: newSelectedQuantity > 0
+        };
+      }
+      return box;
+    });
+    return { ...prev, selectedBoxes: updatedBoxes };
+  });
+};
 
   const calculateSelectedBoxesSummary = () => {
     const selectedBoxes = palletCreation.selectedBoxes.filter(box => box.is_selected && box.selectedQuantity > 0);
@@ -1968,32 +2055,23 @@ export default function ColdRoomPage() {
     window.open(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`, '_blank');
   };
 
-  useEffect(() => {
-    fetchAllData();
-    
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'refreshColdRoom' || e.key === 'loadingSheetUpdated') {
-        console.log('🔄 Storage change detected, refreshing cold room data...');
-        fetchAllData();
-        fetchLoadingSheets();
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    const interval = setInterval(() => {
-      if (activeTab === 'inventory' || activeTab === 'pallets') {
-        fetchColdRoomBoxes();
-        fetchPallets();
-        fetchLoadingSheets();
-      }
-    }, 30000);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
-    };
-  }, [fetchCountingRecords, activeTab]);
+useEffect(() => {
+  fetchAllData();
+  
+  const handleStorageChange = (e: StorageEvent) => {
+    if (e.key === 'refreshColdRoom' || e.key === 'loadingSheetUpdated') {
+      console.log('🔄 Storage change detected, refreshing cold room data...');
+      fetchAllData();
+      fetchLoadingSheets();
+    }
+  };
+  
+  window.addEventListener('storage', handleStorageChange);
+  
+  return () => {
+    window.removeEventListener('storage', handleStorageChange);
+  };
+}, [fetchCountingRecords]); // Removed activeTab dependency
 
   return (
     <SidebarProvider>
@@ -2766,6 +2844,15 @@ export default function ColdRoomPage() {
                       <Palette className="w-5 h-5" />
                       Create Manual Pallet
                     </CardTitle>
+                          <Button
+        variant="outline"
+        size="sm"
+        onClick={refreshPalletFormData}
+        disabled={isLoading.boxes}
+      >
+        <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.boxes ? 'animate-spin' : ''}`} />
+        Refresh Inventory Data
+      </Button>
                     <CardDescription>
                       Combine available boxes from cold room to create a complete pallet
                     </CardDescription>
@@ -2929,6 +3016,32 @@ export default function ColdRoomPage() {
                             </TableHeader>
                             <TableBody>
                               {palletCreation.selectedBoxes
+                                // Sort boxes by size from smallest to largest
+                                .sort((a, b) => {
+                                  // Define the order of sizes from smallest to largest
+                                  const sizeOrder = ['28', '26', '24', '22', '20', '18', '14', '12'];
+                                  
+                                  // Convert size to string for comparison
+                                  const sizeA = a.size.toString();
+                                  const sizeB = b.size.toString();
+                                  
+                                  // Get the index in the ordered array, default to last if not found
+                                  const indexA = sizeOrder.indexOf(sizeA);
+                                  const indexB = sizeOrder.indexOf(sizeB);
+                                  
+                                  // If both sizes are in the order array, sort by their position
+                                  if (indexA !== -1 && indexB !== -1) {
+                                    return indexA - indexB;
+                                  }
+                                  
+                                  // If only one size is in the order array, put it first
+                                  if (indexA !== -1) return -1;
+                                  if (indexB !== -1) return 1;
+                                  
+                                  // If neither size is in the order array, sort alphabetically
+                                  return sizeA.localeCompare(sizeB);
+                                })
+                                // Then apply the filter for showOnlyAvailable
                                 .filter(box => !palletCreation.showOnlyAvailable || (!box.is_in_pallet && !box.loading_sheet_id))
                                 .map((box) => {
                                   const isAssignedToLoadingSheet = box.loading_sheet_id !== null;
@@ -3089,8 +3202,7 @@ export default function ColdRoomPage() {
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-                
+                </Card>                
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">

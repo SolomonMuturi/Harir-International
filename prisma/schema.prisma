@@ -230,13 +230,14 @@ model shipments {
   @@map("shipments")
 }
 
+// In the suppliers model, add unique constraints
 model suppliers {
   id                     String           @id @default(cuid()) @db.VarChar(20)
-  name                   String           @db.VarChar(100)
+  name                   String           @unique @db.VarChar(100) // Add @unique here
   location               String?          @db.VarChar(100)
   contact_name           String?          @db.VarChar(100)
   contact_email          String?          @db.VarChar(100)
-  contact_phone          String?          @db.VarChar(20)
+  contact_phone          String           @unique @db.VarChar(20) // Make this required and unique
   produce_types          String?          @db.LongText
   status                 suppliers_status
   logo_url               String?          @db.VarChar(255)
@@ -258,6 +259,10 @@ model suppliers {
   vehicle_type           String?          @db.VarChar(50)
   cargo_description      String?          @db.LongText
 
+  // Add compound unique constraint for name + phone
+  @@unique([name, contact_phone], name: "supplier_name_phone_unique")
+  
+  // Add validation for payment details
   @@map("suppliers")
 }
 

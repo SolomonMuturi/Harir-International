@@ -1,8 +1,6 @@
-
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -36,19 +34,29 @@ import { format } from 'date-fns';
 import { customerData } from '@/lib/data';
 import { useToast } from '@/hooks/use-toast';
 
-export default function TagManagementPage() {
+// Create a separate component that uses URL params
+function TagManagementContent() {
   const [tagBatches, setTagBatches] = useState<TagBatch[]>(tagBatchData);
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
-  const searchParams = useSearchParams();
+  const [searchParams, setSearchParams] = useState<URLSearchParams | null>(null);
   const [editingBatch, setEditingBatch] = useState<TagBatch | null>(null);
   const [previewingBatch, setPreviewingBatch] = useState<TagBatch | null>(null);
   const { toast } = useToast();
 
+  // Get URL search params on client side
   useEffect(() => {
-    const shipmentIdFromUrl = searchParams.get('shipmentId');
-    if (shipmentIdFromUrl) {
-      const shipment = shipmentData.find(s => s.id === shipmentIdFromUrl) || null;
-      setSelectedShipment(shipment);
+    if (typeof window !== 'undefined') {
+      setSearchParams(new URLSearchParams(window.location.search));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (searchParams) {
+      const shipmentIdFromUrl = searchParams.get('shipmentId');
+      if (shipmentIdFromUrl) {
+        const shipment = shipmentData.find(s => s.id === shipmentIdFromUrl) || null;
+        setSelectedShipment(shipment);
+      }
     }
   }, [searchParams]);
 
@@ -249,5 +257,21 @@ export default function TagManagementPage() {
          </div>
       )}
     </>
+  );
+}
+
+// Main component with Suspense boundary
+export default function TagManagementPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold">Loading Tag Management...</h2>
+          <p className="text-muted-foreground">Please wait while we load the tag management system.</p>
+        </div>
+      </div>
+    }>
+      <TagManagementContent />
+    </Suspense>
   );
 }

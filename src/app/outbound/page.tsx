@@ -2988,7 +2988,7 @@ function TransitManagement() {
   );
 }
 
-// History Component for downloading lists - UPDATED WITH PALLET VIEW MODAL
+// History Component for downloading lists - UPDATED WITH DOWNLOAD FUNCTIONALITY
 function HistoryDownload() {
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -3183,6 +3183,154 @@ function HistoryDownload() {
     window.URL.revokeObjectURL(url);
   };
 
+// Updated downloadLoadingSheet function in CSV format
+const downloadLoadingSheet = async (loadingSheetId: string) => {
+  try {
+    // Get the loading sheet details from the already loaded data
+    const loadingSheet = loadingSheets.find(ls => ls.id === loadingSheetId);
+    if (!loadingSheet) {
+      toast.error('Loading sheet not found');
+      return;
+    }
+
+    // Get pallets from the loading sheet data (already included in the initial fetch)
+    const pallets = loadingSheet.loading_pallets || [];
+    
+    // Calculate totals
+    let totalBoxes = 0;
+    let totalWeight = 0;
+    const varietyDistribution: { [key: string]: number } = {};
+    const boxTypeDistribution: { [key: string]: number } = {};
+    
+    pallets.forEach((pallet: any) => {
+      const quantity = pallet.size24 || 0;
+      const boxType = pallet.trace_code || '4kg'; // Default to 4kg if not specified
+      const weightPerBox = boxType === '10kg' ? 10 : 4;
+      const weight = quantity * weightPerBox;
+      
+      totalBoxes += quantity;
+      totalWeight += weight;
+      
+      // Track variety distribution
+      const variety = pallet.temp || 'Fuerte';
+      varietyDistribution[variety] = (varietyDistribution[variety] || 0) + 1;
+      
+      // Track box type distribution
+      const boxTypeLabel = boxType === '10kg' ? '10kg Boxes' : '4kg Boxes';
+      boxTypeDistribution[boxTypeLabel] = (boxTypeDistribution[boxTypeLabel] || 0) + quantity;
+    });
+
+    // Format variety for display
+    const formatVariety = (variety: string) => {
+      if (!variety) return 'Fuerte';
+      return variety.charAt(0).toUpperCase() + variety.slice(1);
+    };
+
+    // Format date for CSV
+    const formatDateForCSV = (dateString: string | Date | null) => {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    };
+
+    // Create the CSV content
+    const csvRows = [];
+    
+    // Header
+    csvRows.push('LOADING SHEET\n');
+    
+    // Loading Sheet Information
+    csvRows.push(`EXPORTER,${loadingSheet.exporter || 'HARIR INTERNATIONAL LTD'},LOADING DATE,${formatDateForCSV(loadingSheet.loading_date)}`);
+    csvRows.push(`CLIENT,${loadingSheet.client || 'N/A'},VESSEL,${loadingSheet.vessel || 'N/A'}`);
+    csvRows.push(`SHIPPING LINE,${loadingSheet.shipping_line || 'N/A'},ETA MSA,${formatDateForCSV(loadingSheet.eta_msa)}`);
+    csvRows.push(`BILL NUMBER,${loadingSheet.bill_number || 'N/A'},ETD MSA,${formatDateForCSV(loadingSheet.etd_msa)}`);
+    csvRows.push(`CONTAINER,${loadingSheet.container || 'N/A'},PORT,${loadingSheet.port || ''}`);
+    csvRows.push(`SEAL 1,${loadingSheet.seal1 || ''},ETA PORT,${formatDateForCSV(loadingSheet.eta_port)}`);
+    csvRows.push(`SEAL 2,${loadingSheet.seal2 || ''},TEMP REC 1,${loadingSheet.temp_rec1 || ''}`);
+    csvRows.push(`TRUCK,${loadingSheet.truck || ''},TEMP REC 2,${loadingSheet.temp_rec2 || ''}`);
+    csvRows.push('');
+    
+    // Pallet Summary
+    csvRows.push(`PALLETS IN LOADING SHEET (${pallets.length})`);
+    csvRows.push(`${totalBoxes} boxes • ${totalWeight} kg`);
+    csvRows.push('');
+    
+    // Pallet Table Headers
+    csvRows.push('PALLET NO,COLD ROOM,VARIETY,TYPE,SIZE,GRADE,QUANTITY,WEIGHT (kg),ACTIONS');
+    
+    // Pallet Data Rows
+    pallets.forEach((pallet: any, index: number) => {
+      const quantity = pallet.size24 || 0;
+      const boxType = pallet.trace_code || '4kg Box';
+      const weight = quantity * (boxType === '10kg' ? 10 : 4);
+      const variety = formatVariety(pallet.temp || 'Fuerte');
+      const size = pallet.size || 'Size 24';
+      const grade = pallet.grade === 'class1' ? 'Class 1' : pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
+      const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+      
+      csvRows.push(`${index + 1},${coldRoom},${variety},${boxType},${size},${grade},${quantity},${weight} kg,`);
+    });
+    
+    // Totals Row
+    csvRows.push(`TOTAL,,,,,,${totalBoxes},${totalWeight} kg,`);
+    csvRows.push('');
+    
+    // Summary Section
+    csvRows.push('SUMMARY');
+    csvRows.push(`Total Pallets,${pallets.length}`);
+    csvRows.push(`Total Boxes,${totalBoxes}`);
+    csvRows.push(`Total Weight,${totalWeight} kg`);
+    csvRows.push(`Average per Pallet,${pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0} boxes`);
+    
+    // Variety Distribution
+    csvRows.push('Variety Distribution');
+    Object.entries(varietyDistribution).forEach(([variety, count]) => {
+      csvRows.push(`${variety},${count}`);
+    });
+    
+    // Box Type Distribution
+    csvRows.push('Box Type Distribution');
+    Object.entries(boxTypeDistribution).forEach(([boxType, count]) => {
+      csvRows.push(`${boxType},${count}`);
+    });
+    csvRows.push('');
+    
+    // Loading Details
+    csvRows.push('LOADING DETAILS');
+    csvRows.push(`Loaded by,${loadingSheet.loaded_by || "Loader's name & signature"}`);
+    csvRows.push(`Checked by,${loadingSheet.checked_by || "Supervisor's name & signature"}`);
+    csvRows.push(`Remarks,${loadingSheet.remarks || 'Special instructions or notes'}`);
+    csvRows.push('');
+    
+    // Footer
+    csvRows.push(`Generated by Harir International Logistics System • Document ID: ${loadingSheet.id || `NEW-LS-${new Date().getTime().toString().slice(-6)}`}`);
+    
+    // Join all rows with newlines
+    const csvContent = csvRows.join('\n');
+    
+    // Create and download the CSV file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `loading-sheet-${loadingSheet.bill_number || loadingSheet.id}-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    toast.success('Loading sheet downloaded as CSV successfully!');
+    
+  } catch (error) {
+    console.error('Error downloading loading sheet:', error);
+    toast.error('Failed to download loading sheet');
+  }
+};
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -3307,7 +3455,7 @@ function HistoryDownload() {
         </CardContent>
       </Card>
 
-      {/* Loading Sheets Table - UPDATED WITH PALLET VIEW MODAL */}
+      {/* Loading Sheets Table - UPDATED WITH DOWNLOAD BUTTON */}
       <Card>
         <CardHeader>
           <CardTitle>Loading Sheets</CardTitle>
@@ -3357,10 +3505,13 @@ function HistoryDownload() {
                       <TableCell>
                         <div className="flex gap-2">
                           <PalletDetailsModal loadingSheet={sheet} />
-                          <Button variant="ghost" size="sm" asChild>
-                            <a href={`/api/loading-sheets/${sheet.id}/download`} target="_blank">
-                              <Download className="h-4 w-4" />
-                            </a>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => downloadLoadingSheet(sheet.id)}
+                            title="Download loading sheet"
+                          >
+                            <Download className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>

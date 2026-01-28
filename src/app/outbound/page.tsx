@@ -471,7 +471,7 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
   );
 }
 
-// Loading Sheet Component
+// Loading Sheet Component - FIXED VERSION
 function LoadingSheet() {
   const defaultData: LoadingSheetData = {
     exporter: 'HARIR INTERNATIONAL LTD',
@@ -523,37 +523,93 @@ function LoadingSheet() {
   // Fetch assignments to filter out assigned loading sheets
   const [assignments, setAssignments] = useState<Assignment[]>([]);
 
-  // Helper function to safely get quantity
-  const getSafeQuantity = (pallet: ColdRoomPallet | PalletWithBoxes): number => {
-    return Number(pallet?.quantity) || 0;
+  // Helper function to safely get quantity - FIXED
+  const getSafeQuantity = (pallet: any): number => {
+    if (!pallet) return 0;
+    
+    // Try multiple possible quantity fields
+    if (typeof pallet.quantity === 'number') return pallet.quantity;
+    if (typeof pallet.quantity === 'string') return Number(pallet.quantity) || 0;
+    
+    // For ColdRoomPallet type
+    if (typeof pallet.total_boxes === 'number') return pallet.total_boxes;
+    if (typeof pallet.total_boxes === 'string') return Number(pallet.total_boxes) || 0;
+    
+    // For pallet count calculation
+    if (pallet.pallet_count && pallet.boxes_per_pallet) {
+      return Number(pallet.pallet_count) * Number(pallet.boxes_per_pallet);
+    }
+    
+    // Default
+    return pallet.size24 || 0;
   };
 
-  // Helper function to safely get box type
-  const getSafeBoxType = (pallet: ColdRoomPallet | PalletWithBoxes): '4kg' | '10kg' => {
-    return (pallet?.box_type === '10kg' ? '10kg' : '4kg') as '4kg' | '10kg';
+  // Helper function to safely get box type - FIXED
+  const getSafeBoxType = (pallet: any): '4kg' | '10kg' => {
+    if (!pallet) return '4kg';
+    
+    if (pallet.box_type === '10kg' || pallet.box_type === '10kg Box' || pallet.boxType === '10kg') {
+      return '10kg';
+    }
+    
+    return '4kg';
   };
 
-  // Helper function to safely get weight
-  const getSafeWeight = (pallet: ColdRoomPallet | PalletWithBoxes): number => {
+  // Helper function to safely get weight - FIXED
+  const getSafeWeight = (pallet: any): number => {
     const quantity = getSafeQuantity(pallet);
     const boxType = getSafeBoxType(pallet);
     return quantity * (boxType === '10kg' ? 10 : 4);
   };
 
-  // Format variety for display
-  const formatVarietyForDisplay = (variety: string): string => {
-    return variety === 'fuerte' ? 'Fuerte' : 
-           variety === 'hass' ? 'Hass' : 
-           'Mixed (Fuerte & Hass)';
+  // Format variety for display - FIXED
+  const formatVarietyForDisplay = (variety: any): string => {
+    if (!variety) return 'Fuerte';
+    
+    const varietyStr = String(variety).toLowerCase();
+    
+    if (varietyStr === 'hass') return 'Hass';
+    if (varietyStr === 'mixed' || varietyStr.includes('mix')) return 'Mixed (Fuerte & Hass)';
+    
+    return 'Fuerte';
   };
 
-  // Fetch cold room pallets - UPDATED to only show pallets not assigned to any loading sheet
+  // Format size for display - FIXED
+  const formatSizeForDisplay = (size: any): string => {
+    if (!size) return 'Size 24';
+    
+    const sizeStr = String(size);
+    
+    if (sizeStr.includes('size')) {
+      return sizeStr.replace('size', 'Size ');
+    }
+    
+    if (/^\d+$/.test(sizeStr)) {
+      return `Size ${sizeStr}`;
+    }
+    
+    return sizeStr;
+  };
+
+  // Format grade for display - FIXED
+  const formatGradeForDisplay = (grade: any): string => {
+    if (!grade) return 'Class 1';
+    
+    const gradeStr = String(grade).toLowerCase();
+    
+    if (gradeStr === 'class2' || gradeStr === 'class 2' || gradeStr === 'grade2') {
+      return 'Class 2';
+    }
+    
+    return 'Class 1';
+  };
+
+  // Fetch cold room pallets - UPDATED with correct data structure
   const fetchColdRoomPallets = useCallback(async () => {
     try {
       setLoadingColdRoomPallets(true);
       console.log(`📦 Fetching available pallets from ${selectedColdRoom}...`);
       
-      // First, get the pallets from the cold room
       const response = await fetch(`/api/cold-room?action=pallets&coldRoomId=${selectedColdRoom}`);
       
       if (!response.ok) {
@@ -564,46 +620,50 @@ function LoadingSheet() {
       console.log('📊 Cold room pallets response:', result);
       
       if (result.success && Array.isArray(result.data)) {
-        // Process pallets data - only include pallets with NO loading_sheet_id
         const processedPallets: ColdRoomPallet[] = [];
         
-        // Process each pallet from the API
         result.data.forEach((pallet: any, index: number) => {
           console.log(`📦 Processing pallet ${index + 1}:`, pallet);
           
-          // Skip pallets that already have a loading_sheet_id (already assigned)
+          // Skip pallets that already have a loading_sheet_id
           if (pallet.loading_sheet_id) {
             console.log(`⚠️ Skipping pallet ${pallet.id || pallet.pallet_id} - already assigned to loading sheet ${pallet.loading_sheet_id}`);
             return;
           }
           
-          // Generate a unique ID for the pallet
           const palletId = pallet.id || `pallet-${Date.now()}-${index}`;
-          
           const palletNo = pallet.pallet_name || `PAL-${palletId.substring(0, 8).toUpperCase()}`;
           
-          // Get pallet details - handle mixed varieties
+          // Get variety with correct mapping
           let variety: 'fuerte' | 'hass' | 'mixed' = 'fuerte';
-          if (pallet.variety === 'hass') {
+          const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
+          if (varietyStr === 'hass') {
             variety = 'hass';
-          } else if (pallet.variety === 'mixed' || (pallet.variety && pallet.variety.includes('mix'))) {
+          } else if (varietyStr === 'mixed' || varietyStr.includes('mix')) {
             variety = 'mixed';
           }
           
-          const boxType = (pallet.box_type === '10kg' ? '10kg' : '4kg') as '4kg' | '10kg';
-          const size = pallet.size || 'size24';
-          const grade = (pallet.grade === 'class2' ? 'class2' : 'class1') as 'class1' | 'class2';
+          // Get box type
+          const boxTypeStr = String(pallet.box_type || pallet.boxType || '4kg').toLowerCase();
+          const boxType = boxTypeStr === '10kg' ? '10kg' : '4kg' as '4kg' | '10kg';
           
-          // Get quantity - check multiple possible sources
-          let quantity = 0;
-          if (pallet.quantity) {
-            quantity = Number(pallet.quantity);
-          } else if (pallet.pallet_count) {
-            // If it's a pallet, calculate boxes based on pallet count
-            const boxesPerPallet = pallet.boxes_per_pallet || (boxType === '10kg' ? 120 : 288);
+          // Get size - normalize to size format
+          let size = pallet.size || 'size24';
+          if (!size.startsWith('size') && /^\d+$/.test(size)) {
+            size = `size${size}`;
+          }
+          
+          // Get grade
+          const gradeStr = String(pallet.grade || 'class1').toLowerCase();
+          const grade = gradeStr === 'class2' ? 'class2' : 'class1' as 'class1' | 'class2';
+          
+          // Get quantity
+          let quantity = getSafeQuantity(pallet);
+          
+          // If it's a pallet, calculate based on pallet count
+          if (pallet.pallet_count && pallet.boxes_per_pallet) {
+            const boxesPerPallet = Number(pallet.boxes_per_pallet) || (boxType === '10kg' ? 120 : 288);
             quantity = Number(pallet.pallet_count) * boxesPerPallet;
-          } else if (pallet.total_boxes) {
-            quantity = Number(pallet.total_boxes);
           }
           
           const processedPallet: ColdRoomPallet = {
@@ -621,13 +681,13 @@ function LoadingSheet() {
             pallet_id: pallet.pallet_id,
             region: pallet.region || '',
             counting_record_id: pallet.counting_record_id,
-            loading_sheet_id: pallet.loading_sheet_id || null // Should be null for available pallets
+            loading_sheet_id: pallet.loading_sheet_id || null
           };
           
           processedPallets.push(processedPallet);
         });
         
-        console.log(`✅ Found ${processedPallets.length} available pallets (not assigned to any loading sheet)`);
+        console.log(`✅ Found ${processedPallets.length} available pallets`);
         setColdRoomPallets(processedPallets);
         
         // Calculate summary statistics
@@ -636,7 +696,7 @@ function LoadingSheet() {
           totalBoxes: processedPallets.reduce((sum, pallet) => sum + getSafeQuantity(pallet), 0),
           totalWeight: processedPallets.reduce((sum, pallet) => sum + getSafeWeight(pallet), 0),
           varietyCount: processedPallets.reduce((acc, pallet) => {
-            const variety = pallet.variety;
+            const variety = formatVarietyForDisplay(pallet.variety);
             acc[variety] = (acc[variety] || 0) + 1;
             return acc;
           }, {} as { [key: string]: number }),
@@ -661,8 +721,7 @@ function LoadingSheet() {
           boxTypeCount: {}
         });
         
-        // Show a toast notification
-        toast.warning('No available pallets found in the selected cold room. All pallets may already be assigned to loading sheets.');
+        toast.warning('No available pallets found in the selected cold room.');
       }
       
     } catch (error) {
@@ -681,7 +740,7 @@ function LoadingSheet() {
     }
   }, [selectedColdRoom]);
 
-  // Fetch assignments to identify assigned loading sheets
+  // Fetch assignments
   const fetchAssignments = useCallback(async () => {
     try {
       const response = await fetch('/api/carrier-assignments');
@@ -696,7 +755,7 @@ function LoadingSheet() {
     }
   }, []);
 
-  // Fetch existing loading sheets from database - FILTER OUT ASSIGNED SHEETS
+  // Fetch existing loading sheets from database
   const fetchLoadingSheets = useCallback(async () => {
     try {
       setLoadingSheets(true);
@@ -714,13 +773,13 @@ function LoadingSheet() {
             assignments.map(assignment => assignment.loading_sheet_id)
           );
           
-          // Filter out assigned loading sheets - only show unassigned ones
+          // Filter out assigned loading sheets
           const unassignedSheets = allSheets.filter((sheet: DatabaseLoadingSheet) => 
             !assignedSheetIds.has(sheet.id)
           );
           
           setExistingSheets(unassignedSheets);
-          console.log('📋 Loaded', unassignedSheets.length, 'UNASSIGNED loading sheets (filtered out', allSheets.length - unassignedSheets.length, 'assigned sheets)');
+          console.log('📋 Loaded', unassignedSheets.length, 'UNASSIGNED loading sheets');
         } else {
           console.error('Error loading sheets:', result.error);
           toast.error(`Failed to load loading sheets: ${result.error}`);
@@ -746,14 +805,12 @@ function LoadingSheet() {
     fetchColdRoomPallets();
   }, [fetchLoadingSheets, fetchColdRoomPallets]);
 
-  // Refetch when assignments change
   useEffect(() => {
     if (assignments.length > 0) {
       fetchLoadingSheets();
     }
   }, [assignments, fetchLoadingSheets]);
 
-  // Refetch pallets when cold room selection changes
   useEffect(() => {
     fetchColdRoomPallets();
   }, [selectedColdRoom, fetchColdRoomPallets]);
@@ -763,9 +820,9 @@ function LoadingSheet() {
     setExpandedPallet(expandedPallet === palletId ? null : palletId);
   };
 
-  // Add pallet to loading sheet - UPDATED with additional checks
+  // Add pallet to loading sheet
   const addPalletToSheet = (pallet: ColdRoomPallet) => {
-    // Check if pallet is already assigned to ANY loading sheet (not just current one)
+    // Check if pallet is already assigned to ANY loading sheet
     if (pallet.loading_sheet_id && pallet.loading_sheet_id !== sheetData.id) {
       toast.error(`Pallet ${pallet.pallet_no} is already assigned to another loading sheet`);
       return;
@@ -798,7 +855,6 @@ function LoadingSheet() {
 
   // Add all pallets to loading sheet
   const addAllPalletsToSheet = () => {
-    // Filter out pallets that are already assigned to other loading sheets
     const availablePallets = coldRoomPallets.filter(pallet => 
       !pallet.loading_sheet_id || pallet.loading_sheet_id === sheetData.id
     );
@@ -867,153 +923,142 @@ function LoadingSheet() {
     document.body.removeChild(element);
   };
 
-const markPalletsAsAssigned = async (pallets: PalletWithBoxes[], loadingSheetId: string) => {
-  try {
-    console.log('🔒 Marking pallets as assigned (backup)...', pallets.length);
-    
-    // Get the pallet IDs from the pallets
-    const palletIds = pallets.map(p => p.pallet_id || p.id).filter(id => id);
-    
-    if (palletIds.length === 0) {
-      console.warn('⚠️ No valid pallet IDs found to mark as assigned');
-      return true;
-    }
-    
-    // Call API to update pallet status with the actual loading sheet ID
-    const response = await fetch('/api/loading-sheets/assign-pallets', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        palletIds: palletIds,
-        loadingSheetId: loadingSheetId
-      })
-    });
-
-    const result = await response.json();
-    
-    if (result.success) {
-      console.log('✅ Backup: Pallets marked as assigned successfully');
-      return true;
-    } else {
-      console.warn('⚠️ Backup pallet assignment failed:', result.error);
-      return false;
-    }
-  } catch (error) {
-    console.error('Error in backup pallet assignment:', error);
-    return false;
-  }
-};
-
-const handleSave = async () => {
-  try {
-    setSaving(true);
-    
-    // Validate required fields
-    if (!sheetData.billNumber.trim()) {
-      toast.error('Please enter a Bill Number');
-      setSaving(false);
-      return;
-    }
-
-    if (!sheetData.container.trim()) {
-      toast.error('Please enter a Container Number');
-      setSaving(false);
-      return;
-    }
-
-    if (sheetData.pallets.length === 0) {
-      toast.error('Please add at least one pallet to the loading sheet');
-      setSaving(false);
-      return;
-    }
-
-    // Prepare the data for saving
-    const saveData = {
-      exporter: sheetData.exporter || defaultData.exporter,
-      client: sheetData.client || '',
-      shippingLine: sheetData.shippingLine || '',
-      billNumber: sheetData.billNumber || '',
-      container: sheetData.container || '',
-      seal1: sheetData.seal1 || '',
-      seal2: sheetData.seal2 || '',
-      truck: sheetData.truck || '',
-      vessel: sheetData.vessel || '',
-      etaMSA: sheetData.etaMSA || null,
-      etdMSA: sheetData.etdMSA || null,
-      port: sheetData.port || '',
-      etaPort: sheetData.etaPort || null,
-      tempRec1: sheetData.tempRec1 || '',
-      tempRec2: sheetData.tempRec2 || '',
-      loadingDate: sheetData.loadingDate || defaultData.loadingDate,
-      loadedBy: loadedBy || '',
-      checkedBy: checkedBy || '',
-      remarks: remarks || '',
-      pallets: sheetData.pallets.map((pallet, index) => ({
-        palletNo: index + 1,
-        palletId: pallet.pallet_id || pallet.id, // Make sure to include palletId
-        coldRoomId: pallet.cold_room_id || selectedColdRoom,
-        variety: pallet.variety || 'fuerte',
-        boxType: getSafeBoxType(pallet),
-        size: pallet.size || 'size24',
-        grade: pallet.grade || 'class1',
-        quantity: getSafeQuantity(pallet),
-        supplierName: pallet.supplier_name || '',
-        region: pallet.region || '',
-        boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: getSafeQuantity(pallet) }],
-        totalBoxes: pallet.totalBoxes || getSafeQuantity(pallet),
-        totalWeight: pallet.totalWeight || getSafeWeight(pallet)
-      }))
-    };
-
-    console.log('📤 Saving loading sheet to database...', saveData);
-
-    const response = await fetch('/api/loading-sheets', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(saveData)
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
-      toast.success(`✅ Loading sheet saved successfully!\nBill Number: ${sheetData.billNumber}`);
+  const handleSave = async () => {
+    try {
+      setSaving(true);
       
-      // Refresh the list of existing sheets
-      await fetchLoadingSheets();
-      
-      // Refresh assignments
-      await fetchAssignments();
-      
-      // Refresh available pallets (will now exclude the saved ones)
-      await fetchColdRoomPallets();
-      
-      // Clear form for new entry
-      handleNewSheet();
-    } else {
-      // Handle specific API errors
-      if (result.error?.includes('already assigned')) {
-        toast.error(`❌ Some pallets are already assigned to other loading sheets. Please remove them and try again.`);
-      } else {
-        throw new Error(result.error || result.details || 'Failed to save loading sheet');
+      // Validate required fields
+      if (!sheetData.billNumber.trim()) {
+        toast.error('Please enter a Bill Number');
+        setSaving(false);
+        return;
       }
+
+      if (!sheetData.container.trim()) {
+        toast.error('Please enter a Container Number');
+        setSaving(false);
+        return;
+      }
+
+      if (sheetData.pallets.length === 0) {
+        toast.error('Please add at least one pallet to the loading sheet');
+        setSaving(false);
+        return;
+      }
+
+      // Prepare the data for saving with correct field mapping
+      const saveData = {
+        exporter: sheetData.exporter || defaultData.exporter,
+        client: sheetData.client || '',
+        shippingLine: sheetData.shippingLine || '',
+        billNumber: sheetData.billNumber || '',
+        container: sheetData.container || '',
+        seal1: sheetData.seal1 || '',
+        seal2: sheetData.seal2 || '',
+        truck: sheetData.truck || '',
+        vessel: sheetData.vessel || '',
+        etaMSA: sheetData.etaMSA || null,
+        etdMSA: sheetData.etdMSA || null,
+        port: sheetData.port || '',
+        etaPort: sheetData.etaPort || null,
+        tempRec1: sheetData.tempRec1 || '',
+        tempRec2: sheetData.tempRec2 || '',
+        loadingDate: sheetData.loadingDate || defaultData.loadingDate,
+        loadedBy: loadedBy || '',
+        checkedBy: checkedBy || '',
+        remarks: remarks || '',
+        pallets: sheetData.pallets.map((pallet, index) => ({
+          palletNo: index + 1,
+          palletId: pallet.pallet_id || pallet.id,
+          coldRoomId: pallet.cold_room_id || selectedColdRoom,
+          variety: pallet.variety || 'fuerte',
+          boxType: getSafeBoxType(pallet),
+          size: pallet.size || 'size24',
+          grade: pallet.grade || 'class1',
+          quantity: getSafeQuantity(pallet),
+          supplierName: pallet.supplier_name || '',
+          region: pallet.region || '',
+          boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: getSafeQuantity(pallet) }],
+          totalBoxes: pallet.totalBoxes || getSafeQuantity(pallet),
+          totalWeight: pallet.totalWeight || getSafeWeight(pallet)
+        }))
+      };
+
+      console.log('📤 Saving loading sheet to database...', saveData);
+
+      const response = await fetch('/api/loading-sheets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(saveData)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(`✅ Loading sheet saved successfully!\nBill Number: ${sheetData.billNumber}`);
+        
+        await fetchLoadingSheets();
+        await fetchAssignments();
+        await fetchColdRoomPallets();
+        
+        handleNewSheet();
+      } else {
+        if (result.error?.includes('already assigned')) {
+          toast.error(`❌ Some pallets are already assigned to other loading sheets. Please remove them and try again.`);
+        } else {
+          throw new Error(result.error || result.details || 'Failed to save loading sheet');
+        }
+      }
+
+    } catch (error: any) {
+      console.error('❌ Error saving loading sheet:', error);
+      toast.error(`❌ Failed to save loading sheet: ${error.message}`);
+    } finally {
+      setSaving(false);
     }
+  };
 
-  } catch (error: any) {
-    console.error('❌ Error saving loading sheet:', error);
-    toast.error(`❌ Failed to save loading sheet: ${error.message}`);
-  } finally {
-    setSaving(false);
-  }
-};
-
-const handleLoadSheet = (sheetId: string) => {
+  const handleLoadSheet = (sheetId: string) => {
     const selectedSheet = existingSheets.find(sheet => sheet.id === sheetId);
     if (selectedSheet) {
-      // Convert database format to component format
+      console.log('Loading sheet data:', selectedSheet);
+      
+      // Parse loading_pallets correctly
+      let palletsData: PalletWithBoxes[] = [];
+      if (selectedSheet.loading_pallets && Array.isArray(selectedSheet.loading_pallets)) {
+        palletsData = selectedSheet.loading_pallets.map((pallet: any, index: number) => {
+          const quantity = getSafeQuantity(pallet);
+          const boxType = getSafeBoxType(pallet);
+          const variety = formatVarietyForDisplay(pallet.variety || pallet.temp);
+          const grade = formatGradeForDisplay(pallet.grade);
+          const size = formatSizeForDisplay(pallet.size);
+          
+          return {
+            id: pallet.id || `pallet-${index}`,
+            pallet_no: `PAL-${(pallet.palletId || pallet.id || '').substring(0, 8).toUpperCase()}`,
+            cold_room_id: pallet.coldRoomId || selectedColdRoom,
+            variety: (variety.toLowerCase() === 'hass' ? 'hass' : 
+                    variety.toLowerCase().includes('mixed') ? 'mixed' : 'fuerte') as 'fuerte' | 'hass' | 'mixed',
+            box_type: boxType,
+            size: size.toLowerCase().replace('size ', 'size'),
+            grade: (grade.toLowerCase() === 'class 2' ? 'class2' : 'class1') as 'class1' | 'class2',
+            quantity: quantity,
+            created_at: pallet.created_at || new Date().toISOString(),
+            updated_at: pallet.updated_at || new Date().toISOString(),
+            supplier_name: pallet.supplierName || '',
+            pallet_id: pallet.palletId,
+            region: pallet.region || '',
+            counting_record_id: pallet.countingRecordId,
+            loading_sheet_id: pallet.loading_sheet_id || selectedSheet.id,
+            boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: quantity }],
+            totalBoxes: pallet.totalBoxes || quantity,
+            totalWeight: pallet.totalWeight || getSafeWeight(pallet)
+          };
+        });
+      }
+
       const convertedSheet: LoadingSheetData = {
         id: selectedSheet.id,
         exporter: selectedSheet.exporter || defaultData.exporter,
@@ -1037,27 +1082,7 @@ const handleLoadSheet = (sheetId: string) => {
         loadedBy: selectedSheet.loaded_by || '',
         checkedBy: selectedSheet.checked_by || '',
         remarks: selectedSheet.remarks || '',
-        pallets: (selectedSheet.loading_pallets || []).map((pallet: any, index: number) => ({
-          id: pallet.id || `pallet-${index}`,
-          pallet_no: `PAL-${(pallet.palletId || pallet.id || '').substring(0, 8).toUpperCase()}`,
-          cold_room_id: pallet.coldRoomId || selectedColdRoom,
-          variety: pallet.variety === 'hass' ? 'hass' : 
-                  pallet.variety === 'mixed' ? 'mixed' : 'fuerte',
-          box_type: (pallet.boxType === '10kg' ? '10kg' : '4kg') as '4kg' | '10kg',
-          size: pallet.size || 'size24',
-          grade: (pallet.grade === 'class2' ? 'class2' : 'class1') as 'class1' | 'class2',
-          quantity: Number(pallet.quantity) || 0,
-          created_at: pallet.created_at || new Date().toISOString(),
-          updated_at: pallet.updated_at || new Date().toISOString(),
-          supplier_name: pallet.supplierName || '',
-          pallet_id: pallet.palletId,
-          region: pallet.region || '',
-          counting_record_id: pallet.countingRecordId,
-          loading_sheet_id: pallet.loading_sheet_id || selectedSheet.id,
-          boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: Number(pallet.quantity) || 0 }],
-          totalBoxes: pallet.totalBoxes || Number(pallet.quantity) || 0,
-          totalWeight: pallet.totalWeight || (Number(pallet.quantity) || 0) * (pallet.boxType === '10kg' ? 10 : 4)
-        })) || []
+        pallets: palletsData
       };
       
       setSheetData(convertedSheet);
@@ -1099,22 +1124,23 @@ const handleLoadSheet = (sheetId: string) => {
     const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'BOX TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
     headers.push(tableHeaders.join(','));
     
-    // Pallet rows - with null checks
+    // Pallet rows
     const rows = sheetData.pallets.map((pallet, index) => {
       const quantity = getSafeQuantity(pallet);
       const boxType = getSafeBoxType(pallet);
       const totalWeight = getSafeWeight(pallet);
       const totalBoxes = pallet.totalBoxes || quantity;
-      const sizeDisplay = (pallet.size || '').replace('size', 'Size ');
+      const sizeDisplay = formatSizeForDisplay(pallet.size);
       const varietyDisplay = formatVarietyForDisplay(pallet.variety);
+      const gradeDisplay = formatGradeForDisplay(pallet.grade);
       
       return [
         index + 1,
         pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
         varietyDisplay,
-        boxType,
+        boxType === '10kg' ? '10kg Box' : '4kg Box',
         sizeDisplay,
-        pallet.grade === 'class1' ? 'Class 1' : 'Class 2',
+        gradeDisplay,
         quantity,
         totalBoxes,
         totalWeight
@@ -1156,7 +1182,7 @@ const handleLoadSheet = (sheetId: string) => {
     setSheetData({ ...sheetData, [field]: value });
   };
 
-  // Calculate totals with safe defaults
+  // Calculate totals
   const totals = sheetData.pallets.reduce(
     (acc, pallet) => {
       const quantity = getSafeQuantity(pallet);
@@ -1170,12 +1196,6 @@ const handleLoadSheet = (sheetId: string) => {
     },
     { totalBoxes: 0, totalWeight: 0, totalPallets: 0 }
   );
-
-  // Format size for display
-  const formatSizeForDisplay = (size: string) => {
-    if (!size) return 'N/A';
-    return size.replace('size', 'Size ');
-  };
 
   return (
     <Card className="print:p-0 print:border-0 print:shadow-none">
@@ -1195,7 +1215,7 @@ const handleLoadSheet = (sheetId: string) => {
               Complete loading sheet with pallets loaded from cold room
             </p>
             
-            {/* Loading sheet selector - NOW SHOWS ONLY UNASSIGNED SHEETS */}
+            {/* Loading sheet selector */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Label htmlFor="sheet-selector" className="text-xs font-medium">Load existing UNASSIGNED sheet:</Label>
               <DropdownMenu>
@@ -1551,9 +1571,7 @@ const handleLoadSheet = (sheetId: string) => {
                       {Object.entries(palletsSummary.varietyCount).map(([variety, count]) => (
                         <span key={variety} className="ml-2">
                           <Badge variant="outline" className="text-xs">
-                            {variety === 'fuerte' ? 'Fuerte' : 
-                             variety === 'hass' ? 'Hass' : 
-                             'Mixed'}: {count}
+                            {variety}: {count}
                           </Badge>
                         </span>
                       ))}
@@ -1582,7 +1600,7 @@ const handleLoadSheet = (sheetId: string) => {
               </div>
             </div>
             
-            {/* Available Pallets Table - FIXED KEY PROP ISSUE */}
+            {/* Available Pallets Table */}
             <Card>
               <CardContent className="p-0">
                 {loadingColdRoomPallets ? (
@@ -1620,7 +1638,8 @@ const handleLoadSheet = (sheetId: string) => {
                           const quantity = getSafeQuantity(pallet);
                           const weight = getSafeWeight(pallet);
                           const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-                          const gradeDisplay = pallet.grade === 'class1' ? 'Class 1' : 'Class 2';
+                          const gradeDisplay = formatGradeForDisplay(pallet.grade);
+                          const sizeDisplay = formatSizeForDisplay(pallet.size);
                           
                           // Check if pallet is assigned to another loading sheet
                           const isAssignedToOtherSheet = pallet.loading_sheet_id && pallet.loading_sheet_id !== sheetData.id;
@@ -1669,15 +1688,15 @@ const handleLoadSheet = (sheetId: string) => {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
-                                  pallet.box_type === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                                  getSafeBoxType(pallet) === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
                                   "bg-orange-50 text-orange-700 border-orange-200"
                                 }>
-                                  {pallet.box_type === '10kg' ? '10kg Box' : '4kg Box'}
+                                  {getSafeBoxType(pallet) === '10kg' ? '10kg Box' : '4kg Box'}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{formatSizeForDisplay(pallet.size)}</TableCell>
+                              <TableCell>{sizeDisplay}</TableCell>
                               <TableCell>
-                                <Badge variant={pallet.grade === 'class1' ? 'default' : 'secondary'}>
+                                <Badge variant={gradeDisplay === 'Class 1' ? 'default' : 'secondary'}>
                                   {gradeDisplay}
                                 </Badge>
                               </TableCell>
@@ -1722,7 +1741,7 @@ const handleLoadSheet = (sheetId: string) => {
             </Card>
           </div>
 
-          {/* Selected Pallets Table */}
+          {/* Selected Pallets Table - FIXED DISPLAY */}
           <div className="mb-6 print:mb-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Pallets in Loading Sheet ({sheetData.pallets.length})</h3>
@@ -1762,8 +1781,9 @@ const handleLoadSheet = (sheetId: string) => {
                       const quantity = getSafeQuantity(pallet);
                       const weight = getSafeWeight(pallet);
                       const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-                      const gradeDisplay = pallet.grade === 'class1' ? 'Class 1' : 'Class 2';
-                      const boxTypeDisplay = pallet.box_type === '10kg' ? '10kg Box' : '4kg Box';
+                      const gradeDisplay = formatGradeForDisplay(pallet.grade);
+                      const sizeDisplay = formatSizeForDisplay(pallet.size);
+                      const boxTypeDisplay = getSafeBoxType(pallet) === '10kg' ? '10kg Box' : '4kg Box';
                       
                       return (
                         <tr key={`${pallet.id}-${index}`} className="hover:bg-black-50">
@@ -1782,15 +1802,15 @@ const handleLoadSheet = (sheetId: string) => {
                           </td>
                           <td className="border border-gray-300 p-2">
                             <Badge variant="outline" className={
-                              pallet.box_type === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                              getSafeBoxType(pallet) === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
                               "bg-orange-50 text-orange-700 border-orange-200"
                             }>
                               {boxTypeDisplay}
                             </Badge>
                           </td>
-                          <td className="border border-gray-300 p-2">{formatSizeForDisplay(pallet.size)}</td>
+                          <td className="border border-gray-300 p-2">{sizeDisplay}</td>
                           <td className="border border-gray-300 p-2">
-                            <Badge variant={pallet.grade === 'class1' ? 'default' : 'secondary'}>
+                            <Badge variant={gradeDisplay === 'Class 1' ? 'default' : 'secondary'}>
                               {gradeDisplay}
                             </Badge>
                           </td>
@@ -1882,7 +1902,7 @@ const handleLoadSheet = (sheetId: string) => {
                   <div className="flex gap-2">
                     {Object.entries(
                       sheetData.pallets.reduce((acc, pallet) => {
-                        const boxType = pallet.box_type === '10kg' ? '10kg Boxes' : '4kg Boxes';
+                        const boxType = getSafeBoxType(pallet) === '10kg' ? '10kg Boxes' : '4kg Boxes';
                         acc[boxType] = (acc[boxType] || 0) + getSafeQuantity(pallet);
                         return acc;
                       }, {} as { [key: string]: number })
@@ -2989,6 +3009,7 @@ function TransitManagement() {
 }
 
 // History Component for downloading lists - UPDATED WITH DOWNLOAD FUNCTIONALITY
+// History Component for downloading lists - UPDATED WITH CORRECT DATA DISPLAY
 function HistoryDownload() {
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -3002,13 +3023,19 @@ function HistoryDownload() {
     try {
       setLoading(true);
       
-      // Fetch loading sheets
+      // Fetch loading sheets with all details
       const sheetsResponse = await fetch('/api/loading-sheets?limit=100');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
         if (sheetsData.success) {
           setLoadingSheets(sheetsData.data || []);
+        } else {
+          console.error('Error loading sheets:', sheetsData.error);
+          toast.error(`Failed to load loading sheets: ${sheetsData.error}`);
+          setLoadingSheets([]);
         }
+      } else {
+        throw new Error(`HTTP error! status: ${sheetsResponse.status}`);
       }
       
       // Fetch assignments
@@ -3023,6 +3050,8 @@ function HistoryDownload() {
     } catch (error) {
       console.error('Error fetching history data:', error);
       toast.error('Failed to fetch history data. Please check your connection.');
+      setLoadingSheets([]);
+      setAssignments([]);
     } finally {
       setLoading(false);
     }
@@ -3060,10 +3089,12 @@ function HistoryDownload() {
       const searchLower = searchTerm.toLowerCase();
       return (
         (sheet.bill_number?.toLowerCase().includes(searchLower) || false) ||
-        sheet.client?.toLowerCase().includes(searchLower) ||
-        sheet.container?.toLowerCase().includes(searchLower) ||
-        sheet.exporter?.toLowerCase().includes(searchLower) ||
-        sheet.shipping_line?.toLowerCase().includes(searchLower)
+        (sheet.client?.toLowerCase().includes(searchLower) || false) ||
+        (sheet.container?.toLowerCase().includes(searchLower) || false) ||
+        (sheet.exporter?.toLowerCase().includes(searchLower) || false) ||
+        (sheet.shipping_line?.toLowerCase().includes(searchLower) || false) ||
+        (sheet.vessel?.toLowerCase().includes(searchLower) || false) ||
+        sheet.id.toLowerCase().includes(searchLower)
       );
     }
     
@@ -3133,7 +3164,7 @@ function HistoryDownload() {
       sheet.truck || '',
       sheet.vessel || '',
       sheet.port || '',
-      new Date(sheet.loading_date).toLocaleDateString(),
+      sheet.loading_date ? new Date(sheet.loading_date).toLocaleDateString() : '',
       sheet.loaded_by || '',
       sheet.checked_by || '',
       sheet.remarks || ''
@@ -3183,153 +3214,181 @@ function HistoryDownload() {
     window.URL.revokeObjectURL(url);
   };
 
-// Updated downloadLoadingSheet function in CSV format
-const downloadLoadingSheet = async (loadingSheetId: string) => {
-  try {
-    // Get the loading sheet details from the already loaded data
-    const loadingSheet = loadingSheets.find(ls => ls.id === loadingSheetId);
-    if (!loadingSheet) {
-      toast.error('Loading sheet not found');
-      return;
-    }
+  // Download individual loading sheet in CSV format
+  const downloadLoadingSheet = async (loadingSheetId: string) => {
+    try {
+      // Get the loading sheet details
+      const loadingSheet = loadingSheets.find(ls => ls.id === loadingSheetId);
+      if (!loadingSheet) {
+        toast.error('Loading sheet not found');
+        return;
+      }
 
-    // Get pallets from the loading sheet data (already included in the initial fetch)
-    const pallets = loadingSheet.loading_pallets || [];
-    
-    // Calculate totals
-    let totalBoxes = 0;
-    let totalWeight = 0;
-    const varietyDistribution: { [key: string]: number } = {};
-    const boxTypeDistribution: { [key: string]: number } = {};
-    
-    pallets.forEach((pallet: any) => {
-      const quantity = pallet.size24 || 0;
-      const boxType = pallet.trace_code || '4kg'; // Default to 4kg if not specified
-      const weightPerBox = boxType === '10kg' ? 10 : 4;
-      const weight = quantity * weightPerBox;
+      // Get pallets data
+      const pallets = loadingSheet.loading_pallets || [];
       
-      totalBoxes += quantity;
-      totalWeight += weight;
+      // Calculate totals
+      let totalBoxes = 0;
+      let totalWeight = 0;
+      const varietyDistribution: { [key: string]: number } = {};
+      const boxTypeDistribution: { [key: string]: number } = {};
+      const gradeDistribution: { [key: string]: number } = {};
+      const sizeDistribution: { [key: string]: number } = {};
       
-      // Track variety distribution
-      const variety = pallet.temp || 'Fuerte';
-      varietyDistribution[variety] = (varietyDistribution[variety] || 0) + 1;
-      
-      // Track box type distribution
-      const boxTypeLabel = boxType === '10kg' ? '10kg Boxes' : '4kg Boxes';
-      boxTypeDistribution[boxTypeLabel] = (boxTypeDistribution[boxTypeLabel] || 0) + quantity;
-    });
-
-    // Format variety for display
-    const formatVariety = (variety: string) => {
-      if (!variety) return 'Fuerte';
-      return variety.charAt(0).toUpperCase() + variety.slice(1);
-    };
-
-    // Format date for CSV
-    const formatDateForCSV = (dateString: string | Date | null) => {
-      if (!dateString) return '';
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
+      pallets.forEach((pallet: any) => {
+        const quantity = pallet.quantity || 0;
+        const boxType = pallet.box_type || '4kg';
+        const weightPerBox = boxType === '10kg' ? 10 : 4;
+        const weight = quantity * weightPerBox;
+        
+        totalBoxes += quantity;
+        totalWeight += weight;
+        
+        // Track variety distribution
+        const variety = pallet.variety || 'fuerte';
+        const varietyDisplay = variety === 'hass' ? 'Hass' : 
+                             variety === 'mixed' ? 'Mixed' : 'Fuerte';
+        varietyDistribution[varietyDisplay] = (varietyDistribution[varietyDisplay] || 0) + 1;
+        
+        // Track box type distribution
+        const boxTypeLabel = boxType === '10kg' ? '10kg Boxes' : '4kg Boxes';
+        boxTypeDistribution[boxTypeLabel] = (boxTypeDistribution[boxTypeLabel] || 0) + quantity;
+        
+        // Track grade distribution
+        const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
+        gradeDistribution[grade] = (gradeDistribution[grade] || 0) + quantity;
+        
+        // Track size distribution
+        const size = pallet.size || 'size24';
+        const sizeDisplay = size.replace('size', 'Size ');
+        sizeDistribution[sizeDisplay] = (sizeDistribution[sizeDisplay] || 0) + quantity;
       });
-    };
 
-    // Create the CSV content
-    const csvRows = [];
-    
-    // Header
-    csvRows.push('LOADING SHEET\n');
-    
-    // Loading Sheet Information
-    csvRows.push(`EXPORTER,${loadingSheet.exporter || 'HARIR INTERNATIONAL LTD'},LOADING DATE,${formatDateForCSV(loadingSheet.loading_date)}`);
-    csvRows.push(`CLIENT,${loadingSheet.client || 'N/A'},VESSEL,${loadingSheet.vessel || 'N/A'}`);
-    csvRows.push(`SHIPPING LINE,${loadingSheet.shipping_line || 'N/A'},ETA MSA,${formatDateForCSV(loadingSheet.eta_msa)}`);
-    csvRows.push(`BILL NUMBER,${loadingSheet.bill_number || 'N/A'},ETD MSA,${formatDateForCSV(loadingSheet.etd_msa)}`);
-    csvRows.push(`CONTAINER,${loadingSheet.container || 'N/A'},PORT,${loadingSheet.port || ''}`);
-    csvRows.push(`SEAL 1,${loadingSheet.seal1 || ''},ETA PORT,${formatDateForCSV(loadingSheet.eta_port)}`);
-    csvRows.push(`SEAL 2,${loadingSheet.seal2 || ''},TEMP REC 1,${loadingSheet.temp_rec1 || ''}`);
-    csvRows.push(`TRUCK,${loadingSheet.truck || ''},TEMP REC 2,${loadingSheet.temp_rec2 || ''}`);
-    csvRows.push('');
-    
-    // Pallet Summary
-    csvRows.push(`PALLETS IN LOADING SHEET (${pallets.length})`);
-    csvRows.push(`${totalBoxes} boxes • ${totalWeight} kg`);
-    csvRows.push('');
-    
-    // Pallet Table Headers
-    csvRows.push('PALLET NO,COLD ROOM,VARIETY,TYPE,SIZE,GRADE,QUANTITY,WEIGHT (kg),ACTIONS');
-    
-    // Pallet Data Rows
-    pallets.forEach((pallet: any, index: number) => {
-      const quantity = pallet.size24 || 0;
-      const boxType = pallet.trace_code || '4kg Box';
-      const weight = quantity * (boxType === '10kg' ? 10 : 4);
-      const variety = formatVariety(pallet.temp || 'Fuerte');
-      const size = pallet.size || 'Size 24';
-      const grade = pallet.grade === 'class1' ? 'Class 1' : pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
-      const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+      // Format date for CSV
+      const formatDateForCSV = (dateString: string | Date | null) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+      };
+
+      // Create the CSV content
+      const csvRows = [];
       
-      csvRows.push(`${index + 1},${coldRoom},${variety},${boxType},${size},${grade},${quantity},${weight} kg,`);
-    });
-    
-    // Totals Row
-    csvRows.push(`TOTAL,,,,,,${totalBoxes},${totalWeight} kg,`);
-    csvRows.push('');
-    
-    // Summary Section
-    csvRows.push('SUMMARY');
-    csvRows.push(`Total Pallets,${pallets.length}`);
-    csvRows.push(`Total Boxes,${totalBoxes}`);
-    csvRows.push(`Total Weight,${totalWeight} kg`);
-    csvRows.push(`Average per Pallet,${pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0} boxes`);
-    
-    // Variety Distribution
-    csvRows.push('Variety Distribution');
-    Object.entries(varietyDistribution).forEach(([variety, count]) => {
-      csvRows.push(`${variety},${count}`);
-    });
-    
-    // Box Type Distribution
-    csvRows.push('Box Type Distribution');
-    Object.entries(boxTypeDistribution).forEach(([boxType, count]) => {
-      csvRows.push(`${boxType},${count}`);
-    });
-    csvRows.push('');
-    
-    // Loading Details
-    csvRows.push('LOADING DETAILS');
-    csvRows.push(`Loaded by,${loadingSheet.loaded_by || "Loader's name & signature"}`);
-    csvRows.push(`Checked by,${loadingSheet.checked_by || "Supervisor's name & signature"}`);
-    csvRows.push(`Remarks,${loadingSheet.remarks || 'Special instructions or notes'}`);
-    csvRows.push('');
-    
-    // Footer
-    csvRows.push(`Generated by Harir International Logistics System • Document ID: ${loadingSheet.id || `NEW-LS-${new Date().getTime().toString().slice(-6)}`}`);
-    
-    // Join all rows with newlines
-    const csvContent = csvRows.join('\n');
-    
-    // Create and download the CSV file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `loading-sheet-${loadingSheet.bill_number || loadingSheet.id}-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    
-    toast.success('Loading sheet downloaded as CSV successfully!');
-    
-  } catch (error) {
-    console.error('Error downloading loading sheet:', error);
-    toast.error('Failed to download loading sheet');
-  }
-};
+      // Header
+      csvRows.push('LOADING SHEET');
+      csvRows.push('');
+      
+      // Loading Sheet Information
+      csvRows.push(`EXPORTER,${loadingSheet.exporter || 'HARIR INTERNATIONAL LTD'},LOADING DATE,${formatDateForCSV(loadingSheet.loading_date)}`);
+      csvRows.push(`CLIENT,${loadingSheet.client || 'N/A'},VESSEL,${loadingSheet.vessel || 'N/A'}`);
+      csvRows.push(`SHIPPING LINE,${loadingSheet.shipping_line || 'N/A'},ETA MSA,${formatDateForCSV(loadingSheet.eta_msa)}`);
+      csvRows.push(`BILL NUMBER,${loadingSheet.bill_number || 'N/A'},ETD MSA,${formatDateForCSV(loadingSheet.etd_msa)}`);
+      csvRows.push(`CONTAINER,${loadingSheet.container || 'N/A'},PORT,${loadingSheet.port || ''}`);
+      csvRows.push(`SEAL 1,${loadingSheet.seal1 || ''},ETA PORT,${formatDateForCSV(loadingSheet.eta_port)}`);
+      csvRows.push(`SEAL 2,${loadingSheet.seal2 || ''},TEMP REC 1,${loadingSheet.temp_rec1 || ''}`);
+      csvRows.push(`TRUCK,${loadingSheet.truck || ''},TEMP REC 2,${loadingSheet.temp_rec2 || ''}`);
+      csvRows.push('');
+      
+      // Pallet Summary
+      csvRows.push(`PALLETS IN LOADING SHEET (${pallets.length})`);
+      csvRows.push(`${totalBoxes} boxes • ${totalWeight} kg`);
+      csvRows.push('');
+      
+      // Pallet Table Headers
+      csvRows.push('PALLET NO,COLD ROOM,VARIETY,TYPE,SIZE,GRADE,QUANTITY,WEIGHT (kg)');
+      
+      // Pallet Data Rows
+      pallets.forEach((pallet: any, index: number) => {
+        const quantity = pallet.quantity || 0;
+        const boxType = pallet.box_type || '4kg';
+        const weight = quantity * (boxType === '10kg' ? 10 : 4);
+        const variety = pallet.variety || 'fuerte';
+        const varietyDisplay = variety === 'hass' ? 'Hass' : 
+                             variety === 'mixed' ? 'Mixed' : 'Fuerte';
+        const size = pallet.size || 'size24';
+        const sizeDisplay = size.replace('size', 'Size ');
+        const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
+        const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+        
+        csvRows.push(`${index + 1},${coldRoom},${varietyDisplay},${boxType},${sizeDisplay},${grade},${quantity},${weight} kg`);
+      });
+      
+      // Totals Row
+      csvRows.push(`TOTAL,,,,,,${totalBoxes},${totalWeight} kg`);
+      csvRows.push('');
+      
+      // Summary Section
+      csvRows.push('SUMMARY');
+      csvRows.push(`Total Pallets,${pallets.length}`);
+      csvRows.push(`Total Boxes,${totalBoxes}`);
+      csvRows.push(`Total Weight,${totalWeight} kg`);
+      csvRows.push(`Average per Pallet,${pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0} boxes`);
+      csvRows.push('');
+      
+      // Variety Distribution
+      csvRows.push('Variety Distribution');
+      Object.entries(varietyDistribution).forEach(([variety, count]) => {
+        csvRows.push(`${variety},${count}`);
+      });
+      csvRows.push('');
+      
+      // Box Type Distribution
+      csvRows.push('Box Type Distribution');
+      Object.entries(boxTypeDistribution).forEach(([boxType, count]) => {
+        csvRows.push(`${boxType},${count}`);
+      });
+      csvRows.push('');
+      
+      // Grade Distribution
+      csvRows.push('Grade Distribution');
+      Object.entries(gradeDistribution).forEach(([grade, count]) => {
+        csvRows.push(`${grade},${count}`);
+      });
+      csvRows.push('');
+      
+      // Size Distribution
+      csvRows.push('Size Distribution');
+      Object.entries(sizeDistribution).forEach(([size, count]) => {
+        csvRows.push(`${size},${count}`);
+      });
+      csvRows.push('');
+      
+      // Loading Details
+      csvRows.push('LOADING DETAILS');
+      csvRows.push(`Loaded by,${loadingSheet.loaded_by || "Loader's name & signature"}`);
+      csvRows.push(`Checked by,${loadingSheet.checked_by || "Supervisor's name & signature"}`);
+      csvRows.push(`Remarks,${loadingSheet.remarks || 'Special instructions or notes'}`);
+      csvRows.push('');
+      
+      // Footer
+      csvRows.push(`Generated by Harir International Logistics System • Document ID: ${loadingSheet.id}`);
+      csvRows.push(`Created: ${formatDateForCSV(loadingSheet.created_at)}`);
+      
+      // Join all rows with newlines
+      const csvContent = csvRows.join('\n');
+      
+      // Create and download the CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `loading-sheet-${loadingSheet.bill_number || loadingSheet.id}-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Loading sheet downloaded as CSV successfully!');
+      
+    } catch (error) {
+      console.error('Error downloading loading sheet:', error);
+      toast.error('Failed to download loading sheet');
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -3403,7 +3462,7 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
                   <Input
                     id="search"
                     type="search"
-                    placeholder="Search by bill number, client, carrier..."
+                    placeholder="Search by bill number, client, container..."
                     className="pl-8"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -3442,11 +3501,11 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
 
             {/* Download Buttons */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Button onClick={downloadLoadingSheetsCSV} className="w-full">
+              <Button onClick={downloadLoadingSheetsCSV} className="w-full" disabled={filteredLoadingSheets.length === 0}>
                 <FileDown className="h-4 w-4 mr-2" />
                 Download Loading Sheets ({filteredLoadingSheets.length})
               </Button>
-              <Button onClick={downloadAssignmentsCSV} className="w-full">
+              <Button onClick={downloadAssignmentsCSV} className="w-full" disabled={filteredAssignments.length === 0}>
                 <FileDown className="h-4 w-4 mr-2" />
                 Download Carrier Assignments ({filteredAssignments.length})
               </Button>
@@ -3455,7 +3514,7 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
         </CardContent>
       </Card>
 
-      {/* Loading Sheets Table - UPDATED WITH DOWNLOAD BUTTON */}
+      {/* Loading Sheets Table - UPDATED WITH CORRECT DATA */}
       <Card>
         <CardHeader>
           <CardTitle>Loading Sheets</CardTitle>
@@ -3481,6 +3540,18 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
               <TableBody>
                 {filteredLoadingSheets.slice(0, 10).map((sheet) => {
                   const isAssigned = assignments.some(a => a.loading_sheet_id === sheet.id);
+                  const palletsCount = Array.isArray(sheet.loading_pallets) ? sheet.loading_pallets.length : 0;
+                  const totalBoxes = Array.isArray(sheet.loading_pallets) 
+                    ? sheet.loading_pallets.reduce((sum: number, pallet: any) => sum + (pallet.quantity || 0), 0)
+                    : 0;
+                  const totalWeight = Array.isArray(sheet.loading_pallets)
+                    ? sheet.loading_pallets.reduce((sum: number, pallet: any) => {
+                        const boxType = pallet.box_type || '4kg';
+                        const weightPerBox = boxType === '10kg' ? 10 : 4;
+                        return sum + ((pallet.quantity || 0) * weightPerBox);
+                      }, 0)
+                    : 0;
+
                   return (
                     <TableRow key={sheet.id}>
                       <TableCell>
@@ -3488,10 +3559,28 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{sheet.bill_number || 'No Bill'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          ID: {sheet.id.substring(0, 8)}...
+                        </div>
                       </TableCell>
-                      <TableCell>{sheet.client || 'N/A'}</TableCell>
-                      <TableCell>{sheet.container || 'N/A'}</TableCell>
-                      <TableCell>{sheet.vessel || 'N/A'}</TableCell>
+                      <TableCell>
+                        <div>{sheet.client || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {sheet.exporter || 'HARIR INTERNATIONAL LTD'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-mono">{sheet.container || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {sheet.seal1 ? `Seal: ${sheet.seal1}` : 'No seal'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>{sheet.vessel || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {sheet.shipping_line || 'No shipping line'}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {sheet.loading_date ? new Date(sheet.loading_date).toLocaleDateString() : 'N/A'}
                       </TableCell>
@@ -3504,12 +3593,132 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <PalletDetailsModal loadingSheet={sheet} />
+                          {/* Pallet Details Modal */}
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm" title="View pallet details">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                              <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                  <Box className="h-5 w-5" />
+                                  Pallets in Loading Sheet
+                                </DialogTitle>
+                                <DialogDescription>
+                                  {sheet.bill_number || sheet.id} • {sheet.client || 'No Client'}
+                                </DialogDescription>
+                              </DialogHeader>
+                              
+                              <div className="space-y-4">
+                                {/* Summary Stats */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                                  <div className="text-center">
+                                    <div className="text-2xl font-bold text-gray-800">{palletsCount}</div>
+                                    <div className="text-sm text-gray-600">Total Pallets</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-2xl font-bold text-green-600">{totalBoxes.toLocaleString()}</div>
+                                    <div className="text-sm text-gray-600">Total Boxes</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-2xl font-bold text-blue-600">{totalWeight.toLocaleString()} kg</div>
+                                    <div className="text-sm text-gray-600">Total Weight</div>
+                                  </div>
+                                </div>
+
+                                {/* Pallets Table */}
+                                {Array.isArray(sheet.loading_pallets) && sheet.loading_pallets.length > 0 ? (
+                                  <div className="border rounded-lg">
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Pallet No</TableHead>
+                                          <TableHead>Cold Room</TableHead>
+                                          <TableHead>Variety</TableHead>
+                                          <TableHead>Type</TableHead>
+                                          <TableHead>Size</TableHead>
+                                          <TableHead>Grade</TableHead>
+                                          <TableHead className="text-right">Quantity</TableHead>
+                                          <TableHead className="text-right">Weight</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {sheet.loading_pallets.map((pallet: any, index: number) => {
+                                          const quantity = pallet.quantity || 0;
+                                          const boxType = pallet.box_type || '4kg';
+                                          const weight = quantity * (boxType === '10kg' ? 10 : 4);
+                                          const variety = pallet.variety || 'fuerte';
+                                          const varietyDisplay = variety === 'hass' ? 'Hass' : 
+                                                               variety === 'mixed' ? 'Mixed' : 'Fuerte';
+                                          const size = pallet.size || 'size24';
+                                          const sizeDisplay = size.replace('size', 'Size ');
+                                          const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
+                                          const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+                                          
+                                          return (
+                                            <TableRow key={pallet.id || index}>
+                                              <TableCell className="font-medium">{index + 1}</TableCell>
+                                              <TableCell>{coldRoom}</TableCell>
+                                              <TableCell>
+                                                <Badge className={
+                                                  varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 
+                                                  varietyDisplay === 'Hass' ? "bg-purple-100 text-purple-800" : 
+                                                  "bg-yellow-100 text-yellow-800"
+                                                }>
+                                                  {varietyDisplay}
+                                                </Badge>
+                                              </TableCell>
+                                              <TableCell>
+                                                <Badge variant="outline" className={
+                                                  boxType === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                                                  "bg-orange-50 text-orange-700 border-orange-200"
+                                                }>
+                                                  {boxType === '10kg' ? '10kg Box' : '4kg Box'}
+                                                </Badge>
+                                              </TableCell>
+                                              <TableCell>{sizeDisplay}</TableCell>
+                                              <TableCell>
+                                                <Badge variant={grade === 'Class 1' ? 'default' : 'secondary'}>
+                                                  {grade}
+                                                </Badge>
+                                              </TableCell>
+                                              <TableCell className="text-right font-bold">{quantity.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right font-bold text-blue-600">
+                                                {weight.toLocaleString()} kg
+                                              </TableCell>
+                                            </TableRow>
+                                          );
+                                        })}
+                                        
+                                        {/* Totals Row */}
+                                        <TableRow className="bg-gray-50">
+                                          <TableCell colSpan={6} className="font-bold text-right">TOTAL</TableCell>
+                                          <TableCell className="text-right font-bold">{totalBoxes.toLocaleString()}</TableCell>
+                                          <TableCell className="text-right font-bold text-blue-700">{totalWeight.toLocaleString()} kg</TableCell>
+                                        </TableRow>
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                ) : (
+                                  <div className="text-center py-8">
+                                    <Box className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+                                    <p className="text-gray-500 font-medium">No pallet details found</p>
+                                    <p className="text-sm text-gray-400 mt-1">
+                                      This loading sheet doesn't have any pallet records.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          
                           <Button 
                             variant="ghost" 
                             size="sm"
                             onClick={() => downloadLoadingSheet(sheet.id)}
-                            title="Download loading sheet"
+                            title="Download loading sheet as CSV"
                           >
                             <Download className="h-4 w-4" />
                           </Button>
@@ -3581,6 +3790,9 @@ const downloadLoadingSheet = async (loadingSheetId: string) => {
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{assignment.loading_sheet?.bill_number || 'No Bill'}</div>
+                        <div className="text-sm text-muted-foreground">
+                          Container: {assignment.loading_sheet?.container || 'N/A'}
+                        </div>
                       </TableCell>
                       <TableCell>{assignment.loading_sheet?.client || 'N/A'}</TableCell>
                       <TableCell>{getStatusBadge(assignment.status)}</TableCell>

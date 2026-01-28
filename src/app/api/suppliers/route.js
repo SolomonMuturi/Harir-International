@@ -1,134 +1,147 @@
+// app/api/suppliers/route.js
 import { prisma } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { startOfDay, endOfDay } from 'date-fns'
 
-// Helper function to generate small ID (max ~20 chars)
-function generateSmallId() {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substr(2, 4);
-  return `s-${timestamp}-${random}`;
-}
-
-// Alternative: Even smaller ID (~10 chars)
+// Helper function to generate small ID
 function generateTinyId() {
-  return `s${Date.now().toString(36)}`;
+  return `s${Date.now().toString(36)}`
 }
 
-// Alternative: Short UUID (8 chars)
-function generateShortId() {
-  const timePart = Date.now().toString(36).slice(-6);
-  const randPart = Math.random().toString(36).substr(2, 2);
-  return `s${timePart}${randPart}`;
+// Helper function to format phone number
+function formatPhoneNumber(phone) {
+  if (!phone) return ''
+  
+  const cleaned = phone.replace(/[^\d+]/g, '')
+  
+  if (cleaned.startsWith('+')) {
+    return cleaned
+  }
+  
+  if (cleaned.startsWith('0')) {
+    return '+254' + cleaned.slice(1)
+  }
+  
+  if (cleaned.length === 9) {
+    return '+254' + cleaned
+  }
+  
+  if (cleaned.length === 10 && cleaned.startsWith('07')) {
+    return '+254' + cleaned.slice(1)
+  }
+  
+  return cleaned.startsWith('+') ? cleaned : '+' + cleaned
 }
 
-// Helper function to generate CSV with specified columns
+// Validation function
+function validateSupplierData(body) {
+  const errors = []
+
+  // Required fields
+  if (!body.name?.trim()) errors.push('Supplier name is required')
+  if (!body.contact_phone?.trim()) errors.push('Phone number is required')
+  if (!body.supplier_code?.trim()) errors.push('Supplier code is required')
+
+  // Name validation
+  if (body.name) {
+    const nameRegex = /^[a-zA-Z0-9\s&.-]{2,100}$/
+    if (!nameRegex.test(body.name.trim())) {
+      errors.push('Supplier name must be 2-100 characters and can only contain letters, numbers, spaces, &, ., and -')
+    }
+  }
+
+  // Phone validation
+  if (body.contact_phone) {
+    const phoneRegex = /^\+?[\d\s\-\(\)]{10,20}$/
+    const cleanPhone = body.contact_phone.replace(/\s/g, '')
+    if (!phoneRegex.test(cleanPhone)) {
+      errors.push('Phone number must be 10-20 digits')
+    }
+    if (cleanPhone.length < 10) {
+      errors.push('Phone number must be at least 10 digits')
+    }
+  }
+
+  // Email validation
+  if (body.contact_email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(body.contact_email.trim())) {
+      errors.push('Invalid email format')
+    }
+  }
+
+  // Payment details validation
+  if (body.mpesa_paybill && !body.mpesa_account_number) {
+    errors.push('M-PESA account number is required when paybill is provided')
+  }
+  if (body.mpesa_account_number && !body.mpesa_paybill) {
+    errors.push('M-PESA paybill is required when account number is provided')
+  }
+  
+  if (body.bank_name && !body.bank_account_number) {
+    errors.push('Bank account number is required when bank name is provided')
+  }
+  if (body.bank_account_number && !body.bank_name) {
+    errors.push('Bank name is required when bank account number is provided')
+  }
+
+  // KRA PIN validation
+  if (body.kra_pin) {
+    const kraPinRegex = /^[A-Z]{1}\d{9}[A-Z]{1}$/
+    if (!kraPinRegex.test(body.kra_pin.trim())) {
+      errors.push('Invalid KRA PIN format. Should be like A123456789B')
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
+// Generate CSV
 function generateCSV(suppliers) {
   const headers = [
     'Supplier Code',
     'Supplier Name',
-    'Location',
     'Phone Number',
-    'Email'
+    'Email',
+    'Location',
+    'Status',
+    'KRA PIN',
+    'Bank Name',
+    'Bank Account',
+    'M-PESA Paybill',
+    'M-PESA Account',
+    'Active Contracts',
+    'Created At'
   ]
 
   const rows = suppliers.map(supplier => [
     supplier.supplier_code || 'N/A',
     supplier.name || 'N/A',
-    supplier.location || 'N/A',
     supplier.contact_phone || 'N/A',
-    supplier.contact_email || 'N/A'
+    supplier.contact_email || 'N/A',
+    supplier.location || 'N/A',
+    supplier.status || 'N/A',
+    supplier.kra_pin || 'N/A',
+    supplier.bank_name || 'N/A',
+    supplier.bank_account_number || 'N/A',
+    supplier.mpesa_paybill || 'N/A',
+    supplier.mpesa_account_number || 'N/A',
+    supplier.active_contracts || 0,
+    new Date(supplier.created_at).toLocaleDateString()
   ])
 
   const csvContent = [
     headers.join(','),
-    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ...rows.map(row => row.map(cell => `"${cell?.toString().replace(/"/g, '""')}"`).join(','))
   ].join('\n')
 
   return csvContent
 }
 
-// Simple text-based PDF generation (no external font dependencies)
-async function generateTextPDF(suppliers, startDate, endDate) {
-  return new Promise((resolve) => {
-    // Create a simple text-based PDF structure
-    const pdfLines = [
-      '%PDF-1.4',
-      '1 0 obj',
-      '<</Type/Catalog/Pages 2 0 R>>',
-      'endobj',
-      '2 0 obj',
-      '<</Type/Pages/Kids[3 0 R]/Count 1>>',
-      'endobj',
-      '3 0 obj',
-      '<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 4 0 R>>/ProcSet[/PDF/Text]>>/Contents 5 0 R>>',
-      'endobj',
-      '4 0 obj',
-      '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
-      'endobj',
-      '5 0 obj',
-      '<</Length 1000>>',
-      'stream',
-    ];
-
-    // Add content (this is a simplified example - in production, you'd need proper PDF coordinate positioning)
-    const content = [
-      'BT',
-      '/F1 20 Tf',
-      '50 800 Td',
-      '(Supplier Report) Tj',
-      'ET',
-      'BT',
-      '/F1 12 Tf',
-      '50 770 Td',
-      `(Date Range: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}) Tj`,
-      'ET',
-    ];
-
-    // Add supplier information
-    let yPosition = 740;
-    suppliers.forEach((supplier, index) => {
-      if (yPosition < 50) {
-        // Need to add new page - for simplicity, just truncate
-        return;
-      }
-      
-      content.push(
-        'BT',
-        '/F1 10 Tf',
-        `50 ${yPosition} Td`,
-        `(Supplier: ${supplier.name || 'N/A'} - ${supplier.supplier_code || 'N/A'}) Tj`,
-        'ET'
-      );
-      yPosition -= 20;
-    });
-
-    pdfLines.push(content.join('\n'));
-    pdfLines.push('endstream');
-    pdfLines.push('endobj');
-    
-    // Add cross-reference table and trailer
-    pdfLines.push(
-      'xref',
-      '0 6',
-      '0000000000 65535 f',
-      '0000000010 00000 n',
-      '0000000053 00000 n',
-      '0000000112 00000 n',
-      '0000000243 00000 n',
-      '0000000375 00000 n',
-      'trailer',
-      '<</Size 6/Root 1 0 R>>',
-      'startxref',
-      '480',
-      '%%EOF'
-    );
-
-    const pdfContent = pdfLines.join('\n');
-    resolve(Buffer.from(pdfContent, 'utf8'));
-  });
-}
-
-// HTML-based PDF generation using browser print (client-side solution)
+// Generate HTML report
 function generateHTMLReport(suppliers, startDate, endDate) {
   const html = `
 <!DOCTYPE html>
@@ -145,40 +158,68 @@ function generateHTMLReport(suppliers, startDate, endDate) {
     td { padding: 10px; border-bottom: 1px solid #ddd; }
     tr:nth-child(even) { background: #f9f9f9; }
     .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
+    .payment-info { background: #e8f5e9; padding: 10px; border-radius: 3px; margin: 5px 0; }
+    .locked-badge { 
+      background: #2196F3; 
+      color: white; 
+      padding: 2px 8px; 
+      border-radius: 10px; 
+      font-size: 11px; 
+      margin-left: 5px;
+    }
   </style>
 </head>
 <body>
   <h1>Supplier Report</h1>
   <div class="header">
     <p><strong>Date Range:</strong> ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}</p>
+    <p><strong>Total Suppliers:</strong> ${suppliers.length}</p>
   </div>
   
   <div class="summary">
     <h3>Summary</h3>
-    <p>Total Suppliers: ${suppliers.length}</p>
-    <p>Active Suppliers: ${suppliers.filter(s => s.status === 'Active').length}</p>
+    <p><strong>Active Suppliers:</strong> ${suppliers.filter(s => s.status === 'Active').length}</p>
+    <p><strong>Inactive Suppliers:</strong> ${suppliers.filter(s => s.status === 'Inactive').length}</p>
+    <p><strong>Total Active Contracts:</strong> ${suppliers.reduce((acc, s) => acc + (s.active_contracts || 0), 0)}</p>
+    <p><span class="locked-badge">🔒 Locked</span> = Name locked to phone & payment details</p>
   </div>
   
   <table>
     <thead>
       <tr>
         <th>Supplier Code</th>
-        <th>Supplier Name</th>
-        <th>Location</th>
-        <th>Phone Number</th>
+        <th>Supplier Name <span class="locked-badge">🔒</span></th>
+        <th>Phone Number <span class="locked-badge">🔒</span></th>
         <th>Email</th>
+        <th>Location</th>
         <th>Status</th>
+        <th>Payment Details <span class="locked-badge">🔒</span></th>
       </tr>
     </thead>
     <tbody>
       ${suppliers.map(supplier => `
         <tr>
-          <td>${supplier.supplier_code || 'N/A'}</td>
+          <td><strong>${supplier.supplier_code || 'N/A'}</strong></td>
           <td>${supplier.name || 'N/A'}</td>
-          <td>${supplier.location || 'N/A'}</td>
           <td>${supplier.contact_phone || 'N/A'}</td>
           <td>${supplier.contact_email || 'N/A'}</td>
+          <td>${supplier.location || 'N/A'}</td>
           <td>${supplier.status || 'N/A'}</td>
+          <td>
+            ${supplier.bank_name ? `
+              <div class="payment-info">
+                <strong>Bank:</strong> ${supplier.bank_name}<br>
+                <strong>Account:</strong> ${supplier.bank_account_number || 'N/A'}
+              </div>
+            ` : ''}
+            ${supplier.mpesa_paybill ? `
+              <div class="payment-info">
+                <strong>M-PESA:</strong> ${supplier.mpesa_paybill}<br>
+                <strong>Account:</strong> ${supplier.mpesa_account_number || 'N/A'}
+              </div>
+            ` : 'No payment details'}
+            ${supplier.kra_pin ? `<div class="payment-info"><strong>KRA PIN:</strong> ${supplier.kra_pin}</div>` : ''}
+          </td>
         </tr>
       `).join('')}
     </tbody>
@@ -186,64 +227,61 @@ function generateHTMLReport(suppliers, startDate, endDate) {
   
   <div class="footer">
     <p>Report generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+    <p><strong>Note:</strong> Supplier names are permanently locked to their phone numbers and payment details for consistency.</p>
   </div>
   
   <script>
-    // Auto-print for convenience
     window.onload = function() {
-      window.print();
-    };
+      window.print()
+    }
   </script>
 </body>
 </html>
-  `;
+  `
 
-  return html;
+  return html
 }
-
-// Alternative: Use jsPDF if you can install it (client-side)
-// This would require a different approach since we're server-side
 
 export async function GET(request) {
   try {
-    console.log('📨 GET /api/suppliers - Fetching suppliers');
+    console.log('📨 GET /api/suppliers - Fetching suppliers')
     
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const format = searchParams.get('format'); // 'csv', 'pdf', or 'html'
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+    const formatType = searchParams.get('format')
     
     // Handle single supplier request
     if (id) {
       const supplier = await prisma.suppliers.findUnique({
         where: { id }
-      });
+      })
       
       if (!supplier) {
         return NextResponse.json(
           { error: 'Supplier not found' },
           { status: 404 }
-        );
+        )
       }
       
-      return NextResponse.json(supplier);
+      return NextResponse.json(supplier)
     }
     
     // Handle date range filtering for reports
     if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      const start = new Date(startDate)
+      const end = new Date(endDate)
       
       // Validate dates
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
         return NextResponse.json(
           { error: 'Invalid date format. Use ISO format (YYYY-MM-DD)' },
           { status: 400 }
-        );
+        )
       }
       
-      console.log(`📊 Filtering suppliers by date range: ${startDate} to ${endDate}`);
+      console.log(`📊 Filtering suppliers by date range: ${startDate} to ${endDate}`)
       
       const suppliers = await prisma.suppliers.findMany({
         where: {
@@ -253,63 +291,27 @@ export async function GET(request) {
           }
         },
         orderBy: { created_at: 'desc' }
-      });
+      })
       
-      console.log(`✅ Found ${suppliers.length} suppliers in date range`);
+      console.log(`✅ Found ${suppliers.length} suppliers in date range`)
       
       // Handle export formats
-      if (format === 'csv') {
-        const csvContent = generateCSV(suppliers);
+      if (formatType === 'csv') {
+        const csvContent = generateCSV(suppliers)
         return new NextResponse(csvContent, {
           headers: {
             'Content-Type': 'text/csv; charset=utf-8',
             'Content-Disposition': `attachment; filename=suppliers_${startDate}_to_${endDate}.csv`
           }
-        });
-      } else if (format === 'pdf') {
-        try {
-          if (suppliers.length === 0) {
-            return NextResponse.json(
-              { error: 'No suppliers found for the selected date range' },
-              { status: 404 }
-            );
-          }
-          
-          console.log('Generating text-based PDF report...');
-          
-          // Option 1: Simple text-based PDF
-          const pdfBuffer = await generateTextPDF(suppliers, startDate, endDate);
-          
-          return new NextResponse(pdfBuffer, {
-            headers: {
-              'Content-Type': 'application/pdf',
-              'Content-Disposition': `attachment; filename=suppliers_report_${startDate}_to_${endDate}.pdf`
-            }
-          });
-          
-        } catch (pdfError) {
-          console.error('❌ PDF generation error:', pdfError);
-          
-          // Fallback to HTML report
-          console.log('🔄 Providing HTML report as fallback...');
-          const htmlReport = generateHTMLReport(suppliers, startDate, endDate);
-          
-          return new NextResponse(htmlReport, {
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Content-Disposition': `inline; filename=suppliers_report_${startDate}_to_${endDate}.html`
-            }
-          });
-        }
-      } else if (format === 'html') {
-        // Direct HTML report request
-        const htmlReport = generateHTMLReport(suppliers, startDate, endDate);
+        })
+      } else if (formatType === 'html') {
+        const htmlReport = generateHTMLReport(suppliers, startDate, endDate)
         return new NextResponse(htmlReport, {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
             'Content-Disposition': `inline; filename=suppliers_report_${startDate}_to_${endDate}.html`
           }
-        });
+        })
       }
       
       // Return JSON by default
@@ -317,28 +319,27 @@ export async function GET(request) {
         ...supplier,
         produce_types: supplier.produce_types ? JSON.parse(supplier.produce_types) : [],
         created_at: supplier.created_at.toISOString()
-      }));
+      }))
       
-      return NextResponse.json(formattedSuppliers);
+      return NextResponse.json(formattedSuppliers)
     }
     
-    // Get all suppliers (original functionality - no date filtering)
+    // Get all suppliers
     const suppliers = await prisma.suppliers.findMany({
       orderBy: { created_at: 'desc' }
-    });
+    })
     
-    console.log(`✅ Found ${suppliers.length} suppliers`);
+    console.log(`✅ Found ${suppliers.length} suppliers`)
     
-    // Format for response
     const formattedSuppliers = suppliers.map(supplier => ({
       ...supplier,
       produce_types: supplier.produce_types ? JSON.parse(supplier.produce_types) : [],
       created_at: supplier.created_at.toISOString()
-    }));
+    }))
     
-    return NextResponse.json(formattedSuppliers);
+    return NextResponse.json(formattedSuppliers)
   } catch (error) {
-    console.error('❌ Error in GET /api/suppliers:', error);
+    console.error('❌ Error in GET /api/suppliers:', error)
     return NextResponse.json(
       { 
         error: 'Failed to process request',
@@ -346,62 +347,78 @@ export async function GET(request) {
         code: error.code
       },
       { status: 500 }
-    );
+    )
   }
 }
 
 export async function POST(request) {
   try {
-    console.log('📨 POST /api/suppliers - Creating new supplier');
+    console.log('📨 POST /api/suppliers - Creating new supplier')
     
-    const body = await request.json();
-    console.log('📦 Request data:', body);
+    const body = await request.json()
+    console.log('📦 Request data:', body)
     
-    // Validate required fields
-    if (!body.name || !body.contact_name || !body.contact_phone || !body.supplier_code) {
+    // Validate all fields
+    const validation = validateSupplierData(body)
+    if (!validation.isValid) {
       return NextResponse.json(
-        { error: 'Missing required fields: name, contact_name, contact_phone, or supplier_code' },
+        { error: 'Validation failed', details: validation.errors },
         { status: 400 }
-      );
+      )
     }
     
-    // Check if supplier code already exists
+    // Format phone number
+    const formattedPhone = formatPhoneNumber(body.contact_phone)
+    
+    // Check for existing name or phone
     const existingSupplier = await prisma.suppliers.findFirst({
       where: {
-        supplier_code: body.supplier_code
+        OR: [
+          { name: body.name.trim() },
+          { contact_phone: formattedPhone },
+          { supplier_code: body.supplier_code.trim() }
+        ]
       }
-    });
+    })
     
     if (existingSupplier) {
+      let errorMessage = 'Supplier already exists: '
+      if (existingSupplier.name === body.name.trim()) {
+        errorMessage += `Name "${body.name}" is already registered`
+      } else if (existingSupplier.contact_phone === formattedPhone) {
+        errorMessage += `Phone number "${body.contact_phone}" is already registered`
+      } else {
+        errorMessage += `Supplier code "${body.supplier_code}" is already used`
+      }
+      
       return NextResponse.json(
-        { error: 'Supplier with this code already exists' },
+        { error: errorMessage },
         { status: 400 }
-      );
+      )
     }
     
-    // Create supplier with vehicle status fields
+    // Create supplier
     const newSupplier = await prisma.suppliers.create({
       data: {
-        // Using the smallest ID option (8-10 chars)
         id: generateTinyId(),
-        name: body.name,
-        location: body.location || 'Gate Registration',
-        contact_name: body.contact_name,
-        contact_email: body.contact_email || '',
-        contact_phone: body.contact_phone,
+        name: body.name.trim(),
+        location: body.location?.trim() || 'Gate Registration',
+        contact_name: body.contact_name?.trim() || body.name.trim(),
+        contact_email: body.contact_email?.trim() || '',
+        contact_phone: formattedPhone,
         produce_types: JSON.stringify(Array.isArray(body.produce_types) ? body.produce_types : []),
         status: body.status || 'Active',
         logo_url: body.logo_url || `https://avatar.vercel.sh/${encodeURIComponent(body.name)}.png`,
         active_contracts: body.active_contracts || 0,
-        supplier_code: body.supplier_code,
-        kra_pin: body.kra_pin || null,
-        vehicle_number_plate: body.vehicle_number_plate || null,
-        driver_name: body.driver_name || body.contact_name || null,
-        driver_id_number: body.driver_id_number || null,
-        mpesa_paybill: body.mpesa_paybill || null,
-        mpesa_account_number: body.mpesa_account_number || null,
-        bank_name: body.bank_name || null,
-        bank_account_number: body.bank_account_number || null,
+        supplier_code: body.supplier_code.trim(),
+        kra_pin: body.kra_pin?.trim() || null,
+        vehicle_number_plate: body.vehicle_number_plate?.trim() || null,
+        driver_name: body.driver_name?.trim() || body.contact_name?.trim() || body.name.trim(),
+        driver_id_number: body.driver_id_number?.trim() || null,
+        mpesa_paybill: body.mpesa_paybill?.trim() || null,
+        mpesa_account_number: body.mpesa_account_number?.trim() || null,
+        bank_name: body.bank_name?.trim() || null,
+        bank_account_number: body.bank_account_number?.trim() || null,
         password: body.password || null,
         vehicle_status: body.vehicle_status || 'Pre-registered',
         vehicle_check_in_time: body.vehicle_check_in_time || null,
@@ -409,72 +426,142 @@ export async function POST(request) {
         vehicle_type: body.vehicle_type || null,
         cargo_description: body.cargo_description || null
       }
-    });
+    })
 
-    console.log('✅ Supplier created successfully:', newSupplier.id);
-    return NextResponse.json(newSupplier, { status: 201 });
+    console.log('✅ Supplier created successfully:', newSupplier.id)
+    return NextResponse.json(newSupplier, { status: 201 })
   } catch (error) {
-    console.error('❌ Error creating supplier:', error);
+    console.error('❌ Error creating supplier:', error)
     
     if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0]
+      let errorMessage = 'Supplier with this '
+      
+      if (field === 'name') {
+        errorMessage += 'name already exists'
+      } else if (field === 'contact_phone') {
+        errorMessage += 'phone number already exists'
+      } else if (field === 'supplier_code') {
+        errorMessage += 'supplier code already exists'
+      } else if (field === 'supplier_name_phone_unique') {
+        errorMessage += 'name and phone number combination already exists'
+      } else {
+        errorMessage += 'information already exists'
+      }
+      
       return NextResponse.json(
-        { error: 'Supplier with this email or code already exists' },
+        { error: errorMessage },
         { status: 400 }
-      );
+      )
     }
     
     return NextResponse.json(
       { error: 'Failed to create supplier', details: error.message },
       { status: 500 }
-    );
+    )
   }
 }
 
 export async function PUT(request) {
   try {
-    const url = new URL(request.url);
-    const id = url.searchParams.get('id');
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
     
     if (!id) {
       return NextResponse.json(
         { error: 'Missing supplier ID' },
         { status: 400 }
-      );
+      )
     }
     
-    console.log(`📨 PUT /api/suppliers?id=${id} - Updating supplier`);
+    console.log(`📨 PUT /api/suppliers?id=${id} - Updating supplier`)
     
-    const body = await request.json();
-    console.log('📦 Update data:', body);
+    const body = await request.json()
+    console.log('📦 Update data:', body)
     
     // Check if supplier exists
     const existingSupplier = await prisma.suppliers.findUnique({
       where: { id }
-    });
+    })
     
     if (!existingSupplier) {
       return NextResponse.json(
         { error: 'Supplier not found' },
         { status: 404 }
-      );
+      )
+    }
+    
+    // Format phone number
+    const formattedPhone = body.contact_phone 
+      ? formatPhoneNumber(body.contact_phone)
+      : existingSupplier.contact_phone
+    
+    // Prepare validation data
+    const validationData = {
+      ...existingSupplier,
+      ...body,
+      contact_phone: formattedPhone
+    }
+    
+    // Validate all fields
+    const validation = validateSupplierData(validationData)
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: validation.errors },
+        { status: 400 }
+      )
+    }
+    
+    // Check for duplicate name-phone combination
+    if (body.name || body.contact_phone) {
+      const newName = body.name?.trim() || existingSupplier.name
+      const newPhone = formattedPhone
+      
+      const duplicateSupplier = await prisma.suppliers.findFirst({
+        where: {
+          AND: [
+            { id: { not: id } },
+            {
+              OR: [
+                { name: newName },
+                { contact_phone: newPhone }
+              ]
+            }
+          ]
+        }
+      })
+      
+      if (duplicateSupplier) {
+        let errorMessage = 'Cannot update: '
+        if (duplicateSupplier.name === newName) {
+          errorMessage += `Name "${newName}" is already registered to another supplier`
+        } else if (duplicateSupplier.contact_phone === newPhone) {
+          errorMessage += `Phone number "${newPhone}" is already registered to another supplier`
+        }
+        
+        return NextResponse.json(
+          { error: errorMessage },
+          { status: 400 }
+        )
+      }
     }
     
     // Prepare update data
     const updateData = {
-      ...(body.name && { name: body.name }),
-      ...(body.contact_name && { contact_name: body.contact_name }),
-      ...(body.contact_phone && { contact_phone: body.contact_phone }),
-      ...(body.supplier_code && { supplier_code: body.supplier_code }),
-      ...(body.location && { location: body.location }),
-      ...(body.contact_email && { contact_email: body.contact_email }),
+      ...(body.name && { name: body.name.trim() }),
+      ...(body.contact_name && { contact_name: body.contact_name.trim() }),
+      ...(body.contact_phone && { contact_phone: formattedPhone }),
+      ...(body.supplier_code && { supplier_code: body.supplier_code.trim() }),
+      ...(body.location && { location: body.location.trim() }),
+      ...(body.contact_email && { contact_email: body.contact_email.trim() }),
       ...(body.produce_types && { 
         produce_types: JSON.stringify(Array.isArray(body.produce_types) ? body.produce_types : []) 
       }),
       ...(body.status && { status: body.status }),
-      ...(body.kra_pin !== undefined && { kra_pin: body.kra_pin }),
-      ...(body.vehicle_number_plate !== undefined && { vehicle_number_plate: body.vehicle_number_plate }),
-      ...(body.driver_name !== undefined && { driver_name: body.driver_name }),
-      ...(body.driver_id_number !== undefined && { driver_id_number: body.driver_id_number }),
+      ...(body.kra_pin !== undefined && { kra_pin: body.kra_pin?.trim() || null }),
+      ...(body.vehicle_number_plate !== undefined && { vehicle_number_plate: body.vehicle_number_plate?.trim() || null }),
+      ...(body.driver_name !== undefined && { driver_name: body.driver_name?.trim() || null }),
+      ...(body.driver_id_number !== undefined && { driver_id_number: body.driver_id_number?.trim() || null }),
       ...(body.vehicle_status !== undefined && { vehicle_status: body.vehicle_status }),
       ...(body.vehicle_check_in_time !== undefined && { 
         vehicle_check_in_time: body.vehicle_check_in_time ? new Date(body.vehicle_check_in_time) : null 
@@ -482,30 +569,52 @@ export async function PUT(request) {
       ...(body.vehicle_check_out_time !== undefined && { 
         vehicle_check_out_time: body.vehicle_check_out_time ? new Date(body.vehicle_check_out_time) : null 
       }),
-      ...(body.vehicle_type !== undefined && { vehicle_type: body.vehicle_type }),
-      ...(body.cargo_description !== undefined && { cargo_description: body.cargo_description })
-    };
+      ...(body.vehicle_type !== undefined && { vehicle_type: body.vehicle_type || null }),
+      ...(body.cargo_description !== undefined && { cargo_description: body.cargo_description || null }),
+      ...(body.mpesa_paybill !== undefined && { mpesa_paybill: body.mpesa_paybill?.trim() || null }),
+      ...(body.mpesa_account_number !== undefined && { mpesa_account_number: body.mpesa_account_number?.trim() || null }),
+      ...(body.bank_name !== undefined && { bank_name: body.bank_name?.trim() || null }),
+      ...(body.bank_account_number !== undefined && { bank_account_number: body.bank_account_number?.trim() || null })
+    }
 
     const updatedSupplier = await prisma.suppliers.update({
       where: { id },
       data: updateData
-    });
+    })
 
-    console.log('✅ Supplier updated successfully:', updatedSupplier.id);
-    return NextResponse.json(updatedSupplier);
+    console.log('✅ Supplier updated successfully:', updatedSupplier.id)
+    return NextResponse.json(updatedSupplier)
   } catch (error) {
-    console.error('❌ Error updating supplier:', error);
+    console.error('❌ Error updating supplier:', error)
     
     if (error.code === 'P2025') {
       return NextResponse.json(
         { error: 'Supplier not found' },
         { status: 404 }
-      );
+      )
+    }
+    
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0]
+      let errorMessage = 'Cannot update: '
+      
+      if (field === 'name') {
+        errorMessage += 'Name already exists'
+      } else if (field === 'contact_phone') {
+        errorMessage += 'Phone number already exists'
+      } else if (field === 'supplier_code') {
+        errorMessage += 'Supplier code already exists'
+      }
+      
+      return NextResponse.json(
+        { error: errorMessage },
+        { status: 400 }
+      )
     }
     
     return NextResponse.json(
       { error: 'Failed to update supplier', details: error.message },
       { status: 500 }
-    );
+    )
   }
 }

@@ -1,3 +1,4 @@
+// components/dashboard/create-supplier-gate-form.tsx
 'use client';
 
 import { useState } from 'react';
@@ -23,6 +24,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const formSchema = z.object({
   driverName: z.string().min(2, {
@@ -33,6 +41,9 @@ const formSchema = z.object({
   }),
   vehicleRegNo: z.string().min(3, {
     message: 'Vehicle registration number is required.',
+  }),
+  vehicleType: z.string().min(1, {
+    message: 'Vehicle type is required.',
   }),
   idNumber: z.string().min(5, {
     message: 'ID number must be at least 5 characters.',
@@ -57,6 +68,7 @@ export function CreateSupplierGateForm({ onSubmit }: CreateSupplierGateFormProps
       driverName: '',
       phoneNumber: '',
       vehicleRegNo: '',
+      vehicleType: 'Truck',
       idNumber: '',
       date: new Date().toISOString().split('T')[0],
     },
@@ -141,10 +153,42 @@ export function CreateSupplierGateForm({ onSubmit }: CreateSupplierGateFormProps
               
               <FormField
                 control={form.control}
+                name="vehicleType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2">
+                      <Truck className="h-4 w-4" />
+                      Vehicle Type *
+                    </FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select vehicle type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Truck">Probox</SelectItem>
+                        <SelectItem value="Pickup">Pickup</SelectItem>
+                        <SelectItem value="Lorry">Canter</SelectItem>
+                        <SelectItem value="Van">Van</SelectItem>
+                        <SelectItem value="Trailer">Trailer</SelectItem>
+                        <SelectItem value="Refrigerated Truck">Refrigerated Truck</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <FormField
+                control={form.control}
                 name="idNumber"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>ID Number *</FormLabel>
+                    <FormLabel>Driver ID Number *</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g. 12345678" {...field} />
                     </FormControl>

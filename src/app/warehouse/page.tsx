@@ -2116,108 +2116,141 @@ export default function WarehousePage() {
     setSearchTerm('');
   };
 
-  const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
-    return records.map(record => {
-      const boxesSummary = getBoxesSummary(record.totals);
-      const supplierInfo = getSupplierInfoFromCountingData(record.counting_data);
-      
-      return {
-        date: format(new Date(record.submitted_at), 'yyyy-MM-dd HH:mm:ss'),
-        supplier_name: record.supplier_name,
-        region: record.region,
-        pallet_id: record.pallet_id,
-        driver_name: supplierInfo.driver_name,
-        vehicle_plate: supplierInfo.vehicle_plate,
-        intake_weight_kg: record.total_weight,
-        counted_weight_kg: record.total_counted_weight || 0,
-        rejected_weight_kg: record.rejected_weight || 0,
-        weight_variance_kg: (record.total_weight - (record.total_counted_weight || 0) - (record.rejected_weight || 0)),
-        fuerte_4kg_boxes: boxesSummary.fuerte_4kg,
-        fuerte_10kg_crates: boxesSummary.fuerte_10kg,
-        hass_4kg_boxes: boxesSummary.hass_4kg,
-        hass_10kg_crates: boxesSummary.hass_10kg,
-        total_boxes: boxesSummary.total,
-        processed_by: record.processed_by,
-        notes: record.notes || '',
-        rejection_reason: record.rejection_reason || ''
-      };
-    });
-  };
+const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
+  return records.map(record => {
+    const boxesSummary = getBoxesSummary(record.totals);
+    const supplierInfo = getSupplierInfoFromCountingData(record.counting_data);
+    
+    return {
+      date: format(new Date(record.submitted_at), 'yyyy-MM-dd HH:mm:ss'),
+      supplier_name: record.supplier_name,
+      region: record.region,
+      // REMOVED: pallet_id column
+      driver_name: supplierInfo.driver_name,
+      vehicle_plate: supplierInfo.vehicle_plate,
+      intake_weight_kg: record.total_weight,
+      counted_weight_kg: record.total_counted_weight || 0,
+      rejected_weight_kg: record.rejected_weight || 0,
+      weight_variance_kg: (record.total_weight - (record.total_counted_weight || 0) - (record.rejected_weight || 0)),
+      fuerte_4kg_boxes: boxesSummary.fuerte_4kg,
+      fuerte_10kg_crates: boxesSummary.fuerte_10kg,
+      hass_4kg_boxes: boxesSummary.hass_4kg,
+      hass_10kg_crates: boxesSummary.hass_10kg,
+      total_boxes: boxesSummary.total,
+      // CHANGED: processed_by to "Counting Clerk"
+      processed_by: "Counting Clerk", // Changed from record.processed_by
+      notes: record.notes || '',
+      // REMOVED: rejection_reason column
+    };
+  });
+};
 
-  const downloadCSV = (records: CountingRecord[]) => {
-    if (records.length === 0) {
-      toast({
-        title: 'No Data',
-        description: 'No records available to download',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    const csvData = generateCSVData(records);
-    
-    const headers = [
-      'Date',
-      'Supplier Name',
-      'Region',
-      'Pallet ID',
-      'Driver Name',
-      'Vehicle Plate',
-      'Intake Weight (kg)',
-      'Counted Weight (kg)',
-      'Rejected Weight (kg)',
-      'Weight Variance (kg)',
-      'Fuerte 4kg Boxes',
-      'Fuerte 10kg Crates',
-      'Hass 4kg Boxes',
-      'Hass 10kg Crates',
-      'Total Boxes',
-      'Processed By',
-      'Notes',
-      'Rejection Reason'
-    ];
-    
-    const rows = csvData.map(row => [
-      row.date,
-      `"${row.supplier_name}"`,
-      `"${row.region}"`,
-      row.pallet_id,
-      `"${row.driver_name}"`,
-      `"${row.vehicle_plate}"`,
-      row.intake_weight_kg.toFixed(2),
-      row.counted_weight_kg.toFixed(2),
-      row.rejected_weight_kg.toFixed(2),
-      row.weight_variance_kg.toFixed(2),
-      row.fuerte_4kg_boxes,
-      row.fuerte_10kg_crates,
-      row.hass_4kg_boxes,
-      row.hass_10kg_crates,
-      row.total_boxes,
-      `"${row.processed_by}"`,
-      `"${row.notes.replace(/"/g, '""')}"`,
-      `"${row.rejection_reason ? row.rejection_reason.replace(/"/g, '""') : ''}"`
-    ]);
-    
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `warehouse_history_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
+const downloadCSV = (records: CountingRecord[]) => {
+  if (records.length === 0) {
     toast({
-      title: 'CSV Downloaded',
-      description: `${records.length} records exported successfully`,
+      title: 'No Data',
+      description: 'No records available to download',
+      variant: 'destructive',
     });
+    return;
+  }
+  
+  const csvData = generateCSVData(records);
+  
+  // UPDATED: Removed 'Pallet ID' and 'Rejection Reason' columns
+  const headers = [
+    'Date',
+    'Supplier Name',
+    'Region',
+    'Driver Name',
+    'Vehicle Plate',
+    'Intake Weight (kg)',
+    'Counted Weight (kg)',
+    'Rejected Weight (kg)',
+    'Weight Variance (kg)',
+    'Fuerte 4kg Boxes',
+    'Fuerte 10kg Crates',
+    'Hass 4kg Boxes',
+    'Hass 10kg Crates',
+    'Total Boxes',
+    'Processed By',
+    'Notes'
+  ];
+  
+  // Convert data rows
+  const rows = csvData.map(row => [
+    row.date,
+    `"${row.supplier_name}"`,
+    `"${row.region}"`,
+    `"${row.driver_name}"`,
+    `"${row.vehicle_plate}"`,
+    row.intake_weight_kg.toFixed(2),
+    row.counted_weight_kg.toFixed(2),
+    row.rejected_weight_kg.toFixed(2),
+    row.weight_variance_kg.toFixed(2),
+    row.fuerte_4kg_boxes,
+    row.fuerte_10kg_crates,
+    row.hass_4kg_boxes,
+    row.hass_10kg_crates,
+    row.total_boxes,
+    `"${row.processed_by}"`, // Now always "Counting Clerk"
+    `"${row.notes.replace(/"/g, '""')}"`
+  ]);
+  
+  // Calculate totals
+  const totals = {
+    intake_weight: csvData.reduce((sum, row) => sum + row.intake_weight_kg, 0),
+    counted_weight: csvData.reduce((sum, row) => sum + row.counted_weight_kg, 0),
+    rejected_weight: csvData.reduce((sum, row) => sum + row.rejected_weight_kg, 0),
+    weight_variance: csvData.reduce((sum, row) => sum + row.weight_variance_kg, 0),
+    fuerte_4kg: csvData.reduce((sum, row) => sum + row.fuerte_4kg_boxes, 0),
+    fuerte_10kg: csvData.reduce((sum, row) => sum + row.fuerte_10kg_crates, 0),
+    hass_4kg: csvData.reduce((sum, row) => sum + row.hass_4kg_boxes, 0),
+    hass_10kg: csvData.reduce((sum, row) => sum + row.hass_10kg_crates, 0),
+    total_boxes: csvData.reduce((sum, row) => sum + row.total_boxes, 0),
   };
+  
+  // Add totals row
+  const totalsRow = [
+    'TOTALS',
+    '', // Supplier Name
+    '', // Region
+    '', // Driver Name
+    '', // Vehicle Plate
+    totals.intake_weight.toFixed(2),
+    totals.counted_weight.toFixed(2),
+    totals.rejected_weight.toFixed(2),
+    totals.weight_variance.toFixed(2),
+    totals.fuerte_4kg,
+    totals.fuerte_10kg,
+    totals.hass_4kg,
+    totals.hass_10kg,
+    totals.total_boxes,
+    '', // Processed By
+    ''  // Notes
+  ];
+  
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.join(',')),
+    totalsRow.join(',')
+  ].join('\n');
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `warehouse_history_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  toast({
+    title: 'CSV Downloaded',
+    description: `${records.length} records exported with totals row`,
+  });
+};
 
   const downloadAllHistory = () => {
     downloadCSV(countingRecords);

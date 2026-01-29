@@ -114,6 +114,7 @@ function generateCSV(suppliers) {
     'M-PESA Paybill',
     'M-PESA Account',
     'Active Contracts',
+    'Vehicle Type',
     'Created At'
   ]
 
@@ -130,6 +131,7 @@ function generateCSV(suppliers) {
     supplier.mpesa_paybill || 'N/A',
     supplier.mpesa_account_number || 'N/A',
     supplier.active_contracts || 0,
+    supplier.vehicle_type || 'Truck',
     new Date(supplier.created_at).toLocaleDateString()
   ])
 
@@ -159,6 +161,7 @@ function generateHTMLReport(suppliers, startDate, endDate) {
     tr:nth-child(even) { background: #f9f9f9; }
     .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
     .payment-info { background: #e8f5e9; padding: 10px; border-radius: 3px; margin: 5px 0; }
+    .vehicle-info { background: #e3f2fd; padding: 10px; border-radius: 3px; margin: 5px 0; }
     .locked-badge { 
       background: #2196F3; 
       color: white; 
@@ -190,6 +193,8 @@ function generateHTMLReport(suppliers, startDate, endDate) {
         <th>Supplier Code</th>
         <th>Supplier Name <span class="locked-badge">🔒</span></th>
         <th>Phone Number <span class="locked-badge">🔒</span></th>
+        <th>Vehicle Type</th>
+        <th>Vehicle Plate</th>
         <th>Email</th>
         <th>Location</th>
         <th>Status</th>
@@ -202,10 +207,18 @@ function generateHTMLReport(suppliers, startDate, endDate) {
           <td><strong>${supplier.supplier_code || 'N/A'}</strong></td>
           <td>${supplier.name || 'N/A'}</td>
           <td>${supplier.contact_phone || 'N/A'}</td>
+          <td>${supplier.vehicle_type || 'Truck'}</td>
+          <td>${supplier.vehicle_number_plate || 'N/A'}</td>
           <td>${supplier.contact_email || 'N/A'}</td>
           <td>${supplier.location || 'N/A'}</td>
           <td>${supplier.status || 'N/A'}</td>
           <td>
+            ${supplier.vehicle_type || supplier.vehicle_number_plate ? `
+              <div class="vehicle-info">
+                <strong>Vehicle:</strong> ${supplier.vehicle_type || 'Truck'}<br>
+                <strong>Plate:</strong> ${supplier.vehicle_number_plate || 'N/A'}
+              </div>
+            ` : ''}
             ${supplier.bank_name ? `
               <div class="payment-info">
                 <strong>Bank:</strong> ${supplier.bank_name}<br>
@@ -413,6 +426,7 @@ export async function POST(request) {
         supplier_code: body.supplier_code.trim(),
         kra_pin: body.kra_pin?.trim() || null,
         vehicle_number_plate: body.vehicle_number_plate?.trim() || null,
+        vehicle_type: body.vehicle_type || 'Truck', // Set vehicle type
         driver_name: body.driver_name?.trim() || body.contact_name?.trim() || body.name.trim(),
         driver_id_number: body.driver_id_number?.trim() || null,
         mpesa_paybill: body.mpesa_paybill?.trim() || null,
@@ -423,7 +437,6 @@ export async function POST(request) {
         vehicle_status: body.vehicle_status || 'Pre-registered',
         vehicle_check_in_time: body.vehicle_check_in_time || null,
         vehicle_check_out_time: body.vehicle_check_out_time || null,
-        vehicle_type: body.vehicle_type || null,
         cargo_description: body.cargo_description || null
       }
     })
@@ -560,6 +573,7 @@ export async function PUT(request) {
       ...(body.status && { status: body.status }),
       ...(body.kra_pin !== undefined && { kra_pin: body.kra_pin?.trim() || null }),
       ...(body.vehicle_number_plate !== undefined && { vehicle_number_plate: body.vehicle_number_plate?.trim() || null }),
+      ...(body.vehicle_type !== undefined && { vehicle_type: body.vehicle_type || 'Truck' }), // Update vehicle type
       ...(body.driver_name !== undefined && { driver_name: body.driver_name?.trim() || null }),
       ...(body.driver_id_number !== undefined && { driver_id_number: body.driver_id_number?.trim() || null }),
       ...(body.vehicle_status !== undefined && { vehicle_status: body.vehicle_status }),
@@ -569,7 +583,6 @@ export async function PUT(request) {
       ...(body.vehicle_check_out_time !== undefined && { 
         vehicle_check_out_time: body.vehicle_check_out_time ? new Date(body.vehicle_check_out_time) : null 
       }),
-      ...(body.vehicle_type !== undefined && { vehicle_type: body.vehicle_type || null }),
       ...(body.cargo_description !== undefined && { cargo_description: body.cargo_description || null }),
       ...(body.mpesa_paybill !== undefined && { mpesa_paybill: body.mpesa_paybill?.trim() || null }),
       ...(body.mpesa_account_number !== undefined && { mpesa_account_number: body.mpesa_account_number?.trim() || null }),

@@ -2,26 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
 
-// Enhanced schema with all equipment data
+// Enhanced schema with all equipment data - all fields optional
 const utilityReadingInputSchema = z.object({
   // Power readings by area
-  powerOfficeOpening: z.string().min(1, 'Office power opening reading is required'),
-  powerOfficeClosing: z.string().min(1, 'Office power closing reading is required'),
-  powerMachineOpening: z.string().min(1, 'Machine power opening reading is required'),
-  powerMachineClosing: z.string().min(1, 'Machine power closing reading is required'),
-  powerColdroom1Opening: z.string().min(1, 'Coldroom 1 power opening reading is required'),
-  powerColdroom1Closing: z.string().min(1, 'Coldroom 1 power closing reading is required'),
-  powerColdroom2Opening: z.string().min(1, 'Coldroom 2 power opening reading is required'),
-  powerColdroom2Closing: z.string().min(1, 'Coldroom 2 power closing reading is required'),
+  powerOfficeOpening: z.string().optional().nullable(),
+  powerOfficeClosing: z.string().optional().nullable(),
+  powerMachineOpening: z.string().optional().nullable(),
+  powerMachineClosing: z.string().optional().nullable(),
+  powerColdroom1Opening: z.string().optional().nullable(),
+  powerColdroom1Closing: z.string().optional().nullable(),
+  powerColdroom2Opening: z.string().optional().nullable(),
+  powerColdroom2Closing: z.string().optional().nullable(),
   powerOtherOpening: z.string().optional().nullable(),
   powerOtherClosing: z.string().optional().nullable(),
   powerOtherActivity: z.string().optional().nullable(),
   
   // Water readings for two meters
-  waterMeter1Opening: z.string().min(1, 'Water Meter 1 opening reading is required'),
-  waterMeter1Closing: z.string().min(1, 'Water Meter 1 closing reading is required'),
-  waterMeter2Opening: z.string().min(1, 'Water Meter 2 opening reading is required'),
-  waterMeter2Closing: z.string().min(1, 'Water Meter 2 closing reading is required'),
+  waterMeter1Opening: z.string().optional().nullable(),
+  waterMeter1Closing: z.string().optional().nullable(),
+  waterMeter2Opening: z.string().optional().nullable(),
+  waterMeter2Closing: z.string().optional().nullable(),
   
   // Internet costs (monthly)
   internetSafaricom: z.string().optional().nullable(),
@@ -30,8 +30,8 @@ const utilityReadingInputSchema = z.object({
   internetBillingCycle: z.string().optional().nullable(),
   
   // Generator data
-  generatorStart: z.string().regex(/^\d{2}:\d{2}$/, 'Generator start time must be in HH:MM format'),
-  generatorStop: z.string().regex(/^\d{2}:\d{2}$/, 'Generator stop time must be in HH:MM format'),
+  generatorStart: z.string().optional().nullable(),
+  generatorStop: z.string().optional().nullable(),
   generatorCode: z.string().optional().nullable(),
   generatorName: z.string().optional().nullable(),
   
@@ -62,180 +62,293 @@ export async function POST(request: NextRequest) {
     // Validate input
     const parsed = utilityReadingInputSchema.parse(body);
 
-    // Convert numeric values for power
-    const powerOfficeOpening = parseFloat(parsed.powerOfficeOpening);
-    const powerOfficeClosing = parseFloat(parsed.powerOfficeClosing);
-    const powerMachineOpening = parseFloat(parsed.powerMachineOpening);
-    const powerMachineClosing = parseFloat(parsed.powerMachineClosing);
-    const powerColdroom1Opening = parseFloat(parsed.powerColdroom1Opening);
-    const powerColdroom1Closing = parseFloat(parsed.powerColdroom1Closing);
-    const powerColdroom2Opening = parseFloat(parsed.powerColdroom2Opening);
-    const powerColdroom2Closing = parseFloat(parsed.powerColdroom2Closing);
-    
-    const powerOtherOpening = parsed.powerOtherOpening ? parseFloat(parsed.powerOtherOpening) : 0;
-    const powerOtherClosing = parsed.powerOtherClosing ? parseFloat(parsed.powerOtherClosing) : 0;
-    
-    // Convert water readings
-    const waterMeter1Opening = parseFloat(parsed.waterMeter1Opening);
-    const waterMeter1Closing = parseFloat(parsed.waterMeter1Closing);
-    const waterMeter2Opening = parseFloat(parsed.waterMeter2Opening);
-    const waterMeter2Closing = parseFloat(parsed.waterMeter2Closing);
-    
-    // Convert internet costs
-    const internetSafaricom = parsed.internetSafaricom ? parseFloat(parsed.internetSafaricom) : 0;
-    const internet5G = parsed.internet5G ? parseFloat(parsed.internet5G) : 0;
-    const internetSyokinet = parsed.internetSyokinet ? parseFloat(parsed.internetSyokinet) : 0;
-    
-    // Handle optional nullable fields
-    const dieselRefill = parsed.dieselRefill && parsed.dieselRefill.trim() !== '' 
-      ? parseFloat(parsed.dieselRefill) 
-      : null;
+    // Get existing reading for today if exists
+    const today = parsed.date ? new Date(parsed.date) : new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Validate power readings
-    const validateReadings = (opening: number, closing: number, name: string) => {
-      if (closing < opening) {
-        throw new Error(`${name} closing reading must be greater than opening reading`);
-      }
-    };
-
-    validateReadings(powerOfficeOpening, powerOfficeClosing, 'Office Power');
-    validateReadings(powerMachineOpening, powerMachineClosing, 'Machine Power');
-    validateReadings(powerColdroom1Opening, powerColdroom1Closing, 'Coldroom 1 Power');
-    validateReadings(powerColdroom2Opening, powerColdroom2Closing, 'Coldroom 2 Power');
-    if (powerOtherClosing > 0) {
-      validateReadings(powerOtherOpening, powerOtherClosing, 'Other Activities Power');
-    }
-    
-    validateReadings(waterMeter1Opening, waterMeter1Closing, 'Water Meter 1');
-    validateReadings(waterMeter2Opening, waterMeter2Closing, 'Water Meter 2');
-
-    // Calculate power consumption by area
-    const powerOfficeConsumed = powerOfficeClosing - powerOfficeOpening;
-    const powerMachineConsumed = powerMachineClosing - powerMachineOpening;
-    const powerColdroom1Consumed = powerColdroom1Closing - powerColdroom1Opening;
-    const powerColdroom2Consumed = powerColdroom2Closing - powerColdroom2Opening;
-    const powerOtherConsumed = powerOtherClosing - powerOtherOpening;
-    const totalPowerConsumed = powerOfficeConsumed + powerMachineConsumed + 
-                               powerColdroom1Consumed + powerColdroom2Consumed + 
-                               powerOtherConsumed;
-
-    // Calculate water consumption
-    const waterMeter1Consumed = waterMeter1Closing - waterMeter1Opening;
-    const waterMeter2Consumed = waterMeter2Closing - waterMeter2Opening;
-    const totalWaterConsumed = waterMeter1Consumed + waterMeter2Consumed;
-
-    // Generator runtime calculation
-    const [startHour, startMin] = parsed.generatorStart.split(':').map(Number);
-    const [stopHour, stopMin] = parsed.generatorStop.split(':').map(Number);
-
-    let totalMinutes = (stopHour * 60 + stopMin) - (startHour * 60 + startMin);
-    if (totalMinutes < 0) totalMinutes += 24 * 60;
-
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    const totalHours = totalMinutes / 60;
-    
-    // Calculate diesel consumption if not provided
-    const dieselConsumed = parsed.dieselConsumed 
-      ? parseFloat(parsed.dieselConsumed)
-      : totalHours * 7; // Default calculation: 7L per hour
-
-    const formatTimeDisplay = () => {
-      if (hours === 0 && minutes === 0) return '0 hours';
-      const parts = [];
-      if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
-      if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
-      return parts.join(' ');
-    };
-    const timeConsumed = formatTimeDisplay();
-
-    // Total internet cost
-    const totalInternetCost = internetSafaricom + internet5G + internetSyokinet;
-
-    // Create metadata for additional fields
-    const metadata = JSON.stringify({
-      // Power breakdown
-      powerOfficeOpening,
-      powerOfficeClosing,
-      powerMachineOpening,
-      powerMachineClosing,
-      powerColdroom1Opening,
-      powerColdroom1Closing,
-      powerColdroom2Opening,
-      powerColdroom2Closing,
-      powerOtherOpening,
-      powerOtherClosing,
-      powerOtherActivity: parsed.powerOtherActivity,
-      
-      // Water meter details
-      waterMeter1Number: parsed.waterMeter1Number,
-      waterMeter2Number: parsed.waterMeter2Number,
-      
-      // Internet costs
-      internetSafaricom,
-      internet5G,
-      internetSyokinet,
-      internetBillingCycle: parsed.internetBillingCycle,
-      
-      // Equipment status
-      coldroom1Temp: parsed.coldroom1Temp,
-      coldroom2Temp: parsed.coldroom2Temp,
-      machineStatus: parsed.machineStatus,
-      
-      // Generator details
-      generatorCode: parsed.generatorCode,
-      generatorName: parsed.generatorName,
-    });
-
-    const reading = await prisma.utility_readings.create({
-      data: {
-        // Store totals for quick access
-        powerOpening: totalPowerConsumed.toString(), // Storing total for backward compatibility
-        powerClosing: "0", // Not used in new system
-        powerConsumed: totalPowerConsumed.toString(),
-        
-        waterOpening: totalWaterConsumed.toString(), // Storing total for backward compatibility
-        waterClosing: "0", // Not used in new system
-        waterConsumed: totalWaterConsumed.toString(),
-        
-        generatorStart: parsed.generatorStart,
-        generatorStop: parsed.generatorStop,
-        timeConsumed,
-        dieselConsumed: dieselConsumed.toString(),
-        dieselRefill: dieselRefill ? dieselRefill.toString() : null,
+    const existingReading = await prisma.utility_readings.findFirst({
+      where: {
+        date: {
+          gte: today,
+          lt: tomorrow,
+        },
         recordedBy: parsed.recordedBy,
-        shift: parsed.shift || null,
-        date: parsed.date ? new Date(parsed.date) : new Date(),
-        notes: parsed.notes || null,
-        metadata,
       },
     });
+
+    // Parse existing metadata or create new
+    let existingMetadata: any = {};
+    if (existingReading?.metadata) {
+      try {
+        existingMetadata = JSON.parse(existingReading.metadata as string);
+      } catch (error) {
+        console.error('Error parsing existing metadata:', error);
+      }
+    }
+
+    // Initialize totals
+    let totalPowerConsumed = existingReading ? parseFloat(existingReading.powerConsumed) || 0 : 0;
+    let totalWaterConsumed = existingReading ? parseFloat(existingReading.waterConsumed) || 0 : 0;
+    let timeConsumed = existingReading?.timeConsumed || '';
+    let dieselConsumed = existingReading ? parseFloat(existingReading.dieselConsumed) || 0 : 0;
+    let dieselRefill = existingReading?.dieselRefill || null;
+
+    // Merge new metadata with existing
+    const metadata: any = { ...existingMetadata };
+
+    // Update power readings if provided
+    if (parsed.powerOfficeOpening !== undefined || parsed.powerOfficeClosing !== undefined) {
+      const powerOfficeOpening = parsed.powerOfficeOpening ? parseFloat(parsed.powerOfficeOpening) : (metadata.powerOfficeClosing || 0);
+      const powerOfficeClosing = parsed.powerOfficeClosing ? parseFloat(parsed.powerOfficeClosing) : (metadata.powerOfficeClosing || 0);
+      
+      if (powerOfficeClosing < powerOfficeOpening) {
+        return NextResponse.json(
+          { error: 'Office Power closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const powerOfficeConsumed = powerOfficeClosing - powerOfficeOpening;
+      metadata.powerOfficeOpening = powerOfficeOpening;
+      metadata.powerOfficeClosing = powerOfficeClosing;
+      metadata.powerOfficeConsumed = powerOfficeConsumed;
+      
+      // Update total power consumed
+      totalPowerConsumed = (totalPowerConsumed || 0) - (existingMetadata.powerOfficeConsumed || 0) + powerOfficeConsumed;
+    }
+
+    if (parsed.powerMachineOpening !== undefined || parsed.powerMachineClosing !== undefined) {
+      const powerMachineOpening = parsed.powerMachineOpening ? parseFloat(parsed.powerMachineOpening) : (metadata.powerMachineClosing || 0);
+      const powerMachineClosing = parsed.powerMachineClosing ? parseFloat(parsed.powerMachineClosing) : (metadata.powerMachineClosing || 0);
+      
+      if (powerMachineClosing < powerMachineOpening) {
+        return NextResponse.json(
+          { error: 'Machine Power closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const powerMachineConsumed = powerMachineClosing - powerMachineOpening;
+      metadata.powerMachineOpening = powerMachineOpening;
+      metadata.powerMachineClosing = powerMachineClosing;
+      metadata.powerMachineConsumed = powerMachineConsumed;
+      
+      totalPowerConsumed = (totalPowerConsumed || 0) - (existingMetadata.powerMachineConsumed || 0) + powerMachineConsumed;
+    }
+
+    if (parsed.powerColdroom1Opening !== undefined || parsed.powerColdroom1Closing !== undefined) {
+      const powerColdroom1Opening = parsed.powerColdroom1Opening ? parseFloat(parsed.powerColdroom1Opening) : (metadata.powerColdroom1Closing || 0);
+      const powerColdroom1Closing = parsed.powerColdroom1Closing ? parseFloat(parsed.powerColdroom1Closing) : (metadata.powerColdroom1Closing || 0);
+      
+      if (powerColdroom1Closing < powerColdroom1Opening) {
+        return NextResponse.json(
+          { error: 'Coldroom 1 Power closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const powerColdroom1Consumed = powerColdroom1Closing - powerColdroom1Opening;
+      metadata.powerColdroom1Opening = powerColdroom1Opening;
+      metadata.powerColdroom1Closing = powerColdroom1Closing;
+      metadata.powerColdroom1Consumed = powerColdroom1Consumed;
+      
+      totalPowerConsumed = (totalPowerConsumed || 0) - (existingMetadata.powerColdroom1Consumed || 0) + powerColdroom1Consumed;
+    }
+
+    if (parsed.powerColdroom2Opening !== undefined || parsed.powerColdroom2Closing !== undefined) {
+      const powerColdroom2Opening = parsed.powerColdroom2Opening ? parseFloat(parsed.powerColdroom2Opening) : (metadata.powerColdroom2Closing || 0);
+      const powerColdroom2Closing = parsed.powerColdroom2Closing ? parseFloat(parsed.powerColdroom2Closing) : (metadata.powerColdroom2Closing || 0);
+      
+      if (powerColdroom2Closing < powerColdroom2Opening) {
+        return NextResponse.json(
+          { error: 'Coldroom 2 Power closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const powerColdroom2Consumed = powerColdroom2Closing - powerColdroom2Opening;
+      metadata.powerColdroom2Opening = powerColdroom2Opening;
+      metadata.powerColdroom2Closing = powerColdroom2Closing;
+      metadata.powerColdroom2Consumed = powerColdroom2Consumed;
+      
+      totalPowerConsumed = (totalPowerConsumed || 0) - (existingMetadata.powerColdroom2Consumed || 0) + powerColdroom2Consumed;
+    }
+
+    if (parsed.powerOtherOpening !== undefined || parsed.powerOtherClosing !== undefined) {
+      const powerOtherOpening = parsed.powerOtherOpening ? parseFloat(parsed.powerOtherOpening) : (metadata.powerOtherClosing || 0);
+      const powerOtherClosing = parsed.powerOtherClosing ? parseFloat(parsed.powerOtherClosing) : (metadata.powerOtherClosing || 0);
+      
+      if (powerOtherClosing < powerOtherOpening) {
+        return NextResponse.json(
+          { error: 'Other Activities Power closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const powerOtherConsumed = powerOtherClosing - powerOtherOpening;
+      metadata.powerOtherOpening = powerOtherOpening;
+      metadata.powerOtherClosing = powerOtherClosing;
+      metadata.powerOtherConsumed = powerOtherConsumed;
+      
+      totalPowerConsumed = (totalPowerConsumed || 0) - (existingMetadata.powerOtherConsumed || 0) + powerOtherConsumed;
+    }
+
+    if (parsed.powerOtherActivity !== undefined) {
+      metadata.powerOtherActivity = parsed.powerOtherActivity;
+    }
+
+    // Update water readings if provided
+    if (parsed.waterMeter1Opening !== undefined || parsed.waterMeter1Closing !== undefined) {
+      const waterMeter1Opening = parsed.waterMeter1Opening ? parseFloat(parsed.waterMeter1Opening) : (metadata.waterMeter1Closing || 0);
+      const waterMeter1Closing = parsed.waterMeter1Closing ? parseFloat(parsed.waterMeter1Closing) : (metadata.waterMeter1Closing || 0);
+      
+      if (waterMeter1Closing < waterMeter1Opening) {
+        return NextResponse.json(
+          { error: 'Water Meter 1 closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const waterMeter1Consumed = waterMeter1Closing - waterMeter1Opening;
+      metadata.waterMeter1Opening = waterMeter1Opening;
+      metadata.waterMeter1Closing = waterMeter1Closing;
+      metadata.waterMeter1Consumed = waterMeter1Consumed;
+      
+      totalWaterConsumed = (totalWaterConsumed || 0) - (existingMetadata.waterMeter1Consumed || 0) + waterMeter1Consumed;
+    }
+
+    if (parsed.waterMeter2Opening !== undefined || parsed.waterMeter2Closing !== undefined) {
+      const waterMeter2Opening = parsed.waterMeter2Opening ? parseFloat(parsed.waterMeter2Opening) : (metadata.waterMeter2Closing || 0);
+      const waterMeter2Closing = parsed.waterMeter2Closing ? parseFloat(parsed.waterMeter2Closing) : (metadata.waterMeter2Closing || 0);
+      
+      if (waterMeter2Closing < waterMeter2Opening) {
+        return NextResponse.json(
+          { error: 'Water Meter 2 closing reading must be greater than opening reading' },
+          { status: 400 }
+        );
+      }
+
+      const waterMeter2Consumed = waterMeter2Closing - waterMeter2Opening;
+      metadata.waterMeter2Opening = waterMeter2Opening;
+      metadata.waterMeter2Closing = waterMeter2Closing;
+      metadata.waterMeter2Consumed = waterMeter2Consumed;
+      
+      totalWaterConsumed = (totalWaterConsumed || 0) - (existingMetadata.waterMeter2Consumed || 0) + waterMeter2Consumed;
+    }
+
+    // Update internet costs if provided
+    if (parsed.internetSafaricom !== undefined) {
+      metadata.internetSafaricom = parsed.internetSafaricom ? parseFloat(parsed.internetSafaricom) : 0;
+    }
+    if (parsed.internet5G !== undefined) {
+      metadata.internet5G = parsed.internet5G ? parseFloat(parsed.internet5G) : 0;
+    }
+    if (parsed.internetSyokinet !== undefined) {
+      metadata.internetSyokinet = parsed.internetSyokinet ? parseFloat(parsed.internetSyokinet) : 0;
+    }
+    if (parsed.internetBillingCycle !== undefined) {
+      metadata.internetBillingCycle = parsed.internetBillingCycle;
+    }
+
+    // Update generator data if provided
+    if (parsed.generatorStart !== undefined) {
+      metadata.generatorStart = parsed.generatorStart;
+    }
+    if (parsed.generatorStop !== undefined) {
+      metadata.generatorStop = parsed.generatorStop;
+    }
+    
+    // Calculate generator runtime if both times are provided
+    if (parsed.generatorStart && parsed.generatorStop) {
+      const [startHour, startMin] = parsed.generatorStart.split(':').map(Number);
+      const [stopHour, stopMin] = parsed.generatorStop.split(':').map(Number);
+
+      let totalMinutes = (stopHour * 60 + stopMin) - (startHour * 60 + startMin);
+      if (totalMinutes < 0) totalMinutes += 24 * 60;
+
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+
+      const formatTimeDisplay = () => {
+        if (hours === 0 && minutes === 0) return '0 hours';
+        const parts = [];
+        if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+        if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+        return parts.join(' ');
+      };
+      
+      timeConsumed = formatTimeDisplay();
+    }
+
+    // Update diesel data if provided
+    if (parsed.dieselConsumed !== undefined) {
+      dieselConsumed = parsed.dieselConsumed ? parseFloat(parsed.dieselConsumed) : 0;
+    }
+    if (parsed.dieselRefill !== undefined) {
+      dieselRefill = parsed.dieselRefill && parsed.dieselRefill.trim() !== '' 
+        ? parseFloat(parsed.dieselRefill).toString()
+        : null;
+    }
+
+    // Update other metadata fields
+    if (parsed.generatorCode !== undefined) metadata.generatorCode = parsed.generatorCode;
+    if (parsed.generatorName !== undefined) metadata.generatorName = parsed.generatorName;
+    if (parsed.coldroom1Temp !== undefined) metadata.coldroom1Temp = parsed.coldroom1Temp;
+    if (parsed.coldroom2Temp !== undefined) metadata.coldroom2Temp = parsed.coldroom2Temp;
+    if (parsed.machineStatus !== undefined) metadata.machineStatus = parsed.machineStatus;
+    if (parsed.waterMeter1Number !== undefined) metadata.waterMeter1Number = parsed.waterMeter1Number;
+    if (parsed.waterMeter2Number !== undefined) metadata.waterMeter2Number = parsed.waterMeter2Number;
+
+    // Create or update reading
+    const readingData = {
+      // Store totals for quick access
+      powerOpening: totalPowerConsumed.toString(),
+      powerClosing: "0",
+      powerConsumed: totalPowerConsumed.toString(),
+      
+      waterOpening: totalWaterConsumed.toString(),
+      waterClosing: "0",
+      waterConsumed: totalWaterConsumed.toString(),
+      
+      generatorStart: metadata.generatorStart || existingReading?.generatorStart || '',
+      generatorStop: metadata.generatorStop || existingReading?.generatorStop || '',
+      timeConsumed,
+      dieselConsumed: dieselConsumed.toString(),
+      dieselRefill,
+      recordedBy: parsed.recordedBy,
+      shift: parsed.shift || existingReading?.shift || null,
+      date: parsed.date ? new Date(parsed.date) : new Date(),
+      notes: parsed.notes || existingReading?.notes || null,
+      metadata: JSON.stringify(metadata),
+    };
+
+    let reading;
+    if (existingReading) {
+      // Update existing reading
+      reading = await prisma.utility_readings.update({
+        where: { id: existingReading.id },
+        data: readingData,
+      });
+    } else {
+      // Create new reading
+      reading = await prisma.utility_readings.create({
+        data: readingData,
+      });
+    }
     
     return NextResponse.json({ 
       success: true, 
       reading,
+      message: existingReading ? 'Reading updated successfully' : 'Reading created successfully',
       calculated: {
-        // Power breakdown
-        powerOfficeConsumed,
-        powerMachineConsumed,
-        powerColdroom1Consumed,
-        powerColdroom2Consumed,
-        powerOtherConsumed,
         totalPowerConsumed,
-        
-        // Water breakdown
-        waterMeter1Consumed,
-        waterMeter2Consumed,
         totalWaterConsumed,
-        
-        // Generator
         timeConsumed,
         dieselConsumed,
-        
-        // Internet
-        totalInternetCost,
       }
-    }, { status: 201 });
+    }, { status: existingReading ? 200 : 201 });
     
   } catch (error) {
     console.error('Error in utility readings POST:', error);
@@ -295,7 +408,7 @@ export async function GET(request: NextRequest) {
       let startDate = new Date();
       
       switch (period) {
-        case 'day':
+        case 'today':
           startDate.setHours(0, 0, 0, 0);
           break;
         case 'week':
@@ -322,6 +435,7 @@ export async function GET(request: NextRequest) {
     let totalPower = 0;
     let totalWater = 0;
     let totalDiesel = 0;
+    let totalInternet = 0;
     
     const parsedReadings = readings.map(reading => {
       const metadata = reading.metadata ? JSON.parse(reading.metadata as string) : {};
@@ -330,6 +444,11 @@ export async function GET(request: NextRequest) {
       totalPower += Number(reading.powerConsumed) || 0;
       totalWater += Number(reading.waterConsumed) || 0;
       totalDiesel += Number(reading.dieselConsumed) || 0;
+      
+      // Add internet costs if available
+      if (metadata.internetSafaricom) totalInternet += metadata.internetSafaricom;
+      if (metadata.internet5G) totalInternet += metadata.internet5G;
+      if (metadata.internetSyokinet) totalInternet += metadata.internetSyokinet;
       
       return {
         ...reading,
@@ -355,6 +474,7 @@ export async function GET(request: NextRequest) {
         power: totalPower,
         water: totalWater,
         diesel: totalDiesel,
+        internet: totalInternet,
       },
       dailyAverages,
       meta: {
@@ -367,6 +487,37 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching utility readings:', error);
     return NextResponse.json(
       { error: 'Failed to fetch utility readings' },
+      { status: 500 }
+    );
+  }
+}
+
+// New endpoint for CSV export
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Reading ID is required' },
+        { status: 400 }
+      );
+    }
+    
+    await prisma.utility_readings.delete({
+      where: { id: parseInt(id) },
+    });
+    
+    return NextResponse.json({ 
+      success: true,
+      message: 'Reading deleted successfully' 
+    });
+    
+  } catch (error) {
+    console.error('Error deleting utility reading:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete utility reading' },
       { status: 500 }
     );
   }

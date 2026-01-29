@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -12,7 +12,7 @@ import { FreshViewLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
-import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, TrendingUp, AlertTriangle, Truck, Warehouse, Snowflake, Package, Minus, Plus, BarChart, Download, Calendar, Filter, X } from 'lucide-react';
+import { Check, ListTodo, PlusCircle, Package as PackageIcon, Loader2, AlertCircle, RefreshCw, Boxes, TrendingUp, AlertTriangle, Truck, Warehouse, Snowflake, Package, Minus, Plus, BarChart, Download, Calendar, Filter, X, Thermometer, BarChart3, Weight, Box, Layers, Palette, Trash2, Eye, Info, FileSpreadsheet, Layers2 } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 
 // Avocado Inventory Types
 interface ColdRoomBox {
@@ -36,9 +37,16 @@ interface ColdRoomBox {
   quantity: number;
   cold_room_id: string;
   created_at: string;
+  updated_at: string;
   supplier_name?: string;
   pallet_id?: string;
   region?: string;
+  counting_record_id?: string;
+  is_in_pallet?: boolean;
+  converted_to_pallet_at?: string;
+  loading_sheet_id?: string | null;
+  converted_to_pallet_date?: string;
+  original_box_count?: number;
 }
 
 interface PackagingMaterial {
@@ -75,39 +83,155 @@ interface InventoryKPIs {
   };
 }
 
+interface Pallet {
+  id: string;
+  variety: string;
+  box_type: string;
+  size: string;
+  grade: string;
+  pallet_count: number;
+  cold_room_id: string;
+  pallet_name?: string;
+  is_manual: boolean;
+  created_at: string;
+  last_updated: string;
+  boxes?: ColdRoomBox[];
+  total_boxes?: number;
+  boxes_per_pallet: number;
+  loading_sheet_id?: string | null;
+  conversion_date?: string;
+  original_box_ids?: string[];
+}
+
+interface TemperatureLog {
+  id: string;
+  cold_room_id: string;
+  temperature: number;
+  timestamp: string;
+  recorded_by: string;
+}
+
+// Format size for display
+const formatSize = (size: string) => {
+  return size.replace('size', 'Size ');
+};
+
+// Get variety display name
+const getVarietyDisplay = (variety: string): string => {
+  return variety === 'fuerte' ? 'Fuerte' : 'Hass';
+};
+
+// Get grade display name
+const getGradeDisplay = (grade: string): string => {
+  return grade === 'class1' ? 'Class 1' : 'Class 2';
+};
+
+// Safe toFixed function
+const safeToFixed = (value: any, decimals: number = 1): string => {
+  const num = Number(value);
+  return isNaN(num) ? '0.'.padEnd(decimals + 2, '0') : num.toFixed(decimals);
+};
+
+// Format date
+const formatDate = (dateString: string) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'Invalid Date';
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+// Box sizes
+const BOX_SIZES = [
+  'size32', 'size30', 'size28', 'size26', 'size24',
+  'size22', 'size20', 'size18', 'size16', 'size14', 'size12'
+];
+
 export default function InventoryPage() {
   const [stockTakeMode, setStockTakeMode] = useState(false);
-  const [coldRoomInventory, setColdRoomInventory] = useState<ColdRoomBox[]>([]);
+  const [coldRoomBoxes, setColdRoomBoxes] = useState<ColdRoomBox[]>([]);
+  const [pallets, setPallets] = useState<Pallet[]>([]);
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterial[]>([]);
   const [inventoryKPIs, setInventoryKPIs] = useState<InventoryKPIs | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState({
+    boxes: true,
+    pallets: true,
+    packaging: true,
+    stats: true,
+  });
   const [error, setError] = useState<string | null>(null);
   const [bulkUpdateQuantity, setBulkUpdateQuantity] = useState<number>(0);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
   
   // Date filter states
-  const [dateFilter, setDateFilter] = useState<'all' | 'specific' | 'range'>('all');
-  const [specificDate, setSpecificDate] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [dateFilter, setDateFilter] = useState<{
+    avocado: string;
+    packaging: string;
+    packagingStartDate: string;
+    packagingEndDate: string;
+  }>({
+    avocado: '',
+    packaging: 'all',
+    packagingStartDate: '',
+    packagingEndDate: '',
+  });
+  
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedColdRoom, setSelectedColdRoom] = useState<string>('all');
+  const [expandedPallets, setExpandedPallets] = useState<Set<string>>(new Set());
   
   const { toast } = useToast();
 
-  // Format size for display
-  const formatSize = (size: string) => {
-    return size.replace('size', 'Size ');
+  // Calculate available boxes (not in pallets and not assigned to loading sheets)
+  const calculateAvailableBoxes = (boxes: ColdRoomBox[]) => {
+    return boxes.filter(box => 
+      !box.loading_sheet_id && 
+      !box.is_in_pallet
+    );
   };
 
-  // Calculate pallets
-  const calculatePallets = (quantity: number, boxType: string) => {
-    const boxesPerPallet = boxType === '4kg' ? 288 : 120;
-    return Math.floor(quantity / boxesPerPallet);
+  // Calculate available pallets (not assigned to loading sheets)
+  const calculateAvailablePallets = (pallets: Pallet[]) => {
+    return pallets.filter(pallet => !pallet.loading_sheet_id);
+  };
+
+  // Calculate real-time stats
+  const calculateRealTimeStats = () => {
+    const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+    const availablePallets = calculateAvailablePallets(pallets);
+    
+    const totalAvailableBoxes = availableBoxes.reduce((sum, box) => sum + (box.quantity || 0), 0);
+    const totalAssignedBoxes = coldRoomBoxes
+      .filter(box => box.loading_sheet_id || box.is_in_pallet)
+      .reduce((sum, box) => sum + (box.quantity || 0), 0);
+    
+    const boxesInPallets = coldRoomBoxes
+      .filter(box => box.is_in_pallet)
+      .reduce((sum, box) => sum + (box.quantity || 0), 0);
+    
+    const boxesInAssignedPallets = pallets
+      .filter(pallet => pallet.loading_sheet_id)
+      .reduce((sum, pallet) => sum + (pallet.total_boxes || 0), 0);
+    
+    return {
+      totalAvailableBoxes,
+      totalAssignedBoxes,
+      availableBoxes,
+      availablePallets,
+      boxesInPallets,
+      boxesInAssignedPallets,
+      totalBoxesInColdRoom: coldRoomBoxes.reduce((sum, box) => sum + (box.quantity || 0), 0)
+    };
   };
 
   // Fetch cold room boxes from database
-  const fetchColdRoomInventory = async () => {
+  const fetchColdRoomBoxes = async () => {
     try {
+      setIsLoading(prev => ({ ...prev, boxes: true }));
       const response = await fetch('/api/cold-room?action=boxes');
       
       if (!response.ok) {
@@ -117,20 +241,120 @@ export default function InventoryPage() {
       const result = await response.json();
       
       if (result.success && Array.isArray(result.data)) {
-        setColdRoomInventory(result.data);
+        const boxesData = result.data.map((box: any) => ({
+          id: box.id,
+          variety: box.variety,
+          box_type: box.boxType || box.box_type,
+          size: box.size,
+          grade: box.grade,
+          quantity: Number(box.quantity) || 0,
+          cold_room_id: box.cold_room_id,
+          created_at: box.created_at,
+          updated_at: box.updated_at,
+          supplier_name: box.supplier_name,
+          pallet_id: box.pallet_id,
+          region: box.region,
+          counting_record_id: box.counting_record_id,
+          is_in_pallet: box.is_in_pallet || false,
+          converted_to_pallet_at: box.converted_to_pallet_at,
+          loading_sheet_id: box.loading_sheet_id || null,
+          converted_to_pallet_date: box.converted_to_pallet_date,
+          original_box_count: box.original_box_count || 0
+        }));
+        setColdRoomBoxes(boxesData);
       } else {
-        setColdRoomInventory([]);
+        setColdRoomBoxes([]);
       }
     } catch (error: any) {
       console.error('Error fetching cold room boxes:', error);
       setError(error.message || 'Failed to load avocado inventory');
-      setColdRoomInventory([]);
+      setColdRoomBoxes([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, boxes: false }));
+    }
+  };
+
+  // Fetch pallets from database
+  const fetchPallets = async () => {
+    try {
+      setIsLoading(prev => ({ ...prev, pallets: true }));
+      const response = await fetch('/api/cold-room?action=pallets');
+      const result = await response.json();
+      
+      if (result.success && Array.isArray(result.data)) {
+        const palletsData = await Promise.all(
+          result.data.map(async (pallet: any) => {
+            let boxes: ColdRoomBox[] = [];
+            try {
+              const boxesResponse = await fetch(`/api/cold-room?action=pallet-boxes&palletId=${pallet.id}`);
+              const boxesResult = await boxesResponse.json();
+              
+              if (boxesResult.success && Array.isArray(boxesResult.data)) {
+                boxes = boxesResult.data.map((box: any) => ({
+                  id: box.id,
+                  variety: box.variety,
+                  box_type: box.boxType || box.box_type,
+                  size: box.size,
+                  grade: box.grade,
+                  quantity: Number(box.quantity) || 0,
+                  cold_room_id: box.cold_room_id,
+                  created_at: box.created_at,
+                  updated_at: box.updated_at,
+                  supplier_name: box.supplier_name,
+                  pallet_id: box.pallet_id,
+                  region: box.region,
+                  counting_record_id: box.counting_record_id,
+                  is_in_pallet: box.is_in_pallet || false,
+                  converted_to_pallet_at: box.converted_to_pallet_at,
+                  loading_sheet_id: box.loading_sheet_id || null,
+                  converted_to_pallet_date: box.converted_to_pallet_date,
+                  original_box_count: box.original_box_count || 0
+                }));
+              }
+            } catch (error) {
+              console.warn(`Could not fetch boxes for pallet ${pallet.id}:`, error);
+            }
+            
+            const totalBoxes = boxes.reduce((sum: number, box: ColdRoomBox) => sum + (box.quantity || 0), 0);
+            
+            return {
+              id: pallet.id,
+              variety: pallet.variety,
+              box_type: pallet.boxType || pallet.box_type,
+              size: pallet.size,
+              grade: pallet.grade,
+              pallet_count: Number(pallet.pallet_count) || 0,
+              cold_room_id: pallet.cold_room_id,
+              pallet_name: pallet.pallet_name,
+              is_manual: pallet.is_manual || false,
+              created_at: pallet.created_at,
+              last_updated: pallet.last_updated,
+              boxes: boxes,
+              total_boxes: totalBoxes,
+              boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
+              loading_sheet_id: pallet.loading_sheet_id || null,
+              conversion_date: pallet.conversion_date || pallet.created_at,
+              original_box_ids: pallet.original_box_ids || []
+            };
+          })
+        );
+        
+        setPallets(palletsData);
+      } else {
+        setPallets([]);
+      }
+    } catch (error: any) {
+      console.error('Error fetching pallets:', error);
+      setPallets([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, pallets: false }));
     }
   };
 
   // Fetch packaging materials from database
   const fetchPackagingMaterials = async () => {
     try {
+      setIsLoading(prev => ({ ...prev, packaging: true }));
       const response = await fetch('/api/inventory/packaging');
       
       if (!response.ok) {
@@ -143,23 +367,27 @@ export default function InventoryPage() {
       console.error('Error fetching packaging materials:', error);
       setError(error.message || 'Failed to load packaging materials');
       setPackagingMaterials([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, packaging: false }));
     }
   };
 
   // Calculate inventory KPIs
   const calculateKPIs = () => {
-    // Calculate avocado statistics
-    const totalAvocadoBoxes = coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0);
-    const total4kgBoxes = coldRoomInventory
+    // Calculate avocado statistics - ONLY AVAILABLE BOXES (not in pallets or loading sheets)
+    const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+    
+    const totalAvocadoBoxes = availableBoxes.reduce((sum, item) => sum + item.quantity, 0);
+    const total4kgBoxes = availableBoxes
       .filter(item => item.box_type === '4kg')
       .reduce((sum, item) => sum + item.quantity, 0);
-    const total10kgBoxes = coldRoomInventory
+    const total10kgBoxes = availableBoxes
       .filter(item => item.box_type === '10kg')
       .reduce((sum, item) => sum + item.quantity, 0);
-    const fuerteBoxes = coldRoomInventory
+    const fuerteBoxes = availableBoxes
       .filter(item => item.variety === 'fuerte')
       .reduce((sum, item) => sum + item.quantity, 0);
-    const hassBoxes = coldRoomInventory
+    const hassBoxes = availableBoxes
       .filter(item => item.variety === 'hass')
       .reduce((sum, item) => sum + item.quantity, 0);
     
@@ -172,8 +400,8 @@ export default function InventoryPage() {
     const avocadoDistribution = {
       fuerte: fuerteBoxes,
       hass: hassBoxes,
-      class1: coldRoomInventory.filter(item => item.grade === 'class1').reduce((sum, item) => sum + item.quantity, 0),
-      class2: coldRoomInventory.filter(item => item.grade === 'class2').reduce((sum, item) => sum + item.quantity, 0),
+      class1: availableBoxes.filter(item => item.grade === 'class1').reduce((sum, item) => sum + item.quantity, 0),
+      class2: availableBoxes.filter(item => item.grade === 'class2').reduce((sum, item) => sum + item.quantity, 0),
       '4kg': total4kgBoxes,
       '10kg': total10kgBoxes,
     };
@@ -200,11 +428,10 @@ export default function InventoryPage() {
 
   // Load all data
   const loadData = async () => {
-    setIsLoading(true);
-    setError(null);
     try {
       await Promise.all([
-        fetchColdRoomInventory(),
+        fetchColdRoomBoxes(),
+        fetchPallets(),
         fetchPackagingMaterials(),
       ]);
       
@@ -213,14 +440,63 @@ export default function InventoryPage() {
       setInventoryKPIs(kpis);
     } catch (error: any) {
       setError(error.message || 'Failed to load inventory data');
-    } finally {
-      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Filter boxes by cold room
+  const getFilteredBoxes = () => {
+    let filtered = calculateAvailableBoxes(coldRoomBoxes); // Only show available boxes
+    
+    // Filter by cold room
+    if (selectedColdRoom !== 'all') {
+      filtered = filtered.filter(box => box.cold_room_id === selectedColdRoom);
+    }
+    
+    // Filter by date
+    if (dateFilter.avocado) {
+      filtered = filtered.filter(box => {
+        const boxDate = new Date(box.created_at).toISOString().split('T')[0];
+        return boxDate === dateFilter.avocado;
+      });
+    }
+    
+    return filtered;
+  };
+
+  // Get inventory breakdown by variety and size
+  const getInventoryBreakdown = () => {
+    const availableBoxes = getFilteredBoxes();
+    const breakdown: Record<string, any> = {};
+    
+    availableBoxes.forEach(box => {
+      const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.grade}_${box.size}`;
+      if (!breakdown[key]) {
+        breakdown[key] = {
+          cold_room_id: box.cold_room_id,
+          variety: box.variety,
+          box_type: box.box_type,
+          grade: box.grade,
+          size: box.size,
+          totalQuantity: 0,
+          boxes: []
+        };
+      }
+      breakdown[key].totalQuantity += box.quantity || 0;
+      breakdown[key].boxes.push(box);
+    });
+    
+    return Object.values(breakdown);
+  };
+
+  // Calculate pallets
+  const calculatePallets = (quantity: number, boxType: string) => {
+    const boxesPerPallet = boxType === '4kg' ? 288 : 120;
+    return Math.floor(quantity / boxesPerPallet);
+  };
 
   // Handle bulk update of packaging material quantity
   const handleBulkUpdate = async (action: 'add' | 'subtract') => {
@@ -337,19 +613,19 @@ export default function InventoryPage() {
     let filtered = [...packagingMaterials];
 
     // Apply date filter
-    if (dateFilter !== 'all') {
+    if (dateFilter.packaging !== 'all') {
       filtered = filtered.filter(material => {
         const materialDate = material.createdAt ? new Date(material.createdAt) : new Date(material.lastUsedDate);
         
-        switch (dateFilter) {
+        switch (dateFilter.packaging) {
           case 'specific':
-            if (!specificDate) return true;
-            const specific = new Date(specificDate);
+            if (!dateFilter.avocado) return true;
+            const specific = new Date(dateFilter.avocado);
             return materialDate.toDateString() === specific.toDateString();
           case 'range':
-            if (!startDate || !endDate) return true;
-            const start = new Date(startDate);
-            const end = new Date(endDate);
+            if (!dateFilter.packagingStartDate || !dateFilter.packagingEndDate) return true;
+            const start = new Date(dateFilter.packagingStartDate);
+            const end = new Date(dateFilter.packagingEndDate);
             return materialDate >= start && materialDate <= end;
           default:
             return true;
@@ -418,12 +694,12 @@ export default function InventoryPage() {
     
     // Generate filename with date range
     let fileName = 'packaging-materials';
-    if (dateFilter === 'specific' && specificDate) {
-      const dateStr = new Date(specificDate).toISOString().split('T')[0];
+    if (dateFilter.packaging === 'specific' && dateFilter.avocado) {
+      const dateStr = new Date(dateFilter.avocado).toISOString().split('T')[0];
       fileName += `_${dateStr}`;
-    } else if (dateFilter === 'range' && startDate && endDate) {
-      const startStr = new Date(startDate).toISOString().split('T')[0];
-      const endStr = new Date(endDate).toISOString().split('T')[0];
+    } else if (dateFilter.packaging === 'range' && dateFilter.packagingStartDate && dateFilter.packagingEndDate) {
+      const startStr = new Date(dateFilter.packagingStartDate).toISOString().split('T')[0];
+      const endStr = new Date(dateFilter.packagingEndDate).toISOString().split('T')[0];
       fileName += `_${startStr}_to_${endStr}`;
     }
     fileName += `_${new Date().toISOString().split('T')[0]}.csv`;
@@ -442,33 +718,36 @@ export default function InventoryPage() {
 
   // Clear all filters
   const clearFilters = () => {
-    setDateFilter('all');
-    setSpecificDate('');
-    setStartDate('');
-    setEndDate('');
+    setDateFilter({
+      avocado: '',
+      packaging: 'all',
+      packagingStartDate: '',
+      packagingEndDate: '',
+    });
     setSearchTerm('');
+    setSelectedColdRoom('all');
   };
 
   // Prepare KPI data for OverviewCards
   const inventoryKpis = {
     totalAvocadoBoxes: {
-      title: 'Total Avocado Boxes',
+      title: 'Available Avocado Boxes',
       value: inventoryKPIs ? inventoryKPIs.totalAvocadoBoxes.toString() : '0',
-      change: 'in cold storage',
+      change: 'in cold storage (not assigned)',
       changeType: 'increase' as const,
       icon: Boxes,
     },
     total4kgBoxes: {
-      title: '4kg Boxes',
+      title: 'Available 4kg Boxes',
       value: inventoryKPIs ? inventoryKPIs.total4kgBoxes.toString() : '0',
-      change: 'standard boxes',
+      change: 'standard boxes (not assigned)',
       changeType: 'increase' as const,
       icon: Package,
     },
     total10kgBoxes: {
-      title: '10kg Boxes',
+      title: 'Available 10kg Boxes',
       value: inventoryKPIs ? inventoryKPIs.total10kgBoxes.toString() : '0',
-      change: 'large crates',
+      change: 'large crates (not assigned)',
       changeType: 'increase' as const,
       icon: Package,
     },
@@ -496,47 +775,36 @@ export default function InventoryPage() {
   };
 
   // Calculate avocado totals for display
-  const avocadoTotals = {
-    totalBoxes: coldRoomInventory.reduce((sum, item) => sum + item.quantity, 0),
-    totalPallets: coldRoomInventory.reduce((sum, item) => sum + calculatePallets(item.quantity, item.box_type), 0),
-    byVariety: {
-      fuerte: coldRoomInventory
-        .filter(item => item.variety === 'fuerte')
-        .reduce((sum, item) => sum + item.quantity, 0),
-      hass: coldRoomInventory
-        .filter(item => item.variety === 'hass')
-        .reduce((sum, item) => sum + item.quantity, 0),
-    },
-    byGrade: {
-      class1: coldRoomInventory
-        .filter(item => item.grade === 'class1')
-        .reduce((sum, item) => sum + item.quantity, 0),
-      class2: coldRoomInventory
-        .filter(item => item.grade === 'class2')
-        .reduce((sum, item) => sum + item.quantity, 0),
-    },
-    byBoxType: {
-      '4kg': coldRoomInventory
-        .filter(item => item.box_type === '4kg')
-        .reduce((sum, item) => sum + item.quantity, 0),
-      '10kg': coldRoomInventory
-        .filter(item => item.box_type === '10kg')
-        .reduce((sum, item) => sum + item.quantity, 0),
-    },
-  };
+  const realTimeStats = calculateRealTimeStats();
+  
+  // Get available pallets
+  const availablePallets = calculateAvailablePallets(pallets);
 
   // Get low stock packaging materials
   const lowStockMaterials = packagingMaterials.filter(m => m.currentStock <= m.reorderLevel);
   const fastMovingPackaging = packagingMaterials.filter(m => m.consumptionRate === 'high');
-  const deadStockPackaging = packagingMaterials.filter(m => m.consumptionRate === 'low');
 
   // Get filtered materials for display
   const filteredPackagingMaterials = getFilteredPackagingMaterials();
 
   // Check if any filters are active
-  const hasActiveFilters = dateFilter !== 'all' || searchTerm.trim() !== '';
+  const hasActiveFilters = dateFilter.avocado !== '' || dateFilter.packaging !== 'all' || searchTerm.trim() !== '' || selectedColdRoom !== 'all';
 
-  if (isLoading) {
+  const handleTogglePalletExpansion = (palletId: string) => {
+    const newExpanded = new Set(expandedPallets);
+    if (newExpanded.has(palletId)) {
+      newExpanded.delete(palletId);
+    } else {
+      newExpanded.add(palletId);
+    }
+    setExpandedPallets(newExpanded);
+  };
+
+  const handleViewLoadingSheet = (loadingSheetId: string) => {
+    window.open(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`, '_blank');
+  };
+
+  if (isLoading.boxes || isLoading.pallets || isLoading.packaging) {
     return (
       <SidebarProvider>
         <Sidebar>
@@ -592,17 +860,17 @@ export default function InventoryPage() {
                 Inventory Management
               </h2>
               <p className="text-muted-foreground">
-                Track avocado varieties in cold storage and manage packaging material stock.
+                Track AVAILABLE avocado varieties in cold storage (not in pallets or loading sheets) and manage packaging material stock.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Button onClick={() => loadData()} variant="outline" size="sm" disabled={isLoading}>
-                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              <Button onClick={() => loadData()} variant="outline" size="sm" disabled={isLoading.boxes || isLoading.pallets || isLoading.packaging}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading.boxes || isLoading.pallets || isLoading.packaging ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
               <Button 
                 onClick={() => setStockTakeMode(!stockTakeMode)} 
-                disabled={isLoading}
+                disabled={isLoading.boxes || isLoading.pallets || isLoading.packaging}
                 variant={stockTakeMode ? "destructive" : "default"}
               >
                 {stockTakeMode ? (
@@ -645,11 +913,11 @@ export default function InventoryPage() {
 
           <Tabs defaultValue="produce">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="produce">Avocado Inventory</TabsTrigger>
+              <TabsTrigger value="produce">Available Avocado Inventory</TabsTrigger>
               <TabsTrigger value="packaging">Packaging Materials</TabsTrigger>
             </TabsList>
             
-            {/* Avocado Inventory Tab */}
+            {/* Avocado Inventory Tab - SHOWS ONLY AVAILABLE BOXES */}
             <TabsContent value="produce" className="mt-6">
               <div className="grid gap-6 md:gap-8 grid-cols-1 lg:grid-cols-3">
                 <div className="lg:col-span-2">
@@ -657,19 +925,86 @@ export default function InventoryPage() {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <Warehouse className="w-5 h-5" />
-                        Avocado Boxes in Cold Storage
+                        Available Avocado Boxes in Cold Storage
+                        <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
+                          ✅ Real-time Available Stock
+                        </Badge>
                       </CardTitle>
                       <CardDescription>
-                        Real-time inventory from cold room database
+                        Only shows boxes that are NOT in pallets and NOT assigned to loading sheets
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      {coldRoomInventory.length === 0 ? (
+                      <div className="space-y-4 mb-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="coldroom-select">Filter by Cold Room</Label>
+                            <Select value={selectedColdRoom} onValueChange={setSelectedColdRoom}>
+                              <SelectTrigger id="coldroom-select">
+                                <SelectValue placeholder="Select cold room" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">All Cold Rooms</SelectItem>
+                                <SelectItem value="coldroom1">❄️ Cold Room 1</SelectItem>
+                                <SelectItem value="coldroom2">❄️ Cold Room 2</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="avocado-date-filter">Filter by Date</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                id="avocado-date-filter"
+                                type="date"
+                                value={dateFilter.avocado}
+                                onChange={(e) => setDateFilter(prev => ({ ...prev, avocado: e.target.value }))}
+                                className="flex-1"
+                              />
+                              {dateFilter.avocado && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDateFilter(prev => ({ ...prev, avocado: '' }))}
+                                  className="h-10 w-10 p-0"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {hasActiveFilters && (
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm text-muted-foreground">
+                              Showing filtered results • 
+                              {dateFilter.avocado && ` Date: ${dateFilter.avocado}`}
+                              {selectedColdRoom !== 'all' && ` • Cold Room: ${selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}`}
+                            </div>
+                            <Button
+                              onClick={clearFilters}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              Clear Filters
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {getFilteredBoxes().length === 0 ? (
                         <div className="text-center py-8">
                           <PackageIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                          <p className="text-gray-500 font-medium">No avocado boxes in cold storage</p>
+                          <p className="text-gray-500 font-medium">
+                            {selectedColdRoom !== 'all' || dateFilter.avocado 
+                              ? 'No available avocado boxes match your filters'
+                              : 'No available avocado boxes in cold storage'
+                            }
+                          </p>
                           <p className="text-sm text-gray-400 mt-1">
-                            Load boxes from the Cold Room Management page
+                            All boxes may be in pallets or assigned to loading sheets
                           </p>
                         </div>
                       ) : (
@@ -677,27 +1012,34 @@ export default function InventoryPage() {
                           <Table>
                             <TableHeader>
                               <TableRow>
+                                <TableHead>Cold Room</TableHead>
                                 <TableHead>Variety</TableHead>
                                 <TableHead>Box Type</TableHead>
                                 <TableHead>Size</TableHead>
                                 <TableHead>Grade</TableHead>
                                 <TableHead className="text-right">Quantity</TableHead>
                                 <TableHead className="text-right">Pallets</TableHead>
-                                <TableHead>Cold Room</TableHead>
                                 <TableHead>Supplier</TableHead>
+                                <TableHead>Added Date</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {coldRoomInventory.map((item) => (
+                              {getFilteredBoxes().map((item) => (
                                 <TableRow key={item.id}>
+                                  <TableCell>
+                                    <Badge variant="outline" className="text-xs">
+                                      <Snowflake className="w-3 h-3 mr-1" />
+                                      {item.cold_room_id === 'coldroom1' ? 'CR1' : 'CR2'}
+                                    </Badge>
+                                  </TableCell>
                                   <TableCell className="font-medium capitalize">
-                                    {item.variety === 'fuerte' ? 'Fuerte' : 'Hass'}
+                                    {getVarietyDisplay(item.variety)}
                                   </TableCell>
                                   <TableCell>{item.box_type}</TableCell>
                                   <TableCell>{formatSize(item.size)}</TableCell>
                                   <TableCell>
                                     <Badge variant={item.grade === 'class1' ? 'default' : 'secondary'}>
-                                      {item.grade === 'class1' ? 'Class 1' : 'Class 2'}
+                                      {getGradeDisplay(item.grade)}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-right font-medium">
@@ -706,18 +1048,149 @@ export default function InventoryPage() {
                                   <TableCell className="text-right">
                                     {calculatePallets(item.quantity, item.box_type)}
                                   </TableCell>
-                                  <TableCell>
-                                    <Badge variant="outline" className="text-xs">
-                                      {item.cold_room_id === 'coldroom1' ? 'CR1' : 'CR2'}
-                                    </Badge>
-                                  </TableCell>
                                   <TableCell className="text-sm">
                                     {item.supplier_name || 'N/A'}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {formatDate(item.created_at)}
                                   </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
                           </Table>
+                        </ScrollArea>
+                      )}
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Available Pallets Section */}
+                  <Card className="mt-6">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Palette className="w-5 h-5" />
+                        Available Pallets in Cold Rooms
+                        <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
+                          ✅ Ready for Loading Sheets
+                        </Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        Pallets that are in the coldroom and their box contents
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {availablePallets.length === 0 ? (
+                        <div className="text-center py-8 border rounded">
+                          <Palette className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                          <p className="text-gray-500 font-medium">No available pallets</p>
+                          <p className="text-sm text-gray-400 mt-1">
+                            All pallets are assigned to loading sheets. Create new pallets or wait for existing ones to become available.
+                          </p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-[400px]">
+                          <div className="space-y-3">
+                            {availablePallets.map((pallet) => {
+                              const isExpanded = expandedPallets.has(pallet.id);
+                              const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
+                              
+                              return (
+                                <Card key={pallet.id} className="overflow-hidden border-green-200">
+                                  <div 
+                                    className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
+                                    onClick={() => handleTogglePalletExpansion(pallet.id)}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        {isExpanded ? (
+                                          <Layers className="w-5 h-5 text-gray-400" />
+                                        ) : (
+                                          <Layers2 className="w-5 h-5 text-gray-400" />
+                                        )}
+                                        <div>
+                                          <div className="font-medium flex items-center gap-2">
+                                            {palletName}
+                                            {pallet.is_manual && (
+                                              <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
+                                                Manual
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                            <Snowflake className="w-3 h-3" />
+                                            {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                            <span className="mx-1">•</span>
+                                            <Calendar className="w-3 h-3" />
+                                            {formatDate(pallet.conversion_date || pallet.created_at)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
+                                        <div className="text-sm text-gray-500">
+                                          {pallet.total_boxes?.toLocaleString() || 0} boxes
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {isExpanded && (
+                                    <div className="border-t">
+                                      <div className="p-4 bg-black-50">
+                                        <div className="mb-4">
+                                          <h4 className="font-medium mb-3 flex items-center gap-2">
+                                            <Box className="w-4 h-4" />
+                                            Boxes in this Pallet ({pallet.boxes?.length || 0})
+                                          </h4>
+                                          
+                                          {pallet.boxes && pallet.boxes.length > 0 ? (
+                                            <div className="border rounded overflow-hidden">
+                                              <Table>
+                                                <TableHeader>
+                                                  <TableRow className="bg-black-50">
+                                                    <TableHead>Size</TableHead>
+                                                    <TableHead>Variety</TableHead>
+                                                    <TableHead>Type</TableHead>
+                                                    <TableHead>Grade</TableHead>
+                                                    <TableHead className="text-right">Quantity</TableHead>
+                                                  </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                  {pallet.boxes.map((box) => {
+                                                    return (
+                                                      <TableRow key={box.id}>
+                                                        <TableCell>
+                                                          <Badge variant="outline">{formatSize(box.size)}</Badge>
+                                                        </TableCell>
+                                                        <TableCell className="capitalize">
+                                                          {getVarietyDisplay(box.variety)}
+                                                        </TableCell>
+                                                        <TableCell>{box.box_type}</TableCell>
+                                                        <TableCell>
+                                                          {getGradeDisplay(box.grade)}
+                                                        </TableCell>
+                                                        <TableCell className="text-right font-medium">
+                                                          {box.quantity.toLocaleString()}
+                                                        </TableCell>
+                                                      </TableRow>
+                                                    );
+                                                  })}
+                                                </TableBody>
+                                              </Table>
+                                            </div>
+                                          ) : (
+                                            <div className="text-center py-6 border rounded bg-white">
+                                              <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                                              <p className="text-gray-500">No boxes assigned to this pallet</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </Card>
+                              );
+                            })}
+                          </div>
                         </ScrollArea>
                       )}
                     </CardContent>
@@ -728,55 +1201,77 @@ export default function InventoryPage() {
                 <div className="space-y-6">
                   <Card>
                     <CardHeader>
-                      <CardTitle>Avocado Summary</CardTitle>
+                      <CardTitle>Available Inventory Summary</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="border rounded-lg p-3">
-                          <div className="text-sm text-gray-500 mb-1">Total Boxes</div>
-                          <div className="text-2xl font-bold text-blue-600">
-                            {avocadoTotals.totalBoxes.toLocaleString()}
+                        <div className="border rounded-lg p-3 bg-green-50">
+                          <div className="text-sm text-gray-500 mb-1">Available Boxes</div>
+                          <div className="text-2xl font-bold text-green-600">
+                            {realTimeStats.totalAvailableBoxes.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-green-500 mt-1">
+                            Ready for outbound
                           </div>
                         </div>
-                        <div className="border rounded-lg p-3">
-                          <div className="text-sm text-gray-500 mb-1">Total Pallets</div>
-                          <div className="text-2xl font-bold text-green-600">
-                            {avocadoTotals.totalPallets}
+                        <div className="border rounded-lg p-3 bg-blue-50">
+                          <div className="text-sm text-gray-500 mb-1">Available Pallets</div>
+                          <div className="text-2xl font-bold text-blue-600">
+                            {availablePallets.length}
+                          </div>
+                          <div className="text-xs text-blue-500 mt-1">
+                            Ready for loading sheets
                           </div>
                         </div>
                       </div>
+                      
+                      <Separator />
+                      
+                      <div>
+                        <div className="text-sm font-medium mb-2">Status Breakdown</div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">✅ Available Boxes:</span>
+                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                              {realTimeStats.totalAvailableBoxes.toLocaleString()}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">📦 Boxes in Pallets:</span>
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                              {realTimeStats.boxesInPallets.toLocaleString()}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">📋 Assigned to Loading:</span>
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                              {realTimeStats.boxesInAssignedPallets.toLocaleString()}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <Separator />
                       
                       <div>
                         <div className="text-sm font-medium mb-2">By Variety</div>
                         <div className="space-y-2">
                           <div className="flex justify-between items-center">
                             <span className="text-sm">Fuerte</span>
-                            <Badge variant="outline">
-                              {avocadoTotals.byVariety.fuerte.toLocaleString()} boxes
+                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                              {getInventoryBreakdown()
+                                .filter(item => item.variety === 'fuerte')
+                                .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                .toLocaleString()} boxes
                             </Badge>
                           </div>
                           <div className="flex justify-between items-center">
                             <span className="text-sm">Hass</span>
-                            <Badge variant="outline">
-                              {avocadoTotals.byVariety.hass.toLocaleString()} boxes
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <div className="text-sm font-medium mb-2">By Grade</div>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">Class 1</span>
-                            <Badge variant="default" className="text-xs">
-                              {avocadoTotals.byGrade.class1.toLocaleString()} boxes
-                            </Badge>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">Class 2</span>
-                            <Badge variant="secondary" className="text-xs">
-                              {avocadoTotals.byGrade.class2.toLocaleString()} boxes
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                              {getInventoryBreakdown()
+                                .filter(item => item.variety === 'hass')
+                                .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                .toLocaleString()} boxes
                             </Badge>
                           </div>
                         </div>
@@ -788,16 +1283,32 @@ export default function InventoryPage() {
                           <div className="flex justify-between items-center">
                             <span className="text-sm">4kg Boxes</span>
                             <span className="font-medium">
-                              {avocadoTotals.byBoxType['4kg'].toLocaleString()}
+                              {getInventoryBreakdown()
+                                .filter(item => item.box_type === '4kg')
+                                .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                .toLocaleString()}
                             </span>
                           </div>
                           <div className="flex justify-between items-center">
                             <span className="text-sm">10kg Crates</span>
                             <span className="font-medium">
-                              {avocadoTotals.byBoxType['10kg'].toLocaleString()}
+                              {getInventoryBreakdown()
+                                .filter(item => item.box_type === '10kg')
+                                .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                .toLocaleString()}
                             </span>
                           </div>
                         </div>
+                      </div>
+                      
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Info className="w-4 h-4 text-amber-600" />
+                          <span className="text-sm font-medium text-amber-700">Note:</span>
+                        </div>
+                        <p className="text-xs text-amber-600">
+                          This view shows ONLY AVAILABLE boxes in cold rooms.
+                        </p>
                       </div>
                     </CardContent>
                   </Card>
@@ -812,8 +1323,9 @@ export default function InventoryPage() {
                     <CardContent>
                       <div className="space-y-3">
                         {['coldroom1', 'coldroom2'].map(roomId => {
-                          const boxesInRoom = coldRoomInventory.filter(item => item.cold_room_id === roomId);
-                          const totalBoxes = boxesInRoom.reduce((sum, item) => sum + item.quantity, 0);
+                          const availableBoxesInRoom = calculateAvailableBoxes(coldRoomBoxes)
+                            .filter(box => box.cold_room_id === roomId);
+                          const totalBoxes = availableBoxesInRoom.reduce((sum, box) => sum + (box.quantity || 0), 0);
                           const roomName = roomId === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
                           
                           return (
@@ -823,7 +1335,7 @@ export default function InventoryPage() {
                                 <span className="text-sm">{roomName}</span>
                               </div>
                               <Badge variant="outline">
-                                {totalBoxes.toLocaleString()} boxes
+                                {totalBoxes.toLocaleString()} available boxes
                               </Badge>
                             </div>
                           );
@@ -853,7 +1365,7 @@ export default function InventoryPage() {
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                          {hasActiveFilters && (
+                          {(dateFilter.packaging !== 'all' || searchTerm.trim() !== '') && (
                             <Button 
                               onClick={clearFilters} 
                               variant="outline" 
@@ -893,7 +1405,10 @@ export default function InventoryPage() {
                           
                           <div>
                             <Label htmlFor="date-filter">Date Filter</Label>
-                            <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
+                            <Select 
+                              value={dateFilter.packaging} 
+                              onValueChange={(value: any) => setDateFilter(prev => ({ ...prev, packaging: value }))}
+                            >
                               <SelectTrigger id="date-filter">
                                 <SelectValue placeholder="Select date filter" />
                               </SelectTrigger>
@@ -906,22 +1421,22 @@ export default function InventoryPage() {
                           </div>
                         </div>
 
-                        {dateFilter === 'specific' && (
+                        {dateFilter.packaging === 'specific' && (
                           <div className="p-4 border rounded-lg">
                             <Label htmlFor="specific-date">Select Date</Label>
                             <div className="flex items-center gap-2 mt-2">
                               <Input
                                 id="specific-date"
                                 type="date"
-                                value={specificDate}
-                                onChange={(e) => setSpecificDate(e.target.value)}
+                                value={dateFilter.avocado}
+                                onChange={(e) => setDateFilter(prev => ({ ...prev, avocado: e.target.value }))}
                                 className="flex-1"
                               />
-                              {specificDate && (
+                              {dateFilter.avocado && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setSpecificDate('')}
+                                  onClick={() => setDateFilter(prev => ({ ...prev, avocado: '' }))}
                                   className="h-10 w-10 p-0"
                                 >
                                   <X className="h-4 w-4" />
@@ -934,7 +1449,7 @@ export default function InventoryPage() {
                           </div>
                         )}
 
-                        {dateFilter === 'range' && (
+                        {dateFilter.packaging === 'range' && (
                           <div className="p-4 border rounded-lg">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
@@ -943,15 +1458,15 @@ export default function InventoryPage() {
                                   <Input
                                     id="start-date"
                                     type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
+                                    value={dateFilter.packagingStartDate}
+                                    onChange={(e) => setDateFilter(prev => ({ ...prev, packagingStartDate: e.target.value }))}
                                     className="flex-1"
                                   />
-                                  {startDate && (
+                                  {dateFilter.packagingStartDate && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => setStartDate('')}
+                                      onClick={() => setDateFilter(prev => ({ ...prev, packagingStartDate: '' }))}
                                       className="h-10 w-10 p-0"
                                     >
                                       <X className="h-4 w-4" />
@@ -965,15 +1480,15 @@ export default function InventoryPage() {
                                   <Input
                                     id="end-date"
                                     type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
+                                    value={dateFilter.packagingEndDate}
+                                    onChange={(e) => setDateFilter(prev => ({ ...prev, packagingEndDate: e.target.value }))}
                                     className="flex-1"
                                   />
-                                  {endDate && (
+                                  {dateFilter.packagingEndDate && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => setEndDate('')}
+                                      onClick={() => setDateFilter(prev => ({ ...prev, packagingEndDate: '' }))}
                                       className="h-10 w-10 p-0"
                                     >
                                       <X className="h-4 w-4" />
@@ -990,11 +1505,11 @@ export default function InventoryPage() {
 
                         <div className="text-sm text-muted-foreground">
                           Showing {filteredPackagingMaterials.length} of {packagingMaterials.length} packaging materials
-                          {dateFilter === 'specific' && specificDate && (
-                            <span> • Filtered by date: {new Date(specificDate).toLocaleDateString('en-GB')}</span>
+                          {dateFilter.packaging === 'specific' && dateFilter.avocado && (
+                            <span> • Filtered by date: {new Date(dateFilter.avocado).toLocaleDateString('en-GB')}</span>
                           )}
-                          {dateFilter === 'range' && startDate && endDate && (
-                            <span> • Filtered from {new Date(startDate).toLocaleDateString('en-GB')} to {new Date(endDate).toLocaleDateString('en-GB')}</span>
+                          {dateFilter.packaging === 'range' && dateFilter.packagingStartDate && dateFilter.packagingEndDate && (
+                            <span> • Filtered from {new Date(dateFilter.packagingStartDate).toLocaleDateString('en-GB')} to {new Date(dateFilter.packagingEndDate).toLocaleDateString('en-GB')}</span>
                           )}
                         </div>
                       </div>
@@ -1081,8 +1596,8 @@ export default function InventoryPage() {
                       </CardTitle>
                       <CardDescription>
                         Current stock levels and consumption rates
-                        {dateFilter === 'specific' && specificDate && ` • Filtered by date: ${new Date(specificDate).toLocaleDateString('en-GB')}`}
-                        {dateFilter === 'range' && startDate && endDate && ` • Filtered from ${new Date(startDate).toLocaleDateString('en-GB')} to ${new Date(endDate).toLocaleDateString('en-GB')}`}
+                        {dateFilter.packaging === 'specific' && dateFilter.avocado && ` • Filtered by date: ${new Date(dateFilter.avocado).toLocaleDateString('en-GB')}`}
+                        {dateFilter.packaging === 'range' && dateFilter.packagingStartDate && dateFilter.packagingEndDate && ` • Filtered from ${new Date(dateFilter.packagingStartDate).toLocaleDateString('en-GB')} to ${new Date(dateFilter.packagingEndDate).toLocaleDateString('en-GB')}`}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -1091,7 +1606,7 @@ export default function InventoryPage() {
                           <PackageIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                           <p className="text-gray-500 font-medium">No packaging materials found</p>
                           <p className="text-sm text-gray-400 mt-1">
-                            {searchTerm || dateFilter !== 'all' ? 'Try adjusting your filters' : 'Add packaging materials to get started'}
+                            {searchTerm || dateFilter.packaging !== 'all' ? 'Try adjusting your filters' : 'Add packaging materials to get started'}
                           </p>
                         </div>
                       ) : (
@@ -1237,31 +1752,31 @@ export default function InventoryPage() {
                           <div className="flex justify-between items-center">
                             <span className="text-sm">Date Filter:</span>
                             <span className="text-sm font-medium">
-                              {dateFilter === 'all' ? 'All Dates' : 
-                               dateFilter === 'specific' ? 'Specific Date' : 
+                              {dateFilter.packaging === 'all' ? 'All Dates' : 
+                               dateFilter.packaging === 'specific' ? 'Specific Date' : 
                                'Date Range'}
                             </span>
                           </div>
-                          {dateFilter === 'specific' && specificDate && (
+                          {dateFilter.packaging === 'specific' && dateFilter.avocado && (
                             <div className="flex justify-between items-center">
                               <span className="text-sm">Date:</span>
                               <span className="text-sm font-medium">
-                                {new Date(specificDate).toLocaleDateString('en-GB')}
+                                {new Date(dateFilter.avocado).toLocaleDateString('en-GB')}
                               </span>
                             </div>
                           )}
-                          {dateFilter === 'range' && startDate && endDate && (
+                          {dateFilter.packaging === 'range' && dateFilter.packagingStartDate && dateFilter.packagingEndDate && (
                             <>
                               <div className="flex justify-between items-center">
                                 <span className="text-sm">From:</span>
                                 <span className="text-sm font-medium">
-                                  {new Date(startDate).toLocaleDateString('en-GB')}
+                                  {new Date(dateFilter.packagingStartDate).toLocaleDateString('en-GB')}
                                 </span>
                               </div>
                               <div className="flex justify-between items-center">
                                 <span className="text-sm">To:</span>
                                 <span className="text-sm font-medium">
-                                  {new Date(endDate).toLocaleDateString('en-GB')}
+                                  {new Date(dateFilter.packagingEndDate).toLocaleDateString('en-GB')}
                                 </span>
                               </div>
                             </>
@@ -1366,7 +1881,7 @@ export default function InventoryPage() {
                             <span className="text-sm">Slow Moving</span>
                           </div>
                           <Badge variant="outline" className="bg-gray-50 text-gray-700">
-                            {deadStockPackaging.length} items
+                            {packagingMaterials.filter(m => m.consumptionRate === 'low').length} items
                           </Badge>
                         </div>
                       </div>

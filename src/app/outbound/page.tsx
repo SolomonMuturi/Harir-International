@@ -11,7 +11,7 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff, Palette } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
@@ -55,6 +55,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Define types based on your database schema
 interface DatabaseShipment {
@@ -112,13 +113,16 @@ interface ColdRoomPallet {
   pallet_id?: string;
   region?: string;
   counting_record_id?: string;
-  loading_sheet_id?: string | null; // Track which loading sheet the pallet is assigned to
+  loading_sheet_id?: string | null;
 }
 
 interface PalletWithBoxes extends ColdRoomPallet {
   boxes: Array<{
     size: string;
     quantity: number;
+    variety: string;
+    box_type: string;
+    grade: string;
   }>;
   totalBoxes: number;
   totalWeight: number;
@@ -255,223 +259,73 @@ function calculateDaysBetween(startDate: string, endDate: string): number {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
-// Pallet Details Modal Component
-function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingSheet }) {
-  const [open, setOpen] = useState(false);
-  const [pallets, setPallets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const loadPalletDetails = async () => {
-    if (!loadingSheet.id) return;
-    
-    try {
-      setLoading(true);
-      // Fetch pallet details for this loading sheet
-      const response = await fetch(`/api/loading-sheets/${loadingSheet.id}/pallets`);
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setPallets(result.data || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading pallet details:', error);
-      toast.error('Failed to load pallet details');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper function to safely get quantity
-  const getSafeQuantity = (pallet: any): number => {
-    return Number(pallet?.quantity) || 0;
-  };
-
-  // Helper function to safely get weight
-  const getSafeWeight = (pallet: any): number => {
-    const quantity = getSafeQuantity(pallet);
-    const boxType = pallet?.box_type === '10kg' ? 10 : 4;
-    return quantity * boxType;
-  };
-
-  // Format size for display
-  const formatSizeForDisplay = (size: string) => {
-    if (!size) return 'N/A';
-    return size.replace('size', 'Size ');
-  };
-
-  // Calculate totals
-  const totals = pallets.reduce(
-    (acc, pallet) => {
-      const quantity = getSafeQuantity(pallet);
-      const weight = getSafeWeight(pallet);
-      
-      acc.totalPallets += 1;
-      acc.totalBoxes += quantity;
-      acc.totalWeight += weight;
-      return acc;
-    },
-    { totalPallets: 0, totalBoxes: 0, totalWeight: 0 }
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={() => {
-            setOpen(true);
-            loadPalletDetails();
-          }}
-          title="View pallet details"
-        >
-          <Eye className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Box className="h-5 w-5" />
-            Pallets in Loading Sheet
-          </DialogTitle>
-          <DialogDescription>
-            {loadingSheet.bill_number || loadingSheet.id} • {loadingSheet.client || 'No Client'}
-          </DialogDescription>
-        </DialogHeader>
-        
-        {loading ? (
-          <div className="flex items-center justify-center h-32">
-            <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            <span>Loading pallet details...</span>
-          </div>
-        ) : pallets.length === 0 ? (
-          <div className="text-center py-8">
-            <Box className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500 font-medium">No pallet details found</p>
-            <p className="text-sm text-gray-400 mt-1">
-              This loading sheet doesn't have any pallet records.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Summary Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-800">{totals.totalPallets}</div>
-                <div className="text-sm text-gray-600">Total Pallets</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{totals.totalBoxes.toLocaleString()}</div>
-                <div className="text-sm text-gray-600">Total Boxes</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{totals.totalWeight.toLocaleString()} kg</div>
-                <div className="text-sm text-gray-600">Total Weight</div>
-              </div>
-            </div>
-
-            {/* Pallets Table */}
-            <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Pallet No</TableHead>
-                    <TableHead>Variety</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Size</TableHead>
-                    <TableHead>Grade</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Weight</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pallets.map((pallet, index) => {
-                    const quantity = getSafeQuantity(pallet);
-                    const weight = getSafeWeight(pallet);
-                    const varietyDisplay = pallet.variety === 'fuerte' ? 'Fuerte' : 
-                                         pallet.variety === 'hass' ? 'Hass' : 
-                                         'Mixed (Fuerte & Hass)';
-                    const gradeDisplay = pallet.grade === 'class1' ? 'Class 1' : 'Class 2';
-                    
-                    return (
-                      <TableRow key={pallet.id || index}>
-                        <TableCell className="font-medium">{index + 1}</TableCell>
-                        <TableCell>
-                          <Badge className={
-                            varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 
-                            varietyDisplay === 'Hass' ? "bg-purple-100 text-purple-800" : 
-                            "bg-yellow-100 text-yellow-800"
-                          }>
-                            {varietyDisplay}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={
-                            pallet.box_type === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
-                            "bg-orange-50 text-orange-700 border-orange-200"
-                          }>
-                            {pallet.box_type === '10kg' ? '10kg Box' : '4kg Box'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{formatSizeForDisplay(pallet.size)}</TableCell>
-                        <TableCell>
-                          <Badge variant={pallet.grade === 'class1' ? 'default' : 'secondary'}>
-                            {gradeDisplay}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-bold">{quantity.toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-bold text-blue-600">
-                          {weight.toLocaleString()} kg
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  
-                  {/* Totals Row */}
-                  <TableRow className="bg-gray-50">
-                    <TableCell colSpan={5} className="font-bold text-right">TOTAL</TableCell>
-                    <TableCell className="text-right font-bold">{totals.totalBoxes.toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-bold text-blue-700">{totals.totalWeight.toLocaleString()} kg</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Variety Distribution */}
-            <div className="border rounded-lg p-4">
-              <h4 className="font-medium mb-3">Variety Distribution</h4>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(
-                  pallets.reduce((acc, pallet) => {
-                    const variety = pallet.variety === 'fuerte' ? 'Fuerte' : 
-                                  pallet.variety === 'hass' ? 'Hass' : 'Mixed';
-                    acc[variety] = (acc[variety] || 0) + 1;
-                    return acc;
-                  }, {} as { [key: string]: number })
-                ).map(([variety, count]) => (
-                  <Badge 
-                    key={variety} 
-                    variant="outline"
-                    className={
-                      variety === 'Fuerte' ? "bg-green-50 text-green-700" : 
-                      variety === 'Hass' ? "bg-purple-50 text-purple-700" : 
-                      "bg-yellow-50 text-yellow-700"
-                    }
-                  >
-                    {variety}: {count} pallets
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+// Helper function to get unique values from array
+function getUniqueValues<T>(array: T[], key: keyof T): T[keyof T][] {
+  return Array.from(new Set(array.map(item => item[key])));
 }
 
-// Loading Sheet Component - FIXED VERSION
+// Helper function to format variety display
+function formatVarietyDisplay(variety: string): string {
+  const varietyLower = variety.toLowerCase();
+  if (varietyLower === 'fuerte') return 'Fuerte';
+  if (varietyLower === 'hass') return 'Hass';
+  if (varietyLower === 'mixed' || varietyLower.includes('mix')) return 'Mixed';
+  return variety;
+}
+
+// Helper function to format grade display
+function formatGradeDisplay(grade: string): string {
+  const gradeLower = grade.toLowerCase();
+  if (gradeLower === 'class1' || gradeLower === 'class 1' || gradeLower === 'grade1') return 'Class 1';
+  if (gradeLower === 'class2' || gradeLower === 'class 2' || gradeLower === 'grade2') return 'Class 2';
+  return grade;
+}
+
+// Helper function to format size display
+function formatSizeDisplay(size: string): string {
+  if (!size) return 'N/A';
+  const sizeStr = String(size);
+  if (sizeStr.includes('size')) {
+    return sizeStr.replace('size', 'Size ');
+  }
+  if (/^\d+$/.test(sizeStr)) {
+    return `Size ${sizeStr}`;
+  }
+  return sizeStr;
+}
+
+// Interface for Cold Room Pallet from API
+interface ColdRoomPalletFromAPI {
+  id: string;
+  variety: 'fuerte' | 'hass' | 'mixed';
+  box_type: '4kg' | '10kg';
+  size: string;
+  grade: 'class1' | 'class2';
+  pallet_count: number;
+  cold_room_id: string;
+  pallet_name?: string;
+  is_manual: boolean;
+  created_at: string;
+  last_updated: string;
+  boxes?: Array<{
+    id: string;
+    variety: string;
+    box_type: string;
+    size: string;
+    grade: string;
+    quantity: number;
+    cold_room_id: string;
+    supplier_name?: string;
+    region?: string;
+  }>;
+  total_boxes?: number;
+  boxes_per_pallet: number;
+  loading_sheet_id?: string | null;
+  conversion_date?: string;
+  original_box_ids?: string[];
+}
+
+// Loading Sheet Component - UPDATED with proper pallet display
 function LoadingSheet() {
   const defaultData: LoadingSheetData = {
     exporter: 'HARIR INTERNATIONAL LTD',
@@ -497,7 +351,7 @@ function LoadingSheet() {
   const [saving, setSaving] = useState(false);
   const [existingSheets, setExistingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [loadingSheets, setLoadingSheets] = useState(true);
-  const [coldRoomPallets, setColdRoomPallets] = useState<ColdRoomPallet[]>([]);
+  const [coldRoomPallets, setColdRoomPallets] = useState<ColdRoomPalletFromAPI[]>([]);
   const [loadingColdRoomPallets, setLoadingColdRoomPallets] = useState(false);
   const [selectedColdRoom, setSelectedColdRoom] = useState<string>('coldroom1');
   const [expandedPallet, setExpandedPallet] = useState<string | null>(null);
@@ -523,28 +377,24 @@ function LoadingSheet() {
   // Fetch assignments to filter out assigned loading sheets
   const [assignments, setAssignments] = useState<Assignment[]>([]);
 
-  // Helper function to safely get quantity - FIXED
+  // Helper function to safely get quantity
   const getSafeQuantity = (pallet: any): number => {
     if (!pallet) return 0;
     
-    // Try multiple possible quantity fields
     if (typeof pallet.quantity === 'number') return pallet.quantity;
     if (typeof pallet.quantity === 'string') return Number(pallet.quantity) || 0;
     
-    // For ColdRoomPallet type
     if (typeof pallet.total_boxes === 'number') return pallet.total_boxes;
     if (typeof pallet.total_boxes === 'string') return Number(pallet.total_boxes) || 0;
     
-    // For pallet count calculation
     if (pallet.pallet_count && pallet.boxes_per_pallet) {
       return Number(pallet.pallet_count) * Number(pallet.boxes_per_pallet);
     }
     
-    // Default
     return pallet.size24 || 0;
   };
 
-  // Helper function to safely get box type - FIXED
+  // Helper function to safely get box type
   const getSafeBoxType = (pallet: any): '4kg' | '10kg' => {
     if (!pallet) return '4kg';
     
@@ -555,56 +405,64 @@ function LoadingSheet() {
     return '4kg';
   };
 
-  // Helper function to safely get weight - FIXED
+  // Helper function to safely get weight
   const getSafeWeight = (pallet: any): number => {
     const quantity = getSafeQuantity(pallet);
     const boxType = getSafeBoxType(pallet);
     return quantity * (boxType === '10kg' ? 10 : 4);
   };
 
-  // Format variety for display - FIXED
-  const formatVarietyForDisplay = (variety: any): string => {
-    if (!variety) return 'Fuerte';
+  // Get unique values from boxes in pallet
+  const getPalletVarieties = (pallet: any): string[] => {
+    if (!pallet) return [];
     
-    const varietyStr = String(variety).toLowerCase();
-    
-    if (varietyStr === 'hass') return 'Hass';
-    if (varietyStr === 'mixed' || varietyStr.includes('mix')) return 'Mixed (Fuerte & Hass)';
-    
-    return 'Fuerte';
-  };
-
-  // Format size for display - FIXED
-  const formatSizeForDisplay = (size: any): string => {
-    if (!size) return 'Size 24';
-    
-    const sizeStr = String(size);
-    
-    if (sizeStr.includes('size')) {
-      return sizeStr.replace('size', 'Size ');
+    if (pallet.boxes && Array.isArray(pallet.boxes)) {
+      const varieties = pallet.boxes.map((box: any) => box.variety || 'fuerte');
+      return Array.from(new Set(varieties.map(formatVarietyDisplay)));
     }
     
-    if (/^\d+$/.test(sizeStr)) {
-      return `Size ${sizeStr}`;
-    }
-    
-    return sizeStr;
+    // Fallback to pallet variety
+    return [formatVarietyDisplay(pallet.variety || 'fuerte')];
   };
 
-  // Format grade for display - FIXED
-  const formatGradeForDisplay = (grade: any): string => {
-    if (!grade) return 'Class 1';
+  const getPalletTypes = (pallet: any): string[] => {
+    if (!pallet) return [];
     
-    const gradeStr = String(grade).toLowerCase();
-    
-    if (gradeStr === 'class2' || gradeStr === 'class 2' || gradeStr === 'grade2') {
-      return 'Class 2';
+    if (pallet.boxes && Array.isArray(pallet.boxes)) {
+      const types = pallet.boxes.map((box: any) => box.box_type || '4kg');
+      return Array.from(new Set(types.map((type: string) => type === '10kg' ? '10kg Box' : '4kg Box')));
     }
     
-    return 'Class 1';
+    // Fallback to pallet box_type
+    const boxType = getSafeBoxType(pallet);
+    return [boxType === '10kg' ? '10kg Box' : '4kg Box'];
   };
 
-  // Fetch cold room pallets - UPDATED with correct data structure
+  const getPalletSizes = (pallet: any): string[] => {
+    if (!pallet) return [];
+    
+    if (pallet.boxes && Array.isArray(pallet.boxes)) {
+      const sizes = pallet.boxes.map((box: any) => box.size || 'size24');
+      return Array.from(new Set(sizes.map(formatSizeDisplay)));
+    }
+    
+    // Fallback to pallet size
+    return [formatSizeDisplay(pallet.size || 'size24')];
+  };
+
+  const getPalletGrades = (pallet: any): string[] => {
+    if (!pallet) return [];
+    
+    if (pallet.boxes && Array.isArray(pallet.boxes)) {
+      const grades = pallet.boxes.map((box: any) => box.grade || 'class1');
+      return Array.from(new Set(grades.map(formatGradeDisplay)));
+    }
+    
+    // Fallback to pallet grade
+    return [formatGradeDisplay(pallet.grade || 'class1')];
+  };
+
+  // Fetch cold room pallets
   const fetchColdRoomPallets = useCallback(async () => {
     try {
       setLoadingColdRoomPallets(true);
@@ -620,89 +478,56 @@ function LoadingSheet() {
       console.log('📊 Cold room pallets response:', result);
       
       if (result.success && Array.isArray(result.data)) {
-        const processedPallets: ColdRoomPallet[] = [];
+        // Filter out pallets that are already assigned to loading sheets
+        const availablePallets = result.data.filter((pallet: any) => 
+          !pallet.loading_sheet_id || pallet.loading_sheet_id === sheetData.id
+        );
         
-        result.data.forEach((pallet: any, index: number) => {
-          console.log(`📦 Processing pallet ${index + 1}:`, pallet);
-          
-          // Skip pallets that already have a loading_sheet_id
-          if (pallet.loading_sheet_id) {
-            console.log(`⚠️ Skipping pallet ${pallet.id || pallet.pallet_id} - already assigned to loading sheet ${pallet.loading_sheet_id}`);
-            return;
-          }
-          
-          const palletId = pallet.id || `pallet-${Date.now()}-${index}`;
-          const palletNo = pallet.pallet_name || `PAL-${palletId.substring(0, 8).toUpperCase()}`;
-          
-          // Get variety with correct mapping
-          let variety: 'fuerte' | 'hass' | 'mixed' = 'fuerte';
-          const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
-          if (varietyStr === 'hass') {
-            variety = 'hass';
-          } else if (varietyStr === 'mixed' || varietyStr.includes('mix')) {
-            variety = 'mixed';
-          }
-          
-          // Get box type
-          const boxTypeStr = String(pallet.box_type || pallet.boxType || '4kg').toLowerCase();
-          const boxType = boxTypeStr === '10kg' ? '10kg' : '4kg' as '4kg' | '10kg';
-          
-          // Get size - normalize to size format
-          let size = pallet.size || 'size24';
-          if (!size.startsWith('size') && /^\d+$/.test(size)) {
-            size = `size${size}`;
-          }
-          
-          // Get grade
-          const gradeStr = String(pallet.grade || 'class1').toLowerCase();
-          const grade = gradeStr === 'class2' ? 'class2' : 'class1' as 'class1' | 'class2';
-          
-          // Get quantity
-          let quantity = getSafeQuantity(pallet);
-          
-          // If it's a pallet, calculate based on pallet count
-          if (pallet.pallet_count && pallet.boxes_per_pallet) {
-            const boxesPerPallet = Number(pallet.boxes_per_pallet) || (boxType === '10kg' ? 120 : 288);
-            quantity = Number(pallet.pallet_count) * boxesPerPallet;
-          }
-          
-          const processedPallet: ColdRoomPallet = {
-            id: palletId,
-            pallet_no: palletNo,
-            cold_room_id: pallet.cold_room_id || selectedColdRoom,
-            variety: variety,
-            box_type: boxType,
-            size: size,
-            grade: grade,
-            quantity: quantity,
-            created_at: pallet.created_at || new Date().toISOString(),
-            updated_at: pallet.updated_at || new Date().toISOString(),
-            supplier_name: pallet.supplier_name || 'Unknown Supplier',
-            pallet_id: pallet.pallet_id,
-            region: pallet.region || '',
-            counting_record_id: pallet.counting_record_id,
-            loading_sheet_id: pallet.loading_sheet_id || null
-          };
-          
-          processedPallets.push(processedPallet);
-        });
+        console.log(`✅ Found ${availablePallets.length} available pallets (not assigned to loading sheets)`);
         
-        console.log(`✅ Found ${processedPallets.length} available pallets`);
-        setColdRoomPallets(processedPallets);
+        // Transform to match ColdRoomPalletFromAPI interface
+        const transformedPallets: ColdRoomPalletFromAPI[] = availablePallets.map((pallet: any) => ({
+          id: pallet.id,
+          variety: pallet.variety || 'fuerte',
+          box_type: pallet.box_type || '4kg',
+          size: pallet.size || 'size24',
+          grade: pallet.grade || 'class1',
+          pallet_count: pallet.pallet_count || 1,
+          cold_room_id: pallet.cold_room_id || selectedColdRoom,
+          pallet_name: pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`,
+          is_manual: pallet.is_manual || false,
+          created_at: pallet.created_at || new Date().toISOString(),
+          last_updated: pallet.last_updated || pallet.created_at || new Date().toISOString(),
+          boxes: pallet.boxes || [],
+          total_boxes: pallet.total_boxes || getSafeQuantity(pallet),
+          boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
+          loading_sheet_id: pallet.loading_sheet_id || null,
+          conversion_date: pallet.conversion_date || pallet.created_at,
+          original_box_ids: pallet.original_box_ids || []
+        }));
+        
+        setColdRoomPallets(transformedPallets);
         
         // Calculate summary statistics
         const summary = {
-          totalPallets: processedPallets.length,
-          totalBoxes: processedPallets.reduce((sum, pallet) => sum + getSafeQuantity(pallet), 0),
-          totalWeight: processedPallets.reduce((sum, pallet) => sum + getSafeWeight(pallet), 0),
-          varietyCount: processedPallets.reduce((acc, pallet) => {
-            const variety = formatVarietyForDisplay(pallet.variety);
-            acc[variety] = (acc[variety] || 0) + 1;
+          totalPallets: transformedPallets.length,
+          totalBoxes: transformedPallets.reduce((sum, pallet) => sum + (pallet.total_boxes || 0), 0),
+          totalWeight: transformedPallets.reduce((sum, pallet) => {
+            const boxWeight = pallet.box_type === '10kg' ? 10 : 4;
+            return sum + ((pallet.total_boxes || 0) * boxWeight);
+          }, 0),
+          varietyCount: transformedPallets.reduce((acc, pallet) => {
+            const varieties = getPalletVarieties(pallet);
+            varieties.forEach(variety => {
+              acc[variety] = (acc[variety] || 0) + 1;
+            });
             return acc;
           }, {} as { [key: string]: number }),
-          boxTypeCount: processedPallets.reduce((acc, pallet) => {
-            const boxType = getSafeBoxType(pallet);
-            acc[boxType] = (acc[boxType] || 0) + 1;
+          boxTypeCount: transformedPallets.reduce((acc, pallet) => {
+            const types = getPalletTypes(pallet);
+            types.forEach(type => {
+              acc[type] = (acc[type] || 0) + 1;
+            });
             return acc;
           }, {} as { [key: string]: number })
         };
@@ -738,7 +563,7 @@ function LoadingSheet() {
     } finally {
       setLoadingColdRoomPallets(false);
     }
-  }, [selectedColdRoom]);
+  }, [selectedColdRoom, sheetData.id]);
 
   // Fetch assignments
   const fetchAssignments = useCallback(async () => {
@@ -821,27 +646,50 @@ function LoadingSheet() {
   };
 
   // Add pallet to loading sheet
-  const addPalletToSheet = (pallet: ColdRoomPallet) => {
+  const addPalletToSheet = (pallet: ColdRoomPalletFromAPI) => {
     // Check if pallet is already assigned to ANY loading sheet
     if (pallet.loading_sheet_id && pallet.loading_sheet_id !== sheetData.id) {
-      toast.error(`Pallet ${pallet.pallet_no} is already assigned to another loading sheet`);
+      toast.error(`Pallet ${pallet.pallet_name} is already assigned to another loading sheet`);
       return;
     }
 
     // Check if pallet is already added to current sheet
     if (sheetData.pallets.some(p => p.id === pallet.id)) {
-      toast.warning(`Pallet ${pallet.pallet_no} is already in the loading sheet`);
+      toast.warning(`Pallet ${pallet.pallet_name} is already in the loading sheet`);
       return;
     }
 
-    // Create a PalletWithBoxes object from ColdRoomPallet
+    // Create a PalletWithBoxes object from ColdRoomPalletFromAPI
     const palletWithBoxes: PalletWithBoxes = {
-      ...pallet,
-      boxes: [{
-        size: pallet.size || 'size24',
-        quantity: getSafeQuantity(pallet)
+      id: pallet.id,
+      pallet_no: pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`,
+      cold_room_id: pallet.cold_room_id,
+      variety: pallet.variety,
+      box_type: pallet.box_type,
+      size: pallet.size,
+      grade: pallet.grade,
+      quantity: pallet.total_boxes || getSafeQuantity(pallet),
+      created_at: pallet.created_at,
+      updated_at: pallet.last_updated,
+      supplier_name: pallet.boxes?.[0]?.supplier_name,
+      pallet_id: pallet.id,
+      region: pallet.boxes?.[0]?.region,
+      counting_record_id: '',
+      loading_sheet_id: null,
+      boxes: pallet.boxes?.map((box: any) => ({
+        size: box.size || pallet.size,
+        quantity: box.quantity || 0,
+        variety: box.variety || pallet.variety,
+        box_type: box.box_type || pallet.box_type,
+        grade: box.grade || pallet.grade
+      })) || [{
+        size: pallet.size,
+        quantity: pallet.total_boxes || getSafeQuantity(pallet),
+        variety: pallet.variety,
+        box_type: pallet.box_type,
+        grade: pallet.grade
       }],
-      totalBoxes: getSafeQuantity(pallet),
+      totalBoxes: pallet.total_boxes || getSafeQuantity(pallet),
       totalWeight: getSafeWeight(pallet)
     };
 
@@ -850,7 +698,7 @@ function LoadingSheet() {
       pallets: [...prev.pallets, palletWithBoxes]
     }));
 
-    toast.success(`Added pallet ${pallet.pallet_no} to loading sheet`);
+    toast.success(`Added pallet ${pallet.pallet_name} to loading sheet`);
   };
 
   // Add all pallets to loading sheet
@@ -863,12 +711,35 @@ function LoadingSheet() {
       .filter(pallet => !sheetData.pallets.some(p => p.id === pallet.id))
       .map(pallet => {
         const palletWithBoxes: PalletWithBoxes = {
-          ...pallet,
-          boxes: [{
-            size: pallet.size || 'size24',
-            quantity: getSafeQuantity(pallet)
+          id: pallet.id,
+          pallet_no: pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`,
+          cold_room_id: pallet.cold_room_id,
+          variety: pallet.variety,
+          box_type: pallet.box_type,
+          size: pallet.size,
+          grade: pallet.grade,
+          quantity: pallet.total_boxes || getSafeQuantity(pallet),
+          created_at: pallet.created_at,
+          updated_at: pallet.last_updated,
+          supplier_name: pallet.boxes?.[0]?.supplier_name,
+          pallet_id: pallet.id,
+          region: pallet.boxes?.[0]?.region,
+          counting_record_id: '',
+          loading_sheet_id: null,
+          boxes: pallet.boxes?.map((box: any) => ({
+            size: box.size || pallet.size,
+            quantity: box.quantity || 0,
+            variety: box.variety || pallet.variety,
+            box_type: box.box_type || pallet.box_type,
+            grade: box.grade || pallet.grade
+          })) || [{
+            size: pallet.size,
+            quantity: pallet.total_boxes || getSafeQuantity(pallet),
+            variety: pallet.variety,
+            box_type: pallet.box_type,
+            grade: pallet.grade
           }],
-          totalBoxes: getSafeQuantity(pallet),
+          totalBoxes: pallet.total_boxes || getSafeQuantity(pallet),
           totalWeight: getSafeWeight(pallet)
         };
         return palletWithBoxes;
@@ -978,7 +849,13 @@ function LoadingSheet() {
           quantity: getSafeQuantity(pallet),
           supplierName: pallet.supplier_name || '',
           region: pallet.region || '',
-          boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: getSafeQuantity(pallet) }],
+          boxes: pallet.boxes || [{
+            size: pallet.size || 'size24',
+            quantity: getSafeQuantity(pallet),
+            variety: pallet.variety,
+            box_type: pallet.box_type,
+            grade: pallet.grade
+          }],
           totalBoxes: pallet.totalBoxes || getSafeQuantity(pallet),
           totalWeight: pallet.totalWeight || getSafeWeight(pallet)
         }))
@@ -1031,19 +908,15 @@ function LoadingSheet() {
         palletsData = selectedSheet.loading_pallets.map((pallet: any, index: number) => {
           const quantity = getSafeQuantity(pallet);
           const boxType = getSafeBoxType(pallet);
-          const variety = formatVarietyForDisplay(pallet.variety || pallet.temp);
-          const grade = formatGradeForDisplay(pallet.grade);
-          const size = formatSizeForDisplay(pallet.size);
           
           return {
             id: pallet.id || `pallet-${index}`,
             pallet_no: `PAL-${(pallet.palletId || pallet.id || '').substring(0, 8).toUpperCase()}`,
             cold_room_id: pallet.coldRoomId || selectedColdRoom,
-            variety: (variety.toLowerCase() === 'hass' ? 'hass' : 
-                    variety.toLowerCase().includes('mixed') ? 'mixed' : 'fuerte') as 'fuerte' | 'hass' | 'mixed',
+            variety: pallet.variety || 'fuerte',
             box_type: boxType,
-            size: size.toLowerCase().replace('size ', 'size'),
-            grade: (grade.toLowerCase() === 'class 2' ? 'class2' : 'class1') as 'class1' | 'class2',
+            size: pallet.size || 'size24',
+            grade: pallet.grade || 'class1',
             quantity: quantity,
             created_at: pallet.created_at || new Date().toISOString(),
             updated_at: pallet.updated_at || new Date().toISOString(),
@@ -1052,7 +925,19 @@ function LoadingSheet() {
             region: pallet.region || '',
             counting_record_id: pallet.countingRecordId,
             loading_sheet_id: pallet.loading_sheet_id || selectedSheet.id,
-            boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: quantity }],
+            boxes: pallet.boxes?.map((box: any) => ({
+              size: box.size || pallet.size,
+              quantity: box.quantity || 0,
+              variety: box.variety || pallet.variety,
+              box_type: box.box_type || pallet.box_type,
+              grade: box.grade || pallet.grade
+            })) || [{
+              size: pallet.size || 'size24',
+              quantity: quantity,
+              variety: pallet.variety || 'fuerte',
+              box_type: boxType,
+              grade: pallet.grade || 'class1'
+            }],
             totalBoxes: pallet.totalBoxes || quantity,
             totalWeight: pallet.totalWeight || getSafeWeight(pallet)
           };
@@ -1121,26 +1006,28 @@ function LoadingSheet() {
     headers.push(`TRUCK,${sheetData.truck || ''},TEMP REC 2,${sheetData.tempRec2 || ''}\n`);
     
     // Pallet headers
-    const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'BOX TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
+    const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
     headers.push(tableHeaders.join(','));
     
     // Pallet rows
     const rows = sheetData.pallets.map((pallet, index) => {
       const quantity = getSafeQuantity(pallet);
-      const boxType = getSafeBoxType(pallet);
       const totalWeight = getSafeWeight(pallet);
       const totalBoxes = pallet.totalBoxes || quantity;
-      const sizeDisplay = formatSizeForDisplay(pallet.size);
-      const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-      const gradeDisplay = formatGradeForDisplay(pallet.grade);
+      
+      // Get unique values
+      const varieties = getPalletVarieties(pallet).join(' / ');
+      const types = getPalletTypes(pallet).join(' / ');
+      const sizes = getPalletSizes(pallet).join(' / ');
+      const grades = getPalletGrades(pallet).join(' / ');
       
       return [
         index + 1,
         pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
-        varietyDisplay,
-        boxType === '10kg' ? '10kg Box' : '4kg Box',
-        sizeDisplay,
-        gradeDisplay,
+        varieties || 'N/A',
+        types || 'N/A',
+        sizes || 'N/A',
+        grades || 'N/A',
         quantity,
         totalBoxes,
         totalWeight
@@ -1541,9 +1428,9 @@ function LoadingSheet() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Warehouse className="h-5 w-5" />
+                  <Palette className="h-5 w-5" />
                   Available Pallets in Cold Room
-                  <Badge variant="outline" className="ml-2">
+                  <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
                     {coldRoomPallets.length} pallets available
                   </Badge>
                 </h3>
@@ -1610,138 +1497,179 @@ function LoadingSheet() {
                   </div>
                 ) : coldRoomPallets.length === 0 ? (
                   <div className="text-center py-8">
-                    <Snowflake className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+                    <Palette className="h-12 w-12 mx-auto text-gray-300 mb-3" />
                     <p className="text-gray-500 font-medium">No available pallets found</p>
                     <p className="text-sm text-gray-400 mt-1">
                       All pallets may already be assigned to loading sheets. Check existing loading sheets or add more pallets to cold room.
                     </p>
                   </div>
                 ) : (
-                  <ScrollArea className="h-64">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead>Pallet No</TableHead>
-                          <TableHead>Variety</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Size</TableHead>
-                          <TableHead>Grade</TableHead>
-                          <TableHead className="text-right">Quantity</TableHead>
-                          <TableHead className="text-right">Weight</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-4 border-b">
+                      <div className="text-sm text-muted-foreground">
+                        Showing {coldRoomPallets.length} available pallet{coldRoomPallets.length !== 1 ? 's' : ''}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={fetchColdRoomPallets}
+                        disabled={loadingColdRoomPallets}
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-1 ${loadingColdRoomPallets ? 'animate-spin' : ''}`} />
+                        Refresh
+                      </Button>
+                    </div>
+                    
+                    <ScrollArea className="h-[400px]">
+                      <div className="space-y-3 p-2">
                         {coldRoomPallets.map((pallet) => {
+                          const isExpanded = expandedPallet === pallet.id;
+                          const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
                           const isAdded = sheetData.pallets.some(p => p.id === pallet.id);
-                          const quantity = getSafeQuantity(pallet);
-                          const weight = getSafeWeight(pallet);
-                          const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-                          const gradeDisplay = formatGradeForDisplay(pallet.grade);
-                          const sizeDisplay = formatSizeForDisplay(pallet.size);
-                          
-                          // Check if pallet is assigned to another loading sheet
                           const isAssignedToOtherSheet = pallet.loading_sheet_id && pallet.loading_sheet_id !== sheetData.id;
                           
                           return (
-                            <TableRow key={pallet.id} className={
-                              isAdded ? "bg-NA-50" : 
-                              isAssignedToOtherSheet ? "bg-NA-50" : 
-                              "hover:bg-black-50"
-                            }>
-                              <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => togglePalletExpansion(pallet.id)}
-                                  className="h-6 w-6 p-0"
-                                >
-                                  {expandedPallet === pallet.id ? (
-                                    <ChevronUp className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronDown className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                {pallet.pallet_no}
-                                {isAdded && (
-                                  <Badge variant="outline" className="ml-2 bg-black-100 text-green-800 text-xs">
-                                    In Current Sheet
-                                  </Badge>
-                                )}
-                                {isAssignedToOtherSheet && !isAdded && (
-                                  <Badge variant="outline" className="ml-2 bg-black-100 text-amber-800 text-xs">
-                                    Already Assigned
-                                  </Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <Badge className={
-                                  varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 
-                                  varietyDisplay === 'Hass' ? "bg-purple-100 text-purple-800" : 
-                                  "bg-yellow-100 text-yellow-800"
-                                }>
-                                  {varietyDisplay}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className={
-                                  getSafeBoxType(pallet) === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
-                                  "bg-orange-50 text-orange-700 border-orange-200"
-                                }>
-                                  {getSafeBoxType(pallet) === '10kg' ? '10kg Box' : '4kg Box'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>{sizeDisplay}</TableCell>
-                              <TableCell>
-                                <Badge variant={gradeDisplay === 'Class 1' ? 'default' : 'secondary'}>
-                                  {gradeDisplay}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-bold">{quantity.toLocaleString()}</TableCell>
-                              <TableCell className="text-right font-bold text-blue-600">
-                                {weight.toLocaleString()} kg
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  size="sm"
-                                  onClick={() => addPalletToSheet(pallet)}
-                                  disabled={isAdded || isAssignedToOtherSheet}
-                                  variant={isAdded ? "outline" : "default"}
-                                  title={isAssignedToOtherSheet ? "Pallet already assigned to another loading sheet" : ""}
-                                >
-                                  {isAdded ? (
-                                    <>
-                                      <CheckCircle className="h-4 w-4 mr-1" />
-                                      Added
-                                    </>
-                                  ) : isAssignedToOtherSheet ? (
-                                    <>
-                                      <XCircle className="h-4 w-4 mr-1" />
-                                      Assigned
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Plus className="h-4 w-4 mr-1" />
-                                      Add
-                                    </>
-                                  )}
-                                </Button>
-                              </TableCell>
-                            </TableRow>
+                            <Card key={pallet.id} className="overflow-hidden border-green-200">
+                              <div 
+                                className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
+                                onClick={() => togglePalletExpansion(pallet.id)}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                                    ) : (
+                                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                                    )}
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        <Palette className="w-4 h-4" />
+                                        {palletName}
+                                        
+                                        {isAdded && (
+                                          <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 text-xs">
+                                            In Current Sheet
+                                          </Badge>
+                                        )}
+                                        {isAssignedToOtherSheet && !isAdded && (
+                                          <Badge variant="outline" className="ml-2 bg-amber-100 text-amber-800 text-xs">
+                                            Already Assigned
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                        <Snowflake className="w-3 h-3" />
+                                        {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                        <span className="mx-1">•</span>
+                                        <Calendar className="w-3 h-3" />
+                                        {new Date(pallet.created_at).toLocaleDateString()}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <div className="text-right">
+                                      <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
+                                      <div className="text-sm text-gray-500">
+                                        {(pallet.total_boxes || 0).toLocaleString()} boxes
+                                      </div>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        addPalletToSheet(pallet);
+                                      }}
+                                      disabled={isAdded || isAssignedToOtherSheet}
+                                      variant={isAdded ? "outline" : "default"}
+                                      title={isAssignedToOtherSheet ? "Pallet already assigned to another loading sheet" : ""}
+                                    >
+                                      {isAdded ? (
+                                        <>
+                                          <CheckCircle className="h-4 w-4 mr-1" />
+                                          Added
+                                        </>
+                                      ) : isAssignedToOtherSheet ? (
+                                        <>
+                                          <XCircle className="h-4 w-4 mr-1" />
+                                          Assigned
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Plus className="h-4 w-4 mr-1" />
+                                          Add
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {isExpanded && (
+                                <div className="border-t">
+                                  <div className="p-4 bg-black-50">
+                                    <div className="mb-4">
+                                      <h4 className="font-medium mb-3 flex items-center gap-2">
+                                        <Box className="w-4 h-4" />
+                                        Boxes in this Pallet ({pallet.boxes?.length || 0})
+                                      </h4>
+                                      
+                                      {pallet.boxes && pallet.boxes.length > 0 ? (
+                                        <div className="border rounded overflow-hidden">
+                                          <Table>
+                                            <TableHeader>
+                                              <TableRow className="bg-black-50">
+                                                <TableHead>Size</TableHead>
+                                                <TableHead>Variety</TableHead>
+                                                <TableHead>Type</TableHead>
+                                                <TableHead>Grade</TableHead>
+                                                <TableHead className="text-right">Quantity</TableHead>
+                                              </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                              {pallet.boxes.map((box) => {
+                                                return (
+                                                  <TableRow key={box.id}>
+                                                    <TableCell>
+                                                      <Badge variant="outline">{formatSizeDisplay(box.size)}</Badge>
+                                                    </TableCell>
+                                                    <TableCell className="capitalize">
+                                                      {formatVarietyDisplay(box.variety)}
+                                                    </TableCell>
+                                                    <TableCell>{box.box_type === '10kg' ? '10kg Box' : '4kg Box'}</TableCell>
+                                                    <TableCell>
+                                                      {formatGradeDisplay(box.grade)}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-medium">
+                                                      {box.quantity.toLocaleString()}
+                                                    </TableCell>
+                                                  </TableRow>
+                                                );
+                                              })}
+                                            </TableBody>
+                                          </Table>
+                                        </div>
+                                      ) : (
+                                        <div className="text-center py-6 border rounded bg-black">
+                                          <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                                          <p className="text-gray-500">No boxes assigned to this pallet</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </Card>
                           );
                         })}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
+                      </div>
+                    </ScrollArea>
+                  </div>
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Selected Pallets Table - FIXED DISPLAY */}
+          {/* Selected Pallets Table */}
           <div className="mb-6 print:mb-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Pallets in Loading Sheet ({sheetData.pallets.length})</h3>
@@ -1780,10 +1708,12 @@ function LoadingSheet() {
                     {sheetData.pallets.map((pallet, index) => {
                       const quantity = getSafeQuantity(pallet);
                       const weight = getSafeWeight(pallet);
-                      const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-                      const gradeDisplay = formatGradeForDisplay(pallet.grade);
-                      const sizeDisplay = formatSizeForDisplay(pallet.size);
-                      const boxTypeDisplay = getSafeBoxType(pallet) === '10kg' ? '10kg Box' : '4kg Box';
+                      
+                      // Get unique values from boxes
+                      const varieties = getPalletVarieties(pallet);
+                      const types = getPalletTypes(pallet);
+                      const sizes = getPalletSizes(pallet);
+                      const grades = getPalletGrades(pallet);
                       
                       return (
                         <tr key={`${pallet.id}-${index}`} className="hover:bg-black-50">
@@ -1792,27 +1722,57 @@ function LoadingSheet() {
                             {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
                           </td>
                           <td className="border border-gray-300 p-2">
-                            <Badge className={
-                              varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 
-                              varietyDisplay === 'Hass' ? "bg-purple-100 text-purple-800" : 
-                              "bg-yellow-100 text-yellow-800"
-                            }>
-                              {varietyDisplay}
-                            </Badge>
+                            <div className="flex flex-wrap gap-1">
+                              {varieties.map((variety, i) => (
+                                <Badge 
+                                  key={i}
+                                  className={
+                                    variety === 'Fuerte' ? "bg-green-100 text-green-800" : 
+                                    variety === 'Hass' ? "bg-purple-100 text-purple-800" : 
+                                    "bg-yellow-100 text-yellow-800"
+                                  }
+                                >
+                                  {variety}
+                                </Badge>
+                              ))}
+                            </div>
                           </td>
                           <td className="border border-gray-300 p-2">
-                            <Badge variant="outline" className={
-                              getSafeBoxType(pallet) === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
-                              "bg-orange-50 text-orange-700 border-orange-200"
-                            }>
-                              {boxTypeDisplay}
-                            </Badge>
+                            <div className="flex flex-wrap gap-1">
+                              {types.map((type, i) => (
+                                <Badge 
+                                  key={i}
+                                  variant="outline" 
+                                  className={
+                                    type === '10kg Box' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                                    "bg-orange-50 text-orange-700 border-orange-200"
+                                  }
+                                >
+                                  {type}
+                                </Badge>
+                              ))}
+                            </div>
                           </td>
-                          <td className="border border-gray-300 p-2">{sizeDisplay}</td>
                           <td className="border border-gray-300 p-2">
-                            <Badge variant={gradeDisplay === 'Class 1' ? 'default' : 'secondary'}>
-                              {gradeDisplay}
-                            </Badge>
+                            <div className="flex flex-wrap gap-1">
+                              {sizes.map((size, i) => (
+                                <Badge key={i} variant="outline" className="bg-black-50">
+                                  {size}
+                                </Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="border border-gray-300 p-2">
+                            <div className="flex flex-wrap gap-1">
+                              {grades.map((grade, i) => (
+                                <Badge 
+                                  key={i}
+                                  variant={grade === 'Class 1' ? 'default' : 'secondary'}
+                                >
+                                  {grade}
+                                </Badge>
+                              ))}
+                            </div>
                           </td>
                           <td className="border border-gray-300 p-2 text-right font-bold">
                             {quantity.toLocaleString()}
@@ -1875,11 +1835,13 @@ function LoadingSheet() {
                 </div>
                 <div className="pt-3 border-t">
                   <div className="font-medium mb-2">Variety Distribution:</div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {Object.entries(
                       sheetData.pallets.reduce((acc, pallet) => {
-                        const variety = formatVarietyForDisplay(pallet.variety);
-                        acc[variety] = (acc[variety] || 0) + 1;
+                        const varieties = getPalletVarieties(pallet);
+                        varieties.forEach(variety => {
+                          acc[variety] = (acc[variety] || 0) + 1;
+                        });
                         return acc;
                       }, {} as { [key: string]: number })
                     ).map(([variety, count]) => (
@@ -1887,9 +1849,9 @@ function LoadingSheet() {
                         key={variety} 
                         variant="outline"
                         className={
-                          variety === 'Fuerte' ? "bg-black-50 text-green-700" : 
-                          variety === 'Hass' ? "bg-black-50 text-purple-700" : 
-                          "bg-black-50 text-yellow-700"
+                          variety === 'Fuerte' ? "bg-green-50 text-green-700" : 
+                          variety === 'Hass' ? "bg-purple-50 text-purple-700" : 
+                          "bg-yellow-50 text-yellow-700"
                         }
                       >
                         {variety}: {count}
@@ -1899,11 +1861,13 @@ function LoadingSheet() {
                 </div>
                 <div className="pt-3 border-t">
                   <div className="font-medium mb-2">Box Type Distribution:</div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {Object.entries(
                       sheetData.pallets.reduce((acc, pallet) => {
-                        const boxType = getSafeBoxType(pallet) === '10kg' ? '10kg Boxes' : '4kg Boxes';
-                        acc[boxType] = (acc[boxType] || 0) + getSafeQuantity(pallet);
+                        const types = getPalletTypes(pallet);
+                        types.forEach(type => {
+                          acc[type] = (acc[type] || 0) + getSafeQuantity(pallet);
+                        });
                         return acc;
                       }, {} as { [key: string]: number })
                     ).map(([boxType, count]) => (
@@ -1911,7 +1875,7 @@ function LoadingSheet() {
                         key={boxType} 
                         variant="outline"
                         className={
-                          boxType === '10kg Boxes' ? "bg-blue-50 text-blue-700" : 
+                          boxType === '10kg Box' ? "bg-blue-50 text-blue-700" : 
                           "bg-orange-50 text-orange-700"
                         }
                       >
@@ -3008,7 +2972,7 @@ function TransitManagement() {
   );
 }
 
-// History Component for downloading lists - UPDATED WITH CORRECT DATA DISPLAY
+// History Component for downloading lists
 function HistoryDownload() {
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -3242,24 +3206,61 @@ function HistoryDownload() {
         totalBoxes += quantity;
         totalWeight += weight;
         
-        // Track variety distribution
-        const variety = pallet.variety || 'fuerte';
-        const varietyDisplay = variety === 'hass' ? 'Hass' : 
-                             variety === 'mixed' ? 'Mixed' : 'Fuerte';
-        varietyDistribution[varietyDisplay] = (varietyDistribution[varietyDisplay] || 0) + 1;
+        // Get varieties from boxes
+        let varieties: string[] = [];
+        if (pallet.boxes && Array.isArray(pallet.boxes)) {
+          varieties = Array.from(new Set(pallet.boxes.map((box: any) => 
+            formatVarietyDisplay(box.variety || 'fuerte')
+          )));
+        } else {
+          varieties = [formatVarietyDisplay(pallet.variety || 'fuerte')];
+        }
         
-        // Track box type distribution
-        const boxTypeLabel = boxType === '10kg' ? '10kg Boxes' : '4kg Boxes';
-        boxTypeDistribution[boxTypeLabel] = (boxTypeDistribution[boxTypeLabel] || 0) + quantity;
+        varieties.forEach(variety => {
+          varietyDistribution[variety] = (varietyDistribution[variety] || 0) + 1;
+        });
         
-        // Track grade distribution
-        const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
-        gradeDistribution[grade] = (gradeDistribution[grade] || 0) + quantity;
+        // Get box types from boxes
+        let boxTypes: string[] = [];
+        if (pallet.boxes && Array.isArray(pallet.boxes)) {
+          boxTypes = Array.from(new Set(pallet.boxes.map((box: any) => 
+            box.box_type === '10kg' ? '10kg Box' : '4kg Box'
+          )));
+        } else {
+          boxTypes = [boxType === '10kg' ? '10kg Box' : '4kg Box'];
+        }
         
-        // Track size distribution
-        const size = pallet.size || 'size24';
-        const sizeDisplay = size.replace('size', 'Size ');
-        sizeDistribution[sizeDisplay] = (sizeDistribution[sizeDisplay] || 0) + quantity;
+        boxTypes.forEach(type => {
+          boxTypeDistribution[type] = (boxTypeDistribution[type] || 0) + quantity;
+        });
+        
+        // Get grades from boxes
+        let grades: string[] = [];
+        if (pallet.boxes && Array.isArray(pallet.boxes)) {
+          grades = Array.from(new Set(pallet.boxes.map((box: any) => 
+            formatGradeDisplay(box.grade || 'class1')
+          )));
+        } else {
+          grades = [formatGradeDisplay(pallet.grade || 'class1')];
+        }
+        
+        grades.forEach(grade => {
+          gradeDistribution[grade] = (gradeDistribution[grade] || 0) + quantity;
+        });
+        
+        // Get sizes from boxes
+        let sizes: string[] = [];
+        if (pallet.boxes && Array.isArray(pallet.boxes)) {
+          sizes = Array.from(new Set(pallet.boxes.map((box: any) => 
+            formatSizeDisplay(box.size || 'size24')
+          )));
+        } else {
+          sizes = [formatSizeDisplay(pallet.size || 'size24')];
+        }
+        
+        sizes.forEach(size => {
+          sizeDistribution[size] = (sizeDistribution[size] || 0) + quantity;
+        });
       });
 
       // Format date for CSV
@@ -3304,15 +3305,35 @@ function HistoryDownload() {
         const quantity = pallet.quantity || 0;
         const boxType = pallet.box_type || '4kg';
         const weight = quantity * (boxType === '10kg' ? 10 : 4);
-        const variety = pallet.variety || 'fuerte';
-        const varietyDisplay = variety === 'hass' ? 'Hass' : 
-                             variety === 'mixed' ? 'Mixed' : 'Fuerte';
-        const size = pallet.size || 'size24';
-        const sizeDisplay = size.replace('size', 'Size ');
-        const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
         const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
         
-        csvRows.push(`${index + 1},${coldRoom},${varietyDisplay},${boxType},${sizeDisplay},${grade},${quantity},${weight} kg`);
+        // Get unique values
+        let varieties: string[] = [];
+        let types: string[] = [];
+        let sizes: string[] = [];
+        let grades: string[] = [];
+        
+        if (pallet.boxes && Array.isArray(pallet.boxes)) {
+          varieties = Array.from(new Set(pallet.boxes.map((box: any) => 
+            formatVarietyDisplay(box.variety || 'fuerte')
+          )));
+          types = Array.from(new Set(pallet.boxes.map((box: any) => 
+            box.box_type === '10kg' ? '10kg Box' : '4kg Box'
+          )));
+          sizes = Array.from(new Set(pallet.boxes.map((box: any) => 
+            formatSizeDisplay(box.size || 'size24')
+          )));
+          grades = Array.from(new Set(pallet.boxes.map((box: any) => 
+            formatGradeDisplay(box.grade || 'class1')
+          )));
+        } else {
+          varieties = [formatVarietyDisplay(pallet.variety || 'fuerte')];
+          types = [boxType === '10kg' ? '10kg Box' : '4kg Box'];
+          sizes = [formatSizeDisplay(pallet.size || 'size24')];
+          grades = [formatGradeDisplay(pallet.grade || 'class1')];
+        }
+        
+        csvRows.push(`${index + 1},${coldRoom},${varieties.join(' / ')},${types.join(' / ')},${sizes.join(' / ')},${grades.join(' / ')},${quantity},${weight} kg`);
       });
       
       // Totals Row
@@ -3512,7 +3533,7 @@ function HistoryDownload() {
         </CardContent>
       </Card>
 
-      {/* Loading Sheets Table - UPDATED WITH CORRECT DATA */}
+      {/* Loading Sheets Table */}
       <Card>
         <CardHeader>
           <CardTitle>Loading Sheets</CardTitle>
@@ -3647,40 +3668,90 @@ function HistoryDownload() {
                                           const quantity = pallet.quantity || 0;
                                           const boxType = pallet.box_type || '4kg';
                                           const weight = quantity * (boxType === '10kg' ? 10 : 4);
-                                          const variety = pallet.variety || 'fuerte';
-                                          const varietyDisplay = variety === 'hass' ? 'Hass' : 
-                                                               variety === 'mixed' ? 'Mixed' : 'Fuerte';
-                                          const size = pallet.size || 'size24';
-                                          const sizeDisplay = size.replace('size', 'Size ');
-                                          const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
                                           const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+                                          
+                                          // Get unique values from boxes
+                                          let varieties: string[] = [];
+                                          let types: string[] = [];
+                                          let sizes: string[] = [];
+                                          let grades: string[] = [];
+                                          
+                                          if (pallet.boxes && Array.isArray(pallet.boxes)) {
+                                            varieties = Array.from(new Set(pallet.boxes.map((box: any) => 
+                                              formatVarietyDisplay(box.variety || 'fuerte')
+                                            )));
+                                            types = Array.from(new Set(pallet.boxes.map((box: any) => 
+                                              box.box_type === '10kg' ? '10kg Box' : '4kg Box'
+                                            )));
+                                            sizes = Array.from(new Set(pallet.boxes.map((box: any) => 
+                                              formatSizeDisplay(box.size || 'size24')
+                                            )));
+                                            grades = Array.from(new Set(pallet.boxes.map((box: any) => 
+                                              formatGradeDisplay(box.grade || 'class1')
+                                            )));
+                                          } else {
+                                            varieties = [formatVarietyDisplay(pallet.variety || 'fuerte')];
+                                            types = [boxType === '10kg' ? '10kg Box' : '4kg Box'];
+                                            sizes = [formatSizeDisplay(pallet.size || 'size24')];
+                                            grades = [formatGradeDisplay(pallet.grade || 'class1')];
+                                          }
                                           
                                           return (
                                             <TableRow key={pallet.id || index}>
                                               <TableCell className="font-medium">{index + 1}</TableCell>
                                               <TableCell>{coldRoom}</TableCell>
                                               <TableCell>
-                                                <Badge className={
-                                                  varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 
-                                                  varietyDisplay === 'Hass' ? "bg-purple-100 text-purple-800" : 
-                                                  "bg-yellow-100 text-yellow-800"
-                                                }>
-                                                  {varietyDisplay}
-                                                </Badge>
+                                                <div className="flex flex-wrap gap-1">
+                                                  {varieties.map((variety, i) => (
+                                                    <Badge 
+                                                      key={i}
+                                                      className={
+                                                        variety === 'Fuerte' ? "bg-green-100 text-green-800" : 
+                                                        variety === 'Hass' ? "bg-purple-100 text-purple-800" : 
+                                                        "bg-yellow-100 text-yellow-800"
+                                                      }
+                                                    >
+                                                      {variety}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
                                               </TableCell>
                                               <TableCell>
-                                                <Badge variant="outline" className={
-                                                  boxType === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
-                                                  "bg-orange-50 text-orange-700 border-orange-200"
-                                                }>
-                                                  {boxType === '10kg' ? '10kg Box' : '4kg Box'}
-                                                </Badge>
+                                                <div className="flex flex-wrap gap-1">
+                                                  {types.map((type, i) => (
+                                                    <Badge 
+                                                      key={i}
+                                                      variant="outline" 
+                                                      className={
+                                                        type === '10kg Box' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                                                        "bg-orange-50 text-orange-700 border-orange-200"
+                                                      }
+                                                    >
+                                                      {type}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
                                               </TableCell>
-                                              <TableCell>{sizeDisplay}</TableCell>
                                               <TableCell>
-                                                <Badge variant={grade === 'Class 1' ? 'default' : 'secondary'}>
-                                                  {grade}
-                                                </Badge>
+                                                <div className="flex flex-wrap gap-1">
+                                                  {sizes.map((size, i) => (
+                                                    <Badge key={i} variant="outline" className="bg-gray-50">
+                                                      {size}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell>
+                                                <div className="flex flex-wrap gap-1">
+                                                  {grades.map((grade, i) => (
+                                                    <Badge 
+                                                      key={i}
+                                                      variant={grade === 'Class 1' ? 'default' : 'secondary'}
+                                                    >
+                                                      {grade}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
                                               </TableCell>
                                               <TableCell className="text-right font-bold">{quantity.toLocaleString()}</TableCell>
                                               <TableCell className="text-right font-bold text-blue-600">

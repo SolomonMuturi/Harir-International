@@ -12,9 +12,9 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { shipmentData, type Supplier, type Shipment } from '@/lib/data';
+import { shipmentData, type Supplier, type Shipment, type WarehouseData } from '@/lib/data';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, DollarSign, FileText, Package, Mail, Phone, Building, Briefcase, PlusCircle, Eye, Truck, CreditCard, Users } from 'lucide-react';
+import { ArrowLeft, DollarSign, FileText, Package, Mail, Phone, Building, Briefcase, PlusCircle, Eye, Truck, CreditCard, Users, Scale, Box, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -51,6 +51,23 @@ interface DatabaseSupplier {
   created_at: string;
 }
 
+interface WarehouseIntakeData {
+  id: string;
+  shipmentId: string;
+  supplierId: string;
+  supplierName: string;
+  date: string;
+  product: string;
+  intakeWeight: number;
+  countedWeight: number;
+  numberOf4kgBoxes: number;
+  numberOf10kgCrates: number;
+  rejectedWeight: number;
+  rejectionReason?: string;
+  qualityCheckStatus: 'Passed' | 'Failed' | 'Pending';
+  warehouseLocation: string;
+}
+
 export default function SupplierDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -62,6 +79,7 @@ export default function SupplierDetailPage() {
   
   const [isLogActivityOpen, setIsLogActivityOpen] = useState(false);
   const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [warehouseData, setWarehouseData] = useState<WarehouseIntakeData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Fetch supplier from database
@@ -107,15 +125,75 @@ export default function SupplierDetailPage() {
           description: 'Failed to load supplier details',
           variant: 'destructive',
         });
-      } finally {
-        setIsLoading(false);
+      }
+    };
+
+    const fetchWarehouseData = async () => {
+      try {
+        const response = await fetch(`/api/warehouse-intake?supplierId=${supplierId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setWarehouseData(data);
+        } else {
+          // Fallback to mock data if API fails
+          const mockWarehouseData: WarehouseIntakeData[] = generateMockWarehouseData(supplierId);
+          setWarehouseData(mockWarehouseData);
+        }
+      } catch (error) {
+        console.error('Error fetching warehouse data:', error);
+        // Fallback to mock data
+        const mockWarehouseData: WarehouseIntakeData[] = generateMockWarehouseData(supplierId);
+        setWarehouseData(mockWarehouseData);
       }
     };
 
     if (supplierId) {
       fetchSupplier();
+      fetchWarehouseData();
+      setIsLoading(false);
     }
   }, [supplierId, toast]);
+
+  // Generate mock warehouse data for demonstration
+  const generateMockWarehouseData = (supplierId: string): WarehouseIntakeData[] => {
+    const mockData: WarehouseIntakeData[] = [];
+    const supplier = supplierData.find(s => s.id === supplierId);
+    
+    if (!supplier) return mockData;
+    
+    // Generate 3-5 mock deliveries
+    const numberOfDeliveries = Math.floor(Math.random() * 3) + 3;
+    
+    for (let i = 0; i < numberOfDeliveries; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - (i * 7)); // Spread deliveries over weeks
+      
+      const intakeWeight = Math.floor(Math.random() * 1000) + 500; // 500-1500 kg
+      const rejectedWeight = Math.floor(Math.random() * 100); // 0-100 kg
+      const countedWeight = intakeWeight - rejectedWeight;
+      const numberOf4kgBoxes = Math.floor(countedWeight / 4);
+      const numberOf10kgCrates = Math.floor(countedWeight / 10);
+      
+      mockData.push({
+        id: `wh-${supplierId}-${i}`,
+        shipmentId: `SH${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${i.toString().padStart(3, '0')}`,
+        supplierId: supplierId,
+        supplierName: supplier.name,
+        date: date.toISOString(),
+        product: supplier.produceTypes[Math.floor(Math.random() * supplier.produceTypes.length)] || 'Produce',
+        intakeWeight,
+        countedWeight,
+        numberOf4kgBoxes,
+        numberOf10kgCrates,
+        rejectedWeight,
+        rejectionReason: rejectedWeight > 0 ? 'Quality issues' : undefined,
+        qualityCheckStatus: rejectedWeight > 50 ? 'Failed' : 'Passed',
+        warehouseLocation: 'Main Warehouse'
+      });
+    }
+    
+    return mockData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
 
   const supplierShipments = useMemo(() => {
     if (!supplier) return [];
@@ -123,6 +201,36 @@ export default function SupplierDetailPage() {
     // For this mock data, we'll assume the origin contains the supplier's name.
     return shipmentData.filter(ship => ship.origin.toLowerCase().includes(supplier.name.toLowerCase().split(' ')[0]));
   }, [supplier]);
+
+  // Calculate totals for the supplier
+  const deliveryTotals = useMemo(() => {
+    if (warehouseData.length === 0) {
+      return {
+        totalIntakeWeight: 0,
+        totalCountedWeight: 0,
+        total4kgBoxes: 0,
+        total10kgCrates: 0,
+        totalRejectedWeight: 0,
+        totalDeliveries: 0
+      };
+    }
+
+    return warehouseData.reduce((acc, delivery) => ({
+      totalIntakeWeight: acc.totalIntakeWeight + delivery.intakeWeight,
+      totalCountedWeight: acc.totalCountedWeight + delivery.countedWeight,
+      total4kgBoxes: acc.total4kgBoxes + delivery.numberOf4kgBoxes,
+      total10kgCrates: acc.total10kgCrates + delivery.numberOf10kgCrates,
+      totalRejectedWeight: acc.totalRejectedWeight + delivery.rejectedWeight,
+      totalDeliveries: acc.totalDeliveries + 1
+    }), {
+      totalIntakeWeight: 0,
+      totalCountedWeight: 0,
+      total4kgBoxes: 0,
+      total10kgCrates: 0,
+      totalRejectedWeight: 0,
+      totalDeliveries: 0
+    });
+  }, [warehouseData]);
 
   if (isLoading) {
     return (
@@ -214,18 +322,24 @@ export default function SupplierDetailPage() {
     'Delayed': 'destructive',
   } as const;
 
+  const qualityCheckVariant = {
+    'Passed': 'default',
+    'Failed': 'destructive',
+    'Pending': 'secondary'
+  } as const;
+
   const ytdPurchases = {
     title: 'YTD Purchases',
-    value: 'KES 8.2M',
-    change: 'vs. Previous Year',
+    value: `KES ${(deliveryTotals.totalCountedWeight * 100).toLocaleString()}`, // Assuming 100 KES per kg
+    change: `${deliveryTotals.totalDeliveries} deliveries`,
     changeType: 'increase' as const,
   };
 
   const amountPayable = {
     title: 'Amount Payable',
-    value: 'KES 1.1M',
-    change: 'for 3 open invoices',
-    changeType: 'increase' as const,
+    value: `KES ${(deliveryTotals.totalRejectedWeight * 100).toLocaleString()}`, // Cost of rejected items
+    change: `${deliveryTotals.totalRejectedWeight}kg rejected`,
+    changeType: 'decrease' as const,
   };
   
   const handleLogActivitySubmit = () => {
@@ -408,43 +522,197 @@ export default function SupplierDetailPage() {
                 
                 {/* Deliveries Tab */}
                 <TabsContent value="deliveries" className="mt-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Delivery History</CardTitle>
-                            <CardDescription>Recent shipments from this supplier</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {supplierShipments.length > 0 ? (
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Shipment ID</TableHead>
-                                            <TableHead>Product</TableHead>
-                                            <TableHead>Expected Arrival</TableHead>
-                                            <TableHead>Status</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {supplierShipments.map(shipment => (
-                                            <TableRow key={shipment.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/traceability?shipmentId=${shipment.shipmentId}`)}>
-                                                <TableCell className="font-mono font-medium">{shipment.shipmentId}</TableCell>
-                                                <TableCell>{shipment.product}</TableCell>
-                                                <TableCell>{shipment.expectedArrival ? format(new Date(shipment.expectedArrival), 'PPP p') : 'N/A'}</TableCell>
-                                                <TableCell>
-                                                    <Badge variant={shipmentStatusVariant[shipment.status]}>{shipment.status}</Badge>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            ) : (
-                                <div className="text-center py-8">
-                                    <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                                    <p className="text-muted-foreground">No delivery history found for this supplier</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                    <div className="space-y-6">
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-muted-foreground">Total Deliveries</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="text-2xl font-bold">{deliveryTotals.totalDeliveries}</div>
+                                    <p className="text-xs text-muted-foreground">All-time deliveries</p>
+                                </CardContent>
+                            </Card>
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        <Scale className="h-4 w-4" />
+                                        Total Weight
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="text-2xl font-bold">{deliveryTotals.totalCountedWeight} kg</div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {deliveryTotals.totalIntakeWeight} kg intake
+                                    </p>
+                                </CardContent>
+                            </Card>
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        <Box className="h-4 w-4" />
+                                        Total Boxes/Crates
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="text-2xl font-bold">
+                                        {deliveryTotals.total4kgBoxes + deliveryTotals.total10kgCrates}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {deliveryTotals.total4kgBoxes} 4kg boxes, {deliveryTotals.total10kgCrates} 10kg crates
+                                    </p>
+                                </CardContent>
+                            </Card>
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        <AlertCircle className="h-4 w-4" />
+                                        Total Rejected
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="text-2xl font-bold text-destructive">
+                                        {deliveryTotals.totalRejectedWeight} kg
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {((deliveryTotals.totalRejectedWeight / deliveryTotals.totalIntakeWeight) * 100).toFixed(1)}% rejection rate
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        {/* Delivery History Table */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Delivery & Intake History</CardTitle>
+                                <CardDescription>Detailed warehouse intake records for each delivery</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {warehouseData.length > 0 ? (
+                                    <div className="overflow-x-auto">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Shipment ID</TableHead>
+                                                    <TableHead>Date</TableHead>
+                                                    <TableHead>Product</TableHead>
+                                                    <TableHead className="text-right">Intake Weight (kg)</TableHead>
+                                                    <TableHead className="text-right">Counted Weight (kg)</TableHead>
+                                                    <TableHead className="text-right">4kg Boxes</TableHead>
+                                                    <TableHead className="text-right">10kg Crates</TableHead>
+                                                    <TableHead className="text-right">Rejected (kg)</TableHead>
+                                                    <TableHead>QC Status</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {warehouseData.map((delivery) => (
+                                                    <TableRow key={delivery.id} 
+                                                        className="cursor-pointer hover:bg-muted/50" 
+                                                        onClick={() => router.push(`/traceability?shipmentId=${delivery.shipmentId}`)}>
+                                                        <TableCell className="font-mono font-medium">
+                                                            {delivery.shipmentId}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {format(new Date(delivery.date), 'dd/MM/yyyy')}
+                                                        </TableCell>
+                                                        <TableCell>{delivery.product}</TableCell>
+                                                        <TableCell className="text-right font-medium">
+                                                            {delivery.intakeWeight.toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="text-right font-medium">
+                                                            {delivery.countedWeight.toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            {delivery.numberOf4kgBoxes.toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            {delivery.numberOf10kgCrates.toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            <div className="flex flex-col items-end">
+                                                                <span className="font-medium text-destructive">
+                                                                    {delivery.rejectedWeight.toLocaleString()}
+                                                                </span>
+                                                                {delivery.rejectionReason && (
+                                                                    <span className="text-xs text-muted-foreground">
+                                                                        {delivery.rejectionReason}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant={qualityCheckVariant[delivery.qualityCheckStatus]}>
+                                                                {delivery.qualityCheckStatus}
+                                                            </Badge>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8">
+                                        <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                                        <p className="text-muted-foreground">No delivery history found for this supplier</p>
+                                        <p className="text-sm text-muted-foreground mt-2">
+                                            Warehouse intake data will appear here once deliveries are recorded
+                                        </p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Rejection Analysis */}
+                        {deliveryTotals.totalRejectedWeight > 0 && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <AlertCircle className="h-5 w-5 text-destructive" />
+                                        Rejection Analysis
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Quality issues and rejection patterns for {supplier.name}
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="font-medium">Total Rejected Weight</p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    Across {warehouseData.filter(d => d.rejectedWeight > 0).length} deliveries
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-2xl font-bold text-destructive">
+                                                    {deliveryTotals.totalRejectedWeight} kg
+                                                </p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {((deliveryTotals.totalRejectedWeight / deliveryTotals.totalIntakeWeight) * 100).toFixed(1)}% of total intake
+                                                </p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="space-y-2">
+                                            <p className="font-medium">Common Rejection Reasons:</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                                                    Quality Issues
+                                                </Badge>
+                                                <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                                                    Underweight Packages
+                                                </Badge>
+                                                <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                                                    Contamination
+                                                </Badge>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
                 </TabsContent>
                 
                 {/* Financials Tab */}

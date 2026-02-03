@@ -33,7 +33,7 @@ import {
   Download, FileSpreadsheet, ChevronRight, Phone, Banknote, CreditCard,
   FileText, ClipboardList, Printer, FileDown, Eye, EyeOff, Info,
   Wallet, Smartphone, Building, Fingerprint, Apple, PieChart,
-  Grid3x3, Layers, BarChart, Table as TableIcon
+  Grid3x3, Layers, BarChart, Table as TableIcon, Edit
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -589,7 +589,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     doc.text(`Intake: ${safeToFixed(intakeWeight, 2)} kg`, 15, yPos + 10);
     doc.text(`Counted: ${safeToFixed(totalCountedWeight, 2)} kg`, 80, yPos + 10);
-   // doc.text(`Rejected: ${safeToFixed(rejectedWeight, 2)} kg`, 140, yPos + 10);
     doc.text(`Variance: ${safeToFixed(weightVariance, 2)} kg`, 140, yPos + 10);
     
     yPos += 24;
@@ -1056,6 +1055,10 @@ export default function WarehousePage() {
     bank_account: '',
     kra_pin: '',
   });
+
+  // NEW: State for editing existing counting record
+  const [editingRecord, setEditingRecord] = useState<CountingRecord | null>(null);
+  const [isEditingMode, setIsEditingMode] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<string>('');
@@ -1823,6 +1826,185 @@ export default function WarehousePage() {
     });
   };
 
+  // NEW: Function to load counting record for editing
+  const handleEditCountingRecord = async (record: CountingRecord) => {
+    try {
+      // Find the original supplier intake record
+      const supplierIntake = supplierIntakeRecords.find(r => r.id === record.supplier_id);
+      
+      if (!supplierIntake) {
+        toast({
+          title: "Cannot Edit",
+          description: "Original supplier intake record not found",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Find quality check
+      const qc = qualityChecks.find(q => q.weight_entry_id === record.supplier_id);
+      
+      // Set as editing mode
+      setIsEditingMode(true);
+      setEditingRecord(record);
+      
+      // Prepare the counting form with existing data
+      const countingData = record.counting_data || {};
+      
+      const editForm: CountingFormData = {
+        supplier_id: record.supplier_id,
+        supplier_name: record.supplier_name,
+        supplier_phone: record.supplier_phone || supplierIntake.supplier_phone || '',
+        region: record.region,
+        fruits: safeArray(supplierIntake.fruit_varieties).map(fv => ({
+          name: fv.name,
+          weight: fv.weight
+        })),
+        
+        // Fuerte 4kg Class 1
+        fuerte_4kg_class1_size12: countingData.fuerte_4kg_class1_size12 || 0,
+        fuerte_4kg_class1_size14: countingData.fuerte_4kg_class1_size14 || 0,
+        fuerte_4kg_class1_size16: countingData.fuerte_4kg_class1_size16 || 0,
+        fuerte_4kg_class1_size18: countingData.fuerte_4kg_class1_size18 || 0,
+        fuerte_4kg_class1_size20: countingData.fuerte_4kg_class1_size20 || 0,
+        fuerte_4kg_class1_size22: countingData.fuerte_4kg_class1_size22 || 0,
+        fuerte_4kg_class1_size24: countingData.fuerte_4kg_class1_size24 || 0,
+        fuerte_4kg_class1_size26: countingData.fuerte_4kg_class1_size26 || 0,
+        
+        // Fuerte 4kg Class 2
+        fuerte_4kg_class2_size12: countingData.fuerte_4kg_class2_size12 || 0,
+        fuerte_4kg_class2_size14: countingData.fuerte_4kg_class2_size14 || 0,
+        fuerte_4kg_class2_size16: countingData.fuerte_4kg_class2_size16 || 0,
+        fuerte_4kg_class2_size18: countingData.fuerte_4kg_class2_size18 || 0,
+        fuerte_4kg_class2_size20: countingData.fuerte_4kg_class2_size20 || 0,
+        fuerte_4kg_class2_size22: countingData.fuerte_4kg_class2_size22 || 0,
+        fuerte_4kg_class2_size24: countingData.fuerte_4kg_class2_size24 || 0,
+        fuerte_4kg_class2_size26: countingData.fuerte_4kg_class2_size26 || 0,
+        
+        // Fuerte 10kg Class 1
+        fuerte_10kg_class1_size12: countingData.fuerte_10kg_class1_size12 || 0,
+        fuerte_10kg_class1_size14: countingData.fuerte_10kg_class1_size14 || 0,
+        fuerte_10kg_class1_size16: countingData.fuerte_10kg_class1_size16 || 0,
+        fuerte_10kg_class1_size18: countingData.fuerte_10kg_class1_size18 || 0,
+        fuerte_10kg_class1_size20: countingData.fuerte_10kg_class1_size20 || 0,
+        fuerte_10kg_class1_size22: countingData.fuerte_10kg_class1_size22 || 0,
+        fuerte_10kg_class1_size24: countingData.fuerte_10kg_class1_size24 || 0,
+        fuerte_10kg_class1_size26: countingData.fuerte_10kg_class1_size26 || 0,
+        fuerte_10kg_class1_size28: countingData.fuerte_10kg_class1_size28 || 0,
+        fuerte_10kg_class1_size30: countingData.fuerte_10kg_class1_size30 || 0,
+        fuerte_10kg_class1_size32: countingData.fuerte_10kg_class1_size32 || 0,
+        
+        // Fuerte 10kg Class 2
+        fuerte_10kg_class2_size12: countingData.fuerte_10kg_class2_size12 || 0,
+        fuerte_10kg_class2_size14: countingData.fuerte_10kg_class2_size14 || 0,
+        fuerte_10kg_class2_size16: countingData.fuerte_10kg_class2_size16 || 0,
+        fuerte_10kg_class2_size18: countingData.fuerte_10kg_class2_size18 || 0,
+        fuerte_10kg_class2_size20: countingData.fuerte_10kg_class2_size20 || 0,
+        fuerte_10kg_class2_size22: countingData.fuerte_10kg_class2_size22 || 0,
+        fuerte_10kg_class2_size24: countingData.fuerte_10kg_class2_size24 || 0,
+        fuerte_10kg_class2_size26: countingData.fuerte_10kg_class2_size26 || 0,
+        fuerte_10kg_class2_size28: countingData.fuerte_10kg_class2_size28 || 0,
+        fuerte_10kg_class2_size30: countingData.fuerte_10kg_class2_size30 || 0,
+        fuerte_10kg_class2_size32: countingData.fuerte_10kg_class2_size32 || 0,
+        
+        // Hass 4kg Class 1
+        hass_4kg_class1_size12: countingData.hass_4kg_class1_size12 || 0,
+        hass_4kg_class1_size14: countingData.hass_4kg_class1_size14 || 0,
+        hass_4kg_class1_size16: countingData.hass_4kg_class1_size16 || 0,
+        hass_4kg_class1_size18: countingData.hass_4kg_class1_size18 || 0,
+        hass_4kg_class1_size20: countingData.hass_4kg_class1_size20 || 0,
+        hass_4kg_class1_size22: countingData.hass_4kg_class1_size22 || 0,
+        hass_4kg_class1_size24: countingData.hass_4kg_class1_size24 || 0,
+        hass_4kg_class1_size26: countingData.hass_4kg_class1_size26 || 0,
+        
+        // Hass 4kg Class 2
+        hass_4kg_class2_size12: countingData.hass_4kg_class2_size12 || 0,
+        hass_4kg_class2_size14: countingData.hass_4kg_class2_size14 || 0,
+        hass_4kg_class2_size16: countingData.hass_4kg_class2_size16 || 0,
+        hass_4kg_class2_size18: countingData.hass_4kg_class2_size18 || 0,
+        hass_4kg_class2_size20: countingData.hass_4kg_class2_size20 || 0,
+        hass_4kg_class2_size22: countingData.hass_4kg_class2_size22 || 0,
+        hass_4kg_class2_size24: countingData.hass_4kg_class2_size24 || 0,
+        hass_4kg_class2_size26: countingData.hass_4kg_class2_size26 || 0,
+        
+        // Hass 10kg Class 1
+        hass_10kg_class1_size12: countingData.hass_10kg_class1_size12 || 0,
+        hass_10kg_class1_size14: countingData.hass_10kg_class1_size14 || 0,
+        hass_10kg_class1_size16: countingData.hass_10kg_class1_size16 || 0,
+        hass_10kg_class1_size18: countingData.hass_10kg_class1_size18 || 0,
+        hass_10kg_class1_size20: countingData.hass_10kg_class1_size20 || 0,
+        hass_10kg_class1_size22: countingData.hass_10kg_class1_size22 || 0,
+        hass_10kg_class1_size24: countingData.hass_10kg_class1_size24 || 0,
+        hass_10kg_class1_size26: countingData.hass_10kg_class1_size26 || 0,
+        hass_10kg_class1_size28: countingData.hass_10kg_class1_size28 || 0,
+        hass_10kg_class1_size30: countingData.hass_10kg_class1_size30 || 0,
+        hass_10kg_class1_size32: countingData.hass_10kg_class1_size32 || 0,
+        
+        // Hass 10kg Class 2
+        hass_10kg_class2_size12: countingData.hass_10kg_class2_size12 || 0,
+        hass_10kg_class2_size14: countingData.hass_10kg_class2_size14 || 0,
+        hass_10kg_class2_size16: countingData.hass_10kg_class2_size16 || 0,
+        hass_10kg_class2_size18: countingData.hass_10kg_class2_size18 || 0,
+        hass_10kg_class2_size20: countingData.hass_10kg_class2_size20 || 0,
+        hass_10kg_class2_size22: countingData.hass_10kg_class2_size22 || 0,
+        hass_10kg_class2_size24: countingData.hass_10kg_class2_size24 || 0,
+        hass_10kg_class2_size26: countingData.hass_10kg_class2_size26 || 0,
+        hass_10kg_class2_size28: countingData.hass_10kg_class2_size28 || 0,
+        hass_10kg_class2_size30: countingData.hass_10kg_class2_size30 || 0,
+        hass_10kg_class2_size32: countingData.hass_10kg_class2_size32 || 0,
+        
+        notes: record.notes || '',
+        bank_name: record.bank_name || supplierIntake.bank_name || '',
+        bank_account: record.bank_account || supplierIntake.bank_account || '',
+        kra_pin: record.kra_pin || supplierIntake.kra_pin || '',
+      };
+      
+      setCountingForm(editForm);
+      setSelectedSupplier(supplierIntake);
+      setSelectedQC(qc);
+      setSelectedSupplierDetails(null);
+      
+      // Set collapsible sections based on data
+      setExpandedFuerteClass2(
+        Object.keys(countingData).some(k => 
+          k.startsWith('fuerte_4kg_class2_') && countingData[k] > 0
+        )
+      );
+      setExpandedFuerte10kg(
+        Object.keys(countingData).some(k => 
+          k.startsWith('fuerte_10kg_') && countingData[k] > 0
+        )
+      );
+      setExpandedHassClass2(
+        Object.keys(countingData).some(k => 
+          k.startsWith('hass_4kg_class2_') && countingData[k] > 0
+        )
+      );
+      setExpandedHass10kg(
+        Object.keys(countingData).some(k => 
+          k.startsWith('hass_10kg_') && countingData[k] > 0
+        )
+      );
+      
+      // Switch to counting tab
+      setActiveTab('counting');
+      
+      toast({
+        title: "Editing Mode Activated",
+        description: `${record.supplier_name} loaded for editing. Make your changes and click 'Update Counting Data' to save.`,
+        duration: 8000,
+      });
+      
+    } catch (error: any) {
+      console.error('Error loading record for editing:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load record for editing: " + error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleInputChange = (field: keyof CountingFormData, value: string | number) => {
     setCountingForm(prev => ({
       ...prev,
@@ -2069,6 +2251,241 @@ export default function WarehousePage() {
       toast({
         title: "Error",
         description: err.message || "Failed to save counting data",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // NEW: Function to handle updating existing counting record
+  const handleUpdateCountingForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedSupplier || !editingRecord) {
+      toast({
+        title: "Cannot Update",
+        description: "No record selected for editing",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const totals = {
+        fuerte_4kg_class1: calculateSubtotal('fuerte', 'class1', '4kg'),
+        fuerte_4kg_class2: calculateSubtotal('fuerte', 'class2', '4kg'),
+        fuerte_4kg_total: calculateTotalBoxes('fuerte', '4kg'),
+        
+        fuerte_10kg_class1: calculateSubtotal('fuerte', 'class1', '10kg'),
+        fuerte_10kg_class2: calculateSubtotal('fuerte', 'class2', '10kg'),
+        fuerte_10kg_total: calculateTotalBoxes('fuerte', '10kg'),
+        
+        hass_4kg_class1: calculateSubtotal('hass', 'class1', '4kg'),
+        hass_4kg_class2: calculateSubtotal('hass', 'class2', '4kg'),
+        hass_4kg_total: calculateTotalBoxes('hass', '4kg'),
+        
+        hass_10kg_class1: calculateSubtotal('hass', 'class1', '10kg'),
+        hass_10kg_class2: calculateSubtotal('hass', 'class2', '10kg'),
+        hass_10kg_total: calculateTotalBoxes('hass', '10kg'),
+      };
+
+      const calculateTotalWeight = () => {
+        const fuerte4kgWeight = totals.fuerte_4kg_total * 4;
+        const fuerte10kgWeight = totals.fuerte_10kg_total * 10;
+        const hass4kgWeight = totals.hass_4kg_total * 4;
+        const hass10kgWeight = totals.hass_10kg_total * 10;
+        return fuerte4kgWeight + fuerte10kgWeight + hass4kgWeight + hass10kgWeight;
+      };
+
+      const totalCountedWeight = calculateTotalWeight();
+      const intakeWeight = selectedSupplier.total_weight;
+      const rejectedWeight = intakeWeight - totalCountedWeight;
+
+      const updatedData = {
+        id: editingRecord.id,
+        supplier_id: selectedSupplier.id,
+        supplier_name: selectedSupplier.supplier_name,
+        supplier_phone: countingForm.supplier_phone,
+        region: selectedSupplier.region,
+        pallet_id: selectedSupplier.pallet_id,
+        total_weight: intakeWeight,
+        counting_data: { ...countingForm },
+        submitted_at: new Date().toISOString(),
+        processed_by: "Warehouse Staff (Updated)",
+        totals,
+        total_counted_weight: totalCountedWeight,
+        rejected_weight: rejectedWeight > 0 ? rejectedWeight : 0,
+        status: 'pending_coldroom',
+        for_coldroom: true,
+        bank_name: countingForm.bank_name,
+        bank_account: countingForm.bank_account,
+        kra_pin: countingForm.kra_pin,
+        driver_name: selectedSupplier.driver_name,
+        vehicle_plate: selectedSupplier.vehicle_plate,
+        notes: countingForm.notes
+      };
+
+      console.log('🔄 Updating counting record:', updatedData);
+
+      // First delete the old record
+      const deleteResponse = await fetch(`/api/counting?id=${editingRecord.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!deleteResponse.ok) {
+        throw new Error('Failed to delete old record');
+      }
+
+      // Then create new record with updated data
+      const createResponse = await fetch('/api/counting', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedData),
+      });
+
+      const result = await createResponse.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update counting data');
+      }
+
+      localStorage.setItem('refreshColdRoom', 'true');
+      console.log('✅ Set refreshColdRoom flag for cold room');
+
+      // Update local state
+      setCountingRecords(prev => {
+        const filtered = prev.filter(record => record.id !== editingRecord.id);
+        return [result.data, ...filtered];
+      });
+      
+      // Reset form and exit edit mode
+      const resetForm: CountingFormData = {
+        supplier_id: '',
+        supplier_name: '',
+        supplier_phone: '',
+        region: '',
+        fruits: [],
+        fuerte_4kg_class1_size12: 0,
+        fuerte_4kg_class1_size14: 0,
+        fuerte_4kg_class1_size16: 0,
+        fuerte_4kg_class1_size18: 0,
+        fuerte_4kg_class1_size20: 0,
+        fuerte_4kg_class1_size22: 0,
+        fuerte_4kg_class1_size24: 0,
+        fuerte_4kg_class1_size26: 0,
+        fuerte_4kg_class2_size12: 0,
+        fuerte_4kg_class2_size14: 0,
+        fuerte_4kg_class2_size16: 0,
+        fuerte_4kg_class2_size18: 0,
+        fuerte_4kg_class2_size20: 0,
+        fuerte_4kg_class2_size22: 0,
+        fuerte_4kg_class2_size24: 0,
+        fuerte_4kg_class2_size26: 0,
+        fuerte_10kg_class1_size12: 0,
+        fuerte_10kg_class1_size14: 0,
+        fuerte_10kg_class1_size16: 0,
+        fuerte_10kg_class1_size18: 0,
+        fuerte_10kg_class1_size20: 0,
+        fuerte_10kg_class1_size22: 0,
+        fuerte_10kg_class1_size24: 0,
+        fuerte_10kg_class1_size26: 0,
+        fuerte_10kg_class1_size28: 0,
+        fuerte_10kg_class1_size30: 0,
+        fuerte_10kg_class1_size32: 0,
+        fuerte_10kg_class2_size12: 0,
+        fuerte_10kg_class2_size14: 0,
+        fuerte_10kg_class2_size16: 0,
+        fuerte_10kg_class2_size18: 0,
+        fuerte_10kg_class2_size20: 0,
+        fuerte_10kg_class2_size22: 0,
+        fuerte_10kg_class2_size24: 0,
+        fuerte_10kg_class2_size26: 0,
+        fuerte_10kg_class2_size28: 0,
+        fuerte_10kg_class2_size30: 0,
+        fuerte_10kg_class2_size32: 0,
+        hass_4kg_class1_size12: 0,
+        hass_4kg_class1_size14: 0,
+        hass_4kg_class1_size16: 0,
+        hass_4kg_class1_size18: 0,
+        hass_4kg_class1_size20: 0,
+        hass_4kg_class1_size22: 0,
+        hass_4kg_class1_size24: 0,
+        hass_4kg_class1_size26: 0,
+        hass_4kg_class2_size12: 0,
+        hass_4kg_class2_size14: 0,
+        hass_4kg_class2_size16: 0,
+        hass_4kg_class2_size18: 0,
+        hass_4kg_class2_size20: 0,
+        hass_4kg_class2_size22: 0,
+        hass_4kg_class2_size24: 0,
+        hass_4kg_class2_size26: 0,
+        hass_10kg_class1_size12: 0,
+        hass_10kg_class1_size14: 0,
+        hass_10kg_class1_size16: 0,
+        hass_10kg_class1_size18: 0,
+        hass_10kg_class1_size20: 0,
+        hass_10kg_class1_size22: 0,
+        hass_10kg_class1_size24: 0,
+        hass_10kg_class1_size26: 0,
+        hass_10kg_class1_size28: 0,
+        hass_10kg_class1_size30: 0,
+        hass_10kg_class1_size32: 0,
+        hass_10kg_class2_size12: 0,
+        hass_10kg_class2_size14: 0,
+        hass_10kg_class2_size16: 0,
+        hass_10kg_class2_size18: 0,
+        hass_10kg_class2_size20: 0,
+        hass_10kg_class2_size22: 0,
+        hass_10kg_class2_size24: 0,
+        hass_10kg_class2_size26: 0,
+        hass_10kg_class2_size28: 0,
+        hass_10kg_class2_size30: 0,
+        hass_10kg_class2_size32: 0,
+        notes: '',
+        bank_name: '',
+        bank_account: '',
+        kra_pin: '',
+      };
+      
+      setCountingForm(resetForm);
+      setSelectedSupplier(null);
+      setSelectedQC(null);
+      setSelectedSupplierDetails(null);
+      setEditingRecord(null);
+      setIsEditingMode(false);
+      
+      setExpandedFuerteClass2(false);
+      setExpandedFuerte10kg(false);
+      setExpandedHassClass2(false);
+      setExpandedHass10kg(false);
+      
+      fetchAllData();
+      setActiveTab('history');
+      
+      toast({
+        title: "✅ Counting Data Updated Successfully!",
+        description: (
+          <div className="space-y-3">
+            <p>{selectedSupplier.supplier_name}'s counting data has been updated.</p>
+            <div className="text-sm text-gray-500">
+              Record has been updated in the history
+            </div>
+            {rejectedWeight > 0 && (
+              <div className="text-sm text-orange-600">
+                Note: {rejectedWeight.toFixed(2)} kg marked as rejected weight
+              </div>
+            )}
+          </div>
+        ),
+        duration: 10000,
+      });
+      
+    } catch (err: any) {
+      console.error('Error updating counting data:', err);
+      toast({
+        title: "Error",
+        description: err.message || "Failed to update counting data",
         variant: "destructive",
       });
     }
@@ -3126,10 +3543,15 @@ const downloadCSV = (records: CountingRecord[]) => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Package className="w-5 h-5" />
-                      Selected Supplier Information
+                      {isEditingMode ? 'Editing Supplier Information' : 'Selected Supplier Information'}
                     </CardTitle>
                     <CardDescription>
-                      {selectedSupplier ? `${selectedSupplier.supplier_name} - Ready for counting` : 'No supplier selected'}
+                      {selectedSupplier ? `${selectedSupplier.supplier_name} - ${isEditingMode ? 'Editing mode' : 'Ready for counting'}` : 'No supplier selected'}
+                      {isEditingMode && editingRecord && (
+                        <span className="ml-2 text-blue-600">
+                          (Editing record from {formatDate(editingRecord.submitted_at)})
+                        </span>
+                      )}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -3320,13 +3742,134 @@ const downloadCSV = (records: CountingRecord[]) => {
                             </div>
                           </CollapsibleContent>
                         </Collapsible>
+                        
+                        {/* Cancel Edit Button */}
+                        {isEditingMode && (
+                          <div className="mt-4 pt-4 border-t">
+                            <Button
+                              onClick={() => {
+                                setIsEditingMode(false);
+                                setEditingRecord(null);
+                                setSelectedSupplier(null);
+                                setSelectedQC(null);
+                                setSelectedSupplierDetails(null);
+                                
+                                const resetForm: CountingFormData = {
+                                  supplier_id: '',
+                                  supplier_name: '',
+                                  supplier_phone: '',
+                                  region: '',
+                                  fruits: [],
+                                  fuerte_4kg_class1_size12: 0,
+                                  fuerte_4kg_class1_size14: 0,
+                                  fuerte_4kg_class1_size16: 0,
+                                  fuerte_4kg_class1_size18: 0,
+                                  fuerte_4kg_class1_size20: 0,
+                                  fuerte_4kg_class1_size22: 0,
+                                  fuerte_4kg_class1_size24: 0,
+                                  fuerte_4kg_class1_size26: 0,
+                                  fuerte_4kg_class2_size12: 0,
+                                  fuerte_4kg_class2_size14: 0,
+                                  fuerte_4kg_class2_size16: 0,
+                                  fuerte_4kg_class2_size18: 0,
+                                  fuerte_4kg_class2_size20: 0,
+                                  fuerte_4kg_class2_size22: 0,
+                                  fuerte_4kg_class2_size24: 0,
+                                  fuerte_4kg_class2_size26: 0,
+                                  fuerte_10kg_class1_size12: 0,
+                                  fuerte_10kg_class1_size14: 0,
+                                  fuerte_10kg_class1_size16: 0,
+                                  fuerte_10kg_class1_size18: 0,
+                                  fuerte_10kg_class1_size20: 0,
+                                  fuerte_10kg_class1_size22: 0,
+                                  fuerte_10kg_class1_size24: 0,
+                                  fuerte_10kg_class1_size26: 0,
+                                  fuerte_10kg_class1_size28: 0,
+                                  fuerte_10kg_class1_size30: 0,
+                                  fuerte_10kg_class1_size32: 0,
+                                  fuerte_10kg_class2_size12: 0,
+                                  fuerte_10kg_class2_size14: 0,
+                                  fuerte_10kg_class2_size16: 0,
+                                  fuerte_10kg_class2_size18: 0,
+                                  fuerte_10kg_class2_size20: 0,
+                                  fuerte_10kg_class2_size22: 0,
+                                  fuerte_10kg_class2_size24: 0,
+                                  fuerte_10kg_class2_size26: 0,
+                                  fuerte_10kg_class2_size28: 0,
+                                  fuerte_10kg_class2_size30: 0,
+                                  fuerte_10kg_class2_size32: 0,
+                                  hass_4kg_class1_size12: 0,
+                                  hass_4kg_class1_size14: 0,
+                                  hass_4kg_class1_size16: 0,
+                                  hass_4kg_class1_size18: 0,
+                                  hass_4kg_class1_size20: 0,
+                                  hass_4kg_class1_size22: 0,
+                                  hass_4kg_class1_size24: 0,
+                                  hass_4kg_class1_size26: 0,
+                                  hass_4kg_class2_size12: 0,
+                                  hass_4kg_class2_size14: 0,
+                                  hass_4kg_class2_size16: 0,
+                                  hass_4kg_class2_size18: 0,
+                                  hass_4kg_class2_size20: 0,
+                                  hass_4kg_class2_size22: 0,
+                                  hass_4kg_class2_size24: 0,
+                                  hass_4kg_class2_size26: 0,
+                                  hass_10kg_class1_size12: 0,
+                                  hass_10kg_class1_size14: 0,
+                                  hass_10kg_class1_size16: 0,
+                                  hass_10kg_class1_size18: 0,
+                                  hass_10kg_class1_size20: 0,
+                                  hass_10kg_class1_size22: 0,
+                                  hass_10kg_class1_size24: 0,
+                                  hass_10kg_class1_size26: 0,
+                                  hass_10kg_class1_size28: 0,
+                                  hass_10kg_class1_size30: 0,
+                                  hass_10kg_class1_size32: 0,
+                                  hass_10kg_class2_size12: 0,
+                                  hass_10kg_class2_size14: 0,
+                                  hass_10kg_class2_size16: 0,
+                                  hass_10kg_class2_size18: 0,
+                                  hass_10kg_class2_size20: 0,
+                                  hass_10kg_class2_size22: 0,
+                                  hass_10kg_class2_size24: 0,
+                                  hass_10kg_class2_size26: 0,
+                                  hass_10kg_class2_size28: 0,
+                                  hass_10kg_class2_size30: 0,
+                                  hass_10kg_class2_size32: 0,
+                                  notes: '',
+                                  bank_name: '',
+                                  bank_account: '',
+                                  kra_pin: '',
+                                };
+                                
+                                setCountingForm(resetForm);
+                                
+                                setExpandedFuerteClass2(false);
+                                setExpandedFuerte10kg(false);
+                                setExpandedHassClass2(false);
+                                setExpandedHass10kg(false);
+                                
+                                toast({
+                                  title: "Edit Cancelled",
+                                  description: "Returned to normal counting mode",
+                                });
+                              }}
+                              variant="outline"
+                              className="w-full"
+                            >
+                              Cancel Edit
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-8">
                         <Calculator className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                         <p className="text-gray-500 font-medium">No supplier selected</p>
                         <p className="text-sm text-gray-400 mt-1">
-                          Select a QC-approved supplier from the Quality Control tab to begin counting
+                          {isEditingMode 
+                            ? 'Error loading supplier for editing'
+                            : 'Select a QC-approved supplier from the Quality Control tab to begin counting, or edit an existing record from History tab'}
                         </p>
                       </div>
                     )}
@@ -3337,14 +3880,16 @@ const downloadCSV = (records: CountingRecord[]) => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Box className="w-5 h-5" />
-                      Box Counting Form
+                      {isEditingMode ? 'Edit Box Counting Form' : 'Box Counting Form'}
                     </CardTitle>
                     <CardDescription>
-                      Enter number of boxes per size and class. Class 1 (4kg) is default.
+                      {isEditingMode 
+                        ? 'Update number of boxes per size and class. Changes will replace the existing record.'
+                        : 'Enter number of boxes per size and class. Class 1 (4kg) is default.'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <form onSubmit={handleSubmitCountingForm} className="space-y-6">
+                    <form onSubmit={isEditingMode ? handleUpdateCountingForm : handleSubmitCountingForm} className="space-y-6">
                       <ScrollArea className="h-[500px] pr-4">
                         <div className="mb-6">
                           <h3 className="font-semibold text-lg mb-4 text-green-700 border-b pb-2">Fuerte Avocado</h3>
@@ -3546,12 +4091,27 @@ const downloadCSV = (records: CountingRecord[]) => {
                         <Button
                           type="submit"
                           disabled={!selectedSupplier}
-                          className="w-full bg-green-600 hover:bg-green-700"
+                          className={`w-full ${isEditingMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                           size="lg"
                         >
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Save Counting Data to History
+                          {isEditingMode ? (
+                            <>
+                              <Edit className="w-4 h-4 mr-2" />
+                              Update Counting Data
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Save Counting Data to History
+                            </>
+                          )}
                         </Button>
+                        
+                        {isEditingMode && (
+                          <p className="text-sm text-blue-600 mt-2 text-center">
+                            This will replace the existing counting record with updated values
+                          </p>
+                        )}
                       </div>
                     </form>
                   </CardContent>
@@ -3725,6 +4285,20 @@ const downloadCSV = (records: CountingRecord[]) => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
+                                    {/* NEW: Edit Button */}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        await handleEditCountingRecord(record);
+                                      }}
+                                      className="gap-2"
+                                    >
+                                    <Edit className="w-4 h-4" />
+                                      
+                                    </Button>
+                                    
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -3735,7 +4309,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                                       className="gap-2"
                                     >
                                       <FileText className="w-4 h-4" />
-                                      Download GRN
+                                      GRN
                                     </Button>
                                     <div className="flex gap-1">
                                       {hasFuerte && (
@@ -3973,6 +4547,13 @@ const downloadCSV = (records: CountingRecord[]) => {
                                   )}
 
                                   <div className="flex justify-between pt-4 border-t">
+                                    <Button
+                                      onClick={() => handleEditCountingRecord(record)}
+                                      className="gap-2"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                      Edit Counting Data
+                                    </Button>
                                     <Button
                                       onClick={async () => {
                                         await downloadWarehouseGRN(record);

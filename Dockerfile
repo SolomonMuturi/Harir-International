@@ -1,4 +1,4 @@
-FROM node:18-slim AS base
+FROM node:18-bullseye-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -13,12 +13,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN npx prisma generate
+# Generate Prisma client
+RUN ./node_modules/.bin/prisma generate
 
 # Build the application
 RUN npm run build
 
-# Production image, copy all the files and run next
+# Production image
 FROM base AS runner
 WORKDIR /app
 
@@ -27,15 +28,20 @@ RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/
 ENV NODE_ENV production
 
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN adduser --system --uid 1001 --shell /bin/sh nextjs
 
 COPY --from=builder /app/public ./public
-
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+
+RUN chown nextjs:nodejs .next
+RUN chmod +x ./docker-entrypoint.sh
 
 USER nextjs
 
@@ -44,4 +50,5 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "server.js"]

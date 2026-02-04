@@ -329,7 +329,7 @@ model weight_entries {
   hass_weight   Decimal? @db.Decimal(10, 2) // Hass weight
   hass_crates   Int?     @default(0) // Hass crates
 
-  fruit_variety    String? @default("[]") @db.Text // JSON array of variety names
+  fruit_variety    String? @db.Text // JSON array of variety names
   number_of_crates Int?    @default(0) // Total crates
   region           String? @db.VarChar(100)
   image_url        String? @db.Text

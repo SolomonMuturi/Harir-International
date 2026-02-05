@@ -4,8 +4,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=mysql://root:password@db:3306/system_db
-      - NEXTAUTH_SECRET=your-secret-key-here-change-in-production
+      - DATABASE_URL=mysql://root:n2X0OA}8[7"}AOf0be0B'ge:9/c2@db:3306/system_db
+      - NEXTAUTH_SECRET=0qbZVN0sXBEhI5C8g+47eEGsF/2p2JlrnmrIEXNyi44=
       - NEXTAUTH_URL=http://localhost:3000
     depends_on:
       - db
@@ -14,7 +14,7 @@ services:
     image: mariadb:10.6
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: n2X0OA}8[7"}AOf0be0B'ge:9/c2
       MYSQL_DATABASE: system_db
    
     volumes:

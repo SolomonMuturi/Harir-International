@@ -487,6 +487,286 @@ export async function POST(request: NextRequest) {
 // PATCH handler - Update weight entry
 export async function PATCH(request: NextRequest) {
   try {
+    console.log('🔄 PATCH /api/weights called');
+    
+    // Check if it's a specific weight update or KPI update
+    const { searchParams } = new URL(request.url);
+    const isKpiRequest = searchParams.has('kpi');
+    
+    if (isKpiRequest) {
+      // Handle KPI data request
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      // Count today's entries
+      const todayCount = await prisma.weight_entries.count({
+        where: {
+          timestamp: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+      });
+      
+      // Count last hour's entries
+      const lastHour = new Date(Date.now() - 60 * 60 * 1000);
+      const lastHourCount = await prisma.weight_entries.count({
+        where: {
+          timestamp: {
+            gte: lastHour,
+          },
+        },
+      });
+      
+      const changeSinceLastHour = lastHourCount - todayCount;
+      
+      return NextResponse.json({
+        todayCount,
+        changeSinceLastHour,
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+    
+    // Handle weight entry update
+    const body = await request.json();
+    const { id, ...updateData } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed',
+          details: 'Weight entry ID is required'
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(`📝 Updating weight entry ${id} with data:`, updateData);
+
+    // Check if weight entry exists
+    const existingWeight = await prisma.weight_entries.findUnique({
+      where: { id },
+    });
+
+    if (!existingWeight) {
+      console.log(`❌ Weight entry ${id} not found`);
+      return NextResponse.json(
+        { 
+          error: 'Weight entry not found',
+          details: `No weight entry found with ID: ${id}`
+        },
+        { status: 404 }
+      );
+    }
+
+    // Parse and validate fruit weights if provided
+    let fuerteWeight = updateData.fuerte_weight !== undefined 
+      ? parseFloat(String(updateData.fuerte_weight)) 
+      : Number(existingWeight.fuerte_weight) || 0;
+    
+    let fuerteCrates = updateData.fuerte_crates !== undefined 
+      ? parseInt(String(updateData.fuerte_crates)) 
+      : Number(existingWeight.fuerte_crates) || 0;
+    
+    let hassWeight = updateData.hass_weight !== undefined 
+      ? parseFloat(String(updateData.hass_weight)) 
+      : Number(existingWeight.hass_weight) || 0;
+    
+    let hassCrates = updateData.hass_crates !== undefined 
+      ? parseInt(String(updateData.hass_crates)) 
+      : Number(existingWeight.hass_crates) || 0;
+
+    // Validate at least one weight is provided
+    if (fuerteWeight <= 0 && hassWeight <= 0) {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed',
+          details: 'Please enter weight for at least one variety (Fuerte or Hass)'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate at least one crate count is provided
+    if (fuerteCrates <= 0 && hassCrates <= 0) {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed',
+          details: 'Please enter number of crates for at least one variety'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Calculate totals
+    const totalWeight = fuerteWeight + hassWeight;
+    const totalCrates = fuerteCrates + hassCrates;
+
+    // Create product description
+    const productDescription = [];
+    if (fuerteWeight > 0) productDescription.push(`Fuerte: ${fuerteWeight.toFixed(2)}kg`);
+    if (hassWeight > 0) productDescription.push(`Hass: ${hassWeight.toFixed(2)}kg`);
+
+    // Prepare update data
+    const dataToUpdate: any = {
+      // Update product description
+      product: productDescription.join(', ') || existingWeight.product,
+      
+      // Update weight fields if changed
+      ...(updateData.fuerte_weight !== undefined && {
+        fuerte_weight: fuerteWeight > 0 ? fuerteWeight : null,
+      }),
+      ...(updateData.fuerte_crates !== undefined && {
+        fuerte_crates: fuerteCrates > 0 ? fuerteCrates : null,
+      }),
+      ...(updateData.hass_weight !== undefined && {
+        hass_weight: hassWeight > 0 ? hassWeight : null,
+      }),
+      ...(updateData.hass_crates !== undefined && {
+        hass_crates: hassCrates > 0 ? hassCrates : null,
+      }),
+      
+      // Update total weight and crates
+      weight: totalWeight,
+      net_weight: totalWeight,
+      gross_weight: totalWeight,
+      declared_weight: totalWeight,
+      number_of_crates: totalCrates,
+      
+      // Update fruit variety info
+      fruit_variety: JSON.stringify([
+        ...(fuerteWeight > 0 ? ['Fuerte'] : []),
+        ...(hassWeight > 0 ? ['Hass'] : [])
+      ]),
+      
+      // Update per variety weights
+      perVarietyWeights: JSON.stringify([
+        ...(fuerteWeight > 0 ? [{
+          variety: 'Fuerte',
+          weight: fuerteWeight,
+          crates: fuerteCrates
+        }] : []),
+        ...(hassWeight > 0 ? [{
+          variety: 'Hass',
+          weight: hassWeight,
+          crates: hassCrates
+        }] : [])
+      ]),
+      
+      // Update other fields if provided
+      ...(updateData.pallet_id && { pallet_id: updateData.pallet_id }),
+      ...(updateData.supplier !== undefined && { supplier: updateData.supplier }),
+      ...(updateData.supplier_id !== undefined && { supplier_id: updateData.supplier_id }),
+      ...(updateData.supplier_phone !== undefined && { supplier_phone: updateData.supplier_phone }),
+      ...(updateData.driver_name !== undefined && { driver_name: updateData.driver_name }),
+      ...(updateData.driver_phone !== undefined && { driver_phone: updateData.driver_phone }),
+      ...(updateData.vehicle_plate !== undefined && { vehicle_plate: updateData.vehicle_plate }),
+      ...(updateData.region !== undefined && { region: updateData.region }),
+      ...(updateData.notes !== undefined && { notes: updateData.notes }),
+      
+      // Always update the timestamp
+      timestamp: new Date(),
+    };
+
+    console.log('💾 Updating weight entry with data:', dataToUpdate);
+
+    // Update weight entry
+    const updatedWeight = await prisma.weight_entries.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+
+    console.log('✅ Weight entry updated successfully:', {
+      id: updatedWeight.id,
+      pallet_id: updatedWeight.pallet_id,
+      supplier: updatedWeight.supplier
+    });
+
+    // Transform response for frontend
+    const response = {
+      id: updatedWeight.id,
+      palletId: updatedWeight.pallet_id || '',
+      pallet_id: updatedWeight.pallet_id || '',
+      product: updatedWeight.product || '',
+      weight: Number(updatedWeight.weight) || 0,
+      unit: updatedWeight.unit as 'kg' | 'lb',
+      timestamp: updatedWeight.timestamp?.toISOString() || updatedWeight.created_at.toISOString(),
+      
+      // Fruit weights
+      fuerte_weight: Number(updatedWeight.fuerte_weight) || 0,
+      fuerte_crates: Number(updatedWeight.fuerte_crates) || 0,
+      hass_weight: Number(updatedWeight.hass_weight) || 0,
+      hass_crates: Number(updatedWeight.hass_crates) || 0,
+      
+      // Supplier info
+      supplier: updatedWeight.supplier || '',
+      supplier_id: updatedWeight.supplier_id || '',
+      supplier_phone: updatedWeight.supplier_phone || '',
+      
+      // Driver info
+      driver_name: updatedWeight.driver_name || '',
+      driver_phone: updatedWeight.driver_phone || '',
+      driver_id_number: updatedWeight.driver_id_number || '',
+      vehicle_plate: updatedWeight.vehicle_plate || '',
+      
+      // Other info
+      region: updatedWeight.region || '',
+      number_of_crates: updatedWeight.number_of_crates || 0,
+      image_url: updatedWeight.image_url || '',
+      notes: updatedWeight.notes || '',
+      created_at: updatedWeight.created_at.toISOString(),
+    };
+
+    return NextResponse.json({
+      success: true,
+      data: response,
+      message: 'Weight entry updated successfully'
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error updating weight entry:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n')
+    });
+    
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { 
+          error: 'Weight entry not found',
+          details: 'The weight entry you are trying to update does not exist'
+        },
+        { status: 404 }
+      );
+    }
+
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { 
+          error: 'Duplicate entry',
+          details: 'A weight entry with this pallet ID already exists'
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      { 
+        error: 'Failed to update weight entry',
+        details: error.message,
+        code: error.code || 'UNKNOWN_ERROR'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT handler - Alternative update method
+export async function PUT(request: NextRequest) {
+  try {
     const body = await request.json();
     const { id, ...updateData } = body;
 
@@ -497,27 +777,11 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Update weight entry
-    const updatedWeight = await prisma.weight_entries.update({
-      where: { id },
-      data: updateData,
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: updatedWeight
-    });
+    // Forward to PATCH handler
+    return PATCH(request);
 
   } catch (error: any) {
-    console.error('Error updating weight entry:', error);
-    
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { error: 'Weight entry not found' },
-        { status: 404 }
-      );
-    }
-
+    console.error('Error in PUT handler:', error);
     return NextResponse.json(
       { 
         error: 'Failed to update weight entry',
@@ -531,26 +795,92 @@ export async function PATCH(request: NextRequest) {
 // DELETE handler - Remove weight entry
 export async function DELETE(request: NextRequest) {
   try {
+    console.log('🗑️ DELETE /api/weights called');
+    
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json(
-        { error: 'Weight entry ID is required' },
+        { 
+          error: 'Validation failed',
+          details: 'Weight entry ID is required'
+        },
         { status: 400 }
       );
     }
 
+    console.log(`🔍 Looking for weight entry with ID: ${id}`);
+
     // Check if weight entry exists
     const weightEntry = await prisma.weight_entries.findUnique({
       where: { id },
+      select: {
+        id: true,
+        pallet_id: true,
+        supplier: true,
+        supplier_id: true,
+        driver_name: true,
+        vehicle_plate: true,
+        created_at: true,
+      }
     });
 
     if (!weightEntry) {
+      console.log(`❌ Weight entry ${id} not found`);
       return NextResponse.json(
-        { error: 'Weight entry not found' },
+        { 
+          error: 'Weight entry not found',
+          details: `No weight entry found with ID: ${id}`
+        },
         { status: 404 }
       );
+    }
+
+    console.log(`📋 Found weight entry to delete:`, {
+      id: weightEntry.id,
+      pallet_id: weightEntry.pallet_id,
+      supplier: weightEntry.supplier
+    });
+
+    // Check if there are dependent counting records
+    const countingRecords = await prisma.counting_records.count({
+      where: {
+        weight_entry_id: id,
+      },
+    });
+
+    if (countingRecords > 0) {
+      console.log(`⚠️ Weight entry has ${countingRecords} counting records, deleting them first`);
+      
+      // Delete dependent counting records
+      await prisma.counting_records.deleteMany({
+        where: {
+          weight_entry_id: id,
+        },
+      });
+      
+      console.log('✅ Counting records deleted');
+    }
+
+    // Check if there are dependent reject records
+    const rejectRecords = await prisma.rejections.count({
+      where: {
+        weight_entry_id: id,
+      },
+    });
+
+    if (rejectRecords > 0) {
+      console.log(`⚠️ Weight entry has ${rejectRecords} rejection records, deleting them first`);
+      
+      // Delete dependent reject records
+      await prisma.rejections.deleteMany({
+        where: {
+          weight_entry_id: id,
+        },
+      });
+      
+      console.log('✅ Rejection records deleted');
     }
 
     // Delete weight entry
@@ -558,17 +888,64 @@ export async function DELETE(request: NextRequest) {
       where: { id },
     });
 
+    console.log('✅ Weight entry deleted successfully');
+
+    // Check if this was the last weight entry for this supplier
+    if (weightEntry.supplier_id) {
+      const otherWeightEntries = await prisma.weight_entries.count({
+        where: {
+          supplier_id: weightEntry.supplier_id,
+          id: { not: id }
+        },
+      });
+
+      // If no other weight entries for this supplier, update their check-in status
+      if (otherWeightEntries === 0) {
+        try {
+          await prisma.supplier_checkins.updateMany({
+            where: {
+              supplier_id: weightEntry.supplier_id,
+              status: 'weighed'
+            },
+            data: {
+              status: 'checked_in',
+              updated_at: new Date()
+            }
+          });
+          
+          console.log(`🔄 Updated supplier ${weightEntry.supplier_id} status back to checked_in`);
+        } catch (checkinError) {
+          console.error('⚠️ Error updating supplier check-in status:', checkinError);
+          // Continue even if check-in update fails
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Weight entry deleted successfully'
+      message: 'Weight entry deleted successfully',
+      data: {
+        id: weightEntry.id,
+        pallet_id: weightEntry.pallet_id,
+        supplier: weightEntry.supplier,
+        deleted_at: new Date().toISOString()
+      }
     });
 
   } catch (error: any) {
-    console.error('Error deleting weight entry:', error);
+    console.error('❌ Error deleting weight entry:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n')
+    });
     
     if (error.code === 'P2025') {
       return NextResponse.json(
-        { error: 'Weight entry not found' },
+        { 
+          error: 'Weight entry not found',
+          details: 'The weight entry you are trying to delete does not exist'
+        },
         { status: 404 }
       );
     }
@@ -576,7 +953,128 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Failed to delete weight entry',
-        details: error.message
+        details: error.message,
+        code: error.code || 'UNKNOWN_ERROR'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// GET KPI data separately (alternative endpoint)
+export async function GET_KPI(request: NextRequest) {
+  try {
+    console.log('📊 GET /api/weights/kpi called');
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Count today's entries
+    const todayCount = await prisma.weight_entries.count({
+      where: {
+        timestamp: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    });
+    
+    // Count last hour's entries
+    const lastHour = new Date(Date.now() - 60 * 60 * 1000);
+    const lastHourCount = await prisma.weight_entries.count({
+      where: {
+        timestamp: {
+          gte: lastHour,
+        },
+      },
+    });
+    
+    const changeSinceLastHour = todayCount - lastHourCount;
+    
+    // Calculate total weight today
+    const todayEntries = await prisma.weight_entries.findMany({
+      where: {
+        timestamp: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+      select: {
+        fuerte_weight: true,
+        hass_weight: true,
+      },
+    });
+    
+    const totalWeightToday = todayEntries.reduce((sum, entry) => {
+      return sum + (Number(entry.fuerte_weight) || 0) + (Number(entry.hass_weight) || 0);
+    }, 0);
+    
+    // Get unique suppliers today
+    const uniqueSuppliers = await prisma.weight_entries.groupBy({
+      by: ['supplier_id'],
+      where: {
+        timestamp: {
+          gte: today,
+          lt: tomorrow,
+        },
+        supplier_id: {
+          not: null,
+        },
+      },
+      _count: {
+        supplier_id: true,
+      },
+    });
+    
+    const uniqueSuppliersCount = uniqueSuppliers.length;
+    
+    // Get pending suppliers (checked in but not weighed)
+    const pendingSuppliers = await prisma.supplier_checkins.count({
+      where: {
+        status: 'checked_in',
+        check_in_time: {
+          gte: today,
+        },
+      },
+    });
+    
+    const totalCheckedIn = await prisma.supplier_checkins.count({
+      where: {
+        check_in_time: {
+          gte: today,
+        },
+      },
+    });
+    
+    console.log('📈 KPI Data calculated:', {
+      todayCount,
+      changeSinceLastHour,
+      totalWeightToday,
+      uniqueSuppliersCount,
+      pendingSuppliers,
+      totalCheckedIn
+    });
+    
+    return NextResponse.json({
+      palletsWeighed: todayCount,
+      changeSinceLastHour,
+      totalWeight: totalWeightToday,
+      totalWeightTons: (totalWeightToday / 1000).toFixed(1),
+      uniqueSuppliers: uniqueSuppliersCount,
+      pendingSuppliers,
+      totalCheckedIn,
+      lastUpdated: new Date().toISOString(),
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Error fetching KPI data:', error);
+    
+    return NextResponse.json(
+      { 
+        error: 'Failed to fetch KPI data',
+        message: error.message,
       },
       { status: 500 }
     );

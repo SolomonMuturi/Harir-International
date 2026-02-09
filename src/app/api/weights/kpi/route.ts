@@ -3,75 +3,99 @@ import { prisma } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('📊 GET /api/weights/kpi called');
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    
-    // Count today's pallets
+    // Count today's entries
     const todayCount = await prisma.weight_entries.count({
       where: {
         timestamp: {
           gte: today,
-          lt: tomorrow
-        }
-      }
+          lt: tomorrow,
+        },
+      },
     });
     
-    // Count pallets since last hour
+    // Count entries from last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const lastHourCount = await prisma.weight_entries.count({
       where: {
         timestamp: {
-          gte: oneHourAgo
-        }
-      }
+          gte: oneHourAgo,
+        },
+      },
     });
     
     // Calculate change since last hour
     const changeSinceLastHour = todayCount - lastHourCount;
     
     // Calculate total weight today
-    const todayWeights = await prisma.weight_entries.findMany({
+    const todayEntries = await prisma.weight_entries.findMany({
       where: {
         timestamp: {
           gte: today,
-          lt: tomorrow
-        }
+          lt: tomorrow,
+        },
       },
       select: {
         fuerte_weight: true,
-        hass_weight: true
-      }
+        hass_weight: true,
+        supplier_id: true,
+      },
     });
     
-    const totalWeightToday = todayWeights.reduce((sum, entry) => {
-      const fuerte = entry.fuerte_weight ? parseFloat(entry.fuerte_weight.toString()) : 0;
-      const hass = entry.hass_weight ? parseFloat(entry.hass_weight.toString()) : 0;
-      return sum + fuerte + hass;
+    const totalWeightToday = todayEntries.reduce((sum, entry) => {
+      return sum + (Number(entry.fuerte_weight) || 0) + (Number(entry.hass_weight) || 0);
     }, 0);
     
-    // Count checked-in suppliers
-    const checkedInSuppliers = await prisma.supplier_checkins.count({
+    // Get unique suppliers today
+    const uniqueSuppliers = new Set(
+      todayEntries
+        .filter(entry => entry.supplier_id)
+        .map(entry => entry.supplier_id)
+    ).size;
+    
+    // Get pending suppliers (checked in but not weighed)
+    const pendingSuppliers = await prisma.supplier_checkins.count({
       where: {
+        status: 'checked_in',
         check_in_time: {
           gte: today,
-          lt: tomorrow
         },
-        status: 'checked_in'
-      }
+      },
     });
     
-    // Count suppliers processed today
-    const processedSuppliers = await prisma.supplier_checkins.count({
+    // Get total checked-in today
+    const totalCheckedIn = await prisma.supplier_checkins.count({
       where: {
         check_in_time: {
           gte: today,
-          lt: tomorrow
         },
-        status: 'weighed'
-      }
+      },
+    });
+    
+    // Calculate rejects for today
+    const todayRejects = await prisma.rejections.count({
+      where: {
+        rejected_at: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    });
+    
+    console.log('📈 KPI Data calculated:', {
+      todayCount,
+      changeSinceLastHour,
+      totalWeightToday,
+      uniqueSuppliers,
+      pendingSuppliers,
+      totalCheckedIn,
+      todayRejects
     });
     
     return NextResponse.json({
@@ -80,20 +104,23 @@ export async function GET(request: NextRequest) {
         todayCount,
         changeSinceLastHour,
         totalWeightToday,
-        checkedInSuppliers,
-        processedSuppliers,
-        pendingSuppliers: checkedInSuppliers - processedSuppliers
+        totalWeightTons: (totalWeightToday / 1000).toFixed(1),
+        uniqueSuppliers,
+        pendingSuppliers,
+        totalCheckedIn,
+        todayRejects,
+        lastUpdated: new Date().toISOString(),
       }
     });
     
   } catch (error: any) {
-    console.error('Error fetching KPI data:', error);
+    console.error('❌ Error fetching KPI data:', error);
     
     return NextResponse.json(
       { 
         success: false,
         error: 'Failed to fetch KPI data',
-        message: error.message
+        message: error.message,
       },
       { status: 500 }
     );

@@ -489,61 +489,116 @@ export async function PATCH(request: NextRequest) {
   try {
     console.log('🔄 PATCH /api/weights called');
     
-    // Check if it's a specific weight update or KPI update
+    // Extract ID from URL search params
     const { searchParams } = new URL(request.url);
-    const isKpiRequest = searchParams.has('kpi');
+    const id = searchParams.get('id');
     
-    if (isKpiRequest) {
-      // Handle KPI data request
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+    // If no ID in params, check if it's a KPI request or try to get ID from body
+    if (!id) {
+      // Check if it's a KPI request
+      const isKpiRequest = searchParams.has('kpi');
       
-      // Count today's entries
-      const todayCount = await prisma.weight_entries.count({
-        where: {
-          timestamp: {
-            gte: today,
-            lt: tomorrow,
+      if (isKpiRequest) {
+        // Handle KPI data request
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        // Count today's entries
+        const todayCount = await prisma.weight_entries.count({
+          where: {
+            timestamp: {
+              gte: today,
+              lt: tomorrow,
+            },
           },
-        },
-      });
-      
-      // Count last hour's entries
-      const lastHour = new Date(Date.now() - 60 * 60 * 1000);
-      const lastHourCount = await prisma.weight_entries.count({
-        where: {
-          timestamp: {
-            gte: lastHour,
+        });
+        
+        // Count last hour's entries
+        const lastHour = new Date(Date.now() - 60 * 60 * 1000);
+        const lastHourCount = await prisma.weight_entries.count({
+          where: {
+            timestamp: {
+              gte: lastHour,
+            },
           },
-        },
-      });
+        });
+        
+        const changeSinceLastHour = lastHourCount - todayCount;
+        
+        return NextResponse.json({
+          todayCount,
+          changeSinceLastHour,
+          lastUpdated: new Date().toISOString(),
+        });
+      }
       
-      const changeSinceLastHour = lastHourCount - todayCount;
+      // Try to get ID from body for regular updates
+      const body = await request.json();
+      const bodyId = body.id;
       
-      return NextResponse.json({
-        todayCount,
-        changeSinceLastHour,
-        lastUpdated: new Date().toISOString(),
-      });
+      if (!bodyId) {
+        return NextResponse.json(
+          { 
+            error: 'Validation failed',
+            details: 'Weight entry ID is required in either URL params or request body'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Handle update with ID from body
+      return handleWeightUpdate(bodyId, body);
     }
     
-    // Handle weight entry update
+    // Handle update with ID from URL params
     const body = await request.json();
-    const { id, ...updateData } = body;
-
-    if (!id) {
+    return handleWeightUpdate(id, body);
+    
+  } catch (error: any) {
+    console.error('❌ Error in PATCH handler:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n')
+    });
+    
+    if (error.code === 'P2025') {
       return NextResponse.json(
         { 
-          error: 'Validation failed',
-          details: 'Weight entry ID is required'
+          error: 'Weight entry not found',
+          details: 'The weight entry you are trying to update does not exist'
         },
-        { status: 400 }
+        { status: 404 }
       );
     }
 
-    console.log(`📝 Updating weight entry ${id} with data:`, updateData);
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { 
+          error: 'Duplicate entry',
+          details: 'A weight entry with this pallet ID already exists'
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      { 
+        error: 'Failed to update weight entry',
+        details: error.message,
+        code: error.code || 'UNKNOWN_ERROR'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// Helper function to handle weight updates
+async function handleWeightUpdate(id: string, body: any) {
+  try {
+    console.log(`📝 Updating weight entry ${id} with data:`, body);
 
     // Check if weight entry exists
     const existingWeight = await prisma.weight_entries.findUnique({
@@ -562,20 +617,20 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Parse and validate fruit weights if provided
-    let fuerteWeight = updateData.fuerte_weight !== undefined 
-      ? parseFloat(String(updateData.fuerte_weight)) 
+    let fuerteWeight = body.fuerte_weight !== undefined 
+      ? parseFloat(String(body.fuerte_weight)) 
       : Number(existingWeight.fuerte_weight) || 0;
     
-    let fuerteCrates = updateData.fuerte_crates !== undefined 
-      ? parseInt(String(updateData.fuerte_crates)) 
+    let fuerteCrates = body.fuerte_crates !== undefined 
+      ? parseInt(String(body.fuerte_crates)) 
       : Number(existingWeight.fuerte_crates) || 0;
     
-    let hassWeight = updateData.hass_weight !== undefined 
-      ? parseFloat(String(updateData.hass_weight)) 
+    let hassWeight = body.hass_weight !== undefined 
+      ? parseFloat(String(body.hass_weight)) 
       : Number(existingWeight.hass_weight) || 0;
     
-    let hassCrates = updateData.hass_crates !== undefined 
-      ? parseInt(String(updateData.hass_crates)) 
+    let hassCrates = body.hass_crates !== undefined 
+      ? parseInt(String(body.hass_crates)) 
       : Number(existingWeight.hass_crates) || 0;
 
     // Validate at least one weight is provided
@@ -609,22 +664,22 @@ export async function PATCH(request: NextRequest) {
     if (fuerteWeight > 0) productDescription.push(`Fuerte: ${fuerteWeight.toFixed(2)}kg`);
     if (hassWeight > 0) productDescription.push(`Hass: ${hassWeight.toFixed(2)}kg`);
 
-    // Prepare update data
+    // Prepare update data - REMOVE updated_at field since it doesn't exist in schema
     const dataToUpdate: any = {
       // Update product description
       product: productDescription.join(', ') || existingWeight.product,
       
       // Update weight fields if changed
-      ...(updateData.fuerte_weight !== undefined && {
+      ...(body.fuerte_weight !== undefined && {
         fuerte_weight: fuerteWeight > 0 ? fuerteWeight : null,
       }),
-      ...(updateData.fuerte_crates !== undefined && {
+      ...(body.fuerte_crates !== undefined && {
         fuerte_crates: fuerteCrates > 0 ? fuerteCrates : null,
       }),
-      ...(updateData.hass_weight !== undefined && {
+      ...(body.hass_weight !== undefined && {
         hass_weight: hassWeight > 0 ? hassWeight : null,
       }),
-      ...(updateData.hass_crates !== undefined && {
+      ...(body.hass_crates !== undefined && {
         hass_crates: hassCrates > 0 ? hassCrates : null,
       }),
       
@@ -656,17 +711,17 @@ export async function PATCH(request: NextRequest) {
       ]),
       
       // Update other fields if provided
-      ...(updateData.pallet_id && { pallet_id: updateData.pallet_id }),
-      ...(updateData.supplier !== undefined && { supplier: updateData.supplier }),
-      ...(updateData.supplier_id !== undefined && { supplier_id: updateData.supplier_id }),
-      ...(updateData.supplier_phone !== undefined && { supplier_phone: updateData.supplier_phone }),
-      ...(updateData.driver_name !== undefined && { driver_name: updateData.driver_name }),
-      ...(updateData.driver_phone !== undefined && { driver_phone: updateData.driver_phone }),
-      ...(updateData.vehicle_plate !== undefined && { vehicle_plate: updateData.vehicle_plate }),
-      ...(updateData.region !== undefined && { region: updateData.region }),
-      ...(updateData.notes !== undefined && { notes: updateData.notes }),
+      ...(body.pallet_id && { pallet_id: body.pallet_id }),
+      ...(body.supplier !== undefined && { supplier: body.supplier }),
+      ...(body.supplier_id !== undefined && { supplier_id: body.supplier_id }),
+      ...(body.supplier_phone !== undefined && { supplier_phone: body.supplier_phone }),
+      ...(body.driver_name !== undefined && { driver_name: body.driver_name }),
+      ...(body.driver_phone !== undefined && { driver_phone: body.driver_phone }),
+      ...(body.vehicle_plate !== undefined && { vehicle_plate: body.vehicle_plate }),
+      ...(body.region !== undefined && { region: body.region }),
+      ...(body.notes !== undefined && { notes: body.notes }),
       
-      // Always update the timestamp
+      // Update timestamp to track when this was last modified
       timestamp: new Date(),
     };
 
@@ -733,34 +788,7 @@ export async function PATCH(request: NextRequest) {
       stack: error.stack?.split('\n').slice(0, 5).join('\n')
     });
     
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { 
-          error: 'Weight entry not found',
-          details: 'The weight entry you are trying to update does not exist'
-        },
-        { status: 404 }
-      );
-    }
-
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { 
-          error: 'Duplicate entry',
-          details: 'A weight entry with this pallet ID already exists'
-        },
-        { status: 409 }
-      );
-    }
-
-    return NextResponse.json(
-      { 
-        error: 'Failed to update weight entry',
-        details: error.message,
-        code: error.code || 'UNKNOWN_ERROR'
-      },
-      { status: 500 }
-    );
+    throw error;
   }
 }
 
@@ -955,126 +983,6 @@ export async function DELETE(request: NextRequest) {
         error: 'Failed to delete weight entry',
         details: error.message,
         code: error.code || 'UNKNOWN_ERROR'
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// GET KPI data separately (alternative endpoint)
-export async function GET_KPI(request: NextRequest) {
-  try {
-    console.log('📊 GET /api/weights/kpi called');
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    // Count today's entries
-    const todayCount = await prisma.weight_entries.count({
-      where: {
-        timestamp: {
-          gte: today,
-          lt: tomorrow,
-        },
-      },
-    });
-    
-    // Count last hour's entries
-    const lastHour = new Date(Date.now() - 60 * 60 * 1000);
-    const lastHourCount = await prisma.weight_entries.count({
-      where: {
-        timestamp: {
-          gte: lastHour,
-        },
-      },
-    });
-    
-    const changeSinceLastHour = todayCount - lastHourCount;
-    
-    // Calculate total weight today
-    const todayEntries = await prisma.weight_entries.findMany({
-      where: {
-        timestamp: {
-          gte: today,
-          lt: tomorrow,
-        },
-      },
-      select: {
-        fuerte_weight: true,
-        hass_weight: true,
-      },
-    });
-    
-    const totalWeightToday = todayEntries.reduce((sum, entry) => {
-      return sum + (Number(entry.fuerte_weight) || 0) + (Number(entry.hass_weight) || 0);
-    }, 0);
-    
-    // Get unique suppliers today
-    const uniqueSuppliers = await prisma.weight_entries.groupBy({
-      by: ['supplier_id'],
-      where: {
-        timestamp: {
-          gte: today,
-          lt: tomorrow,
-        },
-        supplier_id: {
-          not: null,
-        },
-      },
-      _count: {
-        supplier_id: true,
-      },
-    });
-    
-    const uniqueSuppliersCount = uniqueSuppliers.length;
-    
-    // Get pending suppliers (checked in but not weighed)
-    const pendingSuppliers = await prisma.supplier_checkins.count({
-      where: {
-        status: 'checked_in',
-        check_in_time: {
-          gte: today,
-        },
-      },
-    });
-    
-    const totalCheckedIn = await prisma.supplier_checkins.count({
-      where: {
-        check_in_time: {
-          gte: today,
-        },
-      },
-    });
-    
-    console.log('📈 KPI Data calculated:', {
-      todayCount,
-      changeSinceLastHour,
-      totalWeightToday,
-      uniqueSuppliersCount,
-      pendingSuppliers,
-      totalCheckedIn
-    });
-    
-    return NextResponse.json({
-      palletsWeighed: todayCount,
-      changeSinceLastHour,
-      totalWeight: totalWeightToday,
-      totalWeightTons: (totalWeightToday / 1000).toFixed(1),
-      uniqueSuppliers: uniqueSuppliersCount,
-      pendingSuppliers,
-      totalCheckedIn,
-      lastUpdated: new Date().toISOString(),
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Error fetching KPI data:', error);
-    
-    return NextResponse.json(
-      { 
-        error: 'Failed to fetch KPI data',
-        message: error.message,
       },
       { status: 500 }
     );

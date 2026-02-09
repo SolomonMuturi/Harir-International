@@ -112,12 +112,22 @@ interface ColdRoomPallet {
   pallet_id?: string;
   region?: string;
   counting_record_id?: string;
-  loading_sheet_id?: string | null; // Track which loading sheet the pallet is assigned to
+  loading_sheet_id?: string | null;
+  boxes?: Array<{
+    variety: 'fuerte' | 'hass';
+    box_type: '4kg' | '10kg';
+    size: string;
+    grade: 'class1' | 'class2';
+    quantity: number;
+  }>;
 }
 
 interface PalletWithBoxes extends ColdRoomPallet {
   boxes: Array<{
+    variety: 'fuerte' | 'hass' | 'mixed';
+    box_type: '4kg' | '10kg';
     size: string;
+    grade: 'class1' | 'class2';
     quantity: number;
   }>;
   totalBoxes: number;
@@ -255,6 +265,61 @@ function calculateDaysBetween(startDate: string, endDate: string): number {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
+// Helper function to determine variety from boxes
+function determineVarietyFromBoxes(boxes: Array<{ variety: 'fuerte' | 'hass' | 'mixed' }>): string {
+  if (!boxes || boxes.length === 0) return 'Fuerte';
+  
+  const varieties = boxes.map(box => box.variety);
+  const hasFuerte = varieties.includes('fuerte') || varieties.includes('Fuerte');
+  const hasHass = varieties.includes('hass') || varieties.includes('Hass');
+  
+  if (hasFuerte && hasHass) return 'Mixed (Fuerte, Hass)';
+  if (hasHass) return 'Hass';
+  return 'Fuerte';
+}
+
+// Helper function to determine box type from boxes
+function determineBoxTypeFromBoxes(boxes: Array<{ box_type: '4kg' | '10kg' }>): string {
+  if (!boxes || boxes.length === 0) return '4kg';
+  
+  const boxTypes = boxes.map(box => box.box_type);
+  if (boxTypes.includes('10kg')) return '10kg';
+  return '4kg';
+}
+
+// Helper function to determine size from boxes
+function determineSizeFromBoxes(boxes: Array<{ size: string }>): string {
+  if (!boxes || boxes.length === 0) return 'Size 24';
+  
+  const sizes = boxes.map(box => box.size);
+  
+  // If all boxes have the same size, return that size
+  const uniqueSizes = [...new Set(sizes)];
+  if (uniqueSizes.length === 1) {
+    const size = uniqueSizes[0];
+    return size.replace('size', 'Size ');
+  }
+  
+  // If mixed sizes, return "Mixed" with the sizes
+  const formattedSizes = uniqueSizes.map(size => size.replace('size', '')).join(', ');
+  return `Mixed (${formattedSizes})`;
+}
+
+// Helper function to determine grade from boxes
+function determineGradeFromBoxes(boxes: Array<{ grade: 'class1' | 'class2' }>): string {
+  if (!boxes || boxes.length === 0) return 'Class 1';
+  
+  const grades = boxes.map(box => box.grade);
+  if (grades.includes('class2')) return 'Class 2';
+  return 'Class 1';
+}
+
+// Helper function to calculate total quantity from boxes
+function calculateTotalQuantityFromBoxes(boxes: Array<{ quantity: number }>): number {
+  if (!boxes || boxes.length === 0) return 0;
+  return boxes.reduce((total, box) => total + (box.quantity || 0), 0);
+}
+
 // Pallet Details Modal Component
 function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingSheet }) {
   const [open, setOpen] = useState(false);
@@ -266,7 +331,6 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
     
     try {
       setLoading(true);
-      // Fetch pallet details for this loading sheet
       const response = await fetch(`/api/loading-sheets/${loadingSheet.id}/pallets`);
       if (response.ok) {
         const result = await response.json();
@@ -282,25 +346,21 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
     }
   };
 
-  // Helper function to safely get quantity
   const getSafeQuantity = (pallet: any): number => {
     return Number(pallet?.quantity) || 0;
   };
 
-  // Helper function to safely get weight
   const getSafeWeight = (pallet: any): number => {
     const quantity = getSafeQuantity(pallet);
     const boxType = pallet?.box_type === '10kg' ? 10 : 4;
     return quantity * boxType;
   };
 
-  // Format size for display
   const formatSizeForDisplay = (size: string) => {
     if (!size) return 'N/A';
     return size.replace('size', 'Size ');
   };
 
-  // Calculate totals
   const totals = pallets.reduce(
     (acc, pallet) => {
       const quantity = getSafeQuantity(pallet);
@@ -355,7 +415,6 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Summary Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
               <div className="text-center">
                 <div className="text-2xl font-bold text-gray-800">{totals.totalPallets}</div>
@@ -371,7 +430,6 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
               </div>
             </div>
 
-            {/* Pallets Table */}
             <div className="border rounded-lg">
               <Table>
                 <TableHeader>
@@ -428,7 +486,6 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
                     );
                   })}
                   
-                  {/* Totals Row */}
                   <TableRow className="bg-gray-50">
                     <TableCell colSpan={5} className="font-bold text-right">TOTAL</TableCell>
                     <TableCell className="text-right font-bold">{totals.totalBoxes.toLocaleString()}</TableCell>
@@ -438,7 +495,6 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
               </Table>
             </div>
 
-            {/* Variety Distribution */}
             <div className="border rounded-lg p-4">
               <h4 className="font-medium mb-3">Variety Distribution</h4>
               <div className="flex flex-wrap gap-2">
@@ -471,7 +527,7 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
   );
 }
 
-// Loading Sheet Component - FIXED VERSION
+// Loading Sheet Component - UPDATED WITH NEW DISPLAY FORMAT
 function LoadingSheet() {
   const defaultData: LoadingSheetData = {
     exporter: 'HARIR INTERNATIONAL LTD',
@@ -515,36 +571,30 @@ function LoadingSheet() {
     boxTypeCount: {}
   });
 
-  // Form state for signature fields
   const [loadedBy, setLoadedBy] = useState('');
   const [checkedBy, setCheckedBy] = useState('');
   const [remarks, setRemarks] = useState('');
 
-  // Fetch assignments to filter out assigned loading sheets
   const [assignments, setAssignments] = useState<Assignment[]>([]);
 
-  // Helper function to safely get quantity - FIXED
+  // Helper function to safely get quantity
   const getSafeQuantity = (pallet: any): number => {
     if (!pallet) return 0;
     
-    // Try multiple possible quantity fields
     if (typeof pallet.quantity === 'number') return pallet.quantity;
     if (typeof pallet.quantity === 'string') return Number(pallet.quantity) || 0;
     
-    // For ColdRoomPallet type
     if (typeof pallet.total_boxes === 'number') return pallet.total_boxes;
     if (typeof pallet.total_boxes === 'string') return Number(pallet.total_boxes) || 0;
     
-    // For pallet count calculation
     if (pallet.pallet_count && pallet.boxes_per_pallet) {
       return Number(pallet.pallet_count) * Number(pallet.boxes_per_pallet);
     }
     
-    // Default
     return pallet.size24 || 0;
   };
 
-  // Helper function to safely get box type - FIXED
+  // Helper function to safely get box type
   const getSafeBoxType = (pallet: any): '4kg' | '10kg' => {
     if (!pallet) return '4kg';
     
@@ -555,27 +605,57 @@ function LoadingSheet() {
     return '4kg';
   };
 
-  // Helper function to safely get weight - FIXED
+  // Helper function to safely get weight
   const getSafeWeight = (pallet: any): number => {
     const quantity = getSafeQuantity(pallet);
     const boxType = getSafeBoxType(pallet);
     return quantity * (boxType === '10kg' ? 10 : 4);
   };
 
-  // Format variety for display - FIXED
-  const formatVarietyForDisplay = (variety: any): string => {
-    if (!variety) return 'Fuerte';
+  // Format variety for display based on boxes
+  const formatVarietyForDisplay = (pallet: any): string => {
+    if (!pallet) return 'Fuerte';
     
-    const varietyStr = String(variety).toLowerCase();
+    // Check if pallet has boxes array
+    if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+      return determineVarietyFromBoxes(pallet.boxes);
+    }
+    
+    // Fallback to pallet variety field
+    const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
     
     if (varietyStr === 'hass') return 'Hass';
-    if (varietyStr === 'mixed' || varietyStr.includes('mix')) return 'Mixed (Fuerte & Hass)';
+    if (varietyStr === 'mixed' || varietyStr.includes('mix')) return 'Mixed (Fuerte, Hass)';
     
     return 'Fuerte';
   };
 
-  // Format size for display - FIXED
-  const formatSizeForDisplay = (size: any): string => {
+  // Format box type for display based on boxes
+  const formatBoxTypeForDisplay = (pallet: any): string => {
+    if (!pallet) return '4kg';
+    
+    // Check if pallet has boxes array
+    if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+      const boxType = determineBoxTypeFromBoxes(pallet.boxes);
+      return boxType === '10kg' ? '10kg Box' : '4kg Box';
+    }
+    
+    // Fallback to pallet box_type field
+    const boxTypeStr = String(pallet.box_type || pallet.boxType || '4kg').toLowerCase();
+    return boxTypeStr === '10kg' ? '10kg Box' : '4kg Box';
+  };
+
+  // Format size for display based on boxes
+  const formatSizeForDisplay = (pallet: any): string => {
+    if (!pallet) return 'Size 24';
+    
+    // Check if pallet has boxes array
+    if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+      return determineSizeFromBoxes(pallet.boxes);
+    }
+    
+    // Fallback to pallet size field
+    const size = pallet.size || 'size24';
     if (!size) return 'Size 24';
     
     const sizeStr = String(size);
@@ -591,11 +671,17 @@ function LoadingSheet() {
     return sizeStr;
   };
 
-  // Format grade for display - FIXED
-  const formatGradeForDisplay = (grade: any): string => {
-    if (!grade) return 'Class 1';
+  // Format grade for display based on boxes
+  const formatGradeForDisplay = (pallet: any): string => {
+    if (!pallet) return 'Class 1';
     
-    const gradeStr = String(grade).toLowerCase();
+    // Check if pallet has boxes array
+    if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+      return determineGradeFromBoxes(pallet.boxes);
+    }
+    
+    // Fallback to pallet grade field
+    const gradeStr = String(pallet.grade || 'class1').toLowerCase();
     
     if (gradeStr === 'class2' || gradeStr === 'class 2' || gradeStr === 'grade2') {
       return 'Class 2';
@@ -604,13 +690,26 @@ function LoadingSheet() {
     return 'Class 1';
   };
 
-  // Fetch cold room pallets - UPDATED with correct data structure
+  // Get quantity from boxes
+  const getQuantityFromBoxes = (pallet: any): number => {
+    if (!pallet) return 0;
+    
+    // Check if pallet has boxes array
+    if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+      return calculateTotalQuantityFromBoxes(pallet.boxes);
+    }
+    
+    // Fallback to other quantity fields
+    return getSafeQuantity(pallet);
+  };
+
+  // Fetch cold room pallets - UPDATED TO GET BOXES DETAILS
   const fetchColdRoomPallets = useCallback(async () => {
     try {
       setLoadingColdRoomPallets(true);
       console.log(`📦 Fetching available pallets from ${selectedColdRoom}...`);
       
-      const response = await fetch(`/api/cold-room?action=pallets&coldRoomId=${selectedColdRoom}`);
+      const response = await fetch(`/api/cold-room?action=pallets&coldRoomId=${selectedColdRoom}&withBoxes=true`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -625,7 +724,6 @@ function LoadingSheet() {
         result.data.forEach((pallet: any, index: number) => {
           console.log(`📦 Processing pallet ${index + 1}:`, pallet);
           
-          // Skip pallets that already have a loading_sheet_id
           if (pallet.loading_sheet_id) {
             console.log(`⚠️ Skipping pallet ${pallet.id || pallet.pallet_id} - already assigned to loading sheet ${pallet.loading_sheet_id}`);
             return;
@@ -634,37 +732,42 @@ function LoadingSheet() {
           const palletId = pallet.id || `pallet-${Date.now()}-${index}`;
           const palletNo = pallet.pallet_name || `PAL-${palletId.substring(0, 8).toUpperCase()}`;
           
-          // Get variety with correct mapping
+          // Determine variety from boxes if available
           let variety: 'fuerte' | 'hass' | 'mixed' = 'fuerte';
-          const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
-          if (varietyStr === 'hass') {
-            variety = 'hass';
-          } else if (varietyStr === 'mixed' || varietyStr.includes('mix')) {
-            variety = 'mixed';
+          if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+            const varietyStr = determineVarietyFromBoxes(pallet.boxes);
+            if (varietyStr.includes('Hass') && !varietyStr.includes('Fuerte')) {
+              variety = 'hass';
+            } else if (varietyStr.includes('Mixed')) {
+              variety = 'mixed';
+            }
+          } else {
+            const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
+            if (varietyStr === 'hass') {
+              variety = 'hass';
+            } else if (varietyStr === 'mixed' || varietyStr.includes('mix')) {
+              variety = 'mixed';
+            }
           }
           
-          // Get box type
-          const boxTypeStr = String(pallet.box_type || pallet.boxType || '4kg').toLowerCase();
+          // Determine box type from boxes if available
+          const boxTypeStr = determineBoxTypeFromBoxes(pallet.boxes || []);
           const boxType = boxTypeStr === '10kg' ? '10kg' : '4kg' as '4kg' | '10kg';
           
-          // Get size - normalize to size format
-          let size = pallet.size || 'size24';
-          if (!size.startsWith('size') && /^\d+$/.test(size)) {
-            size = `size${size}`;
+          // Determine size from boxes if available
+          let size = determineSizeFromBoxes(pallet.boxes || []);
+          if (size.includes('Size ')) {
+            size = size.toLowerCase().replace('size ', 'size');
+          } else if (size.includes('Mixed')) {
+            size = 'mixed';
           }
           
-          // Get grade
-          const gradeStr = String(pallet.grade || 'class1').toLowerCase();
-          const grade = gradeStr === 'class2' ? 'class2' : 'class1' as 'class1' | 'class2';
+          // Determine grade from boxes if available
+          const gradeStr = determineGradeFromBoxes(pallet.boxes || []);
+          const grade = gradeStr === 'Class 2' ? 'class2' : 'class1' as 'class1' | 'class2';
           
-          // Get quantity
-          let quantity = getSafeQuantity(pallet);
-          
-          // If it's a pallet, calculate based on pallet count
-          if (pallet.pallet_count && pallet.boxes_per_pallet) {
-            const boxesPerPallet = Number(pallet.boxes_per_pallet) || (boxType === '10kg' ? 120 : 288);
-            quantity = Number(pallet.pallet_count) * boxesPerPallet;
-          }
+          // Get quantity from boxes if available
+          const quantity = getQuantityFromBoxes(pallet);
           
           const processedPallet: ColdRoomPallet = {
             id: palletId,
@@ -681,7 +784,8 @@ function LoadingSheet() {
             pallet_id: pallet.pallet_id,
             region: pallet.region || '',
             counting_record_id: pallet.counting_record_id,
-            loading_sheet_id: pallet.loading_sheet_id || null
+            loading_sheet_id: pallet.loading_sheet_id || null,
+            boxes: pallet.boxes || []
           };
           
           processedPallets.push(processedPallet);
@@ -690,13 +794,12 @@ function LoadingSheet() {
         console.log(`✅ Found ${processedPallets.length} available pallets`);
         setColdRoomPallets(processedPallets);
         
-        // Calculate summary statistics
         const summary = {
           totalPallets: processedPallets.length,
-          totalBoxes: processedPallets.reduce((sum, pallet) => sum + getSafeQuantity(pallet), 0),
+          totalBoxes: processedPallets.reduce((sum, pallet) => sum + getQuantityFromBoxes(pallet), 0),
           totalWeight: processedPallets.reduce((sum, pallet) => sum + getSafeWeight(pallet), 0),
           varietyCount: processedPallets.reduce((acc, pallet) => {
-            const variety = formatVarietyForDisplay(pallet.variety);
+            const variety = formatVarietyForDisplay(pallet);
             acc[variety] = (acc[variety] || 0) + 1;
             return acc;
           }, {} as { [key: string]: number }),
@@ -740,7 +843,6 @@ function LoadingSheet() {
     }
   }, [selectedColdRoom]);
 
-  // Fetch assignments
   const fetchAssignments = useCallback(async () => {
     try {
       const response = await fetch('/api/carrier-assignments');
@@ -755,7 +857,6 @@ function LoadingSheet() {
     }
   }, []);
 
-  // Fetch existing loading sheets from database
   const fetchLoadingSheets = useCallback(async () => {
     try {
       setLoadingSheets(true);
@@ -768,12 +869,10 @@ function LoadingSheet() {
         if (result.success && result.data) {
           const allSheets = result.data;
           
-          // Get assigned loading sheet IDs
           const assignedSheetIds = new Set(
             assignments.map(assignment => assignment.loading_sheet_id)
           );
           
-          // Filter out assigned loading sheets
           const unassignedSheets = allSheets.filter((sheet: DatabaseLoadingSheet) => 
             !assignedSheetIds.has(sheet.id)
           );
@@ -815,33 +914,31 @@ function LoadingSheet() {
     fetchColdRoomPallets();
   }, [selectedColdRoom, fetchColdRoomPallets]);
 
-  // Toggle pallet expansion
   const togglePalletExpansion = (palletId: string) => {
     setExpandedPallet(expandedPallet === palletId ? null : palletId);
   };
 
-  // Add pallet to loading sheet
   const addPalletToSheet = (pallet: ColdRoomPallet) => {
-    // Check if pallet is already assigned to ANY loading sheet
     if (pallet.loading_sheet_id && pallet.loading_sheet_id !== sheetData.id) {
       toast.error(`Pallet ${pallet.pallet_no} is already assigned to another loading sheet`);
       return;
     }
 
-    // Check if pallet is already added to current sheet
     if (sheetData.pallets.some(p => p.id === pallet.id)) {
       toast.warning(`Pallet ${pallet.pallet_no} is already in the loading sheet`);
       return;
     }
 
-    // Create a PalletWithBoxes object from ColdRoomPallet
     const palletWithBoxes: PalletWithBoxes = {
       ...pallet,
-      boxes: [{
-        size: pallet.size || 'size24',
-        quantity: getSafeQuantity(pallet)
+      boxes: pallet.boxes || [{
+        variety: pallet.variety,
+        box_type: pallet.box_type,
+        size: pallet.size,
+        grade: pallet.grade,
+        quantity: getQuantityFromBoxes(pallet)
       }],
-      totalBoxes: getSafeQuantity(pallet),
+      totalBoxes: getQuantityFromBoxes(pallet),
       totalWeight: getSafeWeight(pallet)
     };
 
@@ -853,7 +950,6 @@ function LoadingSheet() {
     toast.success(`Added pallet ${pallet.pallet_no} to loading sheet`);
   };
 
-  // Add all pallets to loading sheet
   const addAllPalletsToSheet = () => {
     const availablePallets = coldRoomPallets.filter(pallet => 
       !pallet.loading_sheet_id || pallet.loading_sheet_id === sheetData.id
@@ -864,11 +960,14 @@ function LoadingSheet() {
       .map(pallet => {
         const palletWithBoxes: PalletWithBoxes = {
           ...pallet,
-          boxes: [{
-            size: pallet.size || 'size24',
-            quantity: getSafeQuantity(pallet)
+          boxes: pallet.boxes || [{
+            variety: pallet.variety,
+            box_type: pallet.box_type,
+            size: pallet.size,
+            grade: pallet.grade,
+            quantity: getQuantityFromBoxes(pallet)
           }],
-          totalBoxes: getSafeQuantity(pallet),
+          totalBoxes: getQuantityFromBoxes(pallet),
           totalWeight: getSafeWeight(pallet)
         };
         return palletWithBoxes;
@@ -895,7 +994,6 @@ function LoadingSheet() {
     toast.success(`Added ${newPallets.length} pallets to loading sheet`);
   };
 
-  // Remove pallet from loading sheet
   const removePalletFromSheet = (index: number) => {
     const updatedPallets = [...sheetData.pallets];
     const removedPallet = updatedPallets[index];
@@ -927,7 +1025,6 @@ function LoadingSheet() {
     try {
       setSaving(true);
       
-      // Validate required fields
       if (!sheetData.billNumber.trim()) {
         toast.error('Please enter a Bill Number');
         setSaving(false);
@@ -946,7 +1043,6 @@ function LoadingSheet() {
         return;
       }
 
-      // Prepare the data for saving with correct field mapping
       const saveData = {
         exporter: sheetData.exporter || defaultData.exporter,
         client: sheetData.client || '',
@@ -971,15 +1067,15 @@ function LoadingSheet() {
           palletNo: index + 1,
           palletId: pallet.pallet_id || pallet.id,
           coldRoomId: pallet.cold_room_id || selectedColdRoom,
-          variety: pallet.variety || 'fuerte',
+          variety: formatVarietyForDisplay(pallet),
           boxType: getSafeBoxType(pallet),
-          size: pallet.size || 'size24',
-          grade: pallet.grade || 'class1',
-          quantity: getSafeQuantity(pallet),
+          size: formatSizeForDisplay(pallet),
+          grade: formatGradeForDisplay(pallet),
+          quantity: getQuantityFromBoxes(pallet),
           supplierName: pallet.supplier_name || '',
           region: pallet.region || '',
-          boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: getSafeQuantity(pallet) }],
-          totalBoxes: pallet.totalBoxes || getSafeQuantity(pallet),
+          boxes: pallet.boxes || [],
+          totalBoxes: pallet.totalBoxes || getQuantityFromBoxes(pallet),
           totalWeight: pallet.totalWeight || getSafeWeight(pallet)
         }))
       };
@@ -1025,25 +1121,24 @@ function LoadingSheet() {
     if (selectedSheet) {
       console.log('Loading sheet data:', selectedSheet);
       
-      // Parse loading_pallets correctly
       let palletsData: PalletWithBoxes[] = [];
       if (selectedSheet.loading_pallets && Array.isArray(selectedSheet.loading_pallets)) {
         palletsData = selectedSheet.loading_pallets.map((pallet: any, index: number) => {
-          const quantity = getSafeQuantity(pallet);
+          const quantity = getQuantityFromBoxes(pallet);
           const boxType = getSafeBoxType(pallet);
-          const variety = formatVarietyForDisplay(pallet.variety || pallet.temp);
-          const grade = formatGradeForDisplay(pallet.grade);
-          const size = formatSizeForDisplay(pallet.size);
+          const variety = formatVarietyForDisplay(pallet);
+          const grade = formatGradeForDisplay(pallet);
+          const size = formatSizeForDisplay(pallet);
           
           return {
             id: pallet.id || `pallet-${index}`,
             pallet_no: `PAL-${(pallet.palletId || pallet.id || '').substring(0, 8).toUpperCase()}`,
             cold_room_id: pallet.coldRoomId || selectedColdRoom,
-            variety: (variety.toLowerCase() === 'hass' ? 'hass' : 
-                    variety.toLowerCase().includes('mixed') ? 'mixed' : 'fuerte') as 'fuerte' | 'hass' | 'mixed',
+            variety: (variety.includes('Hass') && !variety.includes('Fuerte') ? 'hass' : 
+                    variety.includes('Mixed') ? 'mixed' : 'fuerte') as 'fuerte' | 'hass' | 'mixed',
             box_type: boxType,
-            size: size.toLowerCase().replace('size ', 'size'),
-            grade: (grade.toLowerCase() === 'class 2' ? 'class2' : 'class1') as 'class1' | 'class2',
+            size: size.toLowerCase().includes('size') ? size.toLowerCase().replace('size ', 'size') : 'size24',
+            grade: (grade === 'Class 2' ? 'class2' : 'class1') as 'class1' | 'class2',
             quantity: quantity,
             created_at: pallet.created_at || new Date().toISOString(),
             updated_at: pallet.updated_at || new Date().toISOString(),
@@ -1052,7 +1147,7 @@ function LoadingSheet() {
             region: pallet.region || '',
             counting_record_id: pallet.countingRecordId,
             loading_sheet_id: pallet.loading_sheet_id || selectedSheet.id,
-            boxes: pallet.boxes || [{ size: pallet.size || 'size24', quantity: quantity }],
+            boxes: pallet.boxes || [],
             totalBoxes: pallet.totalBoxes || quantity,
             totalWeight: pallet.totalWeight || getSafeWeight(pallet)
           };
@@ -1087,7 +1182,6 @@ function LoadingSheet() {
       
       setSheetData(convertedSheet);
       
-      // Update signature fields
       setLoadedBy(selectedSheet.loaded_by || '');
       setCheckedBy(selectedSheet.checked_by || '');
       setRemarks(selectedSheet.remarks || '');
@@ -1102,7 +1196,6 @@ function LoadingSheet() {
         pallets: []
       });
       
-      // Clear signature fields
       setLoadedBy('');
       setCheckedBy('');
       setRemarks('');
@@ -1120,25 +1213,24 @@ function LoadingSheet() {
     headers.push(`SEAL 2,${sheetData.seal2 || ''},TEMP REC 1,${sheetData.tempRec1 || ''}`);
     headers.push(`TRUCK,${sheetData.truck || ''},TEMP REC 2,${sheetData.tempRec2 || ''}\n`);
     
-    // Pallet headers
-    const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'BOX TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
+    const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
     headers.push(tableHeaders.join(','));
     
-    // Pallet rows
     const rows = sheetData.pallets.map((pallet, index) => {
-      const quantity = getSafeQuantity(pallet);
+      const quantity = getQuantityFromBoxes(pallet);
       const boxType = getSafeBoxType(pallet);
       const totalWeight = getSafeWeight(pallet);
       const totalBoxes = pallet.totalBoxes || quantity;
-      const sizeDisplay = formatSizeForDisplay(pallet.size);
-      const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-      const gradeDisplay = formatGradeForDisplay(pallet.grade);
+      const sizeDisplay = formatSizeForDisplay(pallet);
+      const varietyDisplay = formatVarietyForDisplay(pallet);
+      const gradeDisplay = formatGradeForDisplay(pallet);
+      const boxTypeDisplay = formatBoxTypeForDisplay(pallet);
       
       return [
         index + 1,
         pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
         varietyDisplay,
-        boxType === '10kg' ? '10kg Box' : '4kg Box',
+        boxTypeDisplay,
         sizeDisplay,
         gradeDisplay,
         quantity,
@@ -1149,10 +1241,9 @@ function LoadingSheet() {
     
     headers.push(...rows);
     
-    // Totals
     const totals = sheetData.pallets.reduce(
       (acc, pallet) => {
-        const quantity = getSafeQuantity(pallet);
+        const quantity = getQuantityFromBoxes(pallet);
         const totalBoxes = pallet.totalBoxes || quantity;
         const totalWeight = getSafeWeight(pallet);
         
@@ -1169,7 +1260,6 @@ function LoadingSheet() {
     headers.push(`Total Boxes,${totals.totalBoxes}`);
     headers.push(`Total Weight,${totals.totalWeight} kg\n`);
     
-    // Loading details
     headers.push('LOADING DETAILS');
     headers.push(`Loaded by,${loadedBy || ''}`);
     headers.push(`Checked by,${checkedBy || ''}`);
@@ -1182,10 +1272,9 @@ function LoadingSheet() {
     setSheetData({ ...sheetData, [field]: value });
   };
 
-  // Calculate totals
   const totals = sheetData.pallets.reduce(
     (acc, pallet) => {
-      const quantity = getSafeQuantity(pallet);
+      const quantity = getQuantityFromBoxes(pallet);
       const totalBoxes = pallet.totalBoxes || quantity;
       const totalWeight = getSafeWeight(pallet);
       
@@ -1215,7 +1304,6 @@ function LoadingSheet() {
               Complete loading sheet with pallets loaded from cold room
             </p>
             
-            {/* Loading sheet selector */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Label htmlFor="sheet-selector" className="text-xs font-medium">Load existing UNASSIGNED sheet:</Label>
               <DropdownMenu>
@@ -1312,7 +1400,6 @@ function LoadingSheet() {
       </CardHeader>
       <CardContent className="p-4 print:p-0">
         <div className="loading-sheet print:p-4">
-          {/* Header */}
           <div className="text-center mb-6 print:mb-4">
             <h1 className="text-3xl font-bold uppercase tracking-wider mb-1 print:text-2xl">
               LOADING SHEET
@@ -1320,11 +1407,8 @@ function LoadingSheet() {
             <div className="w-24 h-0.5 bg-black mx-auto"></div>
           </div>
           
-          {/* TWO-COLUMN HEADER INFORMATION */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 print:mb-6">
-            {/* Left Column */}
             <div className="space-y-3">
-              {/* Row 1: EXPORTER + LOADING DATE */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">EXPORTER</div>
                 <div className="w-2/3">
@@ -1336,7 +1420,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 2: CLIENT + VESSEL */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">CLIENT</div>
                 <div className="w-2/3">
@@ -1349,7 +1432,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 3: SHIPPING LINE + ETA MSA */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">SHIPPING LINE</div>
                 <div className="w-2/3">
@@ -1362,7 +1444,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 4: BILL NUMBER + ETD MSA */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">BILL NUMBER</div>
                 <div className="w-2/3">
@@ -1375,7 +1456,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 5: CONTAINER + PORT */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">CONTAINER</div>
                 <div className="w-2/3">
@@ -1388,7 +1468,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 6: SEAL 1 + ETA PORT */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">SEAL 1</div>
                 <div className="w-2/3">
@@ -1401,7 +1480,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 7: SEAL 2 + TEMP REC 1 */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">SEAL 2</div>
                 <div className="w-2/3">
@@ -1414,7 +1492,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 8: TRUCK + TEMP REC 2 */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">TRUCK</div>
                 <div className="w-2/3">
@@ -1428,9 +1505,7 @@ function LoadingSheet() {
               </div>
             </div>
             
-            {/* Right Column */}
             <div className="space-y-3">
-              {/* Row 1: LOADING DATE */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">LOADING DATE</div>
                 <div className="w-2/3">
@@ -1443,7 +1518,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 2: VESSEL */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">VESSEL</div>
                 <div className="w-2/3">
@@ -1456,7 +1530,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 3: ETA MSA */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">ETA MSA</div>
                 <div className="w-2/3">
@@ -1469,7 +1542,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 4: ETD MSA */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">ETD MSA</div>
                 <div className="w-2/3">
@@ -1482,7 +1554,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 5: PORT */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">PORT</div>
                 <div className="w-2/3">
@@ -1495,7 +1566,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 6: ETA PORT */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">ETA PORT</div>
                 <div className="w-2/3">
@@ -1508,7 +1578,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 7: TEMP REC 1 */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">TEMP REC 1</div>
                 <div className="w-2/3">
@@ -1521,7 +1590,6 @@ function LoadingSheet() {
                 </div>
               </div>
               
-              {/* Row 8: TEMP REC 2 */}
               <div className="flex items-center border-b pb-1">
                 <div className="w-1/3 font-bold text-sm uppercase tracking-wide">TEMP REC 2</div>
                 <div className="w-2/3">
@@ -1536,7 +1604,6 @@ function LoadingSheet() {
             </div>
           </div>
           
-          {/* Cold Room Pallets Section */}
           <div className="mb-6 print:mb-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4">
               <div>
@@ -1551,7 +1618,6 @@ function LoadingSheet() {
                   Only shows pallets that are NOT assigned to any loading sheet
                 </p>
                 
-                {/* Pallet Summary Stats */}
                 {palletsSummary.totalPallets > 0 && (
                   <div className="flex flex-wrap gap-3 mt-2">
                     <div className="text-sm">
@@ -1600,7 +1666,6 @@ function LoadingSheet() {
               </div>
             </div>
             
-            {/* Available Pallets Table */}
             <Card>
               <CardContent className="p-0">
                 {loadingColdRoomPallets ? (
@@ -1623,6 +1688,7 @@ function LoadingSheet() {
                         <TableRow>
                           <TableHead className="w-12"></TableHead>
                           <TableHead>Pallet No</TableHead>
+                          <TableHead>Cold Room</TableHead>
                           <TableHead>Variety</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Size</TableHead>
@@ -1635,13 +1701,13 @@ function LoadingSheet() {
                       <TableBody>
                         {coldRoomPallets.map((pallet) => {
                           const isAdded = sheetData.pallets.some(p => p.id === pallet.id);
-                          const quantity = getSafeQuantity(pallet);
+                          const quantity = getQuantityFromBoxes(pallet);
                           const weight = getSafeWeight(pallet);
-                          const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-                          const gradeDisplay = formatGradeForDisplay(pallet.grade);
-                          const sizeDisplay = formatSizeForDisplay(pallet.size);
+                          const varietyDisplay = formatVarietyForDisplay(pallet);
+                          const gradeDisplay = formatGradeForDisplay(pallet);
+                          const sizeDisplay = formatSizeForDisplay(pallet);
+                          const boxTypeDisplay = formatBoxTypeForDisplay(pallet);
                           
-                          // Check if pallet is assigned to another loading sheet
                           const isAssignedToOtherSheet = pallet.loading_sheet_id && pallet.loading_sheet_id !== sheetData.id;
                           
                           return (
@@ -1678,6 +1744,9 @@ function LoadingSheet() {
                                 )}
                               </TableCell>
                               <TableCell>
+                                {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                              </TableCell>
+                              <TableCell>
                                 <Badge className={
                                   varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 
                                   varietyDisplay === 'Hass' ? "bg-purple-100 text-purple-800" : 
@@ -1688,10 +1757,10 @@ function LoadingSheet() {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
-                                  getSafeBoxType(pallet) === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                                  boxTypeDisplay === '10kg Box' ? "bg-blue-50 text-blue-700 border-blue-200" : 
                                   "bg-orange-50 text-orange-700 border-orange-200"
                                 }>
-                                  {getSafeBoxType(pallet) === '10kg' ? '10kg Box' : '4kg Box'}
+                                  {boxTypeDisplay}
                                 </Badge>
                               </TableCell>
                               <TableCell>{sizeDisplay}</TableCell>
@@ -1741,7 +1810,6 @@ function LoadingSheet() {
             </Card>
           </div>
 
-          {/* Selected Pallets Table - FIXED DISPLAY */}
           <div className="mb-6 print:mb-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Pallets in Loading Sheet ({sheetData.pallets.length})</h3>
@@ -1778,12 +1846,12 @@ function LoadingSheet() {
                   </thead>
                   <tbody>
                     {sheetData.pallets.map((pallet, index) => {
-                      const quantity = getSafeQuantity(pallet);
+                      const quantity = getQuantityFromBoxes(pallet);
                       const weight = getSafeWeight(pallet);
-                      const varietyDisplay = formatVarietyForDisplay(pallet.variety);
-                      const gradeDisplay = formatGradeForDisplay(pallet.grade);
-                      const sizeDisplay = formatSizeForDisplay(pallet.size);
-                      const boxTypeDisplay = getSafeBoxType(pallet) === '10kg' ? '10kg Box' : '4kg Box';
+                      const varietyDisplay = formatVarietyForDisplay(pallet);
+                      const gradeDisplay = formatGradeForDisplay(pallet);
+                      const sizeDisplay = formatSizeForDisplay(pallet);
+                      const boxTypeDisplay = formatBoxTypeForDisplay(pallet);
                       
                       return (
                         <tr key={`${pallet.id}-${index}`} className="hover:bg-black-50">
@@ -1802,7 +1870,7 @@ function LoadingSheet() {
                           </td>
                           <td className="border border-gray-300 p-2">
                             <Badge variant="outline" className={
-                              getSafeBoxType(pallet) === '10kg' ? "bg-blue-50 text-blue-700 border-blue-200" : 
+                              boxTypeDisplay === '10kg Box' ? "bg-blue-50 text-blue-700 border-blue-200" : 
                               "bg-orange-50 text-orange-700 border-orange-200"
                             }>
                               {boxTypeDisplay}
@@ -1835,7 +1903,6 @@ function LoadingSheet() {
                       );
                     })}
                     
-                    {/* Totals Row */}
                     <tr className="bg-black-100 font-bold">
                       <td colSpan={6} className="border border-gray-300 p-2 text-right pr-4">TOTAL</td>
                       <td className="border border-gray-300 p-2 text-right">{totals.totalBoxes.toLocaleString()}</td>
@@ -1848,7 +1915,6 @@ function LoadingSheet() {
             )}
           </div>
           
-          {/* Summary Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="border border-gray-300 p-4">
               <h3 className="font-bold text-lg mb-3 border-b pb-2">SUMMARY</h3>
@@ -1878,7 +1944,7 @@ function LoadingSheet() {
                   <div className="flex gap-2">
                     {Object.entries(
                       sheetData.pallets.reduce((acc, pallet) => {
-                        const variety = formatVarietyForDisplay(pallet.variety);
+                        const variety = formatVarietyForDisplay(pallet);
                         acc[variety] = (acc[variety] || 0) + 1;
                         return acc;
                       }, {} as { [key: string]: number })
@@ -1903,7 +1969,7 @@ function LoadingSheet() {
                     {Object.entries(
                       sheetData.pallets.reduce((acc, pallet) => {
                         const boxType = getSafeBoxType(pallet) === '10kg' ? '10kg Boxes' : '4kg Boxes';
-                        acc[boxType] = (acc[boxType] || 0) + getSafeQuantity(pallet);
+                        acc[boxType] = (acc[boxType] || 0) + getQuantityFromBoxes(pallet);
                         return acc;
                       }, {} as { [key: string]: number })
                     ).map(([boxType, count]) => (
@@ -1958,7 +2024,6 @@ function LoadingSheet() {
             </div>
           </div>
           
-          {/* Footer */}
           <div className="mt-6 pt-3 border-t text-center text-xs text-gray-500 print:mt-4">
             <p>Generated by Harir International Logistics System • Document ID: {sheetData.id || `NEW-LS-${new Date().getTime().toString().slice(-6)}`}</p>
           </div>
@@ -1968,7 +2033,7 @@ function LoadingSheet() {
   );
 }
 
-// Carrier Assignment Form Component
+// Carrier Assignment Form Component (unchanged)
 function CarrierAssignmentForm() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
@@ -1977,18 +2042,15 @@ function CarrierAssignmentForm() {
   const [assigning, setAssigning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Form state
   const [selectedCarrierId, setSelectedCarrierId] = useState<string | null>(null);
   const [selectedLoadingSheetId, setSelectedLoadingSheetId] = useState<string | null>(null);
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [assignmentStatus, setAssignmentStatus] = useState<'assigned' | 'in_transit' | 'completed'>('assigned');
   
-  // Fetch data from database
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Fetch carriers
       const carriersResponse = await fetch('/api/carriers');
       if (carriersResponse.ok) {
         const carriersData = await carriersResponse.json();
@@ -1997,7 +2059,6 @@ function CarrierAssignmentForm() {
         }
       }
       
-      // Fetch loading sheets - GET ALL SHEETS (including assigned ones for this form)
       const sheetsResponse = await fetch('/api/loading-sheets?limit=50');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
@@ -2006,7 +2067,6 @@ function CarrierAssignmentForm() {
         }
       }
       
-      // Fetch assignments
       const assignmentsResponse = await fetch('/api/carrier-assignments');
       if (assignmentsResponse.ok) {
         const assignmentsData = await assignmentsResponse.json();
@@ -2038,7 +2098,6 @@ function CarrierAssignmentForm() {
     try {
       setAssigning(true);
       
-      // Find selected carrier and loading sheet
       const selectedCarrier = carriers.find(c => c.id === selectedCarrierId);
       const selectedLoadingSheet = loadingSheets.find(ls => ls.id === selectedLoadingSheetId);
       
@@ -2046,7 +2105,6 @@ function CarrierAssignmentForm() {
         throw new Error('Selected carrier or loading sheet not found');
       }
 
-      // Save to database
       const response = await fetch('/api/carrier-assignments', {
         method: 'POST',
         headers: {
@@ -2065,10 +2123,8 @@ function CarrierAssignmentForm() {
       if (result.success) {
         toast.success(`✅ Successfully assigned carrier "${selectedCarrier.name}" to loading sheet "${selectedLoadingSheet.bill_number || selectedLoadingSheet.id}"`);
         
-        // Refresh assignments
         await fetchData();
         
-        // Reset form
         setSelectedCarrierId(null);
         setSelectedLoadingSheetId(null);
         setAssignmentNotes('');
@@ -2100,7 +2156,6 @@ function CarrierAssignmentForm() {
     }
   };
 
-  // Filter loading sheets based on search - SHOW ALL SHEETS (assigned ones too)
   const filteredLoadingSheets = loadingSheets.filter(sheet =>
     sheet.bill_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     sheet.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -2119,7 +2174,6 @@ function CarrierAssignmentForm() {
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -2141,7 +2195,6 @@ function CarrierAssignmentForm() {
         </Card>
       </div>
 
-      {/* Assignment Form */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2155,7 +2208,6 @@ function CarrierAssignmentForm() {
         <CardContent>
           <form onSubmit={handleAssignCarrier} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Carrier Selection */}
               <div className="space-y-2">
                 <Label htmlFor="carrier-select">Select Carrier *</Label>
                 <Select
@@ -2189,7 +2241,6 @@ function CarrierAssignmentForm() {
                 )}
               </div>
 
-              {/* Loading Sheet Selection */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="loading-sheet-select">Select Loading Sheet *</Label>
@@ -2242,7 +2293,6 @@ function CarrierAssignmentForm() {
                 )}
               </div>
 
-              {/* Assignment Status */}
               <div className="space-y-2">
                 <Label htmlFor="assignment-status">Assignment Status</Label>
                 <Select
@@ -2260,7 +2310,6 @@ function CarrierAssignmentForm() {
                 </Select>
               </div>
 
-              {/* Assignment Notes */}
               <div className="space-y-2">
                 <Label htmlFor="assignment-notes">Assignment Notes</Label>
                 <textarea
@@ -2273,7 +2322,6 @@ function CarrierAssignmentForm() {
               </div>
             </div>
 
-            {/* Submit Button */}
             <div className="flex gap-2 pt-2">
               <Button 
                 type="submit" 
@@ -2308,7 +2356,6 @@ function CarrierAssignmentForm() {
         </CardContent>
       </Card>
 
-      {/* Assignment History */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2365,7 +2412,6 @@ function CarrierAssignmentForm() {
             </Table>
           </div>
 
-          {/* Empty State */}
           {assignments.length === 0 && (
             <div className="text-center py-8">
               <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -2381,26 +2427,23 @@ function CarrierAssignmentForm() {
   );
 }
 
-// Transit Management Component
+// Transit Management Component (unchanged)
 function TransitManagement() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [transitHistory, setTransitHistory] = useState<TransitHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   
-  // Modal states
   const [showStartTransitModal, setShowStartTransitModal] = useState(false);
   const [showEndTransitModal, setShowEndTransitModal] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [transitNotes, setTransitNotes] = useState('');
   const [transitLocation, setTransitLocation] = useState('');
 
-  // Fetch data
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Fetch assignments
       const assignmentsResponse = await fetch('/api/carrier-assignments');
       if (assignmentsResponse.ok) {
         const assignmentsData = await assignmentsResponse.json();
@@ -2409,7 +2452,6 @@ function TransitManagement() {
         }
       }
       
-      // Fetch transit history
       const historyResponse = await fetch('/api/transit-history');
       if (historyResponse.ok) {
         const historyData = await historyResponse.json();
@@ -2454,7 +2496,6 @@ function TransitManagement() {
       if (result.success) {
         toast.success('Transit started successfully!');
         
-        // Update assignment status
         const updateResponse = await fetch(`/api/carrier-assignments/${selectedAssignment.id}`, {
           method: 'PATCH',
           headers: {
@@ -2510,7 +2551,6 @@ function TransitManagement() {
       if (result.success) {
         toast.success('Transit completed successfully!');
         
-        // Update assignment status
         const updateResponse = await fetch(`/api/carrier-assignments/${selectedAssignment.id}`, {
           method: 'PATCH',
           headers: {
@@ -2564,7 +2604,6 @@ function TransitManagement() {
       if (result.success) {
         toast.success('Marked as delivered successfully!');
         
-        // Update assignment status if not already completed
         const assignment = assignments.find(a => a.id === assignmentId);
         if (assignment && assignment.status !== 'completed') {
           const updateResponse = await fetch(`/api/carrier-assignments/${assignmentId}`, {
@@ -2655,7 +2694,6 @@ function TransitManagement() {
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -2691,7 +2729,6 @@ function TransitManagement() {
         </Card>
       </div>
 
-      {/* Active Assignments */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2793,7 +2830,6 @@ function TransitManagement() {
             </Table>
           </div>
 
-          {/* Empty State */}
           {assignments.length === 0 && (
             <div className="text-center py-8">
               <Truck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -2806,7 +2842,6 @@ function TransitManagement() {
         </CardContent>
       </Card>
 
-      {/* Transit History */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2871,7 +2906,6 @@ function TransitManagement() {
             ))}
           </div>
 
-          {/* Empty State */}
           {transitHistory.length === 0 && (
             <div className="text-center py-8">
               <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -2884,8 +2918,6 @@ function TransitManagement() {
         </CardContent>
       </Card>
 
-      {/* Modals */}
-      {/* Start Transit Modal */}
       {showStartTransitModal && selectedAssignment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
@@ -2945,7 +2977,6 @@ function TransitManagement() {
         </div>
       )}
 
-      {/* End Transit Modal */}
       {showEndTransitModal && selectedAssignment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
@@ -3008,7 +3039,7 @@ function TransitManagement() {
   );
 }
 
-// History Component for downloading lists - UPDATED WITH CORRECT DATA DISPLAY
+// History Component for downloading lists (unchanged, kept as is)
 function HistoryDownload() {
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -3017,12 +3048,10 @@ function HistoryDownload() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'assigned' | 'in_transit' | 'completed'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Fetch data
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Fetch loading sheets with all details
       const sheetsResponse = await fetch('/api/loading-sheets?limit=100');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
@@ -3037,7 +3066,6 @@ function HistoryDownload() {
         throw new Error(`HTTP error! status: ${sheetsResponse.status}`);
       }
       
-      // Fetch assignments
       const assignmentsResponse = await fetch('/api/carrier-assignments');
       if (assignmentsResponse.ok) {
         const assignmentsData = await assignmentsResponse.json();
@@ -3060,9 +3088,7 @@ function HistoryDownload() {
     fetchData();
   }, [fetchData]);
 
-  // Filter loading sheets
   const filteredLoadingSheets = loadingSheets.filter(sheet => {
-    // Apply date filter
     if (dateFilter !== 'all') {
       const sheetDate = new Date(sheet.created_at);
       const now = new Date();
@@ -3083,7 +3109,6 @@ function HistoryDownload() {
       }
     }
     
-    // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       return (
@@ -3100,14 +3125,11 @@ function HistoryDownload() {
     return true;
   });
 
-  // Filter assignments
   const filteredAssignments = assignments.filter(assignment => {
-    // Apply status filter
     if (statusFilter !== 'all' && assignment.status !== statusFilter) {
       return false;
     }
     
-    // Apply date filter
     if (dateFilter !== 'all') {
       const assignedDate = new Date(assignment.assigned_at);
       const now = new Date();
@@ -3128,7 +3150,6 @@ function HistoryDownload() {
       }
     }
     
-    // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       const carrierName = assignment.carrier?.name?.toLowerCase() || '';
@@ -3146,7 +3167,6 @@ function HistoryDownload() {
     return true;
   });
 
-  // Download loading sheets as CSV
   const downloadLoadingSheetsCSV = () => {
     const headers = ['ID', 'Created At', 'Exporter', 'Client', 'Shipping Line', 'Bill Number', 'Container', 'Seal 1', 'Seal 2', 'Truck', 'Vessel', 'Port', 'Loading Date', 'Loaded By', 'Checked By'];
     
@@ -3180,7 +3200,6 @@ function HistoryDownload() {
     window.URL.revokeObjectURL(url);
   };
 
-  // Download assignments as CSV
   const downloadAssignmentsCSV = () => {
     const headers = ['ID', 'Assigned At', 'Carrier Name', 'Carrier ID', 'Carrier Vehicle', 'Loading Sheet Bill', 'Client', 'Container', 'Assigned By', 'Status', 'Transit Started', 'Transit Completed', 'Notes'];
     
@@ -3212,20 +3231,16 @@ function HistoryDownload() {
     window.URL.revokeObjectURL(url);
   };
 
-  // Download individual loading sheet in CSV format
   const downloadLoadingSheet = async (loadingSheetId: string) => {
     try {
-      // Get the loading sheet details
       const loadingSheet = loadingSheets.find(ls => ls.id === loadingSheetId);
       if (!loadingSheet) {
         toast.error('Loading sheet not found');
         return;
       }
 
-      // Get pallets data
       const pallets = loadingSheet.loading_pallets || [];
       
-      // Calculate totals
       let totalBoxes = 0;
       let totalWeight = 0;
       const varietyDistribution: { [key: string]: number } = {};
@@ -3242,27 +3257,22 @@ function HistoryDownload() {
         totalBoxes += quantity;
         totalWeight += weight;
         
-        // Track variety distribution
         const variety = pallet.variety || 'fuerte';
         const varietyDisplay = variety === 'hass' ? 'Hass' : 
                              variety === 'mixed' ? 'Mixed' : 'Fuerte';
         varietyDistribution[varietyDisplay] = (varietyDistribution[varietyDisplay] || 0) + 1;
         
-        // Track box type distribution
         const boxTypeLabel = boxType === '10kg' ? '10kg Boxes' : '4kg Boxes';
         boxTypeDistribution[boxTypeLabel] = (boxTypeDistribution[boxTypeLabel] || 0) + quantity;
         
-        // Track grade distribution
         const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
         gradeDistribution[grade] = (gradeDistribution[grade] || 0) + quantity;
         
-        // Track size distribution
         const size = pallet.size || 'size24';
         const sizeDisplay = size.replace('size', 'Size ');
         sizeDistribution[sizeDisplay] = (sizeDistribution[sizeDisplay] || 0) + quantity;
       });
 
-      // Format date for CSV
       const formatDateForCSV = (dateString: string | Date | null) => {
         if (!dateString) return '';
         const date = new Date(dateString);
@@ -3273,14 +3283,11 @@ function HistoryDownload() {
         });
       };
 
-      // Create the CSV content
       const csvRows = [];
       
-      // Header
       csvRows.push('LOADING SHEET');
       csvRows.push('');
       
-      // Loading Sheet Information
       csvRows.push(`EXPORTER,${loadingSheet.exporter || 'HARIR INTERNATIONAL LTD'},LOADING DATE,${formatDateForCSV(loadingSheet.loading_date)}`);
       csvRows.push(`CLIENT,${loadingSheet.client || 'N/A'},VESSEL,${loadingSheet.vessel || 'N/A'}`);
       csvRows.push(`SHIPPING LINE,${loadingSheet.shipping_line || 'N/A'},ETA MSA,${formatDateForCSV(loadingSheet.eta_msa)}`);
@@ -3291,15 +3298,12 @@ function HistoryDownload() {
       csvRows.push(`TRUCK,${loadingSheet.truck || ''},TEMP REC 2,${loadingSheet.temp_rec2 || ''}`);
       csvRows.push('');
       
-      // Pallet Summary
       csvRows.push(`PALLETS IN LOADING SHEET (${pallets.length})`);
       csvRows.push(`${totalBoxes} boxes • ${totalWeight} kg`);
       csvRows.push('');
       
-      // Pallet Table Headers
       csvRows.push('PALLET NO,COLD ROOM,VARIETY,TYPE,SIZE,GRADE,QUANTITY,WEIGHT (kg)');
       
-      // Pallet Data Rows
       pallets.forEach((pallet: any, index: number) => {
         const quantity = pallet.quantity || 0;
         const boxType = pallet.box_type || '4kg';
@@ -3315,11 +3319,9 @@ function HistoryDownload() {
         csvRows.push(`${index + 1},${coldRoom},${varietyDisplay},${boxType},${sizeDisplay},${grade},${quantity},${weight} kg`);
       });
       
-      // Totals Row
       csvRows.push(`TOTAL,,,,,,${totalBoxes},${totalWeight} kg`);
       csvRows.push('');
       
-      // Summary Section
       csvRows.push('SUMMARY');
       csvRows.push(`Total Pallets,${pallets.length}`);
       csvRows.push(`Total Boxes,${totalBoxes}`);
@@ -3327,49 +3329,41 @@ function HistoryDownload() {
       csvRows.push(`Average per Pallet,${pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0} boxes`);
       csvRows.push('');
       
-      // Variety Distribution
       csvRows.push('Variety Distribution');
       Object.entries(varietyDistribution).forEach(([variety, count]) => {
         csvRows.push(`${variety},${count}`);
       });
       csvRows.push('');
       
-      // Box Type Distribution
       csvRows.push('Box Type Distribution');
       Object.entries(boxTypeDistribution).forEach(([boxType, count]) => {
         csvRows.push(`${boxType},${count}`);
       });
       csvRows.push('');
       
-      // Grade Distribution
       csvRows.push('Grade Distribution');
       Object.entries(gradeDistribution).forEach(([grade, count]) => {
         csvRows.push(`${grade},${count}`);
       });
       csvRows.push('');
       
-      // Size Distribution
       csvRows.push('Size Distribution');
       Object.entries(sizeDistribution).forEach(([size, count]) => {
         csvRows.push(`${size},${count}`);
       });
       csvRows.push('');
       
-      // Loading Details
       csvRows.push('LOADING DETAILS');
       csvRows.push(`Loaded by,${loadingSheet.loaded_by || "Loader's name & signature"}`);
       csvRows.push(`Checked by,${loadingSheet.checked_by || "Supervisor's name & signature"}`);
       csvRows.push(`Remarks,${loadingSheet.remarks || 'Special instructions or notes'}`);
       csvRows.push('');
       
-      // Footer
       csvRows.push(`Generated by Harir International Logistics System  Document ID: ${loadingSheet.id}`);
       csvRows.push(`Created: ${formatDateForCSV(loadingSheet.created_at)}`);
       
-      // Join all rows with newlines
       const csvContent = csvRows.join('\n');
       
-      // Create and download the CSV file
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -3414,7 +3408,6 @@ function HistoryDownload() {
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -3438,7 +3431,6 @@ function HistoryDownload() {
         </Card>
       </div>
 
-      {/* Filters and Download Options */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -3451,7 +3443,6 @@ function HistoryDownload() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Search and Filters */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="md:col-span-2">
                 <Label htmlFor="search">Search</Label>
@@ -3497,7 +3488,6 @@ function HistoryDownload() {
               </div>
             </div>
 
-            {/* Download Buttons */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button onClick={downloadLoadingSheetsCSV} className="w-full" disabled={filteredLoadingSheets.length === 0}>
                 <FileDown className="h-4 w-4 mr-2" />
@@ -3512,7 +3502,6 @@ function HistoryDownload() {
         </CardContent>
       </Card>
 
-      {/* Loading Sheets Table - UPDATED WITH CORRECT DATA */}
       <Card>
         <CardHeader>
           <CardTitle>Loading Sheets</CardTitle>
@@ -3591,7 +3580,6 @@ function HistoryDownload() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          {/* Pallet Details Modal */}
                           <Dialog>
                             <DialogTrigger asChild>
                               <Button variant="ghost" size="sm" title="View pallet details">
@@ -3610,7 +3598,6 @@ function HistoryDownload() {
                               </DialogHeader>
                               
                               <div className="space-y-4">
-                                {/* Summary Stats */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                                   <div className="text-center">
                                     <div className="text-2xl font-bold text-gray-800">{palletsCount}</div>
@@ -3626,7 +3613,6 @@ function HistoryDownload() {
                                   </div>
                                 </div>
 
-                                {/* Pallets Table */}
                                 {Array.isArray(sheet.loading_pallets) && sheet.loading_pallets.length > 0 ? (
                                   <div className="border rounded-lg">
                                     <Table>
@@ -3690,7 +3676,6 @@ function HistoryDownload() {
                                           );
                                         })}
                                         
-                                        {/* Totals Row */}
                                         <TableRow className="bg-gray-50">
                                           <TableCell colSpan={6} className="font-bold text-right">TOTAL</TableCell>
                                           <TableCell className="text-right font-bold">{totalBoxes.toLocaleString()}</TableCell>
@@ -3745,7 +3730,6 @@ function HistoryDownload() {
         </CardContent>
       </Card>
 
-      {/* Assignments Table */}
       <Card>
         <CardHeader>
           <CardTitle>Carrier Assignments</CardTitle>
@@ -3830,7 +3814,6 @@ export default function OutboundPage() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const router = useRouter();
 
-  // Statistics state
   const [stats, setStats] = useState({
     totalLoadingSheets: 0,
     containersLoaded: 0,
@@ -3846,49 +3829,41 @@ export default function OutboundPage() {
     statusDistribution: {} as Record<string, number>
   });
 
-  // Fetch all data
   const fetchAllStats = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Fetch loading sheets data
       const loadingSheetsResponse = await fetch('/api/loading-sheets?limit=100');
       const loadingSheetsData = loadingSheetsResponse.ok 
         ? await loadingSheetsResponse.json() 
         : { success: false, data: [] };
       
-      // Fetch carriers data
       const carriersResponse = await fetch('/api/carriers');
       const carriersData = carriersResponse.ok 
         ? await carriersResponse.json() 
         : { success: false, data: [] };
       
-      // Fetch assignments data
       const assignmentsResponse = await fetch('/api/carrier-assignments');
       const assignmentsData = assignmentsResponse.ok 
         ? await assignmentsResponse.json() 
         : { success: false, data: [] };
       
-      // Fetch shipments data for status distribution
       const shipmentsResponse = await fetch('/api/outbound-shipments');
       const shipmentsData = shipmentsResponse.ok 
         ? await shipmentsResponse.json() 
         : { success: false, data: [] };
       
-      // Calculate stats from loaded data
       const loadingSheets = loadingSheetsData.success ? loadingSheetsData.data : [];
       const carriers = carriersData.success ? carriersData.data : [];
       const assignments = assignmentsData.success ? assignmentsData.data : [];
       const shipments = shipmentsData.success ? shipmentsData.data : [];
       
-      // Calculate status distribution
       const statusDistribution: Record<string, number> = {};
       shipments.forEach((shipment: DatabaseShipment) => {
         const displayStatus = convertDbStatusToDisplay(shipment.status);
         statusDistribution[displayStatus] = (statusDistribution[displayStatus] || 0) + 1;
       });
       
-      // Calculate pending assignments (loading sheets without assignments)
       const assignedLoadingSheetIds = new Set(
         assignments.map((assignment: Assignment) => assignment.loading_sheet_id)
       );
@@ -3896,17 +3871,14 @@ export default function OutboundPage() {
         (sheet: DatabaseLoadingSheet) => !assignedLoadingSheetIds.has(sheet.id)
       ).length;
       
-      // Calculate completed assignments
       const completedAssignments = assignments.filter(
         (assignment: Assignment) => assignment.status === 'completed'
       ).length;
       
-      // Calculate active carriers (carriers with status 'Active')
       const activeCarriers = carriers.filter(
         (carrier: Carrier) => carrier.status === 'Active'
       ).length;
       
-      // Set stats
       setStats({
         totalLoadingSheets: loadingSheets.length,
         containersLoaded: assignments.length,
@@ -3924,7 +3896,6 @@ export default function OutboundPage() {
         statusDistribution: statusDistribution
       });
       
-      // Transform and set shipment data
       if (shipmentsData.success && shipmentsData.data) {
         const transformedData = shipmentsData.data.map((shipment: DatabaseShipment) => ({
           id: shipment.id,
@@ -3965,7 +3936,6 @@ export default function OutboundPage() {
     fetchAllStats();
   }, [fetchAllStats]);
 
-  // Filter shipments for outbound processing
   const shipmentsForOutbound = shipments.filter(
     s => s.status === 'Preparing for Dispatch' || s.status === 'Ready for Dispatch'
   );
@@ -3981,7 +3951,6 @@ export default function OutboundPage() {
     fetchAllStats();
   };
 
-  // Calculate completion rate
   const completionRate = stats.totalAssignments > 0 
     ? Math.round((stats.completedAssignments / stats.totalAssignments) * 100) 
     : 0;
@@ -4054,7 +4023,6 @@ export default function OutboundPage() {
             </Button>
           </div>
 
-          {/* Tabs Navigation - Added History tab */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-flex">
               <TabsTrigger value="dashboard">
@@ -4079,9 +4047,7 @@ export default function OutboundPage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* Dashboard Tab */}
             <TabsContent value="dashboard" className="space-y-6">
-              {/* Outbound Operations Stats */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
@@ -4210,7 +4176,6 @@ export default function OutboundPage() {
                 </Card>
               </div>
 
-              {/* Status Distribution */}
               <Card>
                 <CardHeader>
                   <CardTitle>Shipment Status Distribution</CardTitle>
@@ -4254,7 +4219,6 @@ export default function OutboundPage() {
                 </CardContent>
               </Card>
 
-              {/* Recent Activity */}
               <Card>
                 <CardHeader>
                   <CardTitle>Recent Shipments</CardTitle>
@@ -4292,22 +4256,18 @@ export default function OutboundPage() {
               </Card>
             </TabsContent>
 
-            {/* Loading Sheet Tab */}
             <TabsContent value="loading-sheet">
               <LoadingSheet />
             </TabsContent>
 
-            {/* Carrier Assignment Tab */}
             <TabsContent value="carrier-assignment">
               <CarrierAssignmentForm />
             </TabsContent>
 
-            {/* Transit Management Tab */}
             <TabsContent value="transit-management">
               <TransitManagement />
             </TabsContent>
 
-            {/* NEW: History & Reports Tab */}
             <TabsContent value="history">
               <HistoryDownload />
             </TabsContent>

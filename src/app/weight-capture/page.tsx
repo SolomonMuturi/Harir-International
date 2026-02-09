@@ -14,7 +14,7 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { WeightCapture } from '@/components/dashboard/weight-capture';
 import { FinalTagDialog } from '@/components/dashboard/final-tag-dialog';
-import { Scale, Boxes, Truck, Loader2, RefreshCw, AlertCircle, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Printer, FileText, AlertTriangle, XCircle, Trash2, Plus, Filter, Eye, EyeOff, Users, Apple, PieChart, History, Calculator, BarChart3, Layers, ChevronDown, ChevronUp, MoreVertical, Edit, SortAsc, SortDesc, CalendarDays } from 'lucide-react';
+import { Scale, Boxes, Truck, Loader2, RefreshCw, AlertCircle, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Printer, FileText, AlertTriangle, XCircle, Trash2, Plus, Filter, Eye, EyeOff, Users, Apple, PieChart, History, Calculator, BarChart3, Layers, ChevronDown, ChevronUp, MoreVertical, Edit, SortAsc, SortDesc, CalendarDays, Save, X, AlertOctagon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +35,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Define types
 interface WeightEntry {
@@ -187,6 +189,23 @@ interface DailySummary {
   varieties: VarietyStats[];
 }
 
+// Edit form interface
+interface EditWeightFormData {
+  pallet_id: string;
+  supplier: string;
+  supplier_id: string;
+  supplier_phone: string;
+  driver_name: string;
+  driver_phone: string;
+  vehicle_plate: string;
+  region: string;
+  fuerte_weight: number;
+  fuerte_crates: number;
+  hass_weight: number;
+  hass_crates: number;
+  notes: string;
+}
+
 type RejectSortField = 'date' | 'supplier' | 'weight' | 'status';
 type RejectSortDirection = 'asc' | 'desc';
 
@@ -280,6 +299,28 @@ export default function WeightCapturePage() {
   
   // State for pallet ID counter
   const [palletCounter, setPalletCounter] = useState<number>(1);
+
+  // Edit and Delete states
+  const [editingWeight, setEditingWeight] = useState<WeightEntry | null>(null);
+  const [editFormData, setEditFormData] = useState<EditWeightFormData>({
+    pallet_id: '',
+    supplier: '',
+    supplier_id: '',
+    supplier_phone: '',
+    driver_name: '',
+    driver_phone: '',
+    vehicle_plate: '',
+    region: '',
+    fuerte_weight: 0,
+    fuerte_crates: 0,
+    hass_weight: 0,
+    hass_crates: 0,
+    notes: ''
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [weightToDelete, setWeightToDelete] = useState<WeightEntry | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const { toast } = useToast();
 
@@ -556,16 +597,32 @@ export default function WeightCapturePage() {
   };
 
   // Update supplier status
-  useEffect(() => {
-    if (checkedInSuppliers.length > 0) {
-      const updatedSuppliers = checkedInSuppliers.map(supplier => ({
-        ...supplier,
-        status: processedSuppliers.has(supplier.id) ? 'weighed' : 'pending' as const
-      }));
-      setCheckedInSuppliers(updatedSuppliers);
-    }
-  }, [processedSuppliers]);
+useEffect(() => {
+  if (checkedInSuppliers.length > 0) {
+    const updatedSuppliers = checkedInSuppliers.map(supplier => ({
+      ...supplier,
+      // Check if supplier is in processedSuppliers AND has NO recent re-check-in
+      status: shouldShowAsPending(supplier) ? 'pending' : 'weighed'
+    }));
+    setCheckedInSuppliers(updatedSuppliers);
+  }
+}, [processedSuppliers]);
 
+// Add this helper function:
+const shouldShowAsPending = (supplier) => {
+  // If never processed before, definitely show as pending
+  if (!processedSuppliers.has(supplier.id)) return true;
+  
+  // Check if this supplier was re-checked in AFTER their last weighing
+  const supplierWeights = weights.filter(w => w.supplier_id === supplier.id);
+  if (supplierWeights.length === 0) return false; // Shouldn't happen
+  
+  const lastWeightTime = new Date(supplierWeights[0].created_at).getTime();
+  const recheckInTime = new Date(supplier.check_in_time).getTime();
+  
+  // If re-checked in AFTER last weighing, show as pending (new intake)
+  return recheckInTime > lastWeightTime;
+};
   // Fetch KPI data
   const fetchKpiData = async () => {
     try {
@@ -1655,6 +1712,221 @@ export default function WeightCapturePage() {
     }
   };
 
+  // EDIT AND DELETE FUNCTIONS FOR INTAKE RECORDS
+
+  // Start editing a weight entry
+  const handleStartEdit = (weight: WeightEntry) => {
+    setEditingWeight(weight);
+    setEditFormData({
+      pallet_id: weight.pallet_id || '',
+      supplier: weight.supplier || '',
+      supplier_id: weight.supplier_id || '',
+      supplier_phone: weight.supplier_phone || '',
+      driver_name: weight.driver_name || '',
+      driver_phone: weight.driver_phone || '',
+      vehicle_plate: weight.vehicle_plate || '',
+      region: weight.region || '',
+      fuerte_weight: weight.fuerte_weight || 0,
+      fuerte_crates: weight.fuerte_crates || 0,
+      hass_weight: weight.hass_weight || 0,
+      hass_crates: weight.hass_crates || 0,
+      notes: weight.notes || ''
+    });
+  };
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setEditingWeight(null);
+    setEditFormData({
+      pallet_id: '',
+      supplier: '',
+      supplier_id: '',
+      supplier_phone: '',
+      driver_name: '',
+      driver_phone: '',
+      vehicle_plate: '',
+      region: '',
+      fuerte_weight: 0,
+      fuerte_crates: 0,
+      hass_weight: 0,
+      hass_crates: 0,
+      notes: ''
+    });
+  };
+
+// Save edited weight
+const handleSaveEdit = async () => {
+  if (!editingWeight) return;
+  
+  // Validation
+  if (editFormData.fuerte_weight <= 0 && editFormData.hass_weight <= 0) {
+    toast({
+      title: 'Validation Error',
+      description: 'Please enter weight for at least one variety (Fuerte or Hass)',
+      variant: 'destructive',
+    });
+    return;
+  }
+  
+  if (editFormData.fuerte_crates <= 0 && editFormData.hass_crates <= 0) {
+    toast({
+      title: 'Validation Error',
+      description: 'Please enter number of crates for at least one variety',
+      variant: 'destructive',
+    });
+    return;
+  }
+  
+  try {
+    setIsSavingEdit(true);
+    
+    const payload = {
+      pallet_id: editFormData.pallet_id,
+      supplier: editFormData.supplier,
+      supplier_id: editFormData.supplier_id,
+      supplier_phone: editFormData.supplier_phone,
+      driver_name: editFormData.driver_name,
+      driver_phone: editFormData.driver_phone,
+      vehicle_plate: editFormData.vehicle_plate,
+      region: editFormData.region,
+      fuerte_weight: String(editFormData.fuerte_weight),
+      fuerte_crates: String(editFormData.fuerte_crates),
+      hass_weight: String(editFormData.hass_weight),
+      hass_crates: String(editFormData.hass_crates),
+      notes: editFormData.notes
+    };
+    
+    // IMPORTANT: Pass the ID as a query parameter
+    const response = await fetch(`/api/weights?id=${editingWeight.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Failed to update weight';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.details || errorData.message || errorMessage;
+      } catch (parseError) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    const updatedEntry = result.data;
+    
+    if (!updatedEntry) {
+      throw new Error('No data returned from server');
+    }
+    
+    // Update local state
+    setWeights(prev => prev.map(w => 
+      w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
+    ));
+    
+    // Update history weights if we're on the history tab
+    setHistoryWeights(prev => prev.map(w => 
+      w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
+    ));
+    
+    handleCancelEdit();
+    
+    toast({
+      title: 'Weight Updated Successfully',
+      description: `Pallet ${updatedEntry.pallet_id} has been updated.`,
+    });
+    
+    // Refresh KPI data
+    await fetchKpiData();
+    
+  } catch (error: any) {
+    console.error('Error updating weight:', error);
+    toast({
+      title: 'Update Failed',
+      description: error.message || 'Failed to update weight entry',
+      variant: 'destructive',
+    });
+  } finally {
+    setIsSavingEdit(false);
+  }
+};
+
+  // Confirm delete weight
+  const handleConfirmDelete = (weight: WeightEntry) => {
+    setWeightToDelete(weight);
+    setShowDeleteDialog(true);
+  };
+
+  // Delete weight
+// Delete weight
+const handleDeleteWeight = async () => {
+  if (!weightToDelete) return;
+  
+  try {
+    setIsDeleting(true);
+    
+    // IMPORTANT: Pass the ID as a query parameter
+    const response = await fetch(`/api/weights?id=${weightToDelete.id}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete weight entry');
+    }
+    
+    // Update local state
+    setWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
+    
+    // Update history weights if we're on the history tab
+    setHistoryWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
+    
+    // Update processed suppliers if this was the only entry for the supplier
+    const supplierOtherWeights = weights.filter(w => 
+      w.supplier_id === weightToDelete.supplier_id && w.id !== weightToDelete.id
+    );
+    
+    if (supplierOtherWeights.length === 0 && weightToDelete.supplier_id) {
+      setProcessedSuppliers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(weightToDelete.supplier_id);
+        return newSet;
+      });
+      
+      setCheckedInSuppliers(prev => 
+        prev.map(supplier => 
+          supplier.id === weightToDelete.supplier_id 
+            ? { ...supplier, status: 'pending' } 
+            : supplier
+        )
+      );
+    }
+    
+    toast({
+      title: 'Weight Deleted',
+      description: `Pallet ${weightToDelete.pallet_id} has been deleted.`,
+    });
+    
+    // Refresh KPI data
+    await fetchKpiData();
+    
+  } catch (error: any) {
+    console.error('Error deleting weight:', error);
+    toast({
+      title: 'Delete Failed',
+      description: error.message || 'Failed to delete weight entry',
+      variant: 'destructive',
+    });
+  } finally {
+    setIsDeleting(false);
+    setShowDeleteDialog(false);
+    setWeightToDelete(null);
+  }
+};
+
   // Get regions for filter
   const regions = Array.from(new Set(weights.map(w => w.region).filter(Boolean)));
 
@@ -2090,7 +2362,7 @@ export default function WeightCapturePage() {
               </Card>
             </TabsContent>
 
-            {/* History Tab */}
+            {/* History Tab - UPDATED WITH EDIT/DELETE */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2112,7 +2384,7 @@ export default function WeightCapturePage() {
                     </div>
                   </CardTitle>
                   <CardDescription>
-                    View weight history by date and export data in multiple formats
+                    View weight history by date, edit records, and export data in multiple formats
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -2195,6 +2467,241 @@ export default function WeightCapturePage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Edit Form (when editing) */}
+                    {editingWeight && (
+                      <Card className="border-blue-200 border-2">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-blue-700">
+                            <Edit className="w-5 h-5" />
+                            Edit Weight Entry
+                          </CardTitle>
+                          <CardDescription>
+                            Edit details for Pallet: {editingWeight.pallet_id}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-pallet-id">Pallet ID *</Label>
+                                <Input
+                                  id="edit-pallet-id"
+                                  value={editFormData.pallet_id}
+                                  onChange={(e) => setEditFormData({...editFormData, pallet_id: e.target.value})}
+                                  placeholder="Enter pallet ID"
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-supplier">Supplier Name *</Label>
+                                <Input
+                                  id="edit-supplier"
+                                  value={editFormData.supplier}
+                                  onChange={(e) => setEditFormData({...editFormData, supplier: e.target.value})}
+                                  placeholder="Enter supplier name"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-driver-name">Driver Name</Label>
+                                <Input
+                                  id="edit-driver-name"
+                                  value={editFormData.driver_name}
+                                  onChange={(e) => setEditFormData({...editFormData, driver_name: e.target.value})}
+                                  placeholder="Enter driver name"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-vehicle-plate">Vehicle Plate</Label>
+                                <Input
+                                  id="edit-vehicle-plate"
+                                  value={editFormData.vehicle_plate}
+                                  onChange={(e) => setEditFormData({...editFormData, vehicle_plate: e.target.value})}
+                                  placeholder="Enter vehicle plate"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-supplier-phone">Supplier Phone</Label>
+                                <Input
+                                  id="edit-supplier-phone"
+                                  value={editFormData.supplier_phone}
+                                  onChange={(e) => setEditFormData({...editFormData, supplier_phone: e.target.value})}
+                                  placeholder="Enter supplier phone"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-driver-phone">Driver Phone</Label>
+                                <Input
+                                  id="edit-driver-phone"
+                                  value={editFormData.driver_phone}
+                                  onChange={(e) => setEditFormData({...editFormData, driver_phone: e.target.value})}
+                                  placeholder="Enter driver phone"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-region">Region</Label>
+                                <Input
+                                  id="edit-region"
+                                  value={editFormData.region}
+                                  onChange={(e) => setEditFormData({...editFormData, region: e.target.value})}
+                                  placeholder="Enter region"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="edit-supplier-id">Supplier ID</Label>
+                                <Input
+                                  id="edit-supplier-id"
+                                  value={editFormData.supplier_id}
+                                  onChange={(e) => setEditFormData({...editFormData, supplier_id: e.target.value})}
+                                  placeholder="Enter supplier ID"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Weight Inputs */}
+                            <div className="border-t pt-4">
+                              <h4 className="font-semibold mb-3">Weight Details *</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-fuerte-weight" className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    Fuerte Weight (kg) *
+                                  </Label>
+                                  <Input
+                                    id="edit-fuerte-weight"
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={editFormData.fuerte_weight}
+                                    onChange={(e) => setEditFormData({...editFormData, fuerte_weight: parseFloat(e.target.value) || 0})}
+                                    placeholder="0.0"
+                                    required
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-fuerte-crates">Fuerte Crates *</Label>
+                                  <Input
+                                    id="edit-fuerte-crates"
+                                    type="number"
+                                    min="0"
+                                    value={editFormData.fuerte_crates}
+                                    onChange={(e) => setEditFormData({...editFormData, fuerte_crates: parseInt(e.target.value) || 0})}
+                                    placeholder="0"
+                                    required
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-hass-weight" className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                    Hass Weight (kg) *
+                                  </Label>
+                                  <Input
+                                    id="edit-hass-weight"
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={editFormData.hass_weight}
+                                    onChange={(e) => setEditFormData({...editFormData, hass_weight: parseFloat(e.target.value) || 0})}
+                                    placeholder="0.0"
+                                    required
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-hass-crates">Hass Crates *</Label>
+                                  <Input
+                                    id="edit-hass-crates"
+                                    type="number"
+                                    min="0"
+                                    value={editFormData.hass_crates}
+                                    onChange={(e) => setEditFormData({...editFormData, hass_crates: parseInt(e.target.value) || 0})}
+                                    placeholder="0"
+                                    required
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="edit-notes">Notes</Label>
+                              <Textarea
+                                id="edit-notes"
+                                value={editFormData.notes}
+                                onChange={(e) => setEditFormData({...editFormData, notes: e.target.value})}
+                                placeholder="Additional notes..."
+                                rows={3}
+                              />
+                            </div>
+
+                            {/* Summary */}
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                              <div className="grid grid-cols-2 gap-4 mb-3">
+                                <div>
+                                  <div className="text-sm text-blue-600">Total Weight</div>
+                                  <div className="text-xl font-bold text-blue-700">
+                                    {(editFormData.fuerte_weight + editFormData.hass_weight).toFixed(1)} kg
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-blue-600">Total Crates</div>
+                                  <div className="text-xl font-bold">
+                                    {editFormData.fuerte_crates + editFormData.hass_crates}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-blue-700">
+                                  Fuerte: {editFormData.fuerte_weight.toFixed(1)} kg ({editFormData.fuerte_crates} crates)
+                                </span>
+                                <span className="text-green-700">
+                                  Hass: {editFormData.hass_weight.toFixed(1)} kg ({editFormData.hass_crates} crates)
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-2">
+                              <Button
+                                onClick={handleCancelEdit}
+                                variant="outline"
+                                disabled={isSavingEdit}
+                              >
+                                <X className="w-4 h-4 mr-2" />
+                                Cancel
+                              </Button>
+                              <Button
+                                onClick={handleSaveEdit}
+                                disabled={isSavingEdit || (editFormData.fuerte_weight <= 0 && editFormData.hass_weight <= 0)}
+                                className="bg-blue-600 hover:bg-blue-700"
+                              >
+                                {isSavingEdit ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Saving...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-4 h-4 mr-2" />
+                                    Save Changes
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
 
                     {/* History Table */}
                     <div className="border rounded-lg overflow-hidden">
@@ -2319,26 +2826,83 @@ export default function WeightCapturePage() {
                                     </td>
                                     <td className="p-3">
                                       <div className="flex gap-2">
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => handleStartEdit(entry)}
+                                                title="Edit Record"
+                                              >
+                                                <Edit className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Edit record</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                        
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => handleConfirmDelete(entry)}
+                                                title="Delete Record"
+                                              >
+                                                <Trash2 className="h-4 w-4 text-red-600" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Delete record</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                        
                                         {entry.supplier_id && (
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-8 w-8 p-0"
-                                            onClick={() => downloadSupplierGRN(entry.supplier_id!)}
-                                            title="Download Supplier GRN"
-                                          >
-                                            <Printer className="h-4 w-4" />
-                                          </Button>
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  className="h-8 w-8 p-0"
+                                                  onClick={() => downloadSupplierGRN(entry.supplier_id!)}
+                                                  title="Download Supplier GRN"
+                                                >
+                                                  <Printer className="h-4 w-4" />
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                <p>Download GRN</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
                                         )}
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-8 w-8 p-0"
-                                          onClick={() => handleSelectWeightForRejection(entry)}
-                                          title="Add Rejection"
-                                        >
-                                          <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                        </Button>
+                                        
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => handleSelectWeightForRejection(entry)}
+                                                title="Add Rejection"
+                                              >
+                                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Add rejection</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
                                       </div>
                                     </td>
                                   </tr>
@@ -3352,6 +3916,89 @@ export default function WeightCapturePage() {
             }}
           />
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertOctagon className="w-5 h-5" />
+                Delete Weight Entry
+              </DialogTitle>
+              <DialogDescription>
+                This action cannot be undone. This will permanently delete the weight entry for{' '}
+                <span className="font-semibold">{weightToDelete?.supplier || 'Unknown Supplier'}</span>
+                {' '}with Pallet ID: <span className="font-mono font-semibold">{weightToDelete?.pallet_id}</span>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-red-700">Warning</h4>
+                  <p className="text-sm text-red-600">
+                    Deleting this entry will remove all associated data including weight details and may affect supplier status.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 p-3 bg-white rounded border">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-gray-500">Supplier:</span>
+                    <span className="font-medium ml-2">{weightToDelete?.supplier || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Driver:</span>
+                    <span className="font-medium ml-2">{weightToDelete?.driver_name || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Total Weight:</span>
+                    <span className="font-bold text-red-700 ml-2">
+                      {weightToDelete ? ((weightToDelete.fuerte_weight || 0) + (weightToDelete.hass_weight || 0)).toFixed(1) : 0} kg
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Total Crates:</span>
+                    <span className="font-bold ml-2">
+                      {weightToDelete ? ((weightToDelete.fuerte_crates || 0) + (weightToDelete.hass_crates || 0)) : 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setWeightToDelete(null);
+                }}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteWeight}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Permanently
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </SidebarInset>
     </SidebarProvider>
   );

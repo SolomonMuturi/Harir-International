@@ -110,6 +110,7 @@ interface Pallet {
   loading_sheet_id?: string | null;
   conversion_date?: string;
   original_box_ids?: string[];
+  is_air_freight?: boolean;
 }
 
 interface TemperatureLog {
@@ -282,6 +283,7 @@ interface PalletHistory {
   original_box_ids: string[];
   is_manual: boolean;
   created_at: string;
+  is_air_freight?: boolean;
 }
 
 const BOX_SIZES = [
@@ -531,11 +533,15 @@ export default function ColdRoomPage() {
     palletStartDate: string;
     palletEndDate: string;
     inventory: string;
+    countingRecordsStart: string;
+    countingRecordsEnd: string;
   }>({
     countingRecords: today,
     palletStartDate: today,
     palletEndDate: today,
     inventory: today,
+    countingRecordsStart: '',
+    countingRecordsEnd: '',
   });
 
   const getVarietyDisplay = (variety: string): string => {
@@ -961,7 +967,8 @@ export default function ColdRoomPage() {
               boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
               loading_sheet_id: pallet.loading_sheet_id || null,
               conversion_date: pallet.conversion_date || pallet.created_at,
-              original_box_ids: pallet.original_box_ids || []
+              original_box_ids: pallet.original_box_ids || [],
+              is_air_freight: pallet.is_air_freight || false
             };
           })
         );
@@ -1436,248 +1443,268 @@ export default function ColdRoomPage() {
     });
   };
 
-const calculateSelectedGroupsSummary = () => {
-  const selectedGroups = palletCreation.boxGroups.filter(group => group.is_selected && group.selectedQuantity > 0);
-  
-  const totalBoxes = selectedGroups.reduce((sum, group) => sum + group.selectedQuantity, 0);
-  const totalWeight = selectedGroups.reduce((sum, group) => {
-    const boxWeight = group.box_type === '4kg' ? 4 : 10;
-    return sum + (group.selectedQuantity * boxWeight);
-  }, 0);
-  
-  const varietySizeGroups: Record<string, {
-    variety: string;
-    size: string;
-    totalQuantity: number;
-    groups: BoxGroup[];
-  }> = {};
-  
-  selectedGroups.forEach(group => {
-    const key = `${group.variety}_${group.size}`;
-    if (!varietySizeGroups[key]) {
-      varietySizeGroups[key] = {
-        variety: group.variety,
-        size: group.size,
-        totalQuantity: 0,
-        groups: []
-      };
-    }
-    varietySizeGroups[key].totalQuantity += group.selectedQuantity;
-    varietySizeGroups[key].groups.push(group);
-  });
-  
-  const boxTypeSummary: { [key: string]: { totalBoxes: number, pallets: number, remaining: number } } = {};
-  
-  selectedGroups.forEach(group => {
-    if (!boxTypeSummary[group.box_type]) {
-      boxTypeSummary[group.box_type] = { totalBoxes: 0, pallets: 0, remaining: 0 };
-    }
-    boxTypeSummary[group.box_type].totalBoxes += group.selectedQuantity;
-  });
-  
-  Object.keys(boxTypeSummary).forEach(type => {
-    const standardBoxesPerPallet = type === '4kg' ? palletCreation.boxesPerPallet : 120;
-    boxTypeSummary[type].pallets = Math.floor(boxTypeSummary[type].totalBoxes / standardBoxesPerPallet);
-    boxTypeSummary[type].remaining = boxTypeSummary[type].totalBoxes % standardBoxesPerPallet;
-  });
-  
-  const suggestedPallets = Math.ceil(totalBoxes / palletCreation.boxesPerPallet);
-  
-  return {
-    totalBoxes,
-    totalWeight,
-    boxesPerPallet: palletCreation.boxesPerPallet,
-    suggestedPallets,
-    isAtLeastOneBox: totalBoxes > 0,
-    boxTypeSummary,
-    varietySizeGroups: Object.values(varietySizeGroups),
-    selectedGroups: selectedGroups.map(group => ({
-      size: group.size,
-      variety: group.variety,
-      box_type: group.box_type,
-      grade: group.grade,
-      quantity: group.selectedQuantity,
-      cold_room_id: group.cold_room_id,
-      supplierName: group.boxes[0]?.supplier_name || 'Unknown Supplier',
-      region: group.boxes[0]?.region || '',
-      countingRecordId: group.boxes[0]?.counting_record_id || null
-    }))
-  };
-};
-
-
-const calculatePalletCounts = () => {
-  const summary = calculateSelectedGroupsSummary();
-  setPalletCounts({});
-  
-  if (!summary.isAtLeastOneBox) return;
-  
-  const counts: { [key: string]: number } = {};
-  
-  const boxTypes = ['4kg', '10kg'];
-  
-  boxTypes.forEach(type => {
-    const boxesOfType = palletCreation.boxGroups
-      .filter(group => group.is_selected && group.selectedQuantity > 0 && group.box_type === type)
-      .reduce((sum, group) => sum + group.selectedQuantity, 0);
+  const calculateSelectedGroupsSummary = () => {
+    const selectedGroups = palletCreation.boxGroups.filter(group => group.is_selected && group.selectedQuantity > 0);
     
-    if (boxesOfType > 0) {
-      const boxesPerPallet = type === '4kg' ? palletCreation.boxesPerPallet : 120;
-      const fullPallets = Math.floor(boxesOfType / boxesPerPallet);
-      const remainingBoxes = boxesOfType % boxesPerPallet;
-      
-      counts[type] = fullPallets;
-      
-      if (remainingBoxes > 0) {
-        counts[`${type}_remaining`] = remainingBoxes;
+    const totalBoxes = selectedGroups.reduce((sum, group) => sum + group.selectedQuantity, 0);
+    const totalWeight = selectedGroups.reduce((sum, group) => {
+      const boxWeight = group.box_type === '4kg' ? 4 : 10;
+      return sum + (group.selectedQuantity * boxWeight);
+    }, 0);
+    
+    const varietySizeGroups: Record<string, {
+      variety: string;
+      size: string;
+      totalQuantity: number;
+      groups: BoxGroup[];
+    }> = {};
+    
+    selectedGroups.forEach(group => {
+      const key = `${group.variety}_${group.size}`;
+      if (!varietySizeGroups[key]) {
+        varietySizeGroups[key] = {
+          variety: group.variety,
+          size: group.size,
+          totalQuantity: 0,
+          groups: []
+        };
       }
-    }
-  });
-  
-  setPalletCounts(counts);
-};
+      varietySizeGroups[key].totalQuantity += group.selectedQuantity;
+      varietySizeGroups[key].groups.push(group);
+    });
+    
+    const boxTypeSummary: { [key: string]: { totalBoxes: number, pallets: number, remaining: number } } = {};
+    
+    selectedGroups.forEach(group => {
+      if (!boxTypeSummary[group.box_type]) {
+        boxTypeSummary[group.box_type] = { totalBoxes: 0, pallets: 0, remaining: 0 };
+      }
+      boxTypeSummary[group.box_type].totalBoxes += group.selectedQuantity;
+    });
+    
+    Object.keys(boxTypeSummary).forEach(type => {
+      if (palletCreation.boxesPerPallet === 0) {
+        // Unlimited - Air freight
+        boxTypeSummary[type].pallets = 1;
+        boxTypeSummary[type].remaining = 0;
+      } else {
+        const standardBoxesPerPallet = type === '4kg' ? palletCreation.boxesPerPallet : 120;
+        boxTypeSummary[type].pallets = Math.floor(boxTypeSummary[type].totalBoxes / standardBoxesPerPallet);
+        boxTypeSummary[type].remaining = boxTypeSummary[type].totalBoxes % standardBoxesPerPallet;
+      }
+    });
+    
+    const suggestedPallets = palletCreation.boxesPerPallet === 0 ? 
+      1 : // For air freight, always 1 pallet
+      Math.ceil(totalBoxes / palletCreation.boxesPerPallet);
+    
+    return {
+      totalBoxes,
+      totalWeight,
+      boxesPerPallet: palletCreation.boxesPerPallet,
+      suggestedPallets,
+      isAtLeastOneBox: totalBoxes > 0,
+      boxTypeSummary,
+      varietySizeGroups: Object.values(varietySizeGroups),
+      selectedGroups: selectedGroups.map(group => ({
+        size: group.size,
+        variety: group.variety,
+        box_type: group.box_type,
+        grade: group.grade,
+        quantity: group.selectedQuantity,
+        cold_room_id: group.cold_room_id,
+        supplierName: group.boxes[0]?.supplier_name || 'Unknown Supplier',
+        region: group.boxes[0]?.region || '',
+        countingRecordId: group.boxes[0]?.counting_record_id || null
+      }))
+    };
+  };
+
+  const calculatePalletCounts = () => {
+    const summary = calculateSelectedGroupsSummary();
+    setPalletCounts({});
+    
+    if (!summary.isAtLeastOneBox) return;
+    
+    const counts: { [key: string]: number } = {};
+    
+    const boxTypes = ['4kg', '10kg'];
+    
+    boxTypes.forEach(type => {
+      const boxesOfType = palletCreation.boxGroups
+        .filter(group => group.is_selected && group.selectedQuantity > 0 && group.box_type === type)
+        .reduce((sum, group) => sum + group.selectedQuantity, 0);
+      
+      if (boxesOfType > 0) {
+        if (palletCreation.boxesPerPallet === 0) {
+          // Air freight - unlimited boxes per pallet
+          counts[type] = 1;
+        } else {
+          const boxesPerPallet = type === '4kg' ? palletCreation.boxesPerPallet : 120;
+          const fullPallets = Math.floor(boxesOfType / boxesPerPallet);
+          const remainingBoxes = boxesOfType % boxesPerPallet;
+          
+          counts[type] = fullPallets;
+          
+          if (remainingBoxes > 0) {
+            counts[`${type}_remaining`] = remainingBoxes;
+          }
+        }
+      }
+    });
+    
+    setPalletCounts(counts);
+  };
 
   useEffect(() => {
     calculatePalletCounts();
   }, [palletCreation.boxGroups]);
 
-const handleCreateManualPallet = async () => {
-  const summary = calculateSelectedGroupsSummary();
-  
-  if (summary.totalBoxes === 0) {
-    toast({
-      title: 'No boxes selected',
-      description: 'Please select at least one box to create a pallet',
-      variant: 'destructive',
-    });
-    return;
-  }
-
-  if (!palletCreation.palletName.trim()) {
-    toast({
-      title: 'Pallet name required',
-      description: 'Please enter a name for the pallet',
-      variant: 'destructive',
-    });
-    return;
-  }
-
-  try {
-    const duplicateCheck = await checkForExistingPallet(
-      palletCreation.coldRoomId,
-      summary.selectedGroups
-    );
-
-    if (duplicateCheck.exists) {
+  const handleCreateManualPallet = async () => {
+    const summary = calculateSelectedGroupsSummary();
+    
+    if (summary.totalBoxes === 0) {
       toast({
-        title: 'Duplicate Pallet Detected',
-        description: (
-          <div className="space-y-2">
-            <p>A pallet with the exact same box combination already exists:</p>
-            <div className="bg-amber-50 p-3 rounded border border-amber-200">
-              <p className="font-medium text-amber-800">
-                "{duplicateCheck.palletName}"
-              </p>
-              <p className="text-sm text-amber-600">
-                Pallet ID: {duplicateCheck.palletId}
-              </p>
-            </div>
-            <p className="text-sm text-gray-600">
-              To avoid duplicates, please modify your selection or use the existing pallet.
-            </p>
-          </div>
-        ),
+        title: 'No boxes selected',
+        description: 'Please select at least one box to create a pallet',
         variant: 'destructive',
-        duration: 10000,
       });
       return;
     }
 
-    const response = await fetch('/api/cold-room', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'create-manual-pallet',
-        palletName: palletCreation.palletName,
-        coldRoomId: palletCreation.coldRoomId,
-        boxes: summary.selectedGroups,
-        boxesPerPallet: palletCreation.boxesPerPallet,
-      }),
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
+    if (!palletCreation.palletName.trim()) {
       toast({
-        title: '✅ Pallet Created Successfully!',
-        description: (
-          <div className="space-y-2">
-            <p>Pallet "{palletCreation.palletName}" created with {summary.totalBoxes} boxes</p>
-            <div className="text-sm text-gray-600">
-              {Object.entries(summary.boxTypeSummary).map(([type, stats]) => (
-                <div key={type}>
-                  {type === '4kg' ? `${palletCreation.boxesPerPallet}` : '120'} boxes per pallet: {stats.pallets} pallet{stats.pallets !== 1 ? 's' : ''} 
-                  {stats.remaining > 0 && ` + ${stats.remaining} box${stats.remaining !== 1 ? 'es' : ''}`}
-                </div>
-              ))}
-            </div>
-            <div className="text-xs text-green-600 mt-2">
-              ✅ No duplicates detected - This is a unique pallet combination
-            </div>
-          </div>
-        ),
+        title: 'Pallet name required',
+        description: 'Please enter a name for the pallet',
+        variant: 'destructive',
       });
+      return;
+    }
 
-      setPalletCreation({
-        palletName: '',
-        coldRoomId: 'coldroom1',
-        boxesPerPallet: 288,
-        selectedBoxes: [],
-        boxGroups: [],
-        showOnlyAvailable: true,
-        viewMode: 'grouped',
-      });
+    try {
+      const duplicateCheck = await checkForExistingPallet(
+        palletCreation.coldRoomId,
+        summary.selectedGroups
+      );
 
-      await Promise.allSettled([
-        fetchColdRoomBoxes(),
-        fetchPallets(),
-        fetchPalletHistory(),
-        fetchColdRoomStats(),
-        fetchGroupedBoxes(),
-      ]);
-
-    } else {
-      if (result.status === 409) {
+      if (duplicateCheck.exists) {
         toast({
           title: 'Duplicate Pallet Detected',
           description: (
             <div className="space-y-2">
-              <p>{result.error}</p>
+              <p>A pallet with the exact same box combination already exists:</p>
               <div className="bg-amber-50 p-3 rounded border border-amber-200">
+                <p className="font-medium text-amber-800">
+                  "{duplicateCheck.palletName}"
+                </p>
                 <p className="text-sm text-amber-600">
-                  Pallet ID: {result.palletId}
+                  Pallet ID: {duplicateCheck.palletId}
                 </p>
               </div>
+              <p className="text-sm text-gray-600">
+                To avoid duplicates, please modify your selection or use the existing pallet.
+              </p>
             </div>
           ),
           variant: 'destructive',
           duration: 10000,
         });
-      } else {
-        throw new Error(result.error || 'Failed to create pallet');
+        return;
       }
-    }
-  } catch (error: any) {
-    toast({
-      title: 'Error',
-      description: error.message || 'Failed to create pallet',
-      variant: 'destructive',
-    });
-  }
-};
 
+      const response = await fetch('/api/cold-room', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create-manual-pallet',
+          palletName: palletCreation.palletName,
+          coldRoomId: palletCreation.coldRoomId,
+          boxes: summary.selectedGroups,
+          boxesPerPallet: palletCreation.boxesPerPallet,
+          isAirFreight: palletCreation.boxesPerPallet === 0,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const palletType = palletCreation.boxesPerPallet === 0 ? 'Air Freight' : 'Standard';
+        
+        toast({
+          title: `✅ ${palletType} Pallet Created Successfully!`,
+          description: (
+            <div className="space-y-2">
+              <p>Pallet "{palletCreation.palletName}" created with {summary.totalBoxes} boxes</p>
+              {palletCreation.boxesPerPallet === 0 ? (
+                <div className="text-sm text-cyan-600">
+                  ✈️ Air freight pallet - No box limit applied
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600">
+                  {Object.entries(summary.boxTypeSummary).map(([type, stats]) => (
+                    <div key={type}>
+                      {type === '4kg' ? `${palletCreation.boxesPerPallet}` : '120'} boxes per pallet: {stats.pallets} pallet{stats.pallets !== 1 ? 's' : ''} 
+                      {stats.remaining > 0 && ` + ${stats.remaining} box${stats.remaining !== 1 ? 'es' : ''}`}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-xs text-green-600 mt-2">
+                ✅ No duplicates detected - This is a unique pallet combination
+              </div>
+            </div>
+          ),
+        });
+
+        setPalletCreation({
+          palletName: '',
+          coldRoomId: 'coldroom1',
+          boxesPerPallet: 288,
+          selectedBoxes: [],
+          boxGroups: [],
+          showOnlyAvailable: true,
+          viewMode: 'grouped',
+        });
+
+        await Promise.allSettled([
+          fetchColdRoomBoxes(),
+          fetchPallets(),
+          fetchPalletHistory(),
+          fetchColdRoomStats(),
+          fetchGroupedBoxes(),
+        ]);
+
+      } else {
+        if (result.status === 409) {
+          toast({
+            title: 'Duplicate Pallet Detected',
+            description: (
+              <div className="space-y-2">
+                <p>{result.error}</p>
+                <div className="bg-amber-50 p-3 rounded border border-amber-200">
+                  <p className="text-sm text-amber-600">
+                    Pallet ID: {result.palletId}
+                  </p>
+                </div>
+              </div>
+            ),
+            variant: 'destructive',
+            duration: 10000,
+          });
+        } else {
+          throw new Error(result.error || 'Failed to create pallet');
+        }
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create pallet',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleDissolvePallet = async (palletId: string, coldRoomId: string) => {
     try {
@@ -2281,40 +2308,40 @@ const handleCreateManualPallet = async () => {
   
   const realTimeStats = calculateRealTimeStats();
   
-const getInventoryBreakdown = () => {
-  // Show boxes that are NOT in pallets AND NOT assigned to loading sheets
-  const availableBoxes = coldRoomBoxes.filter(box => 
-    !box.loading_sheet_id && 
-    !box.is_in_pallet
-  );
-  
-  // If showing all cold rooms, don't filter by cold_room_id
-  // If showing specific cold room, filter by it
-  const filteredBoxes = selectedColdRoom === 'all' 
-    ? availableBoxes 
-    : availableBoxes.filter(box => box.cold_room_id === selectedColdRoom);
-  
-  const breakdown: Record<string, any> = {};
-  
-  filteredBoxes.forEach(box => {
-    const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.grade}_${box.size}`;
-    if (!breakdown[key]) {
-      breakdown[key] = {
-        cold_room_id: box.cold_room_id,
-        variety: box.variety,
-        box_type: box.box_type,
-        grade: box.grade,
-        size: box.size,
-        totalQuantity: 0,
-        boxes: []
-      };
-    }
-    breakdown[key].totalQuantity += box.quantity || 0;
-    breakdown[key].boxes.push(box);
-  });
-  
-  return Object.values(breakdown);
-};
+  const getInventoryBreakdown = () => {
+    // Show boxes that are NOT in pallets AND NOT assigned to loading sheets
+    const availableBoxes = coldRoomBoxes.filter(box => 
+      !box.loading_sheet_id && 
+      !box.is_in_pallet
+    );
+    
+    // If showing all cold rooms, don't filter by cold_room_id
+    // If showing specific cold room, filter by it
+    const filteredBoxes = selectedColdRoom === 'all' 
+      ? availableBoxes 
+      : availableBoxes.filter(box => box.cold_room_id === selectedColdRoom);
+    
+    const breakdown: Record<string, any> = {};
+    
+    filteredBoxes.forEach(box => {
+      const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.grade}_${box.size}`;
+      if (!breakdown[key]) {
+        breakdown[key] = {
+          cold_room_id: box.cold_room_id,
+          variety: box.variety,
+          box_type: box.box_type,
+          grade: box.grade,
+          size: box.size,
+          totalQuantity: 0,
+          boxes: []
+        };
+      }
+      breakdown[key].totalQuantity += box.quantity || 0;
+      breakdown[key].boxes.push(box);
+    });
+    
+    return Object.values(breakdown);
+  };
 
   const handleViewLoadingSheet = (loadingSheetId: string) => {
     window.open(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`, '_blank');
@@ -2482,489 +2509,490 @@ const getInventoryBreakdown = () => {
               <TabsTrigger value="inventory">Current Inventory</TabsTrigger>
             </TabsList>
             
-<TabsContent value="loading" className="space-y-6 mt-6">
-  <Card>
-    <CardHeader>
-      <CardTitle className="flex items-center gap-2">
-        <Warehouse className="w-5 h-5" />
-        Load Boxes to Cold Room - By Size Groups
-      </CardTitle>
-      <CardDescription>
-        Select counting records and load boxes by size to different cold rooms. Only shows boxes that haven't been loaded yet.
-      </CardDescription>
-    </CardHeader>
-    <CardContent>
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
-          <div>
-            <h3 className="font-medium">Available Counting Records</h3>
-            <p className="text-sm text-muted-foreground">
-              Only shows records with boxes that haven't been loaded to cold rooms yet
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="counting-date-filter" className="text-sm whitespace-nowrap">Filter by Date Range:</Label>
-<div className="flex items-center gap-2">
-  <Input
-    id="counting-start-date"
-    type="date"
-    value={dateFilter.countingRecordsStart || ''}
-    onChange={(e) => {
-      const newStart = e.target.value;
-      setDateFilter(prev => ({ 
-        ...prev, 
-        countingRecordsStart: newStart,
-        // Don't change end date unless start > end
-        countingRecordsEnd: prev.countingRecordsEnd && newStart > prev.countingRecordsEnd 
-          ? newStart 
-          : prev.countingRecordsEnd
-      }));
-      filterCountingRecordsByDateRange(newStart, dateFilter.countingRecordsEnd);
-    }}
-    className="w-40"
-    max={dateFilter.countingRecordsEnd || today}
-  />
-  <span className="text-gray-500">to</span>
-  <Input
-    id="counting-end-date"
-    type="date"
-    value={dateFilter.countingRecordsEnd || ''}
-    onChange={(e) => {
-      const newEnd = e.target.value;
-      setDateFilter(prev => ({ 
-        ...prev, 
-        countingRecordsEnd: newEnd,
-        // Don't change start date unless end < start
-        countingRecordsStart: prev.countingRecordsStart && newEnd < prev.countingRecordsStart 
-          ? newEnd 
-          : prev.countingRecordsStart
-      }));
-      filterCountingRecordsByDateRange(dateFilter.countingRecordsStart, newEnd);
-    }}
-    className="w-40"
-    min={dateFilter.countingRecordsStart || ''}
-    max={today}
-  />
-  {(dateFilter.countingRecordsStart || dateFilter.countingRecordsEnd) && (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => {
-        setDateFilter(prev => ({ 
-          ...prev, 
-          countingRecordsStart: '',
-          countingRecordsEnd: '' 
-        }));
-        filterCountingRecordsByDateRange('', '');
-      }}
-      className="h-8"
-    >
-      <X className="w-3 h-3" />
-    </Button>
-  )}
-</div>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => fetchCountingRecords()}
-                variant="outline"
-                size="sm"
-                disabled={isLoading.countingRecords}
-              >
-                <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.countingRecords ? 'animate-spin' : ''}`} />
-                Refresh Records
-              </Button>
-              <Button
-                onClick={handleSelectAllRecords}
-                variant="outline"
-                size="sm"
-                disabled={filteredCountingRecords.length === 0}
-              >
-                <Check className="w-4 h-4 mr-1" />
-                Select All
-              </Button>
-              <Button
-                onClick={handleDeselectAllRecords}
-                variant="outline"
-                size="sm"
-                disabled={filteredCountingRecords.length === 0}
-              >
-                <X className="w-4 h-4 mr-1" />
-                Deselect All
-              </Button>
-            </div>
-          </div>
-        </div>
-        
-        {isLoading.countingRecords ? (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-            <p className="text-muted-foreground">Loading counting records...</p>
-          </div>
-        ) : (
-          <>
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <Label>Available Records ({filteredCountingRecords.length})</Label>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">
-                    {selectedRecords.size} selected
-                  </Badge>
-                  {dateFilter.countingRecords && dateFilter.countingRecords !== today && (
-                    <Badge variant="secondary">
-                      Filtered by: {dateFilter.countingRecords}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              
-              <ScrollArea className="h-[300px] border rounded">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">Select</TableHead>
-                      <TableHead>Supplier</TableHead>
-                      <TableHead>Pallet ID</TableHead>
-                      <TableHead>Region</TableHead>
-                      <TableHead>Total Weight</TableHead>
-                      <TableHead>Counted Weight</TableHead>
-                      <TableHead>Box Types</TableHead>
-                      <TableHead>Submitted</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredCountingRecords.map((record) => {
-                      const totals = record.totals || {};
-                      const totalBoxes = record.total_remaining_boxes || 0;
-                      const boxTypes = [
-                        totals.fuerte_4kg_total > 0 && 'Fuerte 4kg',
-                        totals.fuerte_10kg_total > 0 && 'Fuerte 10kg',
-                        totals.hass_4kg_total > 0 && 'Hass 4kg',
-                        totals.hass_10kg_total > 0 && 'Hass 10kg'
-                      ].filter(Boolean).join(', ');
-                      
-                      const loadedBoxes = record.total_boxes_loaded || 0;
-                      const remainingBoxes = record.total_remaining_boxes || 0;
-                      
-                      return (
-                        <TableRow 
-                          key={record.id}
-                          className={selectedRecords.has(record.id) ? "bg-black-50" : ""}
-                        >
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              checked={selectedRecords.has(record.id)}
-                              onChange={() => handleToggleRecordSelection(record.id)}
-                              className="h-4 w-4 rounded border-gray-300"
-                              disabled={remainingBoxes === 0}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{record.supplier_name}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-mono text-sm">{record.pallet_id}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">{record.region || 'N/A'}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{safeToFixed(record.total_weight)} kg</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-green-600">{safeToFixed(record.total_counted_weight)} kg</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">{boxTypes || 'No boxes'}</div>
-                            <div className="text-xs text-gray-500">
-                              {remainingBoxes} boxes remaining
-                              {loadedBoxes > 0 && (
-                                <span className="text-green-600 ml-1">
-                                  ({loadedBoxes} already loaded)
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">{formatDate(record.submitted_at)}</div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(record.submitted_at).toISOString().split('T')[0]}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-              
-              {filteredCountingRecords.length === 0 && (
-                <div className="text-center py-8 border rounded">
-                  <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                  <p className="text-gray-500 font-medium">No counting records available</p>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {dateFilter.countingRecords && dateFilter.countingRecords !== today
-                      ? `No records found for date ${dateFilter.countingRecords}`
-                      : 'All boxes from counting records have been loaded to cold rooms'}
-                  </p>
-                </div>
-              )}
-            </div>
-            
-            {selectedRecords.size > 0 && (
-              <div className="mt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-medium">Size Groups from Selected Records</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Select sizes and quantities to load to different cold rooms. Only shows boxes not yet loaded.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline">
-                      {sizeGroups.length} size groups
-                    </Badge>
-                  </div>
-                </div>
-                
-                <Card className="mb-4 border-blue-200">
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
+            <TabsContent value="loading" className="space-y-6 mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Warehouse className="w-5 h-5" />
+                    Load Boxes to Cold Room - By Size Groups
+                  </CardTitle>
+                  <CardDescription>
+                    Select counting records and load boxes by size to different cold rooms. Only shows boxes that haven't been loaded yet.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
                       <div>
-                        <p className="text-sm font-bold text-blue-800">Balance Tracking</p>
-                        <p className="text-xs text-blue-600">
-                          Progress persists across page refreshes
+                        <h3 className="font-medium">Available Counting Records</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Only shows records with boxes that haven't been loaded to cold rooms yet
                         </p>
                       </div>
-                      <div className="flex gap-6">
-                        <div className="text-center">
-                          <p className="text-xs text-gray-500">Total Original</p>
-                          <p className="text-lg font-bold text-blue-800">
-                            {sizeGroupSummary.totalOriginal.toLocaleString()}
-                          </p>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="counting-date-filter" className="text-sm whitespace-nowrap">Filter by Date Range:</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="counting-start-date"
+                              type="date"
+                              value={dateFilter.countingRecordsStart || ''}
+                              onChange={(e) => {
+                                const newStart = e.target.value;
+                                setDateFilter(prev => ({ 
+                                  ...prev, 
+                                  countingRecordsStart: newStart,
+                                  // Don't change end date unless start > end
+                                  countingRecordsEnd: prev.countingRecordsEnd && newStart > prev.countingRecordsEnd 
+                                    ? newStart 
+                                    : prev.countingRecordsEnd
+                                }));
+                                filterCountingRecordsByDateRange(newStart, dateFilter.countingRecordsEnd);
+                              }}
+                              className="w-40"
+                              max={dateFilter.countingRecordsEnd || today}
+                            />
+                            <span className="text-gray-500">to</span>
+                            <Input
+                              id="counting-end-date"
+                              type="date"
+                              value={dateFilter.countingRecordsEnd || ''}
+                              onChange={(e) => {
+                                const newEnd = e.target.value;
+                                setDateFilter(prev => ({ 
+                                  ...prev, 
+                                  countingRecordsEnd: newEnd,
+                                  // Don't change start date unless end < start
+                                  countingRecordsStart: prev.countingRecordsStart && newEnd < prev.countingRecordsStart 
+                                    ? newEnd 
+                                    : prev.countingRecordsStart
+                                }));
+                                filterCountingRecordsByDateRange(dateFilter.countingRecordsStart, newEnd);
+                              }}
+                              className="w-40"
+                              min={dateFilter.countingRecordsStart || ''}
+                              max={today}
+                            />
+                            {(dateFilter.countingRecordsStart || dateFilter.countingRecordsEnd) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setDateFilter(prev => ({ 
+                                    ...prev, 
+                                    countingRecordsStart: '',
+                                    countingRecordsEnd: '' 
+                                  }));
+                                  filterCountingRecordsByDateRange('', '');
+                                }}
+                                className="h-8"
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-center">
-                          <p className="text-xs text-gray-500">Already Loaded</p>
-                          <p className="text-lg font-bold text-green-700">
-                            {sizeGroupSummary.totalLoaded.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-green-600">
-                            {sizeGroupSummary.completionPercentage}%
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-gray-500">Available Now</p>
-                          <p className="text-lg font-bold text-orange-700">
-                            {sizeGroupSummary.totalAvailable.toLocaleString()}
-                          </p>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => fetchCountingRecords()}
+                            variant="outline"
+                            size="sm"
+                            disabled={isLoading.countingRecords}
+                          >
+                            <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.countingRecords ? 'animate-spin' : ''}`} />
+                            Refresh Records
+                          </Button>
+                          <Button
+                            onClick={handleSelectAllRecords}
+                            variant="outline"
+                            size="sm"
+                            disabled={filteredCountingRecords.length === 0}
+                          >
+                            <Check className="w-4 h-4 mr-1" />
+                            Select All
+                          </Button>
+                          <Button
+                            onClick={handleDeselectAllRecords}
+                            variant="outline"
+                            size="sm"
+                            disabled={filteredCountingRecords.length === 0}
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            Deselect All
+                          </Button>
                         </div>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-                
-                <ScrollArea className="h-[500px] border rounded">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-black-50">
-                        <TableHead className="w-12">Status</TableHead>
-                        <TableHead>Size</TableHead>
-                        <TableHead>Variety</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Grade</TableHead>
-                        <TableHead className="text-right">Remaining</TableHead>
-                        <TableHead>Quantity</TableHead>
-                        <TableHead>Cold Room</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sizeGroups.map((group, index) => {
-                        const isCompleted = group.remainingQuantity === 0;
-                        
-                        return (
-                          <TableRow 
-                            key={group.uniqueKey}
-                            className={group.selectedForLoading ? "bg-black-50" : isCompleted ? "bg-black-50" : ""}
-                          >
-                            <TableCell>
-                              {isCompleted ? (
-                                <div className="flex items-center justify-center">
-                                  <Check className="w-5 h-5 text-green-600" />
-                                </div>
-                              ) : (
-                                <input
-                                  type="checkbox"
-                                  checked={group.selectedForLoading}
-                                  onChange={() => handleToggleSizeGroupSelection(index)}
-                                  disabled={isCompleted}
-                                  className="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
-                                />
+                    
+                    {isLoading.countingRecords ? (
+                      <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                        <p className="text-muted-foreground">Loading counting records...</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <Label>Available Records ({filteredCountingRecords.length})</Label>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline">
+                                {selectedRecords.size} selected
+                              </Badge>
+                              {dateFilter.countingRecords && dateFilter.countingRecords !== today && (
+                                <Badge variant="secondary">
+                                  Filtered by: {dateFilter.countingRecords}
+                                </Badge>
                               )}
-                            </TableCell>
-                            <TableCell className="font-medium">
-                              {formatSize(group.size)}
-                            </TableCell>
-                            <TableCell className="capitalize">
-                              {getVarietyDisplay(group.variety)}
-                            </TableCell>
-                            <TableCell>{group.boxType}</TableCell>
-                            <TableCell>
-                              {getGradeDisplay(group.grade)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className={`font-bold ${isCompleted ? 'text-green-600' : 'text-blue-600'}`}>
-                                {group.remainingQuantity.toLocaleString()}
+                            </div>
+                          </div>
+                          
+                          <ScrollArea className="h-[300px] border rounded">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-12">Select</TableHead>
+                                  <TableHead>Supplier</TableHead>
+                                  <TableHead>Pallet ID</TableHead>
+                                  <TableHead>Region</TableHead>
+                                  <TableHead>Total Weight</TableHead>
+                                  <TableHead>Counted Weight</TableHead>
+                                  <TableHead>Box Types</TableHead>
+                                  <TableHead>Submitted</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filteredCountingRecords.map((record) => {
+                                  const totals = record.totals || {};
+                                  const totalBoxes = record.total_remaining_boxes || 0;
+                                  const boxTypes = [
+                                    totals.fuerte_4kg_total > 0 && 'Fuerte 4kg',
+                                    totals.fuerte_10kg_total > 0 && 'Fuerte 10kg',
+                                    totals.hass_4kg_total > 0 && 'Hass 4kg',
+                                    totals.hass_10kg_total > 0 && 'Hass 10kg'
+                                  ].filter(Boolean).join(', ');
+                                  
+                                  const loadedBoxes = record.total_boxes_loaded || 0;
+                                  const remainingBoxes = record.total_remaining_boxes || 0;
+                                  
+                                  return (
+                                    <TableRow 
+                                      key={record.id}
+                                      className={selectedRecords.has(record.id) ? "bg-black-50" : ""}
+                                    >
+                                      <TableCell>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedRecords.has(record.id)}
+                                          onChange={() => handleToggleRecordSelection(record.id)}
+                                          className="h-4 w-4 rounded border-gray-300"
+                                          disabled={remainingBoxes === 0}
+                                        />
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-medium">{record.supplier_name}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-mono text-sm">{record.pallet_id}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{record.region || 'N/A'}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-medium">{safeToFixed(record.total_weight)} kg</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-medium text-green-600">{safeToFixed(record.total_counted_weight)} kg</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{boxTypes || 'No boxes'}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {remainingBoxes} boxes remaining
+                                          {loadedBoxes > 0 && (
+                                            <span className="text-green-600 ml-1">
+                                              ({loadedBoxes} already loaded)
+                                            </span>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="text-sm">{formatDate(record.submitted_at)}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {new Date(record.submitted_at).toISOString().split('T')[0]}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                          
+                          {filteredCountingRecords.length === 0 && (
+                            <div className="text-center py-8 border rounded">
+                              <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                              <p className="text-gray-500 font-medium">No counting records available</p>
+                              <p className="text-sm text-gray-400 mt-1">
+                                {dateFilter.countingRecords && dateFilter.countingRecords !== today
+                                  ? `No records found for date ${dateFilter.countingRecords}`
+                                  : 'All boxes from counting records have been loaded to cold rooms'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {selectedRecords.size > 0 && (
+                          <div className="mt-6">
+                            <div className="flex items-center justify-between mb-4">
+                              <div>
+                                <h3 className="font-medium">Size Groups from Selected Records</h3>
+                                <p className="text-sm text-muted-foreground">
+                                  Select sizes and quantities to load to different cold rooms. Only shows boxes not yet loaded.
+                                </p>
                               </div>
-                            </TableCell>
-                            <TableCell>
-                              {isCompleted ? (
-                                <div className="text-center text-green-600 font-medium">
-                                  ✓ Complete
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    max={group.remainingQuantity}
-                                    value={group.loadingQuantity}
-                                    onChange={(e) => handleSizeGroupQuantityChange(index, parseInt(e.target.value) || 0)}
-                                    disabled={!group.selectedForLoading}
-                                    className="w-24"
-                                  />
-                                  <div className="text-xs text-gray-500 w-8">
-                                    max: {group.remainingQuantity}
+                              <div className="flex items-center gap-3">
+                                <Badge variant="outline">
+                                  {sizeGroups.length} size groups
+                                </Badge>
+                              </div>
+                            </div>
+                            
+                            <Card className="mb-4 border-blue-200">
+                              <CardContent className="py-4">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm font-bold text-blue-800">Balance Tracking</p>
+                                    <p className="text-xs text-blue-600">
+                                      Progress persists across page refreshes
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-6">
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-500">Total Original</p>
+                                      <p className="text-lg font-bold text-blue-800">
+                                        {sizeGroupSummary.totalOriginal.toLocaleString()}
+                                      </p>
+                                    </div>
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-500">Already Loaded</p>
+                                      <p className="text-lg font-bold text-green-700">
+                                        {sizeGroupSummary.totalLoaded.toLocaleString()}
+                                      </p>
+                                      <p className="text-xs text-green-600">
+                                        {sizeGroupSummary.completionPercentage}%
+                                      </p>
+                                    </div>
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-500">Available Now</p>
+                                      <p className="text-lg font-bold text-orange-700">
+                                        {sizeGroupSummary.totalAvailable.toLocaleString()}
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {isCompleted ? (
-                                <div className="text-sm text-gray-500">Completed</div>
-                              ) : (
-                                <Select
-                                  value={group.targetColdRoom}
-                                  onValueChange={(value) => handleSizeGroupTargetChange(index, value)}
-                                  disabled={!group.selectedForLoading}
-                                >
-                                  <SelectTrigger className="w-32">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="coldroom1">Cold Room 1</SelectItem>
-                                    <SelectItem value="coldroom2">Cold Room 2</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-                
-                {sizeGroupSummary.totalGroups > 0 && (
-                  <Card className="mt-4 border-blue-200">
-                    <CardHeader className="py-3 bg-black-50">
-                      <CardTitle className="text-sm font-medium">Load Summary - Ready to Ship</CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                        <div className="border rounded p-4 bg-blue-50">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Box className="w-5 h-5 text-blue-600" />
-                            <div>
-                              <span className="font-medium text-blue-600">Selected Sizes</span>
-                              <p className="text-xs text-blue-600">Ready for loading</p>
+                              </CardContent>
+                            </Card>
+                            
+                            <ScrollArea className="h-[500px] border rounded">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="bg-black-50">
+                                    <TableHead className="w-12">Status</TableHead>
+                                    <TableHead>Size</TableHead>
+                                    <TableHead>Variety</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead>Grade</TableHead>
+                                    <TableHead className="text-right">Remaining</TableHead>
+                                    <TableHead>Quantity</TableHead>
+                                    <TableHead>Cold Room</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {sizeGroups.map((group, index) => {
+                                    const isCompleted = group.remainingQuantity === 0;
+                                    
+                                    return (
+                                      <TableRow 
+                                        key={group.uniqueKey}
+                                        className={group.selectedForLoading ? "bg-black-50" : isCompleted ? "bg-black-50" : ""}
+                                      >
+                                        <TableCell>
+                                          {isCompleted ? (
+                                            <div className="flex items-center justify-center">
+                                              <Check className="w-5 h-5 text-green-600" />
+                                            </div>
+                                          ) : (
+                                            <input
+                                              type="checkbox"
+                                              checked={group.selectedForLoading}
+                                              onChange={() => handleToggleSizeGroupSelection(index)}
+                                              disabled={isCompleted}
+                                              className="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
+                                            />
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="font-medium">
+                                          {formatSize(group.size)}
+                                        </TableCell>
+                                        <TableCell className="capitalize">
+                                          {getVarietyDisplay(group.variety)}
+                                        </TableCell>
+                                        <TableCell>{group.boxType}</TableCell>
+                                        <TableCell>
+                                          {getGradeDisplay(group.grade)}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          <div className={`font-bold ${isCompleted ? 'text-green-600' : 'text-blue-600'}`}>
+                                            {group.remainingQuantity.toLocaleString()}
+                                          </div>
+                                        </TableCell>
+                                        <TableCell>
+                                          {isCompleted ? (
+                                            <div className="text-center text-green-600 font-medium">
+                                              ✓ Complete
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2">
+                                              <Input
+                                                type="number"
+                                                min="0"
+                                                max={group.remainingQuantity}
+                                                value={group.loadingQuantity}
+                                                onChange={(e) => handleSizeGroupQuantityChange(index, parseInt(e.target.value) || 0)}
+                                                disabled={!group.selectedForLoading}
+                                                className="w-24"
+                                              />
+                                              <div className="text-xs text-gray-500 w-8">
+                                                max: {group.remainingQuantity}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          {isCompleted ? (
+                                            <div className="text-sm text-gray-500">Completed</div>
+                                          ) : (
+                                            <Select
+                                              value={group.targetColdRoom}
+                                              onValueChange={(value) => handleSizeGroupTargetChange(index, value)}
+                                              disabled={!group.selectedForLoading}
+                                            >
+                                              <SelectTrigger className="w-32">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="coldroom1">Cold Room 1</SelectItem>
+                                                <SelectItem value="coldroom2">Cold Room 2</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </ScrollArea>
+                            
+                            {sizeGroupSummary.totalGroups > 0 && (
+                              <Card className="mt-4 border-blue-200">
+                                <CardHeader className="py-3 bg-black-50">
+                                  <CardTitle className="text-sm font-medium">Load Summary - Ready to Ship</CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-0">
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                                    <div className="border rounded p-4 bg-blue-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Box className="w-5 h-5 text-blue-600" />
+                                        <div>
+                                          <span className="font-medium text-blue-600">Selected Sizes</span>
+                                          <p className="text-xs text-blue-600">Ready for loading</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm text-blue-600">Size Groups:</span>
+                                          <span className="font-medium text-blue-600">
+                                            {sizeGroupSummary.totalGroups}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm text-blue-600">Boxes to Load:</span>
+                                          <span className="font-bold text-blue-700 text-lg">
+                                            {sizeGroupSummary.totalBoxes.toLocaleString()}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="border rounded p-4 bg-green-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Weight className="w-5 h-5 text-green-600" />
+                                        <div>
+                                          <span className="font-medium text-green-600">Weight Summary</span>
+                                          <p className="text-xs text-green-600">Total weight to load</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm text-green-600">Total Weight:</span>
+                                          <span className="font-bold text-green-700 text-lg">
+                                            {safeToFixed(sizeGroupSummary.totalWeight)} kg
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="border rounded p-4 bg-gradient-to-r from-green-50 to-blue-50">
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <Check className="w-5 h-5 text-green-600" />
+                                        <div>
+                                          <span className="font-medium text-green-600">Overall Progress</span>
+                                          <p className="text-xs text-green-600">Completion status</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm text-green-600">Loaded:</span>
+                                          <span className="font-bold text-green-700 text-lg">
+                                            {sizeGroupSummary.totalLoaded.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-sm text-green-600">Completion:</span>
+                                          <span className="font-bold text-green-700 text-lg">
+                                            {sizeGroupSummary.completionPercentage}%
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            )}
+                            
+                            <div className="flex gap-3 mt-6">
+                              <Button
+                                onClick={handleLoadSizeGroups}
+                                className="flex-1 py-6 text-lg"
+                                size="lg"
+                                disabled={sizeGroupSummary.totalGroups === 0}
+                              >
+                                <Upload className="w-5 h-5 mr-3" />
+                                Load Selected Sizes to Cold Rooms
+                                <span className="ml-3 font-bold">
+                                  ({sizeGroupSummary.totalGroups} sizes, {sizeGroupSummary.totalBoxes} boxes)
+                                </span>
+                              </Button>
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-blue-600">Size Groups:</span>
-                              <span className="font-medium text-blue-600">
-                                {sizeGroupSummary.totalGroups}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-blue-600">Boxes to Load:</span>
-                              <span className="font-bold text-blue-700 text-lg">
-                                {sizeGroupSummary.totalBoxes.toLocaleString()}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="border rounded p-4 bg-green-50">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Weight className="w-5 h-5 text-green-600" />
-                            <div>
-                              <span className="font-medium text-green-600">Weight Summary</span>
-                              <p className="text-xs text-green-600">Total weight to load</p>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-green-600">Total Weight:</span>
-                              <span className="font-bold text-green-700 text-lg">
-                                {safeToFixed(sizeGroupSummary.totalWeight)} kg
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="border rounded p-4 bg-gradient-to-r from-green-50 to-blue-50">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Check className="w-5 h-5 text-green-600" />
-                            <div>
-                              <span className="font-medium text-green-600">Overall Progress</span>
-                              <p className="text-xs text-green-600">Completion status</p>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-green-600">Loaded:</span>
-                              <span className="font-bold text-green-700 text-lg">
-                                {sizeGroupSummary.totalLoaded.toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-green-600">Completion:</span>
-                              <span className="font-bold text-green-700 text-lg">
-                                {sizeGroupSummary.completionPercentage}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-                
-                <div className="flex gap-3 mt-6">
-                  <Button
-                    onClick={handleLoadSizeGroups}
-                    className="flex-1 py-6 text-lg"
-                    size="lg"
-                    disabled={sizeGroupSummary.totalGroups === 0}
-                  >
-                    <Upload className="w-5 h-5 mr-3" />
-                    Load Selected Sizes to Cold Rooms
-                    <span className="ml-3 font-bold">
-                      ({sizeGroupSummary.totalGroups} sizes, {sizeGroupSummary.totalBoxes} boxes)
-                    </span>
-                  </Button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </CardContent>
-  </Card>
-</TabsContent>            
+                        )}
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>            
+            
             <TabsContent value="pallets" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card>
@@ -3006,26 +3034,33 @@ const getInventoryBreakdown = () => {
                         </div>
                       </div>
                       
-                      {/* In the Create Manual Pallet section, find the Boxes per Pallet Select component */}
                       <div>
                         <Label htmlFor="boxes-per-pallet">Boxes per Pallet *</Label>
                         <Select
                           value={palletCreation.boxesPerPallet.toString()}
-                          onValueChange={(value) => setPalletCreation(prev => ({ ...prev, boxesPerPallet: parseInt(value) }))}
+                          onValueChange={(value) => setPalletCreation(prev => ({ 
+                            ...prev, 
+                            boxesPerPallet: value === "unlimited" ? 0 : parseInt(value) 
+                          }))}
                         >
                           <SelectTrigger id="boxes-per-pallet">
                             <SelectValue placeholder="Select boxes per pallet" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="288">288 boxes (4kg boxes)</SelectItem>
-                            <SelectItem value="300">300 boxes (4kg boxes)</SelectItem>
-                            <SelectItem value="120">120 crates (10kg crates)</SelectItem>
+                            <SelectItem value="288">288 boxes (4kg boxes - Standard)</SelectItem>
+                            <SelectItem value="300">300 boxes (4kg boxes - High Density)</SelectItem>
+                            <SelectItem value="120">120 crates (10kg crates - Standard)</SelectItem>
+                            <SelectItem value="unlimited">By Air boxes (no limit - Air Freight)</SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Standard pallet sizes: 288 boxes for 4kg, 300 boxes for 4kg, 120 crates for 10kg
+                          {palletCreation.boxesPerPallet === 0 ? 
+                            "Air freight pallets have no box limit. Select any number of boxes." : 
+                            `Standard pallet sizes: ${palletCreation.boxesPerPallet} ${palletCreation.boxesPerPallet === 120 ? 'crates' : 'boxes'} per pallet`
+                          }
                         </p>
-                      </div>                      
+                      </div>
+                      
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="font-medium">Select Box Groups for Pallet</h3>
@@ -3112,13 +3147,24 @@ const getInventoryBreakdown = () => {
                                       <p className="text-sm text-blue-600">
                                         {summary.totalBoxes} boxes ({summary.totalWeight} kg) selected from {summary.selectedGroups.length} groups
                                       </p>
+                                      {summary.boxesPerPallet === 0 && (
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <Badge className="bg-cyan-100 text-cyan-800">
+                                            ✈️ Air Freight
+                                          </Badge>
+                                          <span className="text-sm text-cyan-700">No box limit per pallet</span>
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="text-right">
                                       <div className="text-lg font-bold text-blue-800">
                                         {summary.suggestedPallets} pallet{summary.suggestedPallets !== 1 ? 's' : ''}
                                       </div>
                                       <div className="text-xs text-blue-600">
-                                        {summary.boxesPerPallet} boxes per pallet
+                                        {summary.boxesPerPallet === 0 ? 
+                                          "Air freight (no box limit)" : 
+                                          `${summary.boxesPerPallet} boxes per pallet`
+                                        }
                                       </div>
                                     </div>
                                   </div>
@@ -3164,7 +3210,7 @@ const getInventoryBreakdown = () => {
                                             <div className="text-xs text-gray-600">
                                               full pallet{stats.pallets !== 1 ? 's' : ''}
                                             </div>
-                                            {stats.remaining > 0 && (
+                                            {stats.remaining > 0 && !summary.boxesPerPallet && (
                                               <div className="text-xs text-amber-600 mt-1">
                                                 +{stats.remaining} box{stats.remaining !== 1 ? 'es' : ''} extra
                                               </div>
@@ -3180,42 +3226,48 @@ const getInventoryBreakdown = () => {
                                       if (key.endsWith('_remaining')) return null;
                                       
                                       const type = key;
-                                      const standardBoxes = type === '4kg' ? 288 : 120;
-                                      const remaining = palletCounts[`${type}_remaining`] || 0;
-                                      const neededForNextPallet = standardBoxes - remaining;
+                                      const isAirFreight = palletCreation.boxesPerPallet === 0;
                                       
                                       return (
-                                        <div key={type} className="bg-gradient-to-r from-amber-50 to-amber-100 p-3 rounded border border-amber-200">
+                                        <div key={type} className={`p-3 rounded border ${isAirFreight ? 'bg-cyan-50 border-cyan-200' : 'bg-gradient-to-r from-amber-50 to-amber-100 border-amber-200'}`}>
                                           <div className="flex items-center justify-between">
                                             <div>
                                               <div className="text-sm font-medium text-amber-800">
                                                 {type === '4kg' ? '4kg Boxes' : '10kg Crates'}
+                                                {isAirFreight && (
+                                                  <Badge variant="outline" className="ml-2 bg-cyan-100 text-cyan-700 text-xs">
+                                                    ✈️ Air
+                                                  </Badge>
+                                                )}
                                               </div>
                                               <div className="text-xs text-amber-600">
-                                                {count} full pallet{count !== 1 ? 's' : ''}
+                                                {count} pallet{count !== 1 ? 's' : ''}
                                               </div>
                                             </div>
-                                            {remaining > 0 && (
+                                            {!isAirFreight && palletCounts[`${type}_remaining`] > 0 && (
                                               <div className="text-right">
                                                 <div className="text-lg font-bold text-amber-700">
-                                                  {neededForNextPallet} more
+                                                  {(type === '4kg' ? palletCreation.boxesPerPallet : 120) - palletCounts[`${type}_remaining`]} more
                                                 </div>
                                                 <div className="text-xs text-amber-600">
-                                                  for next pallet ({remaining} available)
+                                                  for next pallet ({palletCounts[`${type}_remaining`]} available)
                                                 </div>
                                               </div>
                                             )}
                                           </div>
-                                          {remaining > 0 && (
+                                          {!isAirFreight && palletCounts[`${type}_remaining`] > 0 && (
                                             <div className="mt-2">
                                               <div className="w-full bg-amber-200 rounded-full h-2">
                                                 <div 
                                                   className="bg-amber-500 h-2 rounded-full" 
-                                                  style={{ width: `${(remaining / standardBoxes) * 100}%` }}
+                                                  style={{ 
+                                                    width: `${(palletCounts[`${type}_remaining`] / (type === '4kg' ? palletCreation.boxesPerPallet : 120)) * 100}%` 
+                                                  }}
                                                 />
                                               </div>
                                               <div className="text-xs text-amber-700 mt-1 text-center">
-                                                {remaining}/{standardBoxes} ({Math.round((remaining / standardBoxes) * 100)}%)
+                                                {palletCounts[`${type}_remaining`]}/{type === '4kg' ? palletCreation.boxesPerPallet : 120} 
+                                                ({Math.round((palletCounts[`${type}_remaining`] / (type === '4kg' ? palletCreation.boxesPerPallet : 120)) * 100)}%)
                                               </div>
                                             </div>
                                           )}
@@ -3490,348 +3542,369 @@ const getInventoryBreakdown = () => {
                     </div>
                   </CardContent>
                 </Card>                
-<Card>
-  <CardHeader>
-    <CardTitle className="flex items-center gap-2">
-      <ListTree className="w-5 h-5" />
-      Existing Pallets
-      <Badge variant="outline" className="ml-2">
-        {pallets.length} pallets
-      </Badge>
-    </CardTitle>
-    <CardDescription>
-      View and manage pallets in cold rooms
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    <div className="space-y-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="font-medium">All Pallets</h3>
-          <p className="text-sm text-muted-foreground">
-            Showing all pallets regardless of creation date
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchPallets}
-          disabled={isLoading.pallets}
-          className="shrink-0"
-        >
-          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.pallets ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
-      
-      {isLoading.pallets ? (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-          <p className="text-muted-foreground">Loading pallets...</p>
-        </div>
-      ) : pallets.length === 0 ? (
-        <div className="text-center py-8 border rounded">
-          <Palette className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500 font-medium">No pallets created yet</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Create your first pallet by combining boxes from the cold room
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-medium text-lg flex items-center gap-2">
-                  <Badge variant="outline" className="bg-green-50 text-green-700">
-                    ✅ Available Pallets
-                  </Badge>
-                  <span className="text-green-700">Ready for Loading</span>
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {notLoadedPallets.length} pallet{notLoadedPallets.length !== 1 ? 's' : ''} not assigned to loading sheets
-                </p>
-              </div>
-              <Badge variant="outline">
-                {notLoadedPallets.length} available
-              </Badge>
-            </div>
-            
-            {notLoadedPallets.length === 0 ? (
-              <div className="text-center py-6 border rounded bg-black-50">
-                <Check className="w-8 h-8 mx-auto text-green-300 mb-2" />
-                <p className="text-green-500 font-medium">All pallets are assigned to loading sheets</p>
-                <p className="text-sm text-green-400 mt-1">
-                  No available pallets for new loading sheets
-                </p>
-              </div>
-            ) : (
-              <ScrollArea className="h-[300px] border rounded">
-                <div className="space-y-3 p-2">
-                  {notLoadedPallets.map((pallet) => {
-                    const isExpanded = expandedPallets.has(pallet.id);
-                    const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
-                    
-                    return (
-                      <Card key={pallet.id} className="overflow-hidden border-green-200">
-                        <div 
-                          className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
-                          onClick={() => handleTogglePalletExpansion(pallet.id)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              {isExpanded ? (
-                                <ChevronUp className="w-5 h-5 text-gray-400" />
-                              ) : (
-                                <ChevronDown className="w-5 h-5 text-gray-400" />
-                              )}
-                              <div>
-                                <div className="font-medium flex items-center gap-2">
-                                  <Palette className="w-4 h-4" />
-                                  {palletName}
-                                  {pallet.is_manual && (
-                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
-                                      Manual
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                                  <Snowflake className="w-3 h-3" />
-                                  {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                                  <span className="mx-1">•</span>
-                                  <Calendar className="w-3 h-3" />
-                                  {formatDate(pallet.conversion_date || pallet.created_at)}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
-                                <div className="text-sm text-gray-500">
-                                  {pallet.total_boxes?.toLocaleString() || 0} boxes
-                                </div>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDissolvePallet(pallet.id, pallet.cold_room_id);
-                                }}
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                title="Dissolve pallet"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </div>
+                
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ListTree className="w-5 h-5" />
+                      Existing Pallets
+                      <Badge variant="outline" className="ml-2">
+                        {pallets.length} pallets
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      View and manage pallets in cold rooms
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="font-medium">All Pallets</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Showing all pallets regardless of creation date
+                          </p>
                         </div>
-                        
-                        {isExpanded && (
-                          <div className="border-t">
-                            <div className="p-4 bg-black-50">
-                              <div className="mb-4">
-                                <h4 className="font-medium mb-3 flex items-center gap-2">
-                                  <Box className="w-4 h-4" />
-                                  Boxes in this Pallet ({pallet.boxes?.length || 0})
-                                </h4>
-                                
-                                {pallet.boxes && pallet.boxes.length > 0 ? (
-                                  <div className="border rounded overflow-hidden">
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow className="bg-black-50">
-                                          <TableHead>Size</TableHead>
-                                          <TableHead>Variety</TableHead>
-                                          <TableHead>Type</TableHead>
-                                          <TableHead>Grade</TableHead>
-                                          <TableHead className="text-right">Quantity</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {pallet.boxes.map((box) => {
-                                          return (
-                                            <TableRow key={box.id}>
-                                              <TableCell>
-                                                <Badge variant="outline">{formatSize(box.size)}</Badge>
-                                              </TableCell>
-                                              <TableCell className="capitalize">
-                                                {getVarietyDisplay(box.variety)}
-                                              </TableCell>
-                                              <TableCell>{box.box_type}</TableCell>
-                                              <TableCell>
-                                                {getGradeDisplay(box.grade)}
-                                              </TableCell>
-                                              <TableCell className="text-right font-medium">
-                                                {box.quantity.toLocaleString()}
-                                              </TableCell>
-                                            </TableRow>
-                                          );
-                                        })}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
-                                ) : (
-                                  <div className="text-center py-6 border rounded bg-black">
-                                    <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                                    <p className="text-gray-500">No boxes assigned to this pallet</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </Card>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-            )}
-          </div>
-          
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-medium text-lg flex items-center gap-2">
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700">
-                    📦 Loaded Pallets
-                  </Badge>
-                  <span className="text-amber-700">Assigned to Loading Sheets</span>
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {loadedPallets.length} pallet{loadedPallets.length !== 1 ? 's' : ''} assigned to loading sheets
-                </p>
-              </div>
-              <Badge variant="outline" className="bg-amber-50 text-amber-700">
-                {loadedPallets.length} loaded
-              </Badge>
-            </div>
-            
-            {loadedPallets.length === 0 ? (
-              <div className="text-center py-6 border rounded bg-black-50">
-                <Truck className="w-8 h-8 mx-auto text-amber-300 mb-2" />
-                <p className="text-amber-500 font-medium">No pallets assigned to loading sheets</p>
-                <p className="text-sm text-amber-400 mt-1">
-                  All pallets are available for assignment
-                </p>
-              </div>
-            ) : (
-              <ScrollArea className="h-[300px] border rounded">
-                <div className="space-y-3 p-2">
-                  {loadedPallets.map((pallet) => {
-                    const isExpanded = expandedPallets.has(pallet.id);
-                    const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
-                    
-                    return (
-                      <Card key={pallet.id} className="overflow-hidden border-amber-300 bg-black-50">
-                        <div 
-                          className="p-4 cursor-pointer hover:bg-black-100 transition-colors"
-                          onClick={() => handleTogglePalletExpansion(pallet.id)}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={fetchPallets}
+                          disabled={isLoading.pallets}
+                          className="shrink-0"
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              {isExpanded ? (
-                                <ChevronUp className="w-5 h-5 text-amber-400" />
-                              ) : (
-                                <ChevronDown className="w-5 h-5 text-amber-400" />
-                              )}
+                          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.pallets ? 'animate-spin' : ''}`} />
+                          Refresh
+                        </Button>
+                      </div>
+                      
+                      {isLoading.pallets ? (
+                        <div className="text-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                          <p className="text-muted-foreground">Loading pallets...</p>
+                        </div>
+                      ) : pallets.length === 0 ? (
+                        <div className="text-center py-8 border rounded">
+                          <Palette className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                          <p className="text-gray-500 font-medium">No pallets created yet</p>
+                          <p className="text-sm text-gray-400 mt-1">
+                            Create your first pallet by combining boxes from the cold room
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-8">
+                          <div>
+                            <div className="flex items-center justify-between mb-4">
                               <div>
-                                <div className="font-medium flex items-center gap-2">
-                                  <Palette className="w-4 h-4" />
-                                  {palletName}
-                                  {pallet.is_manual && (
-                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
-                                      Manual
-                                    </Badge>
-                                  )}
-                                  <Badge variant="outline" className="ml-2 bg-black-100 text-amber-800 text-xs">
-                                    Assigned to Loading Sheet
+                                <h3 className="font-medium text-lg flex items-center gap-2">
+                                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                                    ✅ Available Pallets
                                   </Badge>
-                                </div>
-                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                                  <Snowflake className="w-3 h-3" />
-                                  {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                                  <span className="mx-1">•</span>
-                                  <Calendar className="w-3 h-3" />
-                                  {formatDate(pallet.conversion_date || pallet.created_at)}
-                                </div>
+                                  <span className="text-green-700">Ready for Loading</span>
+                                </h3>
+                                <p className="text-sm text-gray-500">
+                                  {notLoadedPallets.length} pallet{notLoadedPallets.length !== 1 ? 's' : ''} not assigned to loading sheets
+                                </p>
                               </div>
+                              <Badge variant="outline">
+                                {notLoadedPallets.length} available
+                              </Badge>
                             </div>
-                            <div className="text-right">
-                              <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
-                              <div className="text-sm text-gray-500">
-                                {pallet.total_boxes?.toLocaleString() || 0} boxes
+                            
+                            {notLoadedPallets.length === 0 ? (
+                              <div className="text-center py-6 border rounded bg-black-50">
+                                <Check className="w-8 h-8 mx-auto text-green-300 mb-2" />
+                                <p className="text-green-500 font-medium">All pallets are assigned to loading sheets</p>
+                                <p className="text-sm text-green-400 mt-1">
+                                  No available pallets for new loading sheets
+                                </p>
                               </div>
+                            ) : (
+                              <ScrollArea className="h-[300px] border rounded">
+                                <div className="space-y-3 p-2">
+                                  {notLoadedPallets.map((pallet) => {
+                                    const isExpanded = expandedPallets.has(pallet.id);
+                                    const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
+                                    
+                                    return (
+                                      <Card key={pallet.id} className="overflow-hidden border-green-200">
+                                        <div 
+                                          className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
+                                          onClick={() => handleTogglePalletExpansion(pallet.id)}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                              {isExpanded ? (
+                                                <ChevronUp className="w-5 h-5 text-gray-400" />
+                                              ) : (
+                                                <ChevronDown className="w-5 h-5 text-gray-400" />
+                                              )}
+                                              <div>
+                                                <div className="font-medium flex items-center gap-2">
+                                                  <Palette className="w-4 h-4" />
+                                                  {palletName}
+                                                  {pallet.is_manual && (
+                                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
+                                                      Manual
+                                                    </Badge>
+                                                  )}
+                                                  {pallet.is_air_freight && (
+                                                    <Badge variant="outline" className="ml-2 bg-cyan-50 text-cyan-700 text-xs">
+                                                      ✈️ Air Freight
+                                                    </Badge>
+                                                  )}
+                                                </div>
+                                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                                  <Snowflake className="w-3 h-3" />
+                                                  {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                                  <span className="mx-1">•</span>
+                                                  <Calendar className="w-3 h-3" />
+                                                  {formatDate(pallet.conversion_date || pallet.created_at)}
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                              <div className="text-right">
+                                                <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
+                                                <div className="text-sm text-gray-500">
+                                                  {pallet.total_boxes?.toLocaleString() || 0} boxes
+                                                </div>
+                                                {pallet.is_air_freight && (
+                                                  <div className="text-xs text-cyan-600 mt-1">
+                                                    ✈️ Air freight - No box limit
+                                                  </div>
+                                                )}
+                                              </div>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDissolvePallet(pallet.id, pallet.cold_room_id);
+                                                }}
+                                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                title="Dissolve pallet"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {isExpanded && (
+                                          <div className="border-t">
+                                            <div className="p-4 bg-black-50">
+                                              <div className="mb-4">
+                                                <h4 className="font-medium mb-3 flex items-center gap-2">
+                                                  <Box className="w-4 h-4" />
+                                                  Boxes in this Pallet ({pallet.boxes?.length || 0})
+                                                </h4>
+                                                
+                                                {pallet.boxes && pallet.boxes.length > 0 ? (
+                                                  <div className="border rounded overflow-hidden">
+                                                    <Table>
+                                                      <TableHeader>
+                                                        <TableRow className="bg-black-50">
+                                                          <TableHead>Size</TableHead>
+                                                          <TableHead>Variety</TableHead>
+                                                          <TableHead>Type</TableHead>
+                                                          <TableHead>Grade</TableHead>
+                                                          <TableHead className="text-right">Quantity</TableHead>
+                                                        </TableRow>
+                                                      </TableHeader>
+                                                      <TableBody>
+                                                        {pallet.boxes.map((box) => {
+                                                          return (
+                                                            <TableRow key={box.id}>
+                                                              <TableCell>
+                                                                <Badge variant="outline">{formatSize(box.size)}</Badge>
+                                                              </TableCell>
+                                                              <TableCell className="capitalize">
+                                                                {getVarietyDisplay(box.variety)}
+                                                              </TableCell>
+                                                              <TableCell>{box.box_type}</TableCell>
+                                                              <TableCell>
+                                                                {getGradeDisplay(box.grade)}
+                                                              </TableCell>
+                                                              <TableCell className="text-right font-medium">
+                                                                {box.quantity.toLocaleString()}
+                                                              </TableCell>
+                                                            </TableRow>
+                                                          );
+                                                        })}
+                                                      </TableBody>
+                                                    </Table>
+                                                  </div>
+                                                ) : (
+                                                  <div className="text-center py-6 border rounded bg-black">
+                                                    <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                                                    <p className="text-gray-500">No boxes assigned to this pallet</p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Card>
+                                    );
+                                  })}
+                                </div>
+                              </ScrollArea>
+                            )}
+                          </div>
+                          
+                          <div>
+                            <div className="flex items-center justify-between mb-4">
+                              <div>
+                                <h3 className="font-medium text-lg flex items-center gap-2">
+                                  <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                                    📦 Loaded Pallets
+                                  </Badge>
+                                  <span className="text-amber-700">Assigned to Loading Sheets</span>
+                                </h3>
+                                <p className="text-sm text-gray-500">
+                                  {loadedPallets.length} pallet{loadedPallets.length !== 1 ? 's' : ''} assigned to loading sheets
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                                {loadedPallets.length} loaded
+                              </Badge>
                             </div>
+                            
+                            {loadedPallets.length === 0 ? (
+                              <div className="text-center py-6 border rounded bg-black-50">
+                                <Truck className="w-8 h-8 mx-auto text-amber-300 mb-2" />
+                                <p className="text-amber-500 font-medium">No pallets assigned to loading sheets</p>
+                                <p className="text-sm text-amber-400 mt-1">
+                                  All pallets are available for assignment
+                                </p>
+                              </div>
+                            ) : (
+                              <ScrollArea className="h-[300px] border rounded">
+                                <div className="space-y-3 p-2">
+                                  {loadedPallets.map((pallet) => {
+                                    const isExpanded = expandedPallets.has(pallet.id);
+                                    const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
+                                    
+                                    return (
+                                      <Card key={pallet.id} className="overflow-hidden border-amber-300 bg-black-50">
+                                        <div 
+                                          className="p-4 cursor-pointer hover:bg-black-100 transition-colors"
+                                          onClick={() => handleTogglePalletExpansion(pallet.id)}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                              {isExpanded ? (
+                                                <ChevronUp className="w-5 h-5 text-amber-400" />
+                                              ) : (
+                                                <ChevronDown className="w-5 h-5 text-amber-400" />
+                                              )}
+                                              <div>
+                                                <div className="font-medium flex items-center gap-2">
+                                                  <Palette className="w-4 h-4" />
+                                                  {palletName}
+                                                  {pallet.is_manual && (
+                                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
+                                                      Manual
+                                                    </Badge>
+                                                  )}
+                                                  {pallet.is_air_freight && (
+                                                    <Badge variant="outline" className="ml-2 bg-cyan-50 text-cyan-700 text-xs">
+                                                      ✈️ Air Freight
+                                                    </Badge>
+                                                  )}
+                                                  <Badge variant="outline" className="ml-2 bg-black-100 text-amber-800 text-xs">
+                                                    Assigned to Loading Sheet
+                                                  </Badge>
+                                                </div>
+                                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                                  <Snowflake className="w-3 h-3" />
+                                                  {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                                  <span className="mx-1">•</span>
+                                                  <Calendar className="w-3 h-3" />
+                                                  {formatDate(pallet.conversion_date || pallet.created_at)}
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
+                                              <div className="text-sm text-gray-500">
+                                                {pallet.total_boxes?.toLocaleString() || 0} boxes
+                                              </div>
+                                              {pallet.is_air_freight && (
+                                                <div className="text-xs text-cyan-600 mt-1">
+                                                  ✈️ Air freight - No box limit
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {isExpanded && (
+                                          <div className="border-t">
+                                            <div className="p-4 bg-black-50">
+                                              <div className="mb-4">
+                                                <h4 className="font-medium mb-3 flex items-center gap-2">
+                                                  <Box className="w-4 h-4" />
+                                                  Boxes in this Pallet ({pallet.boxes?.length || 0})
+                                                </h4>
+                                                
+                                                {pallet.boxes && pallet.boxes.length > 0 ? (
+                                                  <div className="border rounded overflow-hidden">
+                                                    <Table>
+                                                      <TableHeader>
+                                                        <TableRow className="bg-black-50">
+                                                          <TableHead>Size</TableHead>
+                                                          <TableHead>Variety</TableHead>
+                                                          <TableHead>Type</TableHead>
+                                                          <TableHead>Grade</TableHead>
+                                                          <TableHead className="text-right">Quantity</TableHead>
+                                                        </TableRow>
+                                                      </TableHeader>
+                                                      <TableBody>
+                                                        {pallet.boxes.map((box) => {
+                                                          return (
+                                                            <TableRow key={box.id}>
+                                                              <TableCell>
+                                                                <Badge variant="outline">{formatSize(box.size)}</Badge>
+                                                              </TableCell>
+                                                              <TableCell className="capitalize">
+                                                                {getVarietyDisplay(box.variety)}
+                                                              </TableCell>
+                                                              <TableCell>{box.box_type}</TableCell>
+                                                              <TableCell>
+                                                                {getGradeDisplay(box.grade)}
+                                                              </TableCell>
+                                                              <TableCell className="text-right font-medium">
+                                                                {box.quantity.toLocaleString()}
+                                                              </TableCell>
+                                                            </TableRow>
+                                                          );
+                                                        })}
+                                                      </TableBody>
+                                                    </Table>
+                                                  </div>
+                                                ) : (
+                                                  <div className="text-center py-6 border rounded bg-black">
+                                                    <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                                                    <p className="text-gray-500">No boxes assigned to this pallet</p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Card>
+                                    );
+                                  })}
+                                </div>
+                              </ScrollArea>
+                            )}
                           </div>
                         </div>
-                        
-                        {isExpanded && (
-                          <div className="border-t">
-                            <div className="p-4 bg-black-50">
-                              <div className="mb-4">
-                                <h4 className="font-medium mb-3 flex items-center gap-2">
-                                  <Box className="w-4 h-4" />
-                                  Boxes in this Pallet ({pallet.boxes?.length || 0})
-                                </h4>
-                                
-                                {pallet.boxes && pallet.boxes.length > 0 ? (
-                                  <div className="border rounded overflow-hidden">
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow className="bg-black-50">
-                                          <TableHead>Size</TableHead>
-                                          <TableHead>Variety</TableHead>
-                                          <TableHead>Type</TableHead>
-                                          <TableHead>Grade</TableHead>
-                                          <TableHead className="text-right">Quantity</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {pallet.boxes.map((box) => {
-                                          return (
-                                            <TableRow key={box.id}>
-                                              <TableCell>
-                                                <Badge variant="outline">{formatSize(box.size)}</Badge>
-                                              </TableCell>
-                                              <TableCell className="capitalize">
-                                                {getVarietyDisplay(box.variety)}
-                                              </TableCell>
-                                              <TableCell>{box.box_type}</TableCell>
-                                              <TableCell>
-                                                {getGradeDisplay(box.grade)}
-                                              </TableCell>
-                                              <TableCell className="text-right font-medium">
-                                                {box.quantity.toLocaleString()}
-                                              </TableCell>
-                                            </TableRow>
-                                          );
-                                        })}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
-                                ) : (
-                                  <div className="text-center py-6 border rounded bg-black">
-                                    <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                                    <p className="text-gray-500">No boxes assigned to this pallet</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </Card>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  </CardContent>
-</Card>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
             
@@ -4332,852 +4405,862 @@ const getInventoryBreakdown = () => {
               </div>
             </TabsContent>
             
-<TabsContent value="inventory" className="space-y-6 mt-6">
-  <Card>
-    <CardHeader>
-      <CardTitle className="flex items-center gap-2">
-        <History className="w-5 h-5" />
-        Current Cold Room Inventory
-        <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
-          ✅ Available Stock
-        </Badge>
-      </CardTitle>
-      <CardDescription>
-        Live inventory of ALL boxes and pallets currently stored in cold rooms that are not assigned to loading sheets.
-      </CardDescription>
-    </CardHeader>
-    <CardContent>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-4">
-            <div>
-              <Label htmlFor="inventory-coldroom">View Inventory for:</Label>
-              <Select 
-                value={selectedColdRoom} 
-                onValueChange={setSelectedColdRoom}
-              >
-                <SelectTrigger id="inventory-coldroom" className="w-48">
-                  <SelectValue placeholder="Select cold room" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="coldroom1">❄️ Cold Room 1 (5°C)</SelectItem>
-                  <SelectItem value="coldroom2">❄️ Cold Room 2 (5°C)</SelectItem>
-                  <SelectItem value="all">📊 All Cold Rooms</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 mt-7">
-              <Badge variant="outline" className="bg-green-50 text-green-700">
-                📦 {realTimeStats.totalAvailableBoxes.toLocaleString()} Available Boxes
-              </Badge>
-              <Badge variant="outline" className="bg-amber-50 text-amber-700">
-                🏗️ {notLoadedPallets.length} Available Pallets
-              </Badge>
-              <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                📋 {realTimeStats.totalBoxesInColdRoom.toLocaleString()} Total Boxes
-              </Badge>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => {
-                const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
-                if (availableBoxes.length === 0) {
-                  toast({
-                    title: 'No data to export',
-                    description: 'There is no available inventory data to download',
-                    variant: 'destructive',
-                  });
-                  return;
-                }
-                
-                try {
-                  exportColdRoomBoxesToCSV(availableBoxes, 'cold-room-available-inventory');
-                  
-                  toast({
-                    title: 'CSV Export Started',
-                    description: `Downloading ${availableBoxes.length} available inventory records as CSV file`,
-                  });
-                } catch (error) {
-                  toast({
-                    title: 'Export Failed',
-                    description: 'Could not generate CSV file. Please try again.',
-                    variant: 'destructive',
-                  });
-                }
-              }}
-              variant="outline"
-              disabled={realTimeStats.totalAvailableBoxes === 0}
-              className="flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Export Available to CSV
-            </Button>
-            <Button
-              onClick={() => {
-                fetchColdRoomBoxes();
-                fetchLoadingSheets();
-                fetchPalletHistory();
-              }}
-              variant="outline"
-              size="sm"
-              disabled={isLoading.boxes || isLoading.loadingSheets || isLoading.palletHistory}
-            >
-              <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.boxes || isLoading.loadingSheets ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-green-700">Available Boxes</div>
-              <Package className="w-5 h-5 text-green-600" />
-            </div>
-            <div className="text-2xl font-bold text-green-800">
-              {realTimeStats.totalAvailableBoxes.toLocaleString()}
-            </div>
-            <div className="text-xs text-green-600 mt-1">
-              Not in pallets or loading sheets
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-lg border border-amber-200 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-amber-700">Boxes in Pallets</div>
-              <Palette className="w-5 h-5 text-amber-600" />
-            </div>
-            <div className="text-2xl font-bold text-amber-800">
-              {realTimeStats.boxesInPallets.toLocaleString()}
-            </div>
-            <div className="text-xs text-amber-600 mt-1">
-              Converted to available pallets
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-blue-700">Available Pallets</div>
-              <Layers className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="text-2xl font-bold text-blue-800">
-              {notLoadedPallets.length}
-            </div>
-            <div className="text-xs text-blue-600 mt-1">
-              Ready for loading sheets
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-purple-700">Total Available Stock</div>
-              <Warehouse className="w-5 h-5 text-purple-600" />
-            </div>
-            <div className="text-2xl font-bold text-purple-800">
-              {(realTimeStats.totalAvailableBoxes + realTimeStats.boxesInPallets).toLocaleString()}
-            </div>
-            <div className="text-xs text-purple-600 mt-1">All available boxes (loose + in pallets)</div>
-          </div>
-        </div>
-
-<Card>
-  <CardHeader className="pb-3">
-    <CardTitle className="text-lg flex items-center gap-2">
-      <Palette className="w-5 h-5" />
-      Available Pallets in Cold Rooms
-    </CardTitle>
-    <CardDescription>
-      Pallets that are created but not yet assigned to loading sheets
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    {isLoading.pallets ? (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-        <p className="text-muted-foreground">Loading pallets...</p>
-      </div>
-    ) : notLoadedPallets.length === 0 ? (
-      <div className="text-center py-8 border rounded">
-        <Palette className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-        <p className="text-gray-500 font-medium">No available pallets</p>
-        <p className="text-sm text-gray-400 mt-1">
-          All pallets are assigned to loading sheets. Create new pallets or wait for existing ones to become available.
-        </p>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {notLoadedPallets.length} available pallet{notLoadedPallets.length !== 1 ? 's' : ''}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchPallets}
-            disabled={isLoading.pallets}
-          >
-            <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.pallets ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
-        
-        <ScrollArea className="h-[300px]">
-          <div className="space-y-3">
-            {notLoadedPallets.map((pallet) => {
-              const isExpanded = expandedPallets.has(pallet.id);
-              const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
-              
-              return (
-                <Card key={pallet.id} className="overflow-hidden border-green-200">
-                  <div 
-                    className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
-                    onClick={() => handleTogglePalletExpansion(pallet.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {isExpanded ? (
-                          <ChevronUp className="w-5 h-5 text-gray-400" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-gray-400" />
-                        )}
-                        <div>
-                          <div className="font-medium flex items-center gap-2">
-                            <Palette className="w-4 h-4" />
-                            {palletName}
-                            {pallet.is_manual && (
-                              <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
-                                Manual
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                            <Snowflake className="w-3 h-3" />
-                            {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                            <span className="mx-1">•</span>
-                            <Calendar className="w-3 h-3" />
-                            {formatDate(pallet.conversion_date || pallet.created_at)}
-                          </div>
-                        </div>
-                      </div>
+            <TabsContent value="inventory" className="space-y-6 mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="w-5 h-5" />
+                    Current Cold Room Inventory
+                    <Badge variant="outline" className="ml-2 bg-green-50 text-green-700">
+                      ✅ Available Stock
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    Live inventory of ALL boxes and pallets currently stored in cold rooms that are not assigned to loading sheets.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                       <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
-                          <div className="text-sm text-gray-500">
-                            {pallet.total_boxes?.toLocaleString() || 0} boxes
-                          </div>
+                        <div>
+                          <Label htmlFor="inventory-coldroom">View Inventory for:</Label>
+                          <Select 
+                            value={selectedColdRoom} 
+                            onValueChange={setSelectedColdRoom}
+                          >
+                            <SelectTrigger id="inventory-coldroom" className="w-48">
+                              <SelectValue placeholder="Select cold room" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="coldroom1">❄️ Cold Room 1 (5°C)</SelectItem>
+                              <SelectItem value="coldroom2">❄️ Cold Room 2 (5°C)</SelectItem>
+                              <SelectItem value="all">📊 All Cold Rooms</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex gap-2 mt-7">
+                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                            📦 {realTimeStats.totalAvailableBoxes.toLocaleString()} Available Boxes
+                          </Badge>
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                            🏗️ {notLoadedPallets.length} Available Pallets
+                          </Badge>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                            📋 {realTimeStats.totalBoxesInColdRoom.toLocaleString()} Total Boxes
+                          </Badge>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  {isExpanded && (
-                    <div className="border-t">
-                      <div className="p-4 bg-black-50">
-                        <div className="mb-4">
-                          <h4 className="font-medium mb-3 flex items-center gap-2">
-                            <Box className="w-4 h-4" />
-                            Boxes in this Pallet ({pallet.boxes?.length || 0})
-                          </h4>
-                          
-                          {pallet.boxes && pallet.boxes.length > 0 ? (
-                            <div className="border rounded overflow-hidden">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="bg-black-50">
-                                    <TableHead>Size</TableHead>
-                                    <TableHead>Variety</TableHead>
-                                    <TableHead>Type</TableHead>
-                                    <TableHead>Grade</TableHead>
-                                    <TableHead className="text-right">Quantity</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {pallet.boxes.map((box) => {
-                                    return (
-                                      <TableRow key={box.id}>
-                                        <TableCell>
-                                          <Badge variant="outline">{formatSize(box.size)}</Badge>
-                                        </TableCell>
-                                        <TableCell className="capitalize">
-                                          {getVarietyDisplay(box.variety)}
-                                        </TableCell>
-                                        <TableCell>{box.box_type}</TableCell>
-                                        <TableCell>
-                                          {getGradeDisplay(box.grade)}
-                                        </TableCell>
-                                        <TableCell className="text-right font-medium">
-                                          {box.quantity.toLocaleString()}
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  })}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          ) : (
-                            <div className="text-center py-6 border rounded bg-white">
-                              <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                              <p className="text-gray-500">No boxes assigned to this pallet</p>
-                            </div>
-                          )}
-                        </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+                            if (availableBoxes.length === 0) {
+                              toast({
+                                title: 'No data to export',
+                                description: 'There is no available inventory data to download',
+                                variant: 'destructive',
+                              });
+                              return;
+                            }
+                            
+                            try {
+                              exportColdRoomBoxesToCSV(availableBoxes, 'cold-room-available-inventory');
+                              
+                              toast({
+                                title: 'CSV Export Started',
+                                description: `Downloading ${availableBoxes.length} available inventory records as CSV file`,
+                              });
+                            } catch (error) {
+                              toast({
+                                title: 'Export Failed',
+                                description: 'Could not generate CSV file. Please try again.',
+                                variant: 'destructive',
+                              });
+                            }
+                          }}
+                          variant="outline"
+                          disabled={realTimeStats.totalAvailableBoxes === 0}
+                          className="flex items-center gap-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          Export Available to CSV
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            fetchColdRoomBoxes();
+                            fetchLoadingSheets();
+                            fetchPalletHistory();
+                          }}
+                          variant="outline"
+                          size="sm"
+                          disabled={isLoading.boxes || isLoading.loadingSheets || isLoading.palletHistory}
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.boxes || isLoading.loadingSheets ? 'animate-spin' : ''}`} />
+                          Refresh
+                        </Button>
                       </div>
                     </div>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </div>
-    )}
-  </CardContent>
-</Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Layers className="w-5 h-5" />
-              Available Inventory Breakdown by Variety and Size
-            </CardTitle>
-            <CardDescription>
-              Detailed breakdown of ALL available boxes in {selectedColdRoom === 'all' ? 'all cold rooms' : selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'} (loose boxes + boxes in pallets)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading.boxes ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
-                <p className="text-muted-foreground">Loading breakdown...</p>
-              </div>
-            ) : (realTimeStats.totalAvailableBoxes + realTimeStats.boxesInPallets) === 0 ? (
-              <div className="text-center py-8 border rounded">
-                <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                <p className="text-gray-500 font-medium">No available inventory found</p>
-                <p className="text-sm text-gray-400 mt-1">
-                  All boxes may be assigned to loading sheets. Check pallets or load more boxes from counting records.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
-                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Fuerte</Badge>
-                    <span className="text-green-700">Avocado Available Inventory</span>
-                    <span className="text-sm text-gray-500 ml-2">
-                      ({getInventoryBreakdown().filter(item => item.variety === 'fuerte').reduce((sum, item) => sum + item.totalQuantity, 0)} boxes available)
-                    </span>
-                  </h3>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="default">Class 1</Badge>
-                            <span>4kg Boxes</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'fuerte' && item.grade === 'class1' && item.box_type === '4kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'fuerte' && 
-                              item.grade === 'class1' && 
-                              item.box_type === '4kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Box className="w-4 h-4 text-green-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-green-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'fuerte' && 
-                                item.grade === 'class1' && 
-                                item.box_type === '4kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 1 4kg Fuerte boxes
-                            </div>
-                          )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-green-700">Available Boxes</div>
+                          <Package className="w-5 h-5 text-green-600" />
                         </div>
+                        <div className="text-2xl font-bold text-green-800">
+                          {realTimeStats.totalAvailableBoxes.toLocaleString()}
+                        </div>
+                        <div className="text-xs text-green-600 mt-1">
+                          Not in pallets or loading sheets
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-lg border border-amber-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-amber-700">Boxes in Pallets</div>
+                          <Palette className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-amber-800">
+                          {realTimeStats.boxesInPallets.toLocaleString()}
+                        </div>
+                        <div className="text-xs text-amber-600 mt-1">
+                          Converted to available pallets
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-blue-700">Available Pallets</div>
+                          <Layers className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-blue-800">
+                          {notLoadedPallets.length}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1">
+                          Ready for loading sheets
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-purple-700">Total Available Stock</div>
+                          <Warehouse className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div className="text-2xl font-bold text-purple-800">
+                          {(realTimeStats.totalAvailableBoxes + realTimeStats.boxesInPallets).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-purple-600 mt-1">All available boxes (loose + in pallets)</div>
+                      </div>
+                    </div>
+
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Palette className="w-5 h-5" />
+                          Available Pallets in Cold Rooms
+                        </CardTitle>
+                        <CardDescription>
+                          Pallets that are created but not yet assigned to loading sheets
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {isLoading.pallets ? (
+                          <div className="text-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                            <p className="text-muted-foreground">Loading pallets...</p>
+                          </div>
+                        ) : notLoadedPallets.length === 0 ? (
+                          <div className="text-center py-8 border rounded">
+                            <Palette className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                            <p className="text-gray-500 font-medium">No available pallets</p>
+                            <p className="text-sm text-gray-400 mt-1">
+                              All pallets are assigned to loading sheets. Create new pallets or wait for existing ones to become available.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm text-muted-foreground">
+                                Showing {notLoadedPallets.length} available pallet{notLoadedPallets.length !== 1 ? 's' : ''}
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={fetchPallets}
+                                disabled={isLoading.pallets}
+                              >
+                                <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.pallets ? 'animate-spin' : ''}`} />
+                                Refresh
+                              </Button>
+                            </div>
+                            
+                            <ScrollArea className="h-[300px]">
+                              <div className="space-y-3">
+                                {notLoadedPallets.map((pallet) => {
+                                  const isExpanded = expandedPallets.has(pallet.id);
+                                  const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
+                                  
+                                  return (
+                                    <Card key={pallet.id} className="overflow-hidden border-green-200">
+                                      <div 
+                                        className="p-4 cursor-pointer hover:bg-black-50 transition-colors"
+                                        onClick={() => handleTogglePalletExpansion(pallet.id)}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                            {isExpanded ? (
+                                              <ChevronUp className="w-5 h-5 text-gray-400" />
+                                            ) : (
+                                              <ChevronDown className="w-5 h-5 text-gray-400" />
+                                            )}
+                                            <div>
+                                              <div className="font-medium flex items-center gap-2">
+                                                <Palette className="w-4 h-4" />
+                                                {palletName}
+                                                {pallet.is_manual && (
+                                                  <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
+                                                    Manual
+                                                  </Badge>
+                                                )}
+                                                {pallet.is_air_freight && (
+                                                  <Badge variant="outline" className="ml-2 bg-cyan-50 text-cyan-700 text-xs">
+                                                    ✈️ Air Freight
+                                                  </Badge>
+                                                )}
+                                              </div>
+                                              <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                                <Snowflake className="w-3 h-3" />
+                                                {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                                <span className="mx-1">•</span>
+                                                <Calendar className="w-3 h-3" />
+                                                {formatDate(pallet.conversion_date || pallet.created_at)}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-4">
+                                            <div className="text-right">
+                                              <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
+                                              <div className="text-sm text-gray-500">
+                                                {pallet.total_boxes?.toLocaleString() || 0} boxes
+                                              </div>
+                                              {pallet.is_air_freight && (
+                                                <div className="text-xs text-cyan-600 mt-1">
+                                                  ✈️ Air freight - No box limit
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      
+                                      {isExpanded && (
+                                        <div className="border-t">
+                                          <div className="p-4 bg-black-50">
+                                            <div className="mb-4">
+                                              <h4 className="font-medium mb-3 flex items-center gap-2">
+                                                <Box className="w-4 h-4" />
+                                                Boxes in this Pallet ({pallet.boxes?.length || 0})
+                                              </h4>
+                                              
+                                              {pallet.boxes && pallet.boxes.length > 0 ? (
+                                                <div className="border rounded overflow-hidden">
+                                                  <Table>
+                                                    <TableHeader>
+                                                      <TableRow className="bg-black-50">
+                                                        <TableHead>Size</TableHead>
+                                                        <TableHead>Variety</TableHead>
+                                                        <TableHead>Type</TableHead>
+                                                        <TableHead>Grade</TableHead>
+                                                        <TableHead className="text-right">Quantity</TableHead>
+                                                      </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                      {pallet.boxes.map((box) => {
+                                                        return (
+                                                          <TableRow key={box.id}>
+                                                            <TableCell>
+                                                              <Badge variant="outline">{formatSize(box.size)}</Badge>
+                                                            </TableCell>
+                                                            <TableCell className="capitalize">
+                                                              {getVarietyDisplay(box.variety)}
+                                                            </TableCell>
+                                                            <TableCell>{box.box_type}</TableCell>
+                                                            <TableCell>
+                                                              {getGradeDisplay(box.grade)}
+                                                            </TableCell>
+                                                            <TableCell className="text-right font-medium">
+                                                              {box.quantity.toLocaleString()}
+                                                            </TableCell>
+                                                          </TableRow>
+                                                        );
+                                                      })}
+                                                    </TableBody>
+                                                  </Table>
+                                                </div>
+                                              ) : (
+                                                <div className="text-center py-6 border rounded bg-white">
+                                                  <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                                                  <p className="text-gray-500">No boxes assigned to this pallet</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Card>
+                                  );
+                                })}
+                              </div>
+                            </ScrollArea>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
 
                     <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="default">Class 1</Badge>
-                            <span>10kg Crates</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'fuerte' && item.grade === 'class1' && item.box_type === '10kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Layers className="w-5 h-5" />
+                          Available Inventory Breakdown by Variety and Size
                         </CardTitle>
+                        <CardDescription>
+                          Detailed breakdown of ALL available boxes in {selectedColdRoom === 'all' ? 'all cold rooms' : selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'} (loose boxes + boxes in pallets)
+                        </CardDescription>
                       </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'fuerte' && 
-                              item.grade === 'class1' && 
-                              item.box_type === '10kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Package2 className="w-4 h-4 text-green-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-green-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'fuerte' && 
-                                item.grade === 'class1' && 
-                                item.box_type === '10kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 1 10kg Fuerte crates
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                      <CardContent>
+                        {isLoading.boxes ? (
+                          <div className="text-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4 mx-auto"></div>
+                            <p className="text-muted-foreground">Loading breakdown...</p>
+                          </div>
+                        ) : (realTimeStats.totalAvailableBoxes + realTimeStats.boxesInPallets) === 0 ? (
+                          <div className="text-center py-8 border rounded">
+                            <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                            <p className="text-gray-500 font-medium">No available inventory found</p>
+                            <p className="text-sm text-gray-400 mt-1">
+                              All boxes may be assigned to loading sheets. Check pallets or load more boxes from counting records.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            <div>
+                              <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
+                                <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Fuerte</Badge>
+                                <span className="text-green-700">Avocado Available Inventory</span>
+                                <span className="text-sm text-gray-500 ml-2">
+                                  ({getInventoryBreakdown().filter(item => item.variety === 'fuerte').reduce((sum, item) => sum + item.totalQuantity, 0)} boxes available)
+                                </span>
+                              </h3>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="default">Class 1</Badge>
+                                        <span>4kg Boxes</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class1' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Box className="w-4 h-4 text-green-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-green-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 1 4kg Fuerte boxes
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
 
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Class 2</Badge>
-                            <span>4kg Boxes</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'fuerte' && item.grade === 'class2' && item.box_type === '4kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'fuerte' && 
-                              item.grade === 'class2' && 
-                              item.box_type === '4kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Box className="w-4 h-4 text-blue-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'fuerte' && 
-                                item.grade === 'class2' && 
-                                item.box_type === '4kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 2 4kg Fuerte boxes
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="default">Class 1</Badge>
+                                        <span>10kg Crates</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class1' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Package2 className="w-4 h-4 text-green-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-green-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 1 10kg Fuerte crates
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
 
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Class 2</Badge>
-                            <span>10kg Crates</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'fuerte' && item.grade === 'class2' && item.box_type === '10kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'fuerte' && 
-                              item.grade === 'class2' && 
-                              item.box_type === '10kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Package2 className="w-4 h-4 text-blue-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="secondary">Class 2</Badge>
+                                        <span>4kg Boxes</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class2' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Box className="w-4 h-4 text-blue-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 2 4kg Fuerte boxes
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="secondary">Class 2</Badge>
+                                        <span>10kg Crates</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'fuerte' && item.grade === 'class2' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'fuerte' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Package2 className="w-4 h-4 text-blue-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-blue-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'fuerte' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 2 10kg Fuerte crates
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
                               </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'fuerte' && 
-                                item.grade === 'class2' && 
-                                item.box_type === '10kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 2 10kg Fuerte crates
                             </div>
-                          )}
-                        </div>
+
+                            <div>
+                              <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
+                                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Hass</Badge>
+                                <span className="text-purple-700">Avocado Available Inventory</span>
+                                <span className="text-sm text-gray-500 ml-2">
+                                  ({getInventoryBreakdown().filter(item => item.variety === 'hass').reduce((sum, item) => sum + item.totalQuantity, 0)} boxes available)
+                                </span>
+                              </h3>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="default">Class 1</Badge>
+                                        <span>4kg Boxes</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class1' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Box className="w-4 h-4 text-purple-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-purple-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 1 4kg Hass boxes
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="default">Class 1</Badge>
+                                        <span>10kg Crates</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class1' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class1' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Package2 className="w-4 h-4 text-purple-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-purple-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class1' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 1 10kg Hass crates
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="secondary">Class 2</Badge>
+                                        <span>4kg Boxes</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class2' && item.box_type === '4kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '4kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Box className="w-4 h-4 text-pink-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-pink-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '4kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 2 4kg Hass boxes
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
+                                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="secondary">Class 2</Badge>
+                                        <span>10kg Crates</span>
+                                      </div>
+                                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                                        {getInventoryBreakdown()
+                                          .filter(item => item.variety === 'hass' && item.grade === 'class2' && item.box_type === '10kg')
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0)
+                                          .toLocaleString()} available
+                                      </Badge>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="pt-3">
+                                    <div className="space-y-2">
+                                      {BOX_SIZES.map(size => {
+                                        const availableItems = getInventoryBreakdown().filter(item => 
+                                          (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                          item.variety === 'hass' && 
+                                          item.grade === 'class2' && 
+                                          item.box_type === '10kg' && 
+                                          item.size === size
+                                        );
+                                        const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        
+                                        if (totalQuantity === 0) return null;
+                                        
+                                        return (
+                                          <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <Package2 className="w-4 h-4 text-pink-600" />
+                                              <span className="font-medium">{formatSize(size)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-bold text-pink-700">{totalQuantity.toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                      {BOX_SIZES.every(size => {
+                                        const totalQuantity = getInventoryBreakdown()
+                                          .filter(item => 
+                                            (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
+                                            item.variety === 'hass' && 
+                                            item.grade === 'class2' && 
+                                            item.box_type === '10kg' && 
+                                            item.size === size
+                                          )
+                                          .reduce((sum, item) => sum + item.totalQuantity, 0);
+                                        return totalQuantity === 0;
+                                      }) && (
+                                        <div className="text-center py-4 text-gray-400 text-sm">
+                                          No available Class 2 10kg Hass crates
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </div>
-                </div>
-
-                <div>
-                  <h3 className="font-medium text-lg mb-3 flex items-center gap-2">
-                    <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Hass</Badge>
-                    <span className="text-purple-700">Avocado Available Inventory</span>
-                    <span className="text-sm text-gray-500 ml-2">
-                      ({getInventoryBreakdown().filter(item => item.variety === 'hass').reduce((sum, item) => sum + item.totalQuantity, 0)} boxes available)
-                    </span>
-                  </h3>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="default">Class 1</Badge>
-                            <span>4kg Boxes</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'hass' && item.grade === 'class1' && item.box_type === '4kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'hass' && 
-                              item.grade === 'class1' && 
-                              item.box_type === '4kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Box className="w-4 h-4 text-purple-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-purple-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'hass' && 
-                                item.grade === 'class1' && 
-                                item.box_type === '4kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 1 4kg Hass boxes
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="default">Class 1</Badge>
-                            <span>10kg Crates</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'hass' && item.grade === 'class1' && item.box_type === '10kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'hass' && 
-                              item.grade === 'class1' && 
-                              item.box_type === '10kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Package2 className="w-4 h-4 text-purple-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-purple-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'hass' && 
-                                item.grade === 'class1' && 
-                                item.box_type === '10kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 1 10kg Hass crates
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Class 2</Badge>
-                            <span>4kg Boxes</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'hass' && item.grade === 'class2' && item.box_type === '4kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'hass' && 
-                              item.grade === 'class2' && 
-                              item.box_type === '4kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Box className="w-4 h-4 text-pink-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-pink-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'hass' && 
-                                item.grade === 'class2' && 
-                                item.box_type === '4kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 2 4kg Hass boxes
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="py-3 bg-gradient-to-r from-black-50 to-black-100">
-                        <CardTitle className="text-sm font-medium flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Class 2</Badge>
-                            <span>10kg Crates</span>
-                          </div>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {getInventoryBreakdown()
-                              .filter(item => item.variety === 'hass' && item.grade === 'class2' && item.box_type === '10kg')
-                              .reduce((sum, item) => sum + item.totalQuantity, 0)
-                              .toLocaleString()} available
-                          </Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <div className="space-y-2">
-                          {BOX_SIZES.map(size => {
-                            const availableItems = getInventoryBreakdown().filter(item => 
-                              (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                              item.variety === 'hass' && 
-                              item.grade === 'class2' && 
-                              item.box_type === '10kg' && 
-                              item.size === size
-                            );
-                            const totalQuantity = availableItems.reduce((sum, item) => sum + item.totalQuantity, 0);
-                            
-                            if (totalQuantity === 0) return null;
-                            
-                            return (
-                              <div key={size} className="flex items-center justify-between text-sm p-2 hover:bg-black-50 rounded">
-                                <div className="flex items-center gap-2">
-                                  <Package2 className="w-4 h-4 text-pink-600" />
-                                  <span className="font-medium">{formatSize(size)}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-pink-700">{totalQuantity.toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {BOX_SIZES.every(size => {
-                            const totalQuantity = getInventoryBreakdown()
-                              .filter(item => 
-                                (selectedColdRoom === 'all' || item.cold_room_id === selectedColdRoom) &&
-                                item.variety === 'hass' && 
-                                item.grade === 'class2' && 
-                                item.box_type === '10kg' && 
-                                item.size === size
-                              )
-                              .reduce((sum, item) => sum + item.totalQuantity, 0);
-                            return totalQuantity === 0;
-                          }) && (
-                            <div className="text-center py-4 text-gray-400 text-sm">
-                              No available Class 2 10kg Hass crates
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </CardContent>
-  </Card>
-</TabsContent>
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
         </main>
       </SidebarInset>

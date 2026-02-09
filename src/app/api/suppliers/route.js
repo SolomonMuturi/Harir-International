@@ -33,72 +33,6 @@ function formatPhoneNumber(phone) {
   return cleaned.startsWith('+') ? cleaned : '+' + cleaned
 }
 
-// Validation function
-function validateSupplierData(body) {
-  const errors = []
-
-  // Required fields
-  if (!body.name?.trim()) errors.push('Supplier name is required')
-  if (!body.contact_phone?.trim()) errors.push('Phone number is required')
-  if (!body.supplier_code?.trim()) errors.push('Supplier code is required')
-
-  // Name validation
-  if (body.name) {
-    const nameRegex = /^[a-zA-Z0-9\s&.-]{2,100}$/
-    if (!nameRegex.test(body.name.trim())) {
-      errors.push('Supplier name must be 2-100 characters and can only contain letters, numbers, spaces, &, ., and -')
-    }
-  }
-
-  // Phone validation
-  if (body.contact_phone) {
-    const phoneRegex = /^\+?[\d\s\-\(\)]{10,20}$/
-    const cleanPhone = body.contact_phone.replace(/\s/g, '')
-    if (!phoneRegex.test(cleanPhone)) {
-      errors.push('Phone number must be 10-20 digits')
-    }
-    if (cleanPhone.length < 10) {
-      errors.push('Phone number must be at least 10 digits')
-    }
-  }
-
-  // Email validation
-  if (body.contact_email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(body.contact_email.trim())) {
-      errors.push('Invalid email format')
-    }
-  }
-
-  // Payment details validation
-  if (body.mpesa_paybill && !body.mpesa_account_number) {
-    errors.push('M-PESA account number is required when paybill is provided')
-  }
-  if (body.mpesa_account_number && !body.mpesa_paybill) {
-    errors.push('M-PESA paybill is required when account number is provided')
-  }
-  
-  if (body.bank_name && !body.bank_account_number) {
-    errors.push('Bank account number is required when bank name is provided')
-  }
-  if (body.bank_account_number && !body.bank_name) {
-    errors.push('Bank name is required when bank account number is provided')
-  }
-
-  // KRA PIN validation
-  if (body.kra_pin) {
-    const kraPinRegex = /^[A-Z]{1}\d{9}[A-Z]{1}$/
-    if (!kraPinRegex.test(body.kra_pin.trim())) {
-      errors.push('Invalid KRA PIN format. Should be like A123456789B')
-    }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors
-  }
-}
-
 // Generate CSV
 function generateCSV(suppliers) {
   const headers = [
@@ -371,32 +305,23 @@ export async function POST(request) {
     const body = await request.json()
     console.log('📦 Request data:', body)
     
-    // Validate all fields
-    const validation = validateSupplierData(body)
-    if (!validation.isValid) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: validation.errors },
-        { status: 400 }
-      )
-    }
-    
-    // Format phone number
-    const formattedPhone = formatPhoneNumber(body.contact_phone)
+    // Format phone number if provided
+    const formattedPhone = body.contact_phone ? formatPhoneNumber(body.contact_phone) : ''
     
     // Check for existing name or phone
     const existingSupplier = await prisma.suppliers.findFirst({
       where: {
         OR: [
-          { name: body.name.trim() },
+          { name: body.name?.trim() || '' },
           { contact_phone: formattedPhone },
-          { supplier_code: body.supplier_code.trim() }
+          { supplier_code: body.supplier_code?.trim() || '' }
         ]
       }
     })
     
     if (existingSupplier) {
       let errorMessage = 'Supplier already exists: '
-      if (existingSupplier.name === body.name.trim()) {
+      if (existingSupplier.name === (body.name?.trim() || '')) {
         errorMessage += `Name "${body.name}" is already registered`
       } else if (existingSupplier.contact_phone === formattedPhone) {
         errorMessage += `Phone number "${body.contact_phone}" is already registered`
@@ -414,20 +339,20 @@ export async function POST(request) {
     const newSupplier = await prisma.suppliers.create({
       data: {
         id: generateTinyId(),
-        name: body.name.trim(),
+        name: body.name?.trim() || '',
         location: body.location?.trim() || 'Gate Registration',
-        contact_name: body.contact_name?.trim() || body.name.trim(),
+        contact_name: body.contact_name?.trim() || body.name?.trim() || '',
         contact_email: body.contact_email?.trim() || '',
         contact_phone: formattedPhone,
         produce_types: JSON.stringify(Array.isArray(body.produce_types) ? body.produce_types : []),
         status: body.status || 'Active',
-        logo_url: body.logo_url || `https://avatar.vercel.sh/${encodeURIComponent(body.name)}.png`,
+        logo_url: body.logo_url || `https://avatar.vercel.sh/${encodeURIComponent(body.name || '')}.png`,
         active_contracts: body.active_contracts || 0,
-        supplier_code: body.supplier_code.trim(),
+        supplier_code: body.supplier_code?.trim() || '',
         kra_pin: body.kra_pin?.trim() || null,
         vehicle_number_plate: body.vehicle_number_plate?.trim() || null,
-        vehicle_type: body.vehicle_type || 'Truck', // Set vehicle type
-        driver_name: body.driver_name?.trim() || body.contact_name?.trim() || body.name.trim(),
+        vehicle_type: body.vehicle_type || 'Truck',
+        driver_name: body.driver_name?.trim() || body.contact_name?.trim() || body.name?.trim() || '',
         driver_id_number: body.driver_id_number?.trim() || null,
         mpesa_paybill: body.mpesa_paybill?.trim() || null,
         mpesa_account_number: body.mpesa_account_number?.trim() || null,
@@ -509,22 +434,6 @@ export async function PUT(request) {
       ? formatPhoneNumber(body.contact_phone)
       : existingSupplier.contact_phone
     
-    // Prepare validation data
-    const validationData = {
-      ...existingSupplier,
-      ...body,
-      contact_phone: formattedPhone
-    }
-    
-    // Validate all fields
-    const validation = validateSupplierData(validationData)
-    if (!validation.isValid) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: validation.errors },
-        { status: 400 }
-      )
-    }
-    
     // Check for duplicate name-phone combination
     if (body.name || body.contact_phone) {
       const newName = body.name?.trim() || existingSupplier.name
@@ -573,7 +482,7 @@ export async function PUT(request) {
       ...(body.status && { status: body.status }),
       ...(body.kra_pin !== undefined && { kra_pin: body.kra_pin?.trim() || null }),
       ...(body.vehicle_number_plate !== undefined && { vehicle_number_plate: body.vehicle_number_plate?.trim() || null }),
-      ...(body.vehicle_type !== undefined && { vehicle_type: body.vehicle_type || 'Truck' }), // Update vehicle type
+      ...(body.vehicle_type !== undefined && { vehicle_type: body.vehicle_type || 'Truck' }),
       ...(body.driver_name !== undefined && { driver_name: body.driver_name?.trim() || null }),
       ...(body.driver_id_number !== undefined && { driver_id_number: body.driver_id_number?.trim() || null }),
       ...(body.vehicle_status !== undefined && { vehicle_status: body.vehicle_status }),

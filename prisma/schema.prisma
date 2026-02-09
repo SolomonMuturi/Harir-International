@@ -320,6 +320,7 @@ model weight_entries {
   declared_weight Decimal?            @db.Decimal(10, 2)
   rejected_weight Decimal?            @db.Decimal(10, 2)
   created_at      DateTime            @default(now()) @db.DateTime(0)
+  updated_at      DateTime?           @db.DateTime(0) // ADD THIS FIELD
   supplier_id     String?             @db.VarChar(255)
   supplier_phone  String?             @db.VarChar(50)
 
@@ -356,6 +357,29 @@ model weight_entries {
   @@index([supplier])
   @@index([timestamp])
   @@map("weight_entries")
+}
+
+// prisma/schema.prisma
+model Driver {
+  id                 String   @id @default(cuid())
+  driver_name        String   @unique
+  phone_number       String   @unique
+  vehicle_plate      String   @unique
+  vehicle_type       String   @default("Truck")
+  id_number          String
+  arrival_date       DateTime @default(now())
+  status             String   @default("Active")
+  check_in_time      DateTime
+  check_out_time     DateTime?
+  cargo_description  String?
+  gate_location      String   @default("Main Gate")
+  registration_type  String   @default("Gate Registration")
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+  
+  @@index([driver_name])
+  @@index([phone_number])
+  @@index([vehicle_plate])
 }
 
 model rejects {

@@ -664,7 +664,7 @@ async function handleWeightUpdate(id: string, body: any) {
     if (fuerteWeight > 0) productDescription.push(`Fuerte: ${fuerteWeight.toFixed(2)}kg`);
     if (hassWeight > 0) productDescription.push(`Hass: ${hassWeight.toFixed(2)}kg`);
 
-    // Prepare update data - REMOVE updated_at field since it doesn't exist in schema
+    // Prepare update data
     const dataToUpdate: any = {
       // Update product description
       product: productDescription.join(', ') || existingWeight.product,
@@ -823,7 +823,7 @@ export async function PUT(request: NextRequest) {
 // DELETE handler - Remove weight entry
 export async function DELETE(request: NextRequest) {
   try {
-    console.log('🗑️ DELETE /api/weights called');
+    console.log('🗑️ DELETE /api/weights called - SIMPLIFIED VERSION');
     
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -848,9 +848,6 @@ export async function DELETE(request: NextRequest) {
         pallet_id: true,
         supplier: true,
         supplier_id: true,
-        driver_name: true,
-        vehicle_plate: true,
-        created_at: true,
       }
     });
 
@@ -865,89 +862,15 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    console.log(`📋 Found weight entry to delete:`, {
-      id: weightEntry.id,
-      pallet_id: weightEntry.pallet_id,
-      supplier: weightEntry.supplier
-    });
+    console.log(`📋 Found weight entry to delete:`, weightEntry);
 
-    // Check if there are dependent counting records
-    const countingRecords = await prisma.counting_records.count({
-      where: {
-        weight_entry_id: id,
-      },
-    });
-
-    if (countingRecords > 0) {
-      console.log(`⚠️ Weight entry has ${countingRecords} counting records, deleting them first`);
-      
-      // Delete dependent counting records
-      await prisma.counting_records.deleteMany({
-        where: {
-          weight_entry_id: id,
-        },
-      });
-      
-      console.log('✅ Counting records deleted');
-    }
-
-    // Check if there are dependent reject records
-    const rejectRecords = await prisma.rejections.count({
-      where: {
-        weight_entry_id: id,
-      },
-    });
-
-    if (rejectRecords > 0) {
-      console.log(`⚠️ Weight entry has ${rejectRecords} rejection records, deleting them first`);
-      
-      // Delete dependent reject records
-      await prisma.rejections.deleteMany({
-        where: {
-          weight_entry_id: id,
-        },
-      });
-      
-      console.log('✅ Rejection records deleted');
-    }
-
-    // Delete weight entry
+    // SIMPLIFIED: Just delete the weight entry
+    // Let Prisma handle cascade deletes if set up in schema
     await prisma.weight_entries.delete({
       where: { id },
     });
 
     console.log('✅ Weight entry deleted successfully');
-
-    // Check if this was the last weight entry for this supplier
-    if (weightEntry.supplier_id) {
-      const otherWeightEntries = await prisma.weight_entries.count({
-        where: {
-          supplier_id: weightEntry.supplier_id,
-          id: { not: id }
-        },
-      });
-
-      // If no other weight entries for this supplier, update their check-in status
-      if (otherWeightEntries === 0) {
-        try {
-          await prisma.supplier_checkins.updateMany({
-            where: {
-              supplier_id: weightEntry.supplier_id,
-              status: 'weighed'
-            },
-            data: {
-              status: 'checked_in',
-              updated_at: new Date()
-            }
-          });
-          
-          console.log(`🔄 Updated supplier ${weightEntry.supplier_id} status back to checked_in`);
-        } catch (checkinError) {
-          console.error('⚠️ Error updating supplier check-in status:', checkinError);
-          // Continue even if check-in update fails
-        }
-      }
-    }
 
     return NextResponse.json({
       success: true,
@@ -965,7 +888,7 @@ export async function DELETE(request: NextRequest) {
       name: error.name,
       message: error.message,
       code: error.code,
-      stack: error.stack?.split('\n').slice(0, 5).join('\n')
+      stack: error.stack?.split('\n').slice(0, 3).join('\n')
     });
     
     if (error.code === 'P2025') {

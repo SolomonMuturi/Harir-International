@@ -78,8 +78,9 @@ export async function GET(request: NextRequest) {
       },
     });
     
+    // FIXED: Changed from 'rejections' to 'rejects' to match Prisma schema
     // Calculate rejects for today
-    const todayRejects = await prisma.rejections.count({
+    const todayRejects = await prisma.rejects.count({
       where: {
         rejected_at: {
           gte: today,

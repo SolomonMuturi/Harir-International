@@ -645,7 +645,7 @@ export async function GET(request: NextRequest) {
         try {
           const countingRecords = await prisma.$queryRaw`
             SELECT * FROM counting_records 
-            ORDER BY submitted_at ASC
+            ORDER BY submitted_at DESC
           `;
 
         // Process the data

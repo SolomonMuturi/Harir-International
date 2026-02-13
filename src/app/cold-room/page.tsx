@@ -2750,12 +2750,48 @@ export default function ColdRoomPage() {
                                 </p>
                               </div>
                               <div className="flex items-center gap-3">
+                                {/* Add this new section for size group selection controls */}
+                                {sizeGroups.length > 0 && (
+                                  <div className="flex items-center gap-2 mr-4">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        const updatedGroups = sizeGroups.map(group => ({
+                                          ...group,
+                                          selectedForLoading: group.remainingQuantity > 0,
+                                          loadingQuantity: group.remainingQuantity > 0 ? group.remainingQuantity : 0
+                                        }));
+                                        setSizeGroups(updatedGroups);
+                                      }}
+                                      disabled={sizeGroups.filter(g => g.remainingQuantity > 0).length === 0}
+                                    >
+                                      <Check className="w-4 h-4 mr-1" />
+                                      Select All Available
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        const updatedGroups = sizeGroups.map(group => ({
+                                          ...group,
+                                          selectedForLoading: false,
+                                          loadingQuantity: 0
+                                        }));
+                                        setSizeGroups(updatedGroups);
+                                      }}
+                                      disabled={sizeGroups.filter(g => g.selectedForLoading).length === 0}
+                                    >
+                                      <X className="w-4 h-4 mr-1" />
+                                      Clear All
+                                    </Button>
+                                  </div>
+                                )}
                                 <Badge variant="outline">
                                   {sizeGroups.length} size groups
                                 </Badge>
                               </div>
-                            </div>
-                            
+                            </div>                            
                             <Card className="mb-4 border-blue-200">
                               <CardContent className="py-4">
                                 <div className="flex items-center justify-between">

@@ -3352,26 +3352,15 @@ const downloadCSV = (records: CountingRecord[]) => {
                       <div className="space-y-3">
                         {qualityChecks
                           .filter(qc => {
-                            // Don't filter out the supplier that's currently being edited
-                            if (isEditingMode && editingRecord?.supplier_name === qc.supplier_name) {
-                              return true; // Keep showing in QC tab while editing
-                            }
-                            
-                            // Check if this supplier has already been counted (and not being edited)
-                            const alreadyCounted = countingRecords.some(record => 
-                              record.supplier_name === qc.supplier_name
-                            );
-                            
+                            const alreadyCounted = isSupplierCounted(qc.weight_entry_id, countingRecords);
                             return qc.overall_status === 'approved' && !alreadyCounted;
                           })
                           .map((qc) => {
                             const supplierIntake = supplierIntakeRecords.find(r => r.id === qc.weight_entry_id);
                             const hasFuerteQC = qc.fuerte_overall > 0;
                             const hasHassQC = qc.hass_overall > 0;
-                            const alreadyCounted = countingRecords.some(record => 
-                              record.supplier_name === qc.supplier_name && 
-                              (!isEditingMode || record.id !== editingRecord?.id) // Exclude current edit
-                            );  
+                            const alreadyCounted = isSupplierCounted(qc.weight_entry_id, countingRecords);
+                            
                             return (
                               <Collapsible
                                 key={qc.id}

@@ -8,6 +8,101 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Enums (defined only once at the top)
+enum carriers_status {
+  Active
+  Inactive
+  Suspended
+}
+
+enum accounts_receivable_aging_status {
+  On_Time
+  At_Risk
+  Late
+}
+
+enum activity_logs_status {
+  success
+  failure
+  pending
+}
+
+enum cold_room_inventory_category {
+  Fruit
+  Vegetable
+  Flower
+  Other
+}
+
+enum cold_room_inventory_unit {
+  pallets
+  tonnes
+  boxes
+  crates
+}
+
+enum cold_rooms_status {
+  Optimal
+  Warning
+  Alert
+}
+
+enum cold_rooms_zone_type {
+  Fruit
+  Vegetable
+  Flower
+}
+
+enum customers_status {
+  active
+  inactive
+  new
+}
+
+enum dwell_times_status {
+  optimal
+  moderate
+  high
+}
+
+enum products_category {
+  Fruit
+  Vegetable
+  Flower
+  Other
+}
+
+enum quotes_status {
+  Draft
+  Sent
+  Accepted
+  Expired
+}
+
+enum shipments_status {
+  Awaiting_QC
+  Processing
+  Receiving
+  Preparing_for_Dispatch
+  Ready_for_Dispatch
+  In_Transit
+  Delivered
+  Delayed
+}
+
+enum suppliers_status {
+  Active
+  Inactive
+  Onboarding
+  Suspended
+}
+
+enum weight_entries_unit {
+  kg
+  lb
+}
+
+// Models
 model carriers {
   id                   String                @id @default(cuid()) @db.VarChar(20)
   name                 String                @unique @db.VarChar(100)
@@ -73,7 +168,7 @@ model accounts_receivable {
   due_date     DateTime?                        @db.Date
   aging_status accounts_receivable_aging_status
   created_at   DateTime                         @default(now()) @db.DateTime(0)
-  customers    customers?                       @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customers    customers?                        @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([customer_id], map: "customer_id_idx")
   @@map("accounts_receivable")
@@ -230,7 +325,52 @@ model shipments {
   @@map("shipments")
 }
 
-// Suppliers model
+model vehicle_visits {
+  id                 String    @id @default(cuid()) @db.VarChar(20)
+  supplier_id        String    @map("supplier_id") @db.VarChar(20)
+  visit_number       Int       @default(1)
+  vehicle_plate      String    @map("vehicle_plate") @db.VarChar(20)
+  driver_name        String?   @map("driver_name") @db.VarChar(100)
+  driver_id_number   String?   @map("driver_id_number") @db.VarChar(50)
+  cargo_description  String?   @map("cargo_description") @db.LongText
+  fruit_varieties    String?   @map("fruit_varieties") @db.LongText
+  region             String?   @db.VarChar(100)
+  
+  // Status tracking
+  status             String    @default("Pre-registered") @db.VarChar(50) 
+  
+  // Gate Entry Tracking
+  gate_entry_id      String?   @map("gate_entry_id") @db.VarChar(50) @unique 
+  gate_entry_number  Int?      @map("gate_entry_number") 
+  gate_entry_date    String?   @map("gate_entry_date") @db.VarChar(8) 
+  is_recheck_in      Boolean?  @map("is_recheck_in") @default(false) 
+  previous_gate_entry_id String? @map("previous_gate_entry_id") @db.VarChar(50) 
+  
+  // Timestamps
+  registered_at      DateTime  @default(now()) @map("registered_at") @db.DateTime(0)
+  check_in_time      DateTime? @map("check_in_time") @db.DateTime(0)
+  check_out_time     DateTime? @map("check_out_time") @db.DateTime(0)
+  created_at         DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at         DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+  
+  // Relations
+  supplier           suppliers @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
+  
+  weight_entry_id    String?   @map("weight_entry_id") @db.VarChar(20)
+  weight_entry       weight_entries? @relation(fields: [weight_entry_id], references: [id])
+  
+  // Unique constraint for supplier visit numbers
+  @@unique([supplier_id, visit_number], name: "supplier_visit_unique")
+  @@index([supplier_id])
+  @@index([vehicle_plate])
+  @@index([status])
+  @@index([check_in_time])
+  @@index([registered_at])
+  @@index([gate_entry_id]) // New index
+  @@index([gate_entry_date]) // New index
+  @@map("vehicle_visits")
+}
+
 model suppliers {
   id                     String           @id @default(cuid()) @db.VarChar(20)
   name                   String           @unique @db.VarChar(100)
@@ -245,7 +385,7 @@ model suppliers {
   kra_pin                String?          @db.VarChar(20)
   supplier_code          String?          @unique @db.VarChar(20)
   vehicle_number_plate   String?          @db.VarChar(20)
-  vehicle_type           String?          @db.VarChar(50) // Already exists
+  vehicle_type           String?          @db.VarChar(50)
   driver_name            String?          @db.VarChar(100)
   driver_id_number       String?          @db.VarChar(50)
   mpesa_paybill          String?          @db.VarChar(20)
@@ -259,8 +399,10 @@ model suppliers {
   vehicle_check_out_time DateTime?        @db.DateTime(0)
   cargo_description      String?          @db.LongText
 
+  // Visits relation
+  visits                 vehicle_visits[]
+
   @@unique([name, contact_phone], name: "supplier_name_phone_unique")
-  
   @@map("suppliers")
 }
 
@@ -308,7 +450,7 @@ model weight_entries {
   product   String? @db.VarChar(100)
 
   // Total fields
-  weight          Decimal?            @db.Decimal(10, 2) // Total weight
+  weight          Decimal?            @db.Decimal(10, 2)
   unit            weight_entries_unit
   timestamp       DateTime?           @db.DateTime(0)
   supplier        String?             @db.VarChar(100)
@@ -316,19 +458,19 @@ model weight_entries {
   driver_id       String?             @db.VarChar(100)
   gross_weight    Decimal?            @db.Decimal(10, 2)
   tare_weight     Decimal?            @db.Decimal(10, 2)
-  net_weight      Decimal?            @db.Decimal(10, 2) // Total net weight
+  net_weight      Decimal?            @db.Decimal(10, 2)
   declared_weight Decimal?            @db.Decimal(10, 2)
   rejected_weight Decimal?            @db.Decimal(10, 2)
   created_at      DateTime            @default(now()) @db.DateTime(0)
-  updated_at      DateTime?           @db.DateTime(0) // ADD THIS FIELD
+  updated_at      DateTime?           @updatedAt @db.DateTime(0)
   supplier_id     String?             @db.VarChar(255)
   supplier_phone  String?             @db.VarChar(50)
 
   // Specific variety weights
-  fuerte_weight Decimal? @db.Decimal(10, 2) // Fuerte weight
-  fuerte_crates Int?     @default(0) // Fuerte crates
-  hass_weight   Decimal? @db.Decimal(10, 2) // Hass weight
-  hass_crates   Int?     @default(0) // Hass crates
+  fuerte_weight Decimal? @db.Decimal(10, 2)
+  fuerte_crates Int?     @default(0)
+  hass_weight   Decimal? @db.Decimal(10, 2)
+  hass_crates   Int?     @default(0)
 
   fruit_variety    String? @db.Text // JSON array of variety names
   number_of_crates Int?    @default(0) // Total crates
@@ -340,10 +482,13 @@ model weight_entries {
   vehicle_plate    String? @db.VarChar(50)
   notes            String? @db.Text
 
-  // New fields for payment details
+  // New field for payment details
   bank_name    String? @db.VarChar(100)
   bank_account String? @db.VarChar(50)
   kra_pin      String? @db.VarChar(20)
+
+  // NEW: Gate Entry ID field to link with vehicle_visits
+  gate_entry_id String? @db.VarChar(50) @map("gate_entry_id") // Links to vehicle_visits.gate_entry_id
 
   // Per variety details (JSON array)
   perVarietyWeights String? @default("[]") @db.Text // JSON array of {variety, weight, crates}
@@ -352,14 +497,15 @@ model weight_entries {
   counting_records CountingRecord[]
   quality_checks   quality_checks[]
   varieties        weight_entry_varieties[] // Relation to varieties table
+  vehicle_visits   vehicle_visits[] // Relation to vehicle visits
 
   @@index([pallet_id])
   @@index([supplier])
   @@index([timestamp])
+  @@index([gate_entry_id]) // New index for faster lookups
   @@map("weight_entries")
 }
 
-// prisma/schema.prisma
 model Driver {
   id                 String   @id @default(cuid())
   driver_name        String   @unique
@@ -608,7 +754,6 @@ model cold_room_pallets {
   total_weight_kg  Float    @default(0)
   boxes_per_pallet Int      @default(288) // Standard boxes per pallet (4kg: 288, 10kg: 120)
   
-  // NEW FIELD: Add this line
   loading_sheet_id String?  @db.VarChar(255) // Link to loading sheet
   
   created_at       DateTime @default(now())
@@ -617,7 +762,6 @@ model cold_room_pallets {
   // Relationship to boxes
   boxes cold_room_boxes[]
   
-  // NEW RELATION: Add this line
   loading_sheet loading_sheets? @relation(fields: [loading_sheet_id], references: [id], onDelete: SetNull)
 
   @@index([cold_room_id])
@@ -626,7 +770,7 @@ model cold_room_pallets {
   @@index([is_manual])
   @@index([total_boxes])
   @@index([total_weight_kg])
-  @@index([loading_sheet_id]) // Add this index for better performance
+  @@index([loading_sheet_id])
   @@map("cold_room_pallets")
 }
 
@@ -710,7 +854,6 @@ model loading_sheets {
   carrier_assignments carrier_assignments[]
   loading_pallets     loading_pallets[]
   
-  // NEW RELATION: Add this line for the reverse relationship
   cold_room_pallets  cold_room_pallets[]   // Reverse relation
 
   @@map("loading_sheets")
@@ -721,7 +864,7 @@ model loading_pallets {
   loading_sheet_id String         @db.VarChar(255)
   pallet_no        Int
   
-  // Cold room info (NEW FIELDS)
+  // Cold room info
   cold_room_id     String?        @db.VarChar(50)
   original_pallet_id String?      @db.VarChar(255) // Original pallet ID from cold_room_pallets
   variety          String?        @db.VarChar(50)
@@ -838,7 +981,7 @@ model User {
 }
 
 model UserRole {
-  id          String   @id @default(nanoid(8))
+  id          String   @id @default(cuid())
   name        String   @unique @db.VarChar(100)
   description String?  @db.Text
   permissions String   @db.LongText
@@ -955,7 +1098,6 @@ model equipment_temperatures {
   @@map("equipment_temperatures")
 }
 
-// New model for supplier check-ins
 model supplier_checkins {
   id              String    @id @default(cuid())
   supplier_id     String
@@ -976,98 +1118,4 @@ model supplier_checkins {
   @@index([check_in_time])
   @@index([status])
   @@map("supplier_checkins")
-}
-
-// Enums
-enum carriers_status {
-  Active
-  Inactive
-  Suspended
-}
-
-enum accounts_receivable_aging_status {
-  On_Time
-  At_Risk
-  Late
-}
-
-enum activity_logs_status {
-  success
-  failure
-  pending
-}
-
-enum cold_room_inventory_category {
-  Fruit
-  Vegetable
-  Flower
-  Other
-}
-
-enum cold_room_inventory_unit {
-  pallets
-  tonnes
-  boxes
-  crates
-}
-
-enum cold_rooms_status {
-  Optimal
-  Warning
-  Alert
-}
-
-enum cold_rooms_zone_type {
-  Fruit
-  Vegetable
-  Flower
-}
-
-enum customers_status {
-  active
-  inactive
-  new
-}
-
-enum dwell_times_status {
-  optimal
-  moderate
-  high
-}
-
-enum products_category {
-  Fruit
-  Vegetable
-  Flower
-  Other
-}
-
-enum quotes_status {
-  Draft
-  Sent
-  Accepted
-  Expired
-}
-
-enum shipments_status {
-  Awaiting_QC
-  Processing
-  Receiving
-  Preparing_for_Dispatch
-  Ready_for_Dispatch
-  In_Transit
-  Delivered
-  Delayed
-}
-
-enum suppliers_status {
-  Active
-  Inactive
-  Onboarding
-  Suspended
-}
-
-enum weight_entries_unit {
-  kg
-  lb
 }

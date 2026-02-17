@@ -32,7 +32,7 @@ import {
   Phone, Mail, Building, BadgeCheck, Award, DollarSign, CalendarDays,
   Shield, FileText, Download, Filter, MoreVertical, UserPlus,
   ChevronLeft, ChevronRight, DownloadCloud, UploadCloud, BarChart,
-  DoorOpen, DoorClosed, MapPin, ListChecks
+  DoorOpen, DoorClosed, MapPin, ListChecks, Save, FileDown
 } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { useToast } from '@/hooks/use-toast';
@@ -69,6 +69,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Switch } from '@/components/ui/switch';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Types
 type EmployeeContract = 'Full-time' | 'Part-time' | 'Contract';
@@ -344,7 +346,9 @@ interface DesignationCardProps {
   todayRecord?: Attendance;
   designation?: Designation;
   onDesignationChange: (designation: Designation) => void;
+  onSave: (employeeId: string, designation: Designation) => void;
   disabled?: boolean;
+  isSaving?: boolean;
 }
 
 const DesignationCard: React.FC<DesignationCardProps> = ({
@@ -352,10 +356,22 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
   todayRecord,
   designation = 'dipping',
   onDesignationChange,
-  disabled = false
+  onSave,
+  disabled = false,
+  isSaving = false
 }) => {
   const isPresent = todayRecord?.status === 'Present' || todayRecord?.status === 'Late';
   const hasCheckedIn = !!todayRecord?.clockInTime;
+  const [selectedDesignation, setSelectedDesignation] = useState<Designation>(designation);
+  
+  const handleDesignationChange = (value: Designation) => {
+    setSelectedDesignation(value);
+    onDesignationChange(value);
+  };
+  
+  const handleSave = () => {
+    onSave(employee.id, selectedDesignation);
+  };
   
   return (
     <Card className={cn(
@@ -412,42 +428,67 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
         </div>
         
         {/* Designation Selector */}
-        <div className="mt-4">
-          <Label className="text-sm font-medium mb-2 block">Assign Designation</Label>
-          <Select 
-            value={designation} 
-            onValueChange={(value: Designation) => onDesignationChange(value)}
-            disabled={disabled || !hasCheckedIn}
-          >
-            <SelectTrigger className={cn(
-              "h-10",
-              !hasCheckedIn && "border-amber-300 text-amber-600"
-            )}>
-              <SelectValue placeholder="Select designation" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(designationLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "w-2 h-2 rounded-full",
-                      value === 'dipping' && "bg-blue-500",
-                      value === 'intake' && "bg-green-500",
-                      value === 'qualityControl' && "bg-yellow-500",
-                      value === 'qualityAssurance' && "bg-purple-500",
-                      value === 'packing' && "bg-pink-500",
-                      value === 'loading' && "bg-indigo-500",
-                      value === 'palletizing' && "bg-orange-500",
-                      value === 'porter' && "bg-cyan-500"
-                    )} />
-                    {label}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="mt-4 space-y-3">
+          <div>
+            <Label className="text-sm font-medium mb-2 block">Assign Designation</Label>
+            <Select 
+              value={selectedDesignation} 
+              onValueChange={handleDesignationChange}
+              disabled={disabled || !hasCheckedIn || isSaving}
+            >
+              <SelectTrigger className={cn(
+                "h-10",
+                !hasCheckedIn && "border-amber-300 text-amber-600"
+              )}>
+                <SelectValue placeholder="Select designation" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(designationLabels).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-2 h-2 rounded-full",
+                        value === 'dipping' && "bg-blue-500",
+                        value === 'intake' && "bg-green-500",
+                        value === 'qualityControl' && "bg-yellow-500",
+                        value === 'qualityAssurance' && "bg-purple-500",
+                        value === 'packing' && "bg-pink-500",
+                        value === 'loading' && "bg-indigo-500",
+                        value === 'palletizing' && "bg-orange-500",
+                        value === 'porter' && "bg-cyan-500"
+                      )} />
+                      {label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Save Button */}
+          {hasCheckedIn && (
+            <Button
+              onClick={handleSave}
+              disabled={disabled || !hasCheckedIn || isSaving}
+              className="w-full bg-green-600 hover:bg-green-700"
+              size="sm"
+            >
+              {isSaving ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save & Continue to Gate Out
+                </>
+              )}
+            </Button>
+          )}
+          
           {!hasCheckedIn && (
-            <p className="text-xs text-amber-600 mt-2">
+            <p className="text-xs text-amber-600 mt-2 text-center">
               Employee must check in first before assigning designation
             </p>
           )}
@@ -612,6 +653,304 @@ const getNumberOfDays = (from: Date, to: Date): number => {
   return differenceInDays(to, from) + 1;
 };
 
+// Helper function to load image as base64 for PDF
+const loadImageAsBase64 = async (url: string): Promise<string | null> => {
+  try {
+    const response = await fetch(url);
+    if (response.ok) {
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (error) {
+    console.log('Logo loading failed:', error);
+  }
+  return null;
+};
+
+// Generate Employee PDF Report
+const generateEmployeePDF = async (
+  employees: Employee[], 
+  filteredEmployees: Employee[],
+  dateRange: { from: Date; to: Date }
+) => {
+  try {
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+    const today = new Date();
+    
+    // Try to load logo
+    let hasLogo = false;
+    try {
+      const logoPaths = [
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico'
+      ];
+      
+      for (const path of logoPaths) {
+        const base64 = await loadImageAsBase64(path);
+        if (base64) {
+          doc.addImage(base64, 'PNG', 130, 6, 18, 18);
+          hasLogo = true;
+          break;
+        }
+      }
+    } catch (error) {
+      console.log('Logo loading failed:', error);
+    }
+    
+    if (!hasLogo) {
+      doc.setFillColor(34, 139, 34);
+      doc.circle(139, 15, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('HI', 139, 18, { align: 'center' });
+    }
+    
+    // Header
+    doc.setTextColor(34, 139, 34);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('HARIR INTERNATIONAL', 148, 30, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.text('EMPLOYEE DIRECTORY REPORT', 148, 38, { align: 'center' });
+    
+    doc.setDrawColor(34, 139, 34);
+    doc.setLineWidth(0.5);
+    doc.line(10, 42, 287, 42);
+    
+    // Report Info
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 14, 50);
+    doc.text(`Period: ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`, 14, 56);
+    doc.text(`Total Employees: ${employees.length} | Filtered: ${filteredEmployees.length}`, 14, 62);
+    
+    // Employee Table
+    const tableData = filteredEmployees.map(emp => [
+      emp.employeeId || 'N/A',
+      emp.name,
+      emp.role,
+      emp.contract,
+      emp.status === 'active' ? 'Active' : 'Inactive',
+      emp.phone || 'N/A',
+      emp.id_number || 'N/A'
+    ]);
+    
+    autoTable(doc, {
+      startY: 70,
+      head: [['ID', 'Name', 'Role', 'Contract', 'Status', 'Phone', 'ID Number']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [34, 139, 34],
+        textColor: [255, 255, 255],
+        fontSize: 9,
+        fontStyle: 'bold'
+      },
+      styles: { 
+        fontSize: 8,
+        cellPadding: 3,
+        textColor: [0, 0, 0]
+      },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 50 },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 35 },
+        6: { cellWidth: 30 }
+      }
+    });
+    
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Summary
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SUMMARY', 14, finalY);
+    doc.setFont('helvetica', 'normal');
+    
+    const fullTime = employees.filter(e => e.contract === 'Full-time').length;
+    const partTime = employees.filter(e => e.contract === 'Part-time').length;
+    const contract = employees.filter(e => e.contract === 'Contract').length;
+    const active = employees.filter(e => e.status === 'active').length;
+    
+    doc.text(`Full-time: ${fullTime}`, 14, finalY + 6);
+    doc.text(`Part-time: ${partTime}`, 50, finalY + 6);
+    doc.text(`Contract: ${contract}`, 86, finalY + 6);
+    doc.text(`Active: ${active}`, 122, finalY + 6);
+    doc.text(`Inactive: ${employees.length - active}`, 158, finalY + 6);
+    
+    // Footer
+    doc.setFontSize(7);
+    doc.setTextColor(128, 128, 128);
+    doc.text('Harir International - Employee Management System', 148, 200, { align: 'center' });
+    doc.text(`Document: EMP-DIR-${format(today, 'yyyyMMddHHmm')}`, 148, 205, { align: 'center' });
+    doc.text('This is a computer-generated document', 148, 210, { align: 'center' });
+    
+    doc.save(`Employee_Directory_${format(today, 'yyyy-MM-dd')}.pdf`);
+    return true;
+  } catch (error) {
+    console.error('Error generating employee PDF:', error);
+    throw error;
+  }
+};
+
+// Generate Attendance PDF Report
+const generateAttendancePDF = async (
+  attendance: Attendance[],
+  filteredAttendance: Attendance[],
+  employees: Employee[],
+  dateRange: { from: Date; to: Date }
+) => {
+  try {
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+    const today = new Date();
+    
+    // Try to load logo
+    let hasLogo = false;
+    try {
+      const logoPaths = [
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico'
+      ];
+      
+      for (const path of logoPaths) {
+        const base64 = await loadImageAsBase64(path);
+        if (base64) {
+          doc.addImage(base64, 'PNG', 130, 6, 18, 18);
+          hasLogo = true;
+          break;
+        }
+      }
+    } catch (error) {
+      console.log('Logo loading failed:', error);
+    }
+    
+    if (!hasLogo) {
+      doc.setFillColor(34, 139, 34);
+      doc.circle(139, 15, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('HI', 139, 18, { align: 'center' });
+    }
+    
+    // Header
+    doc.setTextColor(34, 139, 34);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('HARIR INTERNATIONAL', 148, 30, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.text('ATTENDANCE REPORT', 148, 38, { align: 'center' });
+    
+    doc.setDrawColor(34, 139, 34);
+    doc.setLineWidth(0.5);
+    doc.line(10, 42, 287, 42);
+    
+    // Report Info
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 14, 50);
+    doc.text(`Period: ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`, 14, 56);
+    doc.text(`Total Records: ${attendance.length} | Filtered: ${filteredAttendance.length}`, 14, 62);
+    
+    // Attendance Table
+    const tableData = filteredAttendance.map(record => {
+      const employee = employees.find(emp => emp.id === record.employeeId);
+      const hours = record.clockInTime && record.clockOutTime 
+        ? differenceInHours(parseISO(record.clockOutTime), parseISO(record.clockInTime)) + 'h'
+        : '-';
+      
+      return [
+        format(parseISO(record.date), 'dd/MM/yyyy'),
+        employee?.name || 'Unknown',
+        employee?.contract || 'N/A',
+        record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : '-',
+        record.clockOutTime ? format(parseISO(record.clockOutTime), 'HH:mm') : '-',
+        record.designation ? designationLabels[record.designation] : '-',
+        record.status,
+        hours
+      ];
+    });
+    
+    autoTable(doc, {
+      startY: 70,
+      head: [['Date', 'Employee', 'Type', 'Check In', 'Check Out', 'Designation', 'Status', 'Hours']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [34, 139, 34],
+        textColor: [255, 255, 255],
+        fontSize: 8,
+        fontStyle: 'bold'
+      },
+      styles: { 
+        fontSize: 7,
+        cellPadding: 2,
+        textColor: [0, 0, 0]
+      },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 50 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 20 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 30 },
+        6: { cellWidth: 20 },
+        7: { cellWidth: 15 }
+      }
+    });
+    
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Summary Statistics
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ATTENDANCE SUMMARY', 14, finalY);
+    doc.setFont('helvetica', 'normal');
+    
+    const present = filteredAttendance.filter(r => r.status === 'Present').length;
+    const late = filteredAttendance.filter(r => r.status === 'Late').length;
+    const absent = filteredAttendance.filter(r => r.status === 'Absent').length;
+    const leave = filteredAttendance.filter(r => r.status === 'On Leave').length;
+    
+    doc.text(`Present: ${present}`, 14, finalY + 6);
+    doc.text(`Late: ${late}`, 50, finalY + 6);
+    doc.text(`Absent: ${absent}`, 86, finalY + 6);
+    doc.text(`On Leave: ${leave}`, 122, finalY + 6);
+    doc.text(`Total: ${filteredAttendance.length}`, 158, finalY + 6);
+    
+    // Footer
+    doc.setFontSize(7);
+    doc.setTextColor(128, 128, 128);
+    doc.text('Harir International - Employee Management System', 148, 200, { align: 'center' });
+    doc.text(`Document: ATT-${format(today, 'yyyyMMddHHmm')}`, 148, 205, { align: 'center' });
+    doc.text('This is a computer-generated document', 148, 210, { align: 'center' });
+    
+    doc.save(`Attendance_Report_${format(today, 'yyyy-MM-dd')}.pdf`);
+    return true;
+  } catch (error) {
+    console.error('Error generating attendance PDF:', error);
+    throw error;
+  }
+};
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -634,10 +973,12 @@ export default function EmployeesPage() {
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // Gate In/Out state
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [designationForEmployee, setDesignationForEmployee] = useState<Record<string, Designation>>({});
+  const [savingDesignation, setSavingDesignation] = useState<Record<string, boolean>>({});
 
   // Attendance History state
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
@@ -778,7 +1119,6 @@ export default function EmployeesPage() {
         const query = searchQuery.toLowerCase();
         return (
           employee.name.toLowerCase().includes(query) ||
-          employee.email.toLowerCase().includes(query) ||
           employee.role.toLowerCase().includes(query) ||
           (employee.id_number && employee.id_number.toLowerCase().includes(query)) ||
           (employee.phone && employee.phone.toLowerCase().includes(query)) ||
@@ -1176,9 +1516,11 @@ export default function EmployeesPage() {
     }
   };
 
-  // Handle assign designation
+  // Handle assign designation with save button
   const handleAssignDesignation = async (employeeId: string, designation: Designation) => {
     try {
+      setSavingDesignation(prev => ({ ...prev, [employeeId]: true }));
+      
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) {
         toast({
@@ -1230,9 +1572,12 @@ export default function EmployeesPage() {
       ));
 
       toast({
-        title: 'Designation Assigned',
-        description: `${employee.name} assigned to ${designationLabels[designation]}`,
+        title: '✅ Designation Assigned',
+        description: `${employee.name} assigned to ${designationLabels[designation]}. Moving to Gate Out tab.`,
       });
+      
+      // Automatically switch to Gate Out tab after successful save
+      setActiveTab('gate-out');
       
     } catch (error: any) {
       toast({
@@ -1240,6 +1585,8 @@ export default function EmployeesPage() {
         description: error.message || 'Failed to assign designation',
         variant: 'destructive',
       });
+    } finally {
+      setSavingDesignation(prev => ({ ...prev, [employeeId]: false }));
     }
   };
 
@@ -1441,6 +1788,35 @@ export default function EmployeesPage() {
         description: error.message || 'Failed to delete employee',
         variant: 'destructive',
       });
+    }
+  };
+
+  // Handle PDF Export
+  const handleExportPDF = async (type: 'employees' | 'attendance') => {
+    try {
+      setIsExportingPDF(true);
+      
+      if (type === 'employees') {
+        await generateEmployeePDF(employees, filteredEmployees, dateRange);
+        toast({
+          title: '✅ PDF Exported',
+          description: 'Employee directory has been downloaded as PDF.',
+        });
+      } else {
+        await generateAttendancePDF(attendance, filteredAttendance, employees, dateRange);
+        toast({
+          title: '✅ PDF Exported',
+          description: 'Attendance report has been downloaded as PDF.',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error Exporting PDF',
+        description: error.message || 'Failed to generate PDF',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExportingPDF(false);
     }
   };
 
@@ -1748,6 +2124,14 @@ export default function EmployeesPage() {
               >
                 <RefreshCw className={`mr-2 w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => handleExportPDF('employees')}
+                disabled={isExportingPDF || employees.length === 0}
+              >
+                <FileDown className={`mr-2 w-4 h-4 ${isExportingPDF ? 'animate-pulse' : ''}`} />
+                {isExportingPDF ? 'Exporting PDF...' : 'Export PDF'}
               </Button>
               <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                 <DialogTrigger asChild>
@@ -2138,7 +2522,7 @@ export default function EmployeesPage() {
                         Assign Designation
                       </CardTitle>
                       <CardDescription>
-                        Assign work areas to contract employees who have checked in. Designation is required before gate out.
+                        Assign work areas to contract employees who have checked in. Click Save to confirm designation and proceed to Gate Out.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-4">
@@ -2277,6 +2661,7 @@ export default function EmployeesPage() {
                         {assignDesignationEmployees.map((employee) => {
                           const todayRecord = getAttendanceForDate.find(r => r.employeeId === employee.id);
                           const designation = designationForEmployee[employee.id] || bulkDesignation;
+                          const isSaving = savingDesignation[employee.id] || false;
                           
                           return (
                             <DesignationCard
@@ -2289,8 +2674,9 @@ export default function EmployeesPage() {
                                   ...prev,
                                   [employee.id]: newDesignation
                                 }));
-                                handleAssignDesignation(employee.id, newDesignation);
                               }}
+                              onSave={handleAssignDesignation}
+                              isSaving={isSaving}
                             />
                           );
                         })}
@@ -2504,6 +2890,14 @@ export default function EmployeesPage() {
                         <Download className="mr-2 w-4 h-4" />
                         Export CSV
                       </Button>
+                      <Button 
+                        onClick={() => handleExportPDF('employees')}
+                        variant="outline"
+                        disabled={isExportingPDF || employees.length === 0}
+                      >
+                        <FileDown className={`mr-2 w-4 h-4 ${isExportingPDF ? 'animate-pulse' : ''}`} />
+                        {isExportingPDF ? 'Exporting...' : 'Export PDF'}
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
@@ -2515,7 +2909,6 @@ export default function EmployeesPage() {
                           <TableRow>
                             <TableHead>Employee ID</TableHead>
                             <TableHead>Name</TableHead>
-                            <TableHead>Email</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Role</TableHead>
                             <TableHead>Status</TableHead>
@@ -2538,7 +2931,6 @@ export default function EmployeesPage() {
                                   <span>{employee.name}</span>
                                 </div>
                               </TableCell>
-                              <TableCell>{employee.email}</TableCell>
                               <TableCell>
                                 <Badge variant={
                                   employee.contract === 'Full-time' ? 'default' :
@@ -2627,7 +3019,7 @@ export default function EmployeesPage() {
                 <CardHeader>
                   <CardTitle>Attendance History</CardTitle>
                   <CardDescription>
-                    View and filter attendance records. Download reports as CSV.
+                    View and filter attendance records. Download reports as CSV or PDF.
                   </CardDescription>
                   <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1">
@@ -2717,6 +3109,15 @@ export default function EmployeesPage() {
                       <Button onClick={exportToCSV}>
                         <Download className="w-4 h-4 mr-2" />
                         Export CSV
+                      </Button>
+                      
+                      <Button 
+                        onClick={() => handleExportPDF('attendance')}
+                        variant="outline"
+                        disabled={isExportingPDF || filteredAttendance.length === 0}
+                      >
+                        <FileDown className={`w-4 h-4 mr-2 ${isExportingPDF ? 'animate-pulse' : ''}`} />
+                        {isExportingPDF ? 'Exporting...' : 'Export PDF'}
                       </Button>
                     </div>
                   </div>

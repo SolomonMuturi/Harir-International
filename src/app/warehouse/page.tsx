@@ -1312,11 +1312,12 @@ export default function WarehousePage() {
       setIsLoading(prev => ({ ...prev, intake: true }));
       const response = await fetch('/api/weights?limit=100&order=desc');
       if (!response.ok) throw new Error('Failed to fetch intake records');
-      const weightEntries = await response.json();
-      
+      let data = await response.json();
+      // Normalize response to always be an array
+      const weightEntries = Array.isArray(data) ? data : (data.weights || []);
+
       const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => {
         const varieties = extractFruitVarieties(entry);
-        
         return {
           id: entry.id,
           pallet_id: entry.pallet_id || `WE-${entry.id}`,
@@ -1338,7 +1339,7 @@ export default function WarehousePage() {
           kra_pin: entry.kra_pin || ''
         };
       });
-      
+
       setSupplierIntakeRecords(intakeRecords);
     } catch (err: any) {
       console.error('Error fetching intake records:', err);

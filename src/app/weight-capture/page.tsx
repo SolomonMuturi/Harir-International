@@ -1,7 +1,7 @@
 // app/weights/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -14,7 +14,7 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { WeightCapture } from '@/components/dashboard/weight-capture';
 import { FinalTagDialog } from '@/components/dashboard/final-tag-dialog';
-import { Scale, Boxes, Truck, Loader2, RefreshCw, AlertCircle, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Printer, FileText, AlertTriangle, XCircle, Trash2, Plus, Filter, Eye, EyeOff, Users, Apple, PieChart, History, Calculator, BarChart3, Layers, ChevronDown, ChevronUp, MoreVertical, Edit, SortAsc, SortDesc, CalendarDays, Save, X, AlertOctagon } from 'lucide-react';
+import { Scale, Boxes, Truck, Loader2, RefreshCw, AlertCircle, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Printer, FileText, AlertTriangle, XCircle, Trash2, Plus, Filter, Eye, EyeOff, Users, Apple, PieChart, History, Calculator, BarChart3, Layers, ChevronDown, ChevronUp, MoreVertical, Edit, SortAsc, SortDesc, CalendarDays, Save, X, AlertOctagon, Fingerprint } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -77,6 +77,8 @@ interface WeightEntry {
   bank_name: string;
   bank_account: string;
   kra_pin: string;
+  check_in_session?: string;
+  gate_entry_id?: string; // NEW: Gate entry ID from check-in
 }
 
 interface CheckedInSupplier {
@@ -90,6 +92,8 @@ interface CheckedInSupplier {
   fruit_varieties?: string[];
   region?: string;
   check_in_time: string;
+  check_in_session?: string;
+  gate_entry_id?: string; // NEW: Gate entry ID from check-in
   status?: 'pending' | 'weighed';
 }
 
@@ -189,7 +193,6 @@ interface DailySummary {
   varieties: VarietyStats[];
 }
 
-// Edit form interface
 interface EditWeightFormData {
   pallet_id: string;
   supplier: string;
@@ -204,6 +207,7 @@ interface EditWeightFormData {
   hass_weight: number;
   hass_crates: number;
   notes: string;
+  gate_entry_id?: string; // NEW
 }
 
 type RejectSortField = 'date' | 'supplier' | 'weight' | 'status';
@@ -244,17 +248,19 @@ export default function WeightCapturePage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
-  const [processedSuppliers, setProcessedSuppliers] = useState<Set<string>>(new Set());
+  
+  // NEW: Track processed gate entry IDs
+  const [processedGateIds, setProcessedGateIds] = useState<Set<string>>(new Set());
+  
+  const [processedCheckIns, setProcessedCheckIns] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<CheckedInSupplier | null>(null);
   
-  // History tab states
   const [historyDate, setHistoryDate] = useState<Date | undefined>(new Date());
   const [historyWeights, setHistoryWeights] = useState<WeightEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRegion, setFilterRegion] = useState<string>('all');
   
-  // Rejects tab states
   const [rejects, setRejects] = useState<RejectionEntry[]>([]);
   const [filteredRejects, setFilteredRejects] = useState<RejectionEntry[]>([]);
   const [isRejectsLoading, setIsRejectsLoading] = useState(false);
@@ -285,7 +291,6 @@ export default function WeightCapturePage() {
   const [selectedCountingRecordForReject, setSelectedCountingRecordForReject] = useState<CountingHistoryRecord | null>(null);
   const [isAddingRejection, setIsAddingRejection] = useState(false);
   
-  // Enhanced reject filtering states
   const [rejectSearchTerm, setRejectSearchTerm] = useState('');
   const [rejectDateFilter, setRejectDateFilter] = useState<Date | undefined>(new Date());
   const [rejectStatusFilter, setRejectStatusFilter] = useState<string>('all');
@@ -293,14 +298,11 @@ export default function WeightCapturePage() {
   const [rejectSortField, setRejectSortField] = useState<RejectSortField>('date');
   const [rejectSortDirection, setRejectSortDirection] = useState<RejectSortDirection>('desc');
   
-  // Statistics tab states
   const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month'>('today');
   const [dailySummaries, setDailySummaries] = useState<DailySummary[]>([]);
   
-  // State for pallet ID counter
   const [palletCounter, setPalletCounter] = useState<number>(1);
 
-  // Edit and Delete states
   const [editingWeight, setEditingWeight] = useState<WeightEntry | null>(null);
   const [editFormData, setEditFormData] = useState<EditWeightFormData>({
     pallet_id: '',
@@ -315,7 +317,8 @@ export default function WeightCapturePage() {
     fuerte_crates: 0,
     hass_weight: 0,
     hass_crates: 0,
-    notes: ''
+    notes: '',
+    gate_entry_id: ''
   });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -324,59 +327,107 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
-  // Fetch all weight entries
-  const fetchWeights = async () => {
-    try {
-      setError(null);
-      const response = await fetch('/api/weights?limit=1000&order=desc');
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch weights: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setWeights(data);
-      
-      const processedSet = new Set<string>();
-      data.forEach((entry: WeightEntry) => {
-        if (entry.supplier_id) {
-          processedSet.add(entry.supplier_id);
-        }
-      });
-      setProcessedSuppliers(processedSet);
-      
-      const today = new Date();
-      const todayString = today.toISOString().split('T')[0];
-      const todayPallets = data
-        .filter((entry: WeightEntry) => entry.created_at.startsWith(todayString))
-        .filter((entry: WeightEntry) => entry.pallet_id && entry.pallet_id.startsWith('PAL-'));
-      
-      if (todayPallets.length > 0) {
-        const palletNumbers = todayPallets.map((entry: WeightEntry) => {
-          const match = entry.pallet_id.match(/PAL-(\d+)/);
-          return match ? parseInt(match[1]) : 0;
-        }).filter(num => num > 0);
-        
-        if (palletNumbers.length > 0) {
-          setPalletCounter(Math.max(...palletNumbers) + 1);
-        }
-      }
-      
-    } catch (error: any) {
-      console.error('Error fetching weights:', error);
-      setError(error.message || 'Failed to load weight data');
-      setWeights([]);
-      
-      toast({
-        title: 'Error Loading Data',
-        description: 'Could not load weight entries. Please try refreshing.',
-        variant: 'destructive',
-      });
+// Fetch all weight entries - FIXED
+const fetchWeights = useCallback(async () => {
+  try {
+    setError(null);
+    const response = await fetch('/api/weights?limit=1000&order=desc');
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch weights: ${response.statusText}`);
     }
-  };
+    
+    const data = await response.json();
+    console.log('📊 Fetched weights data:', data);
+    
+    // FIX: Handle both array and object responses
+    let weightsArray: WeightEntry[] = [];
+    let gateIds = new Set<string>();
+    
+    if (Array.isArray(data)) {
+      // Old format: direct array
+      weightsArray = data;
+      weightsArray.forEach((entry: WeightEntry) => {
+        if (entry.gate_entry_id) {
+          gateIds.add(entry.gate_entry_id);
+        }
+      });
+      setWeights(data);
+    } else if (data && typeof data === 'object') {
+      // New format: { weights: [], processedGateIds: [] }
+      if (Array.isArray(data.weights)) {
+        weightsArray = data.weights;
+        weightsArray.forEach((entry: WeightEntry) => {
+          if (entry.gate_entry_id) {
+            gateIds.add(entry.gate_entry_id);
+          }
+        });
+        setWeights(data.weights);
+      } else {
+        // Fallback to empty array
+        setWeights([]);
+      }
+      
+      // Also handle processedGateIds if provided
+      if (Array.isArray(data.processedGateIds)) {
+        data.processedGateIds.forEach((id: string) => {
+          gateIds.add(id);
+        });
+      }
+    } else {
+      setWeights([]);
+    }
+    
+    // Update processed gate IDs
+    setProcessedGateIds(gateIds);
+    console.log('🔑 Processed gate IDs:', Array.from(gateIds));
+    
+    // Process check-in sessions (keep existing logic)
+    const processedSet = new Set<string>();
+    weightsArray.forEach((entry: WeightEntry) => {
+      if (entry.check_in_session) {
+        processedSet.add(entry.check_in_session);
+      } else if (entry.supplier_id && entry.created_at) {
+        const sessionId = `${entry.supplier_id}_${new Date(entry.created_at).toISOString().split('T')[0]}`;
+        processedSet.add(sessionId);
+      }
+    });
+    setProcessedCheckIns(processedSet);
+    
+    // Calculate pallet counter (keep existing logic)
+    const today = new Date();
+    const todayString = today.toISOString().split('T')[0];
+    const todayPallets = weightsArray
+      .filter((entry: WeightEntry) => entry.created_at?.startsWith(todayString))
+      .filter((entry: WeightEntry) => entry.pallet_id && entry.pallet_id.startsWith('PAL-'));
+    
+    if (todayPallets.length > 0) {
+      const palletNumbers = todayPallets.map((entry: WeightEntry) => {
+        const match = entry.pallet_id.match(/PAL-(\d+)/);
+        return match ? parseInt(match[1]) : 0;
+      }).filter(num => num > 0);
+      
+      if (palletNumbers.length > 0) {
+        setPalletCounter(Math.max(...palletNumbers) + 1);
+      }
+    }
+    
+  } catch (error: any) {
+    console.error('Error fetching weights:', error);
+    setError(error.message || 'Failed to load weight data');
+    setWeights([]);
+    
+    toast({
+      title: 'Error Loading Data',
+      description: 'Could not load weight entries. Please try refreshing.',
+      variant: 'destructive',
+    });
+  }
+}, [toast]);
+
 
   // Fetch checked-in suppliers
-  const fetchCheckedInSuppliers = async () => {
+  const fetchCheckedInSuppliers = useCallback(async () => {
     try {
       const response = await fetch('/api/suppliers/checked-in');
       
@@ -385,19 +436,26 @@ export default function WeightCapturePage() {
       }
       
       const data: CheckedInSupplier[] = await response.json();
-      const suppliersWithStatus = data.map(supplier => ({
+      console.log('🚚 Fetched checked-in suppliers:', data);
+      
+      // Add gate_entry_id from vehicle_visits if available
+      // This assumes your API returns suppliers with their latest visit's gate_entry_id
+      const suppliersWithSession = data.map(supplier => ({
         ...supplier,
-        status: processedSuppliers.has(supplier.id) ? 'weighed' : 'pending' as const
+        check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
+        // If the API doesn't return gate_entry_id, you'd need to fetch it separately
+        gate_entry_id: (supplier as any).gate_entry_id || (supplier as any).latest_visit?.gate_entry_id
       }));
-      setCheckedInSuppliers(suppliersWithStatus);
+      
+      setCheckedInSuppliers(suppliersWithSession);
     } catch (error: any) {
       console.error('Error fetching checked-in suppliers:', error);
       setCheckedInSuppliers([]);
     }
-  };
+  }, []);
 
   // Fetch counting history
-  const fetchCountingHistory = async () => {
+  const fetchCountingHistory = useCallback(async () => {
     try {
       const response = await fetch('/api/counting?action=history');
       
@@ -411,17 +469,16 @@ export default function WeightCapturePage() {
       console.error('Error fetching counting history:', error);
       setCountingHistory([]);
     }
-  };
+  }, []);
 
-  // Fetch rejects with enhanced filtering
-  const fetchRejects = async () => {
+  // Fetch rejects
+  const fetchRejects = useCallback(async () => {
     try {
       setIsRejectsLoading(true);
       const response = await fetch('/api/rejects');
       
       if (response.ok) {
         const data: RejectionEntry[] = await response.json();
-        // Ensure all rejects have status
         const rejectsWithStatus = data.map(reject => ({
           ...reject,
           status: reject.status || 'pending'
@@ -429,26 +486,193 @@ export default function WeightCapturePage() {
         setRejects(rejectsWithStatus);
         setFilteredRejects(rejectsWithStatus);
       } else {
-        // If no rejects API, use empty array
-        const emptyRejects: RejectionEntry[] = [];
-        setRejects(emptyRejects);
-        setFilteredRejects(emptyRejects);
+        setRejects([]);
+        setFilteredRejects([]);
       }
     } catch (error: any) {
       console.error('Error fetching rejects:', error);
-      const emptyRejects: RejectionEntry[] = [];
-      setRejects(emptyRejects);
-      setFilteredRejects(emptyRejects);
+      setRejects([]);
+      setFilteredRejects([]);
     } finally {
       setIsRejectsLoading(false);
     }
-  };
+  }, []);
+
+  // Calculate statistics
+  const calculateStatistics = useCallback(() => {
+    const today = new Date();
+    const weekAgo = subDays(today, 7);
+    const monthAgo = subDays(today, 30);
+    
+    let periodWeights: WeightEntry[] = [];
+    
+    switch (statsPeriod) {
+      case 'today':
+        periodWeights = weights.filter(w => isSameDay(new Date(w.created_at), today));
+        break;
+      case 'week':
+        periodWeights = weights.filter(w => new Date(w.created_at) >= weekAgo);
+        break;
+      case 'month':
+        periodWeights = weights.filter(w => new Date(w.created_at) >= monthAgo);
+        break;
+    }
+    
+    const summariesMap = new Map<string, DailySummary>();
+    
+    periodWeights.forEach(entry => {
+      const date = new Date(entry.created_at).toISOString().split('T')[0];
+      
+      if (!summariesMap.has(date)) {
+        summariesMap.set(date, {
+          date,
+          total_weight: 0,
+          total_crates: 0,
+          total_pallets: 0,
+          total_suppliers: 0,
+          varieties: []
+        });
+      }
+      
+      const summary = summariesMap.get(date)!;
+      summary.total_weight += (entry.fuerte_weight || 0) + (entry.hass_weight || 0);
+      summary.total_crates += (entry.fuerte_crates || 0) + (entry.hass_crates || 0);
+      summary.total_pallets++;
+      
+      if (entry.supplier_id && !summary.total_suppliers) {
+        summary.total_suppliers = 1;
+      }
+      
+      if (entry.fuerte_weight > 0) {
+        let variety = summary.varieties.find(v => v.variety === 'Fuerte');
+        if (!variety) {
+          variety = { variety: 'Fuerte', total_weight: 0, total_crates: 0, avg_weight_per_crate: 0 };
+          summary.varieties.push(variety);
+        }
+        variety.total_weight += entry.fuerte_weight;
+        variety.total_crates += entry.fuerte_crates || 0;
+      }
+      
+      if (entry.hass_weight > 0) {
+        let variety = summary.varieties.find(v => v.variety === 'Hass');
+        if (!variety) {
+          variety = { variety: 'Hass', total_weight: 0, total_crates: 0, avg_weight_per_crate: 0 };
+          summary.varieties.push(variety);
+        }
+        variety.total_weight += entry.hass_weight;
+        variety.total_crates += entry.hass_crates || 0;
+      }
+    });
+    
+    summariesMap.forEach(summary => {
+      summary.varieties.forEach(variety => {
+        variety.avg_weight_per_crate = variety.total_crates > 0 
+          ? variety.total_weight / variety.total_crates 
+          : 0;
+      });
+    });
+    
+    const summaries = Array.from(summariesMap.values())
+      .sort((a, b) => b.date.localeCompare(a.date));
+    
+    setDailySummaries(summaries);
+  }, [weights, statsPeriod]);
+
+  // Fetch KPI data
+  const fetchKpiData = useCallback(() => {
+    try {
+      const today = new Date();
+      const todayEntries = weights.filter(entry => {
+        const entryDate = new Date(entry.created_at);
+        return isSameDay(entryDate, today);
+      });
+      
+      const uniqueSuppliers = new Set(
+        todayEntries.map(entry => entry.supplier_id).filter(Boolean)
+      ).size;
+      
+      // Calculate pending suppliers based on gate entry IDs
+      const pendingSuppliers = checkedInSuppliers.filter(supplier => {
+        // If supplier has gate_entry_id and it's in processedGateIds, they're weighed
+        if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
+          return false;
+        }
+        // Fallback to check_in_session if gate_entry_id not available
+        if (supplier.check_in_session && processedCheckIns.has(supplier.check_in_session)) {
+          return false;
+        }
+        return true;
+      }).length;
+      
+      const totalWeightToday = todayEntries.reduce((sum, entry) => 
+        sum + (entry.fuerte_weight || 0) + (entry.hass_weight || 0), 0);
+      
+      setKpiData({
+        palletsWeighed: {
+          title: 'Pallets Weighed Today',
+          value: todayEntries.length.toString(),
+          change: `${todayEntries.length} entries`,
+          changeType: 'neutral',
+        },
+        totalWeight: {
+          title: 'Total Weight Today',
+          value: `${(totalWeightToday / 1000).toFixed(1)} t`,
+          change: `${todayEntries.length} entries`,
+          changeType: 'neutral',
+        },
+        suppliersToday: {
+          title: 'Suppliers Processed',
+          value: uniqueSuppliers.toString(),
+          change: `${pendingSuppliers} pending`,
+          changeType: pendingSuppliers > 0 ? 'increase' : 'neutral',
+        },
+        pendingSuppliers: {
+          title: 'Pending Weighing',
+          value: pendingSuppliers.toString(),
+          change: `${checkedInSuppliers.length} checked-in`,
+          changeType: 'neutral',
+        },
+      });
+    } catch (error: any) {
+      console.error('Error calculating KPI data:', error);
+    }
+  }, [weights, checkedInSuppliers, processedCheckIns, processedGateIds]);
+
+  // Load initial data - only once on mount
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      await Promise.all([
+        fetchWeights(),
+        fetchCheckedInSuppliers(),
+        fetchCountingHistory(),
+        fetchRejects()
+      ]);
+      setIsLoading(false);
+    };
+    
+    loadData();
+  }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects]);
+
+  // Update KPI and statistics when weights change
+  useEffect(() => {
+    if (!isLoading) {
+      fetchKpiData();
+      calculateStatistics();
+    }
+  }, [weights, fetchKpiData, calculateStatistics, isLoading]);
+
+  // Fetch history when date changes
+  useEffect(() => {
+    if (activeTab === 'history' && historyDate) {
+      fetchHistoryWeights(historyDate);
+    }
+  }, [historyDate, activeTab]);
 
   // Filter and sort rejects
   useEffect(() => {
     let filtered = [...rejects];
 
-    // Apply search filter
     if (rejectSearchTerm) {
       const term = rejectSearchTerm.toLowerCase();
       filtered = filtered.filter(reject =>
@@ -460,7 +684,6 @@ export default function WeightCapturePage() {
       );
     }
 
-    // Apply date filter
     if (rejectDateFilter) {
       const filterDate = startOfDay(rejectDateFilter);
       filtered = filtered.filter(reject => {
@@ -469,12 +692,10 @@ export default function WeightCapturePage() {
       });
     }
 
-    // Apply status filter
     if (rejectStatusFilter !== 'all') {
       filtered = filtered.filter(reject => reject.status === rejectStatusFilter);
     }
 
-    // Apply sorting
     filtered.sort((a, b) => {
       let aValue: any, bValue: any;
       
@@ -510,250 +731,8 @@ export default function WeightCapturePage() {
     setFilteredRejects(filtered);
   }, [rejects, rejectSearchTerm, rejectDateFilter, rejectStatusFilter, rejectSortField, rejectSortDirection]);
 
-  // Calculate statistics
-  const calculateStatistics = () => {
-    const today = new Date();
-    const weekAgo = new Date();
-    weekAgo.setDate(today.getDate() - 7);
-    const monthAgo = new Date();
-    monthAgo.setDate(today.getDate() - 30);
-    
-    let periodWeights: WeightEntry[] = [];
-    
-    switch (statsPeriod) {
-      case 'today':
-        periodWeights = weights.filter(w => isSameDay(new Date(w.created_at), today));
-        break;
-      case 'week':
-        periodWeights = weights.filter(w => new Date(w.created_at) >= weekAgo);
-        break;
-      case 'month':
-        periodWeights = weights.filter(w => new Date(w.created_at) >= monthAgo);
-        break;
-    }
-    
-    // Group by date
-    const summariesMap = new Map<string, DailySummary>();
-    
-    periodWeights.forEach(entry => {
-      const date = new Date(entry.created_at).toISOString().split('T')[0];
-      
-      if (!summariesMap.has(date)) {
-        summariesMap.set(date, {
-          date,
-          total_weight: 0,
-          total_crates: 0,
-          total_pallets: 0,
-          total_suppliers: 0,
-          varieties: []
-        });
-      }
-      
-      const summary = summariesMap.get(date)!;
-      summary.total_weight += (entry.fuerte_weight || 0) + (entry.hass_weight || 0);
-      summary.total_crates += (entry.fuerte_crates || 0) + (entry.hass_crates || 0);
-      summary.total_pallets++;
-      
-      // Add supplier if not counted yet
-      if (entry.supplier_id && !summary.total_suppliers) {
-        summary.total_suppliers = 1;
-      }
-      
-      // Update variety stats
-      if (entry.fuerte_weight > 0) {
-        let variety = summary.varieties.find(v => v.variety === 'Fuerte');
-        if (!variety) {
-          variety = { variety: 'Fuerte', total_weight: 0, total_crates: 0, avg_weight_per_crate: 0 };
-          summary.varieties.push(variety);
-        }
-        variety.total_weight += entry.fuerte_weight;
-        variety.total_crates += entry.fuerte_crates || 0;
-      }
-      
-      if (entry.hass_weight > 0) {
-        let variety = summary.varieties.find(v => v.variety === 'Hass');
-        if (!variety) {
-          variety = { variety: 'Hass', total_weight: 0, total_crates: 0, avg_weight_per_crate: 0 };
-          summary.varieties.push(variety);
-        }
-        variety.total_weight += entry.hass_weight;
-        variety.total_crates += entry.hass_crates || 0;
-      }
-    });
-    
-    // Calculate averages
-    summariesMap.forEach(summary => {
-      summary.varieties.forEach(variety => {
-        variety.avg_weight_per_crate = variety.total_crates > 0 
-          ? variety.total_weight / variety.total_crates 
-          : 0;
-      });
-    });
-    
-    const summaries = Array.from(summariesMap.values())
-      .sort((a, b) => b.date.localeCompare(a.date));
-    
-    setDailySummaries(summaries);
-  };
-
-  // Update supplier status
-useEffect(() => {
-  if (checkedInSuppliers.length > 0) {
-    const updatedSuppliers = checkedInSuppliers.map(supplier => ({
-      ...supplier,
-      // Check if supplier is in processedSuppliers AND has NO recent re-check-in
-      status: shouldShowAsPending(supplier) ? 'pending' : 'weighed'
-    }));
-    setCheckedInSuppliers(updatedSuppliers);
-  }
-}, [processedSuppliers]);
-
-// Add this helper function:
-const shouldShowAsPending = (supplier) => {
-  // If never processed before, definitely show as pending
-  if (!processedSuppliers.has(supplier.id)) return true;
-  
-  // Check if this supplier was re-checked in AFTER their last weighing
-  const supplierWeights = weights.filter(w => w.supplier_id === supplier.id);
-  if (supplierWeights.length === 0) return false; // Shouldn't happen
-  
-  const lastWeightTime = new Date(supplierWeights[0].created_at).getTime();
-  const recheckInTime = new Date(supplier.check_in_time).getTime();
-  
-  // If re-checked in AFTER last weighing, show as pending (new intake)
-  return recheckInTime > lastWeightTime;
-};
-  // Fetch KPI data
-  const fetchKpiData = async () => {
-    try {
-      const response = await fetch('/api/weights/kpi');
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        const todayEntries = weights.filter(entry => {
-          const entryDate = new Date(entry.created_at);
-          const today = new Date();
-          return isSameDay(entryDate, today);
-        });
-        
-        const uniqueSuppliers = new Set(
-          todayEntries.map(entry => entry.supplier_id).filter(Boolean)
-        ).size;
-        
-        const pendingSuppliers = checkedInSuppliers.filter(s => !processedSuppliers.has(s.id)).length;
-        
-        const totalWeightToday = todayEntries.reduce((sum, entry) => 
-          sum + (entry.fuerte_weight || 0) + (entry.hass_weight || 0), 0);
-        
-        setKpiData({
-          palletsWeighed: {
-            title: 'Pallets Weighed Today',
-            value: data.todayCount?.toString() || todayEntries.length.toString(),
-            change: data.changeSinceLastHour >= 0 ? 
-              `+${data.changeSinceLastHour} since last hour` : 
-              `${data.changeSinceLastHour} since last hour`,
-            changeType: data.changeSinceLastHour >= 0 ? 'increase' : 'decrease',
-          },
-          totalWeight: {
-            title: 'Total Weight Today',
-            value: `${(totalWeightToday / 1000).toFixed(1)} t`,
-            change: `${todayEntries.length} entries recorded`,
-            changeType: 'increase',
-          },
-          suppliersToday: {
-            title: 'Suppliers Processed',
-            value: uniqueSuppliers.toString(),
-            change: `${pendingSuppliers} still pending`,
-            changeType: pendingSuppliers > 0 ? 'increase' : 'neutral',
-          },
-          pendingSuppliers: {
-            title: 'Pending Weighing',
-            value: pendingSuppliers.toString(),
-            change: `${checkedInSuppliers.length} checked-in total`,
-            changeType: 'neutral',
-          },
-        });
-      }
-    } catch (error: any) {
-      console.error('Error fetching KPI data:', error);
-      
-      const todayEntries = weights.filter(entry => {
-        const entryDate = new Date(entry.created_at);
-        const today = new Date();
-        return isSameDay(entryDate, today);
-      });
-      
-      const totalWeightToday = todayEntries.reduce((sum, entry) => 
-        sum + (entry.fuerte_weight || 0) + (entry.hass_weight || 0), 0);
-      
-      const uniqueSuppliers = new Set(
-        todayEntries.map(entry => entry.supplier_id).filter(Boolean)
-      ).size;
-      const pendingSuppliers = checkedInSuppliers.filter(s => !processedSuppliers.has(s.id)).length;
-      
-      setKpiData({
-        palletsWeighed: {
-          title: 'Pallets Weighed Today',
-          value: todayEntries.length.toString(),
-          change: 'Local data',
-          changeType: 'neutral',
-        },
-        totalWeight: {
-          title: 'Total Weight Today',
-          value: `${(totalWeightToday / 1000).toFixed(1)} t`,
-          change: `${todayEntries.length} entries`,
-          changeType: 'neutral',
-        },
-        suppliersToday: {
-          title: 'Suppliers Processed',
-          value: uniqueSuppliers.toString(),
-          change: `${pendingSuppliers} pending`,
-          changeType: 'neutral',
-        },
-        pendingSuppliers: {
-          title: 'Pending Weighing',
-          value: pendingSuppliers.toString(),
-          change: `${checkedInSuppliers.length} checked-in`,
-          changeType: 'neutral',
-        },
-      });
-    }
-  };
-
-  // Load initial data
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      await Promise.all([
-        fetchWeights(),
-        fetchCheckedInSuppliers(),
-        fetchCountingHistory(),
-        fetchRejects()
-      ]);
-      setIsLoading(false);
-    };
-    
-    loadData();
-  }, []);
-
-  // Refresh data when weights change
-  useEffect(() => {
-    if (!isLoading) {
-      fetchKpiData();
-      calculateStatistics();
-    }
-  }, [weights, statsPeriod]);
-
-  // Fetch history when date changes
-  useEffect(() => {
-    if (activeTab === 'history' && historyDate) {
-      fetchHistoryWeights(historyDate);
-    }
-  }, [historyDate, activeTab, weights]);
-
   // Function to refresh all data
-  const refreshAllData = async () => {
+  const refreshAllData = useCallback(async () => {
     setIsRefreshing(true);
     await Promise.all([
       fetchWeights(),
@@ -767,10 +746,10 @@ const shouldShowAsPending = (supplier) => {
       title: 'Data Refreshed',
       description: 'Latest data has been loaded.',
     });
-  };
+  }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, toast]);
 
   // Fetch history weights by date
-  const fetchHistoryWeights = async (date: Date) => {
+  const fetchHistoryWeights = useCallback(async (date: Date) => {
     if (!date) return;
     
     setIsHistoryLoading(true);
@@ -800,10 +779,10 @@ const shouldShowAsPending = (supplier) => {
     } finally {
       setIsHistoryLoading(false);
     }
-  };
+  }, [weights, toast]);
 
   // Generate pallet ID
-  const generatePalletId = () => {
+  const generatePalletId = useCallback(() => {
     const today = new Date();
     const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
     const palletNum = palletCounter.toString().padStart(3, '0');
@@ -811,10 +790,10 @@ const shouldShowAsPending = (supplier) => {
     setPalletCounter(prev => prev + 1);
     
     return `PAL-${palletNum}/${dateStr}`;
-  };
+  }, [palletCounter]);
 
-  // Handle Add Weight
-  const handleAddWeight = async (weightData: any) => {
+  // Handle Add Weight - UPDATED with gate_entry_id
+  const handleAddWeight = useCallback(async (weightData: any) => {
     try {
       const fuerteWeight = weightData.fuerte_weight ? parseFloat(String(weightData.fuerte_weight)) : 0;
       const fuerteCrates = weightData.fuerte_crates ? parseInt(String(weightData.fuerte_crates)) : 0;
@@ -842,7 +821,15 @@ const shouldShowAsPending = (supplier) => {
       setError(null);
       
       const submittedSupplierId = weightData.supplier_id;
+      const checkInSession = weightData.check_in_session || 
+        (submittedSupplierId ? `${submittedSupplierId}_${new Date().getTime()}` : undefined);
+      
       const generatedPalletId = weightData.pallet_id || generatePalletId();
+      
+      // NEW: Get gate_entry_id from selected supplier or weightData
+      const gateEntryId = weightData.gate_entry_id || selectedSupplier?.gate_entry_id;
+      
+      console.log('🔑 Using gate entry ID for weight:', gateEntryId);
       
       const payload = {
         pallet_id: generatedPalletId,
@@ -865,7 +852,11 @@ const shouldShowAsPending = (supplier) => {
         driver_id: weightData.driver_id || weightData.driver_id_number || '',
         image_url: weightData.image_url || '',
         notes: weightData.notes || '',
+        check_in_session: checkInSession,
+        gate_entry_id: gateEntryId, // NEW: Include gate entry ID
       };
+      
+      console.log('📦 Sending weight payload:', payload);
       
       const response = await fetch('/api/weights', {
         method: 'POST',
@@ -891,29 +882,35 @@ const shouldShowAsPending = (supplier) => {
       setWeights(prev => [savedEntry, ...prev]);
       setLastWeightEntry(savedEntry);
       
-      if (submittedSupplierId) {
-        setProcessedSuppliers(prev => {
+      // NEW: Add gate entry ID to processed set
+      if (gateEntryId) {
+        setProcessedGateIds(prev => {
           const newSet = new Set(prev);
-          newSet.add(submittedSupplierId);
+          newSet.add(gateEntryId);
           return newSet;
         });
-        
-        setCheckedInSuppliers(prev => 
-          prev.map(supplier => 
-            supplier.id === submittedSupplierId 
-              ? { ...supplier, status: 'weighed' } 
-              : supplier
-          )
-        );
+        console.log('✅ Added gate entry ID to processed set:', gateEntryId);
+      }
+      
+      if (checkInSession) {
+        setProcessedCheckIns(prev => {
+          const newSet = new Set(prev);
+          newSet.add(checkInSession);
+          return newSet;
+        });
       }
       
       setIsReceiptOpen(true);
-      await fetchKpiData();
       
       toast({
         title: 'Weight Saved Successfully',
-        description: `Pallet ${savedEntry.pallet_id} has been recorded.`,
+        description: gateEntryId 
+          ? `Pallet ${savedEntry.pallet_id} recorded for Gate ID: ${gateEntryId}`
+          : `Pallet ${savedEntry.pallet_id} has been recorded.`,
       });
+      
+      // Clear selected supplier after successful save
+      setSelectedSupplier(null);
       
     } catch (error: any) {
       console.error('Error adding weight:', error);
@@ -925,14 +922,25 @@ const shouldShowAsPending = (supplier) => {
         variant: 'destructive',
       });
     }
-  };
+  }, [generatePalletId, selectedSupplier, toast]);
 
   // Handle supplier selection
-  const handleSelectSupplierForWeighing = (supplier: CheckedInSupplier) => {
-    if (processedSuppliers.has(supplier.id)) {
+  const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier) => {
+    // Check if supplier has already been weighed using gate_entry_id
+    if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
       toast({
-        title: 'Supplier Already Processed',
-        description: `${supplier.driver_name} has already been weighed.`,
+        title: 'Already Weighed',
+        description: `${supplier.driver_name}'s check-in with Gate ID ${supplier.gate_entry_id} has already been processed.`,
+        variant: 'default',
+      });
+      return;
+    }
+    
+    // Fallback to check_in_session check
+    if (supplier.check_in_session && processedCheckIns.has(supplier.check_in_session)) {
+      toast({
+        title: 'Already Weighed',
+        description: `${supplier.driver_name}'s current check-in has already been processed.`,
         variant: 'default',
       });
       return;
@@ -943,12 +951,14 @@ const shouldShowAsPending = (supplier) => {
     
     toast({
       title: 'Supplier Selected',
-      description: `${supplier.driver_name} from ${supplier.company_name} is ready for weighing.`,
+      description: supplier.gate_entry_id 
+        ? `${supplier.driver_name} from ${supplier.company_name} (Gate ID: ${supplier.gate_entry_id}) is ready for weighing.`
+        : `${supplier.driver_name} from ${supplier.company_name} is ready for weighing.`,
     });
-  };
+  }, [processedCheckIns, processedGateIds, toast]);
 
   // Extract variety data
-  const extractVarietyData = (weights: WeightEntry[]) => {
+  const extractVarietyData = useCallback((weights: WeightEntry[]) => {
     const varietyMap = new Map<string, { weight: number; crates: number }>();
     
     weights.forEach(entry => {
@@ -992,10 +1002,10 @@ const shouldShowAsPending = (supplier) => {
         crates: data.crates
       }))
       .sort((a, b) => a.variety.localeCompare(b.variety));
-  };
+  }, []);
 
   // Generate CSV data
-  const generateCSVData = (weights: WeightEntry[]) => {
+  const generateCSVData = useCallback((weights: WeightEntry[]) => {
     const supplierMap = new Map<string, any>();
     
     weights.forEach(entry => {
@@ -1004,6 +1014,7 @@ const shouldShowAsPending = (supplier) => {
       const phoneKey = entry.supplier_phone || entry.driver_phone || '';
       const vehicleKey = entry.vehicle_plate || '';
       const regionKey = entry.region || '';
+      const gateKey = entry.gate_entry_id || '';
       
       const key = `${date}_${supplierKey}_${vehicleKey}`;
       
@@ -1013,6 +1024,7 @@ const shouldShowAsPending = (supplier) => {
           supplier_name: supplierKey,
           phone_number: phoneKey,
           vehicle_plate_number: vehicleKey,
+          gate_entry_id: gateKey,
           fuerte_weight: 0,
           hass_weight: 0,
           total_weight: 0,
@@ -1034,10 +1046,10 @@ const shouldShowAsPending = (supplier) => {
     });
     
     return Array.from(supplierMap.values());
-  };
+  }, []);
 
   // Download CSV with totals row
-  const downloadCSV = (weights: WeightEntry[], date: Date) => {
+  const downloadCSV = useCallback((weights: WeightEntry[], date: Date) => {
     const csvData = generateCSVData(weights);
     
     if (csvData.length === 0) {
@@ -1049,7 +1061,6 @@ const shouldShowAsPending = (supplier) => {
       return;
     }
     
-    // Calculate totals
     const totals = csvData.reduce((acc, row) => {
       return {
         totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
@@ -1071,6 +1082,7 @@ const shouldShowAsPending = (supplier) => {
       'Supplier Name',
       'Phone Number',
       'Vehicle Plate Number',
+      'Gate Entry ID',
       'Fuerte Weight (kg)',
       'Hass Weight (kg)',
       'Fuerte Crates In',
@@ -1083,6 +1095,7 @@ const shouldShowAsPending = (supplier) => {
       `"${row.supplier_name}"`,
       `"${row.phone_number}"`,
       `"${row.vehicle_plate_number}"`,
+      `"${row.gate_entry_id}"`,
       row.fuerte_weight.toFixed(2),
       row.hass_weight.toFixed(2),
       row.fuerte_crates_in,
@@ -1090,12 +1103,11 @@ const shouldShowAsPending = (supplier) => {
       `"${row.region}"`
     ]);
     
-    // Add empty row before totals
-    rows.push(['', '', '', '', '', '', '', '', '']);
+    rows.push(['', '', '', '', '', '', '', '', '', '']);
     
-    // Add totals row
     rows.push([
       'TOTALS',
+      '',
       '',
       '',
       '',
@@ -1106,9 +1118,9 @@ const shouldShowAsPending = (supplier) => {
       ''
     ]);
     
-    // Add grand total row for total fruits weight
     rows.push([
       'GRAND TOTAL',
+      '',
       '',
       '',
       '',
@@ -1138,10 +1150,10 @@ const shouldShowAsPending = (supplier) => {
       title: 'CSV Downloaded',
       description: `Weight data for ${format(date, 'MMMM d, yyyy')} has been downloaded with totals.`,
     });
-  };
+  }, [generateCSVData, toast]);
 
-  // Download Supplier GRN
-  const downloadSupplierGRN = async (supplierId: string) => {
+  // Download Supplier GRN - UPDATED to include gate entry ID
+  const downloadSupplierGRN = useCallback(async (supplierId: string) => {
     try {
       const supplierWeights = weights.filter(w => w.supplier_id === supplierId);
       
@@ -1158,6 +1170,7 @@ const shouldShowAsPending = (supplier) => {
       const supplierPhone = supplierWeights[0]?.supplier_phone || '';
       const driverName = supplierWeights[0]?.driver_name || '';
       const vehiclePlate = supplierWeights[0]?.vehicle_plate || '';
+      const gateEntryId = supplierWeights[0]?.gate_entry_id || '';
       
       const supplier = checkedInSuppliers.find(s => s.id === supplierId);
       
@@ -1255,6 +1268,11 @@ const shouldShowAsPending = (supplier) => {
       doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 50, yPos + 12);
       doc.text(`Time: ${format(new Date(), 'HH:mm')}`, 85, yPos + 12);
       doc.text(`Code: ${supplier?.supplier_code || 'N/A'}`, 120, yPos + 12);
+      
+      // NEW: Add Gate Entry ID
+      if (gateEntryId) {
+        doc.text(`Gate ID: ${gateEntryId}`, 155, yPos + 12);
+      }
       
       yPos += 20;
       
@@ -1371,7 +1389,7 @@ const shouldShowAsPending = (supplier) => {
       
       toast({
         title: 'GRN Downloaded',
-        description: `Goods Received Note has been downloaded for ${supplierName}.`,
+        description: `Goods Receipt Note has been downloaded for ${supplierName}.`,
       });
       
     } catch (error: any) {
@@ -1382,28 +1400,11 @@ const shouldShowAsPending = (supplier) => {
         variant: 'destructive',
       });
     }
-  };
+  }, [weights, checkedInSuppliers, extractVarietyData, toast]);
 
-  // Filter history weights
-  const filteredHistoryWeights = historyWeights.filter(entry => {
-    if (!searchQuery && filterRegion === 'all') return true;
-    
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = !searchQuery || 
-      (entry.supplier?.toLowerCase().includes(query)) ||
-      (entry.driver_name?.toLowerCase().includes(query)) ||
-      (entry.vehicle_plate?.toLowerCase().includes(query)) ||
-      (entry.pallet_id?.toLowerCase().includes(query));
-    
-    const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
-    
-    return matchesSearch && matchesRegion;
-  });
-
-  // Handle weight selection for rejection from weight history
-  const handleSelectWeightForRejection = (weight: WeightEntry) => {
+  // Handle weight selection for rejection
+  const handleSelectWeightForRejection = useCallback((weight: WeightEntry) => {
     setSelectedWeightForReject(weight);
-    // Find counting record for this pallet/supplier
     const countingRecord = countingHistory.find(
       record => record.pallet_id === weight.pallet_id || record.supplier_id === weight.supplier_id
     );
@@ -1424,7 +1425,7 @@ const shouldShowAsPending = (supplier) => {
       counted_weight: countingRecord?.total_counted_weight || 0,
       total_rejected_weight: 0,
       total_rejected_crates: 0,
-      variance: calculateVariance(weight, countingRecord, 0, 0),
+      variance: 0,
       status: 'pending'
     });
     
@@ -1432,13 +1433,12 @@ const shouldShowAsPending = (supplier) => {
       title: 'Weight Selected',
       description: `${weight.supplier} (Pallet: ${weight.pallet_id}) selected for rejection entry.`,
     });
-  };
+  }, [countingHistory, toast]);
 
   // Handle counting record selection for rejection
-  const handleSelectCountingRecordForRejection = (record: CountingHistoryRecord) => {
+  const handleSelectCountingRecordForRejection = useCallback((record: CountingHistoryRecord) => {
     setSelectedCountingRecordForReject(record);
     
-    // Find weight entry for this pallet/supplier
     const weightEntry = weights.find(
       weight => weight.pallet_id === record.pallet_id || weight.supplier_id === record.supplier_id
     );
@@ -1459,7 +1459,7 @@ const shouldShowAsPending = (supplier) => {
       counted_weight: record.total_counted_weight || 0,
       total_rejected_weight: 0,
       total_rejected_crates: 0,
-      variance: calculateVariance(weightEntry || null, record, 0, 0),
+      variance: 0,
       status: 'pending'
     });
     
@@ -1467,66 +1467,44 @@ const shouldShowAsPending = (supplier) => {
       title: 'Counting Record Selected',
       description: `${record.supplier_name} (Pallet: ${record.pallet_id}) selected for rejection entry.`,
     });
-  };
-
-  // Calculate variance: intake weight - (counted weight + rejected weight)
-  const calculateVariance = (
-    weightEntry: WeightEntry | null, 
-    countingRecord: CountingHistoryRecord | null, 
-    rejectedWeight: number,
-    rejectedCrates: number
-  ) => {
-    // Get intake weight from weight entry if available, otherwise from counting record
-    let intakeWeight = 0;
-    
-    if (weightEntry) {
-      intakeWeight = (weightEntry.fuerte_weight || 0) + (weightEntry.hass_weight || 0);
-    } else if (countingRecord) {
-      intakeWeight = countingRecord.total_weight || 0;
-    }
-    
-    // Get counted weight from counting record
-    const countedWeight = countingRecord?.total_counted_weight || 0;
-    
-    // Calculate variance: intake - (counted + rejected)
-    const variance = intakeWeight - (countedWeight + rejectedWeight);
-    
-    return variance;
-  };
+  }, [weights, toast]);
 
   // Handle rejection input change
-  const handleRejectionInputChange = (field: keyof RejectionEntry, value: string | number) => {
-    const updatedRejection = {
-      ...newRejection,
-      [field]: value
-    };
-    
-    if (field === 'fuerte_weight' || field === 'hass_weight' || 
-        field === 'fuerte_crates' || field === 'hass_crates') {
+  const handleRejectionInputChange = useCallback((field: keyof RejectionEntry, value: string | number) => {
+    setNewRejection(prev => {
+      const updated = {
+        ...prev,
+        [field]: value
+      };
       
-      const totalRejectedWeight = (updatedRejection.fuerte_weight || 0) + (updatedRejection.hass_weight || 0);
-      const totalRejectedCrates = (updatedRejection.fuerte_crates || 0) + (updatedRejection.hass_crates || 0);
+      if (field === 'fuerte_weight' || field === 'hass_weight' || 
+          field === 'fuerte_crates' || field === 'hass_crates') {
+        
+        const totalRejectedWeight = (updated.fuerte_weight || 0) + (updated.hass_weight || 0);
+        const totalRejectedCrates = (updated.fuerte_crates || 0) + (updated.hass_crates || 0);
+        
+        updated.total_rejected_weight = totalRejectedWeight;
+        updated.total_rejected_crates = totalRejectedCrates;
+        
+        let intakeWeight = 0;
+        if (selectedWeightForReject) {
+          intakeWeight = (selectedWeightForReject.fuerte_weight || 0) + (selectedWeightForReject.hass_weight || 0);
+        } else if (selectedCountingRecordForReject) {
+          intakeWeight = selectedCountingRecordForReject.total_weight || 0;
+        }
+        
+        const countedWeight = updated.counted_weight || 0;
+        const rejectedWeight = updated.total_rejected_weight || 0;
+        
+        updated.variance = intakeWeight - (countedWeight + rejectedWeight);
+      }
       
-      updatedRejection.total_rejected_weight = totalRejectedWeight;
-      updatedRejection.total_rejected_crates = totalRejectedCrates;
-      
-      // Recalculate variance with new rejected weight
-      const intakeWeight = selectedWeightForReject 
-        ? (selectedWeightForReject.fuerte_weight || 0) + (selectedWeightForReject.hass_weight || 0)
-        : selectedCountingRecordForReject?.total_weight || 0;
-      
-      const countedWeight = updatedRejection.counted_weight || 0;
-      const rejectedWeight = updatedRejection.total_rejected_weight || 0;
-      
-      // Variance = intake - (counted + rejected)
-      updatedRejection.variance = intakeWeight - (countedWeight + rejectedWeight);
-    }
-    
-    setNewRejection(updatedRejection);
-  };
+      return updated;
+    });
+  }, [selectedWeightForReject, selectedCountingRecordForReject]);
 
   // Submit rejection
-  const handleSubmitRejection = async () => {
+  const handleSubmitRejection = useCallback(async () => {
     if (!selectedWeightForReject && !selectedCountingRecordForReject) {
       toast({
         title: 'No Record Selected',
@@ -1548,7 +1526,6 @@ const shouldShowAsPending = (supplier) => {
     try {
       setIsAddingRejection(true);
       
-      // Get the appropriate intake weight
       let intakeWeight = 0;
       if (selectedWeightForReject) {
         intakeWeight = (selectedWeightForReject.fuerte_weight || 0) + (selectedWeightForReject.hass_weight || 0);
@@ -1560,7 +1537,6 @@ const shouldShowAsPending = (supplier) => {
         ...newRejection,
         rejected_at: new Date().toISOString(),
         created_by: 'Weight Capture Station',
-        // Ensure variance is calculated correctly
         variance: intakeWeight - (newRejection.counted_weight + newRejection.total_rejected_weight)
       };
       
@@ -1580,7 +1556,6 @@ const shouldShowAsPending = (supplier) => {
       
       setRejects(prev => [savedRejection, ...prev]);
       
-      // Reset form
       setNewRejection({
         id: '',
         weight_entry_id: '',
@@ -1623,10 +1598,10 @@ const shouldShowAsPending = (supplier) => {
     } finally {
       setIsAddingRejection(false);
     }
-  };
+  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast]);
 
   // Delete rejection
-  const handleDeleteRejection = async (rejectionId: string) => {
+  const handleDeleteRejection = useCallback(async (rejectionId: string) => {
     if (!confirm('Are you sure you want to delete this rejection entry?')) {
       return;
     }
@@ -1655,10 +1630,10 @@ const shouldShowAsPending = (supplier) => {
         variant: 'destructive',
       });
     }
-  };
+  }, [toast]);
 
   // Update rejection status
-  const handleUpdateRejectionStatus = async (rejectionId: string, status: RejectionEntry['status']) => {
+  const handleUpdateRejectionStatus = useCallback(async (rejectionId: string, status: RejectionEntry['status']) => {
     try {
       const response = await fetch(`/api/rejects/${rejectionId}`, {
         method: 'PATCH',
@@ -1695,27 +1670,25 @@ const shouldShowAsPending = (supplier) => {
         variant: 'destructive',
       });
     }
-  };
+  }, [toast]);
 
   // Toggle reject details
-  const toggleRejectDetails = (rejectId: string) => {
-    setExpandedRejectId(expandedRejectId === rejectId ? null : rejectId);
-  };
+  const toggleRejectDetails = useCallback((rejectId: string) => {
+    setExpandedRejectId(prev => prev === rejectId ? null : rejectId);
+  }, []);
 
   // Handle sort change
-  const handleSortChange = (field: RejectSortField) => {
+  const handleSortChange = useCallback((field: RejectSortField) => {
     if (rejectSortField === field) {
-      setRejectSortDirection(rejectSortDirection === 'asc' ? 'desc' : 'asc');
+      setRejectSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setRejectSortField(field);
       setRejectSortDirection('desc');
     }
-  };
+  }, [rejectSortField]);
 
-  // EDIT AND DELETE FUNCTIONS FOR INTAKE RECORDS
-
-  // Start editing a weight entry
-  const handleStartEdit = (weight: WeightEntry) => {
+  // Start editing a weight entry - UPDATED to include gate_entry_id
+  const handleStartEdit = useCallback((weight: WeightEntry) => {
     setEditingWeight(weight);
     setEditFormData({
       pallet_id: weight.pallet_id || '',
@@ -1730,12 +1703,13 @@ const shouldShowAsPending = (supplier) => {
       fuerte_crates: weight.fuerte_crates || 0,
       hass_weight: weight.hass_weight || 0,
       hass_crates: weight.hass_crates || 0,
-      notes: weight.notes || ''
+      notes: weight.notes || '',
+      gate_entry_id: weight.gate_entry_id || ''
     });
-  };
+  }, []);
 
   // Cancel editing
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setEditingWeight(null);
     setEditFormData({
       pallet_id: '',
@@ -1750,231 +1724,268 @@ const shouldShowAsPending = (supplier) => {
       fuerte_crates: 0,
       hass_weight: 0,
       hass_crates: 0,
-      notes: ''
+      notes: '',
+      gate_entry_id: ''
     });
-  };
+  }, []);
 
-// Save edited weight
-const handleSaveEdit = async () => {
-  if (!editingWeight) return;
-  
-  // Validation
-  if (editFormData.fuerte_weight <= 0 && editFormData.hass_weight <= 0) {
-    toast({
-      title: 'Validation Error',
-      description: 'Please enter weight for at least one variety (Fuerte or Hass)',
-      variant: 'destructive',
-    });
-    return;
-  }
-  
-  if (editFormData.fuerte_crates <= 0 && editFormData.hass_crates <= 0) {
-    toast({
-      title: 'Validation Error',
-      description: 'Please enter number of crates for at least one variety',
-      variant: 'destructive',
-    });
-    return;
-  }
-  
-  try {
-    setIsSavingEdit(true);
+  // Save edited weight - UPDATED to handle gate_entry_id
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingWeight) return;
     
-    const payload = {
-      pallet_id: editFormData.pallet_id,
-      supplier: editFormData.supplier,
-      supplier_id: editFormData.supplier_id,
-      supplier_phone: editFormData.supplier_phone,
-      driver_name: editFormData.driver_name,
-      driver_phone: editFormData.driver_phone,
-      vehicle_plate: editFormData.vehicle_plate,
-      region: editFormData.region,
-      fuerte_weight: String(editFormData.fuerte_weight),
-      fuerte_crates: String(editFormData.fuerte_crates),
-      hass_weight: String(editFormData.hass_weight),
-      hass_crates: String(editFormData.hass_crates),
-      notes: editFormData.notes
-    };
-    
-    // IMPORTANT: Pass the ID as a query parameter
-    const response = await fetch(`/api/weights?id=${editingWeight.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    
-    if (!response.ok) {
-      let errorMessage = 'Failed to update weight';
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.error || errorData.details || errorData.message || errorMessage;
-      } catch (parseError) {
-        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      }
-      throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-    const updatedEntry = result.data;
-    
-    if (!updatedEntry) {
-      throw new Error('No data returned from server');
+    if (editFormData.fuerte_weight <= 0 && editFormData.hass_weight <= 0) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter weight for at least one variety (Fuerte or Hass)',
+        variant: 'destructive',
+      });
+      return;
     }
     
-    // Update local state
-    setWeights(prev => prev.map(w => 
-      w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
-    ));
-    
-    // Update history weights if we're on the history tab
-    setHistoryWeights(prev => prev.map(w => 
-      w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
-    ));
-    
-    handleCancelEdit();
-    
-    toast({
-      title: 'Weight Updated Successfully',
-      description: `Pallet ${updatedEntry.pallet_id} has been updated.`,
-    });
-    
-    // Refresh KPI data
-    await fetchKpiData();
-    
-  } catch (error: any) {
-    console.error('Error updating weight:', error);
-    toast({
-      title: 'Update Failed',
-      description: error.message || 'Failed to update weight entry',
-      variant: 'destructive',
-    });
-  } finally {
-    setIsSavingEdit(false);
-  }
-};
-
-  // Confirm delete weight
-  const handleConfirmDelete = (weight: WeightEntry) => {
-    setWeightToDelete(weight);
-    setShowDeleteDialog(true);
-  };
-
-  // Delete weight
-// Delete weight
-const handleDeleteWeight = async () => {
-  if (!weightToDelete) return;
-  
-  try {
-    setIsDeleting(true);
-    
-    // IMPORTANT: Pass the ID as a query parameter
-    const response = await fetch(`/api/weights?id=${weightToDelete.id}`, {
-      method: 'DELETE',
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to delete weight entry');
+    if (editFormData.fuerte_crates <= 0 && editFormData.hass_crates <= 0) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter number of crates for at least one variety',
+        variant: 'destructive',
+      });
+      return;
     }
     
-    // Update local state
-    setWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
-    
-    // Update history weights if we're on the history tab
-    setHistoryWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
-    
-    // Update processed suppliers if this was the only entry for the supplier
-    const supplierOtherWeights = weights.filter(w => 
-      w.supplier_id === weightToDelete.supplier_id && w.id !== weightToDelete.id
-    );
-    
-    if (supplierOtherWeights.length === 0 && weightToDelete.supplier_id) {
-      setProcessedSuppliers(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(weightToDelete.supplier_id);
-        return newSet;
+    try {
+      setIsSavingEdit(true);
+      
+      const payload = {
+        pallet_id: editFormData.pallet_id,
+        supplier: editFormData.supplier,
+        supplier_id: editFormData.supplier_id,
+        supplier_phone: editFormData.supplier_phone,
+        driver_name: editFormData.driver_name,
+        driver_phone: editFormData.driver_phone,
+        vehicle_plate: editFormData.vehicle_plate,
+        region: editFormData.region,
+        fuerte_weight: String(editFormData.fuerte_weight),
+        fuerte_crates: String(editFormData.fuerte_crates),
+        hass_weight: String(editFormData.hass_weight),
+        hass_crates: String(editFormData.hass_crates),
+        notes: editFormData.notes,
+        gate_entry_id: editFormData.gate_entry_id
+      };
+      
+      const response = await fetch(`/api/weights?id=${editingWeight.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       });
       
-      setCheckedInSuppliers(prev => 
-        prev.map(supplier => 
-          supplier.id === weightToDelete.supplier_id 
-            ? { ...supplier, status: 'pending' } 
-            : supplier
-        )
-      );
+      if (!response.ok) {
+        let errorMessage = 'Failed to update weight';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.details || errorData.message || errorMessage;
+        } catch (parseError) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      const updatedEntry = result.data || result;
+      
+      if (!updatedEntry) {
+        throw new Error('No data returned from server');
+      }
+      
+      setWeights(prev => prev.map(w => 
+        w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
+      ));
+      
+      setHistoryWeights(prev => prev.map(w => 
+        w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
+      ));
+      
+      handleCancelEdit();
+      
+      toast({
+        title: 'Weight Updated Successfully',
+        description: `Pallet ${updatedEntry.pallet_id} has been updated.`,
+      });
+      
+    } catch (error: any) {
+      console.error('Error updating weight:', error);
+      toast({
+        title: 'Update Failed',
+        description: error.message || 'Failed to update weight entry',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingEdit(false);
     }
+  }, [editingWeight, editFormData, handleCancelEdit, toast]);
+
+  // Confirm delete weight
+  const handleConfirmDelete = useCallback((weight: WeightEntry) => {
+    setWeightToDelete(weight);
+    setShowDeleteDialog(true);
+  }, []);
+
+  // Delete weight
+  const handleDeleteWeight = useCallback(async () => {
+    if (!weightToDelete) return;
     
-    toast({
-      title: 'Weight Deleted',
-      description: `Pallet ${weightToDelete.pallet_id} has been deleted.`,
-    });
-    
-    // Refresh KPI data
-    await fetchKpiData();
-    
-  } catch (error: any) {
-    console.error('Error deleting weight:', error);
-    toast({
-      title: 'Delete Failed',
-      description: error.message || 'Failed to delete weight entry',
-      variant: 'destructive',
-    });
-  } finally {
-    setIsDeleting(false);
-    setShowDeleteDialog(false);
-    setWeightToDelete(null);
-  }
-};
+    try {
+      setIsDeleting(true);
+      
+      const response = await fetch(`/api/weights?id=${weightToDelete.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete weight entry');
+      }
+      
+      setWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
+      setHistoryWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
+      
+      // NEW: Remove gate entry ID from processed set if this was the only entry with that ID
+      if (weightToDelete.gate_entry_id) {
+        const hasOtherEntriesWithSameGateId = weights.some(w => 
+          w.id !== weightToDelete.id && w.gate_entry_id === weightToDelete.gate_entry_id
+        );
+        
+        if (!hasOtherEntriesWithSameGateId) {
+          setProcessedGateIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(weightToDelete.gate_entry_id!);
+            return newSet;
+          });
+          console.log('🗑️ Removed gate entry ID from processed set:', weightToDelete.gate_entry_id);
+        }
+      }
+      
+      if (weightToDelete.check_in_session) {
+        setProcessedCheckIns(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(weightToDelete.check_in_session!);
+          return newSet;
+        });
+      }
+      
+      toast({
+        title: 'Weight Deleted',
+        description: `Pallet ${weightToDelete.pallet_id} has been deleted.`,
+      });
+      
+    } catch (error: any) {
+      console.error('Error deleting weight:', error);
+      toast({
+        title: 'Delete Failed',
+        description: error.message || 'Failed to delete weight entry',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+      setWeightToDelete(null);
+    }
+  }, [weightToDelete, weights, toast]);
 
   // Get regions for filter
   const regions = Array.from(new Set(weights.map(w => w.region).filter(Boolean)));
 
-  // Calculate totals
+  // Calculate derived values for rendering - UPDATED to use gate_entry_id
+  const suppliersWithStatus = checkedInSuppliers.map(supplier => ({
+    ...supplier,
+    status: (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) ||
+            (supplier.check_in_session && processedCheckIns.has(supplier.check_in_session))
+      ? 'weighed' 
+      : 'pending'
+  }));
+
+  const pendingSuppliers = suppliersWithStatus.filter(s => s.status === 'pending');
+  const weighedSuppliers = suppliersWithStatus.filter(s => s.status === 'weighed');
+
+  const today = new Date();
   const totalWeightToday = weights
-    .filter(w => {
-      const today = new Date();
-      return isSameDay(new Date(w.created_at), today);
-    })
+    .filter(w => isSameDay(new Date(w.created_at), today))
     .reduce((sum, w) => sum + (w.fuerte_weight || 0) + (w.hass_weight || 0), 0);
 
   const uniqueSuppliersToday = new Set(
     weights
-      .filter(w => {
-        const today = new Date();
-        return isSameDay(new Date(w.created_at), today) && w.supplier_id;
-      })
+      .filter(w => isSameDay(new Date(w.created_at), today) && w.supplier_id)
       .map(w => w.supplier_id)
   ).size;
 
-  const pendingSuppliersCount = checkedInSuppliers.filter(s => !processedSuppliers.has(s.id)).length;
-  const weighedSuppliersCount = checkedInSuppliers.filter(s => processedSuppliers.has(s.id)).length;
+  const pendingSuppliersCount = pendingSuppliers.length;
+  const weighedSuppliersCount = weighedSuppliers.length;
 
   const totalFuerteWeightToday = weights
-    .filter(w => {
-      const today = new Date();
-      return isSameDay(new Date(w.created_at), today);
-    })
+    .filter(w => isSameDay(new Date(w.created_at), today))
     .reduce((sum, w) => sum + (w.fuerte_weight || 0), 0);
 
   const totalHassWeightToday = weights
-    .filter(w => {
-      const today = new Date();
-      return isSameDay(new Date(w.created_at), today);
-    })
+    .filter(w => isSameDay(new Date(w.created_at), today))
     .reduce((sum, w) => sum + (w.hass_weight || 0), 0);
 
   const totalRejectedWeight = rejects.reduce((sum, r) => sum + r.total_rejected_weight, 0);
   const totalRejectedToday = rejects.filter(r => {
-    const today = new Date();
     const rejectDate = new Date(r.rejected_at);
     return isSameDay(rejectDate, today);
   }).length;
 
-  // Calculate status counts
   const pendingRejectsCount = rejects.filter(r => r.status === 'pending').length;
   const completedRejectsCount = rejects.filter(r => r.status === 'completed').length;
   const cancelledRejectsCount = rejects.filter(r => r.status === 'cancelled').length;
+
+  const filteredHistoryWeights = historyWeights.filter(entry => {
+    if (!searchQuery && filterRegion === 'all') return true;
+    
+    const query = searchQuery.toLowerCase();
+    const matchesSearch = !searchQuery || 
+      (entry.supplier?.toLowerCase().includes(query)) ||
+      (entry.driver_name?.toLowerCase().includes(query)) ||
+      (entry.vehicle_plate?.toLowerCase().includes(query)) ||
+      (entry.pallet_id?.toLowerCase().includes(query)) ||
+      (entry.gate_entry_id?.toLowerCase().includes(query)); // NEW: Search by gate entry ID
+    
+    const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
+    
+    return matchesSearch && matchesRegion;
+  });
+
+  if (isLoading) {
+    return (
+      <SidebarProvider>
+        <Sidebar>
+          <SidebarHeader>
+            <div className="flex items-center gap-2 p-2">
+              <FreshViewLogo className="w-8 h-8 text-primary" />
+              <h1 className="text-xl font-headline font-bold text-sidebar-foreground">
+                Harir International
+              </h1>
+            </div>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarNav />
+          </SidebarContent>
+        </Sidebar>
+        <SidebarInset>
+          <div className='non-printable'>
+            <Header />
+          </div>
+          <main className="p-6 space-y-6">
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+                <p className="text-muted-foreground">Loading weight data...</p>
+              </div>
+            </div>
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
 
   return (
     <SidebarProvider>
@@ -2035,13 +2046,12 @@ const handleDeleteWeight = async () => {
           )}
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <Card className="border-l-4 border-l-blue-500">
               <CardContent className="p-4">
                 <div className="flex flex-col">
                   <p className="text-sm font-medium text-gray-500">Pallets Today</p>
                   <h3 className="text-2xl font-bold mt-1">{weights.filter(w => {
-                    const today = new Date();
                     return isSameDay(new Date(w.created_at), today);
                   }).length}</h3>
                   <div className="flex items-center mt-1 text-sm text-gray-500">
@@ -2079,6 +2089,19 @@ const handleDeleteWeight = async () => {
                   <div className="flex items-center mt-1 text-sm text-gray-500">
                     <Clock className="h-4 w-4 mr-1 text-amber-500" />
                     <span>Ready for weighing</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-purple-500">
+              <CardContent className="p-4">
+                <div className="flex flex-col">
+                  <p className="text-sm font-medium text-gray-500">Gate Entries Today</p>
+                  <h3 className="text-2xl font-bold mt-1">{processedGateIds.size}</h3>
+                  <div className="flex items-center mt-1 text-sm text-gray-500">
+                    <Fingerprint className="h-4 w-4 mr-1 text-purple-500" />
+                    <span>Processed today</span>
                   </div>
                 </div>
               </CardContent>
@@ -2149,7 +2172,7 @@ const handleDeleteWeight = async () => {
                 </div>
               )}
 
-              {/* Checked-in Suppliers */}
+              {/* Checked-in Suppliers - UPDATED to filter out weighed suppliers using gate_entry_id */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -2172,9 +2195,9 @@ const handleDeleteWeight = async () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {checkedInSuppliers.length > 0 ? (
-                      checkedInSuppliers.map((supplier) => {
-                        const isWeighed = processedSuppliers.has(supplier.id);
+                    {pendingSuppliers.length > 0 ? (
+                      pendingSuppliers.map((supplier) => {
+                        const isWeighed = supplier.status === 'weighed';
                         const supplierWeights = weights.filter(w => w.supplier_id === supplier.id);
                         const varietyData = extractVarietyData(supplierWeights);
                         
@@ -2190,8 +2213,8 @@ const handleDeleteWeight = async () => {
                             <div className="flex items-center gap-4 flex-1">
                               <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
                                 isWeighed 
-                                  ? 'bg-black-100 border border-green-200' 
-                                  : 'bg-black-100 border border-amber-200'
+                                  ? 'bg-green-100 border border-green-200' 
+                                  : 'bg-amber-100 border border-amber-200'
                               }`}>
                                 {isWeighed ? (
                                   <CheckCircle className="w-6 h-6 text-green-600" />
@@ -2205,6 +2228,14 @@ const handleDeleteWeight = async () => {
                                   {supplier.company_name} • {supplier.vehicle_plate} • {supplier.region}
                                 </div>
                                 
+                                {/* Show Gate Entry ID if available */}
+                                {supplier.gate_entry_id && (
+                                  <div className="mt-1 flex items-center gap-1">
+                                    <Fingerprint className="w-3 h-3 text-purple-500" />
+                                    <span className="text-xs font-mono text-purple-700">{supplier.gate_entry_id}</span>
+                                  </div>
+                                )}
+                                
                                 {isWeighed && varietyData.length > 0 && (
                                   <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
                                     {varietyData.map((item) => (
@@ -2212,10 +2243,10 @@ const handleDeleteWeight = async () => {
                                         key={item.variety} 
                                         className={`p-2 rounded ${
                                           item.variety.toLowerCase().includes('fuerte') 
-                                            ? 'bg-black-50 border border-blue-200' 
+                                            ? 'bg-blue-50 border border-blue-200' 
                                             : item.variety.toLowerCase().includes('hass')
-                                            ? 'bg-black-50 border border-green-200'
-                                            : 'bg-black-50 border border-gray-200'
+                                            ? 'bg-green-50 border border-green-200'
+                                            : 'bg-gray-50 border border-gray-200'
                                         }`}
                                       >
                                         <div className="text-xs font-medium flex items-center gap-1">
@@ -2239,7 +2270,7 @@ const handleDeleteWeight = async () => {
                                   </div>
                                 )}
                                 
-                                {supplier.fruit_varieties.length > 0 && !isWeighed && (
+                                {supplier.fruit_varieties && supplier.fruit_varieties.length > 0 && !isWeighed && (
                                   <div className="flex flex-wrap gap-1 mt-2">
                                     {supplier.fruit_varieties.slice(0, 2).map((variety, idx) => (
                                       <Badge key={idx} variant="outline" className={`text-xs ${
@@ -2305,9 +2336,9 @@ const handleDeleteWeight = async () => {
                     ) : (
                       <div className="text-center py-12">
                         <Truck className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                        <p className="text-gray-600 font-semibold text-lg">No suppliers checked in</p>
+                        <p className="text-gray-600 font-semibold text-lg">No pending suppliers</p>
                         <p className="text-sm text-gray-500 mt-2">
-                          Suppliers will appear here once they check in at the gate
+                          All checked-in suppliers have been weighed
                         </p>
                         <Button 
                           variant="outline" 
@@ -2333,6 +2364,9 @@ const handleDeleteWeight = async () => {
                     Record weights for supplier deliveries. {selectedSupplier && 
                       <span className="font-semibold text-primary">
                         Currently processing: {selectedSupplier.driver_name} from {selectedSupplier.company_name}
+                        {selectedSupplier.gate_entry_id && (
+                          <span className="ml-2 text-purple-600">(Gate ID: {selectedSupplier.gate_entry_id})</span>
+                        )}
                       </span>
                     }
                   </CardDescription>
@@ -2352,7 +2386,7 @@ const handleDeleteWeight = async () => {
                       onAddWeight={handleAddWeight}
                       isLoading={isLoading}
                       onRefreshSuppliers={fetchCheckedInSuppliers}
-                      processedSupplierIds={processedSuppliers}
+                      processedSupplierIds={processedCheckIns}
                       selectedSupplier={selectedSupplier}
                       onClearSelectedSupplier={() => setSelectedSupplier(null)}
                       palletCounter={palletCounter}
@@ -2362,7 +2396,7 @@ const handleDeleteWeight = async () => {
               </Card>
             </TabsContent>
 
-            {/* History Tab - UPDATED WITH EDIT/DELETE */}
+            {/* History Tab - UPDATED to show gate_entry_id in table */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2422,7 +2456,7 @@ const handleDeleteWeight = async () => {
                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                           <Input
                             id="search-history"
-                            placeholder="Search by supplier, driver, vehicle plate..."
+                            placeholder="Search by supplier, driver, vehicle plate, gate ID..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-10"
@@ -2446,7 +2480,7 @@ const handleDeleteWeight = async () => {
                     </div>
 
                     {/* CSV Preview Header */}
-                    <div className="bg-black-50 p-4 rounded-lg">
+                    <div className="bg-gray-950 p-4 rounded-lg">
                       <div className="flex items-center gap-2 mb-2">
                         <FileSpreadsheet className="w-5 h-5 text-green-600" />
                         <span className="font-medium">Export Options</span>
@@ -2478,6 +2512,9 @@ const handleDeleteWeight = async () => {
                           </CardTitle>
                           <CardDescription>
                             Edit details for Pallet: {editingWeight.pallet_id}
+                            {editingWeight.gate_entry_id && (
+                              <span className="ml-2 text-purple-600">Gate ID: {editingWeight.gate_entry_id}</span>
+                            )}
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -2558,12 +2595,13 @@ const handleDeleteWeight = async () => {
                                 />
                               </div>
                               <div className="space-y-2">
-                                <Label htmlFor="edit-supplier-id">Supplier ID</Label>
+                                <Label htmlFor="edit-gate-entry-id">Gate Entry ID</Label>
                                 <Input
-                                  id="edit-supplier-id"
-                                  value={editFormData.supplier_id}
-                                  onChange={(e) => setEditFormData({...editFormData, supplier_id: e.target.value})}
-                                  placeholder="Enter supplier ID"
+                                  id="edit-gate-entry-id"
+                                  value={editFormData.gate_entry_id || ''}
+                                  onChange={(e) => setEditFormData({...editFormData, gate_entry_id: e.target.value})}
+                                  placeholder="Enter gate entry ID"
+                                  className="font-mono"
                                 />
                               </div>
                             </div>
@@ -2646,7 +2684,7 @@ const handleDeleteWeight = async () => {
                             </div>
 
                             {/* Summary */}
-                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
                               <div className="grid grid-cols-2 gap-4 mb-3">
                                 <div>
                                   <div className="text-sm text-blue-600">Total Weight</div>
@@ -2669,6 +2707,11 @@ const handleDeleteWeight = async () => {
                                   Hass: {editFormData.hass_weight.toFixed(1)} kg ({editFormData.hass_crates} crates)
                                 </span>
                               </div>
+                              {editFormData.gate_entry_id && (
+                                <div className="mt-2 pt-2 border-t border-blue-200">
+                                  <span className="text-xs text-purple-700">Gate ID: {editFormData.gate_entry_id}</span>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex justify-end gap-3 pt-2">
@@ -2703,7 +2746,7 @@ const handleDeleteWeight = async () => {
                       </Card>
                     )}
 
-                    {/* History Table */}
+                    {/* History Table - UPDATED to include Gate Entry ID column */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
@@ -2737,6 +2780,7 @@ const handleDeleteWeight = async () => {
                             <thead>
                               <tr className="bg-black-50 border-b">
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Time</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Gate Entry ID</th>
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Pallet ID</th>
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Supplier</th>
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Driver</th>
@@ -2762,6 +2806,16 @@ const handleDeleteWeight = async () => {
                                         hour: '2-digit', 
                                         minute: '2-digit' 
                                       })}
+                                    </td>
+                                    <td className="p-3">
+                                      {entry.gate_entry_id ? (
+                                        <Badge variant="outline" className="bg-black-50 text-purple-700 border-purple-200 font-mono">
+                                          <Fingerprint className="w-3 h-3 mr-1" />
+                                          {entry.gate_entry_id}
+                                        </Badge>
+                                      ) : (
+                                        <span className="text-gray-400 text-xs">-</span>
+                                      )}
                                     </td>
                                     <td className="p-3 font-mono font-medium">
                                       {entry.pallet_id || '-'}
@@ -2872,7 +2926,7 @@ const handleDeleteWeight = async () => {
                                                   size="sm"
                                                   variant="ghost"
                                                   className="h-8 w-8 p-0"
-                                                  onClick={() => downloadSupplierGRN(entry.supplier_id!)}
+                                                  onClick={() => downloadSupplierGRN(entry.supplier_id)}
                                                   title="Download Supplier GRN"
                                                 >
                                                   <Printer className="h-4 w-4" />
@@ -2936,7 +2990,7 @@ const handleDeleteWeight = async () => {
                           <CardTitle className="text-sm">Export Summary</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
+                          <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-4">
                             <div className="text-center">
                               <div className="text-2xl font-bold text-blue-600">
                                 {new Set(filteredHistoryWeights.map(w => w.supplier_id)).size}
@@ -2973,6 +3027,12 @@ const handleDeleteWeight = async () => {
                               </div>
                               <div className="text-sm text-gray-600">Hass Crates</div>
                             </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-indigo-600">
+                                {filteredHistoryWeights.filter(w => w.gate_entry_id).length}
+                              </div>
+                              <div className="text-sm text-gray-600">With Gate IDs</div>
+                            </div>
                           </div>
                           
                           <div className="bg-black-50 p-4 rounded-lg mb-4">
@@ -3005,10 +3065,10 @@ const handleDeleteWeight = async () => {
               </Card>
             </TabsContent>
 
-            {/* Rejects Tab - Enhanced Version */}
+            {/* Rejects Tab */}
             <TabsContent value="rejects" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Enhanced Rejects History */}
+                {/* Rejects History */}
                 <div className="lg:col-span-2">
                   <Card>
                     <CardHeader>
@@ -3037,7 +3097,7 @@ const handleDeleteWeight = async () => {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {/* Enhanced Filter Controls */}
+                      {/* Filter Controls */}
                       <div className="space-y-4 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="space-y-2">
@@ -3142,7 +3202,7 @@ const handleDeleteWeight = async () => {
                         </div>
                       </div>
 
-                      {/* Rejects List with Collapsible Details */}
+                      {/* Rejects List */}
                       {isRejectsLoading ? (
                         <div className="flex flex-col items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
@@ -3167,7 +3227,7 @@ const handleDeleteWeight = async () => {
                               onOpenChange={() => toggleRejectDetails(reject.id)}
                               className="border rounded-lg overflow-hidden"
                             >
-                              <div className={`p-4 hover:bg-black-50 ${expandedRejectId === reject.id ? 'bg-black-50' : ''}`}>
+                              <div className={`p-4 hover:bg-gray-50 ${expandedRejectId === reject.id ? 'bg-gray-50' : ''}`}>
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-2">
@@ -3240,7 +3300,7 @@ const handleDeleteWeight = async () => {
                                         </DropdownMenuItem>
                                         <Separator />
                                         <DropdownMenuItem
-                                          onClick={() => reject.id && handleDeleteRejection(reject.id)}
+                                          onClick={() => handleDeleteRejection(reject.id)}
                                           className="text-red-600"
                                         >
                                           <Trash2 className="mr-2 h-4 w-4" />
@@ -3379,7 +3439,7 @@ const handleDeleteWeight = async () => {
 
                         {/* Selected Record Info */}
                         {(selectedWeightForReject || selectedCountingRecordForReject) && (
-                          <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
+                          <div className="bg-gray-50 p-4 rounded-lg border border-blue-200">
                             <div className="flex items-center justify-between mb-2">
                               <div className="font-semibold text-blue-800">
                                 {selectedWeightForReject ? 'Selected Weight Entry' : 'Selected Counting Record'}
@@ -3402,6 +3462,9 @@ const handleDeleteWeight = async () => {
                               <div><span className="font-medium">Pallet ID:</span> {
                                 selectedWeightForReject?.pallet_id || selectedCountingRecordForReject?.pallet_id || '-'
                               }</div>
+                              {selectedWeightForReject?.gate_entry_id && (
+                                <div><span className="font-medium">Gate ID:</span> <span className="font-mono text-purple-600">{selectedWeightForReject.gate_entry_id}</span></div>
+                              )}
                               <div><span className="font-medium">Intake Weight:</span> 
                                 {selectedWeightForReject 
                                   ? ((selectedWeightForReject.fuerte_weight + selectedWeightForReject.hass_weight).toFixed(1))
@@ -3524,7 +3587,7 @@ const handleDeleteWeight = async () => {
                           </div>
 
                           {/* Summary */}
-                          <div className="bg-black-50 p-4 rounded-lg border">
+                          <div className="bg-gray-50 p-4 rounded-lg border">
                             <div className="grid grid-cols-2 gap-4 mb-4">
                               <div>
                                 <div className="text-sm text-gray-500">Total Rejected Weight</div>
@@ -3641,7 +3704,7 @@ const handleDeleteWeight = async () => {
 
                     {/* Counting History Table */}
                     <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-black-50 px-4 py-3 border-b">
+                      <div className="bg-gray-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Calculator className="w-4 h-4" />
@@ -3754,7 +3817,7 @@ const handleDeleteWeight = async () => {
                     {/* Daily Summaries */}
                     {dailySummaries.length > 0 && (
                       <div className="border rounded-lg overflow-hidden">
-                        <div className="bg-black-50 px-4 py-3 border-b">
+                        <div className="bg-gray-50 px-4 py-3 border-b">
                           <div className="flex items-center gap-2">
                             <BarChart3 className="w-4 h-4" />
                             <span className="font-medium">Daily Weight Summary ({statsPeriod === 'today' ? 'Today' : statsPeriod === 'week' ? 'Last 7 Days' : 'Last 30 Days'})</span>
@@ -3913,6 +3976,7 @@ const handleDeleteWeight = async () => {
                 weight: variety.toLowerCase().includes('fuerte') ? lastWeightEntry.fuerte_weight : lastWeightEntry.hass_weight
               })) || [],
               supplierPhone: lastWeightEntry.supplier_phone || '',
+              gateEntryId: lastWeightEntry.gate_entry_id || '', // NEW
             }}
           />
         )}
@@ -3929,6 +3993,9 @@ const handleDeleteWeight = async () => {
                 This action cannot be undone. This will permanently delete the weight entry for{' '}
                 <span className="font-semibold">{weightToDelete?.supplier || 'Unknown Supplier'}</span>
                 {' '}with Pallet ID: <span className="font-mono font-semibold">{weightToDelete?.pallet_id}</span>
+                {weightToDelete?.gate_entry_id && (
+                  <> and Gate ID: <span className="font-mono font-semibold text-purple-600">{weightToDelete.gate_entry_id}</span></>
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="bg-red-50 p-4 rounded-lg border border-red-200">
@@ -3947,12 +4014,18 @@ const handleDeleteWeight = async () => {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <span className="text-gray-500">Supplier:</span>
-                    <span className="font-medium ml-2">{weightToDelete?.supplier || '-'}</span>
+                    <span className="font-medium ml-2 text-red-600">{weightToDelete?.supplier || '-'}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Driver:</span>
-                    <span className="font-medium ml-2">{weightToDelete?.driver_name || '-'}</span>
+                    <span className="font-medium ml-2 text-red-600">{weightToDelete?.driver_name || '-'}</span>
                   </div>
+                  {weightToDelete?.gate_entry_id && (
+                    <div className="col-span-2">
+                      <span className="text-gray-500">Gate ID:</span>
+                      <span className="font-mono ml-2 text-purple-600">{weightToDelete.gate_entry_id}</span>
+                    </div>
+                  )}
                   <div>
                     <span className="text-gray-500">Total Weight:</span>
                     <span className="font-bold text-red-700 ml-2">
@@ -3961,7 +4034,7 @@ const handleDeleteWeight = async () => {
                   </div>
                   <div>
                     <span className="text-gray-500">Total Crates:</span>
-                    <span className="font-bold ml-2">
+                    <span className="font-bold ml-2 text-red-700">
                       {weightToDelete ? ((weightToDelete.fuerte_crates || 0) + (weightToDelete.hass_crates || 0)) : 0}
                     </span>
                   </div>

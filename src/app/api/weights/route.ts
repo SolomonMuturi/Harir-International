@@ -21,7 +21,7 @@ function generateValidId(): string {
   return `w${timestamp}${random}`.substr(0, 20);
 }
 
-// GET handler - Fetch weight entries
+// GET handler - Fetch weight entries with gate entry filtering
 export async function GET(request: NextRequest) {
   try {
     console.log('📥 GET /api/weights called');
@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const supplierId = searchParams.get('supplierId');
     const date = searchParams.get('date');
     const region = searchParams.get('region');
+    const gateEntryId = searchParams.get('gateEntryId'); // New filter
 
     console.log(`📊 Fetching ${limit} weights, order: ${order}`);
 
@@ -56,6 +57,11 @@ export async function GET(request: NextRequest) {
         gte: startDate,
         lte: endDate
       };
+    }
+    
+    // New: Filter by gate entry ID
+    if (gateEntryId) {
+      where.gate_entry_id = gateEntryId;
     }
 
     // Fetch weights with all necessary fields
@@ -112,6 +118,9 @@ export async function GET(request: NextRequest) {
         bank_account: true,
         kra_pin: true,
         
+        // NEW: Gate entry ID
+        gate_entry_id: true,
+        
         // Relations
         counting_records: {
           select: {
@@ -124,6 +133,21 @@ export async function GET(request: NextRequest) {
     });
 
     console.log(`✅ Fetched ${weights.length} weight entries`);
+
+    // Get all processed gate entry IDs for filtering active suppliers
+    const processedGateIds = await prisma.weight_entries.findMany({
+      where: {
+        gate_entry_id: {
+          not: null
+        }
+      },
+      select: {
+        gate_entry_id: true
+      },
+      distinct: ['gate_entry_id']
+    });
+
+    const processedGateIdSet = new Set(processedGateIds.map(w => w.gate_entry_id));
 
     // Transform to ensure proper number types
     const transformedWeights = weights.map(weight => ({
@@ -187,11 +211,18 @@ export async function GET(request: NextRequest) {
       bank_account: weight.bank_account || '',
       kra_pin: weight.kra_pin || '',
       
+      // NEW: Gate entry ID
+      gate_entry_id: weight.gate_entry_id || '',
+      
       // Counting records
       counting_records: weight.counting_records || []
     }));
 
-    return NextResponse.json(transformedWeights);
+    // Return both weights and processed gate IDs for filtering
+    return NextResponse.json({
+      weights: transformedWeights,
+      processedGateIds: Array.from(processedGateIdSet)
+    });
     
   } catch (error: any) {
     console.error('❌ Error fetching weights:', error);
@@ -206,7 +237,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST handler - Create new weight entry
+// POST handler - Create new weight entry with gate entry ID
 export async function POST(request: NextRequest) {
   try {
     console.log('📤 POST /api/weights called');
@@ -219,6 +250,7 @@ export async function POST(request: NextRequest) {
       hass_crates: body.hass_crates,
       supplier: body.supplier,
       region: body.region,
+      gate_entry_id: body.gate_entry_id, // New field
     });
     
     // Parse fruit weights
@@ -235,7 +267,7 @@ export async function POST(request: NextRequest) {
     });
     
     // Validate at least one weight is provided
-    if (fuerteWeight <= 0 && hassWeight <= 0) {
+    if (fuerteWeight === 0 && hassWeight === 0) {
       return NextResponse.json(
         { 
           error: 'Validation failed',
@@ -244,9 +276,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     // Validate at least one crate count is provided
-    if (fuerteCrates <= 0 && hassCrates <= 0) {
+    if (fuerteCrates === 0 && hassCrates === 0) {
       return NextResponse.json(
         { 
           error: 'Validation failed',
@@ -324,6 +356,9 @@ export async function POST(request: NextRequest) {
       supplier_id: body.supplier_id || null,
       supplier_phone: body.supplier_phone || '',
       
+      // NEW: Gate entry ID
+      gate_entry_id: body.gate_entry_id || null,
+      
       // Fruit variety info
       fruit_variety: JSON.stringify([
         ...(fuerteWeight > 0 ? ['Fuerte'] : []),
@@ -367,6 +402,7 @@ export async function POST(request: NextRequest) {
     console.log('💾 Saving to database:', {
       pallet_id: weightData.pallet_id,
       supplier: weightData.supplier,
+      gate_entry_id: weightData.gate_entry_id,
       total_weight: totalWeight
     });
     
@@ -378,7 +414,8 @@ export async function POST(request: NextRequest) {
     console.log('✅ Saved successfully:', {
       id: newWeight.id,
       pallet_id: newWeight.pallet_id,
-      supplier: newWeight.supplier
+      supplier: newWeight.supplier,
+      gate_entry_id: newWeight.gate_entry_id
     });
     
     // Update supplier check-in status if supplier_id is provided
@@ -433,6 +470,9 @@ export async function POST(request: NextRequest) {
       driver_id_number: newWeight.driver_id_number || '',
       vehicle_plate: newWeight.vehicle_plate || '',
       
+      // NEW: Gate entry ID
+      gate_entry_id: newWeight.gate_entry_id || '',
+      
       // Other info
       region: newWeight.region || '',
       number_of_crates: newWeight.number_of_crates || 0,
@@ -484,7 +524,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH handler - Update weight entry
+// PATCH handler - Update weight entry (including gate_entry_id)
 export async function PATCH(request: NextRequest) {
   try {
     console.log('🔄 PATCH /api/weights called');
@@ -721,6 +761,9 @@ async function handleWeightUpdate(id: string, body: any) {
       ...(body.region !== undefined && { region: body.region }),
       ...(body.notes !== undefined && { notes: body.notes }),
       
+      // NEW: Update gate entry ID if provided
+      ...(body.gate_entry_id !== undefined && { gate_entry_id: body.gate_entry_id }),
+      
       // Update timestamp to track when this was last modified
       timestamp: new Date(),
     };
@@ -736,7 +779,8 @@ async function handleWeightUpdate(id: string, body: any) {
     console.log('✅ Weight entry updated successfully:', {
       id: updatedWeight.id,
       pallet_id: updatedWeight.pallet_id,
-      supplier: updatedWeight.supplier
+      supplier: updatedWeight.supplier,
+      gate_entry_id: updatedWeight.gate_entry_id
     });
 
     // Transform response for frontend
@@ -765,6 +809,9 @@ async function handleWeightUpdate(id: string, body: any) {
       driver_phone: updatedWeight.driver_phone || '',
       driver_id_number: updatedWeight.driver_id_number || '',
       vehicle_plate: updatedWeight.vehicle_plate || '',
+      
+      // NEW: Gate entry ID
+      gate_entry_id: updatedWeight.gate_entry_id || '',
       
       // Other info
       region: updatedWeight.region || '',
@@ -823,7 +870,7 @@ export async function PUT(request: NextRequest) {
 // DELETE handler - Remove weight entry
 export async function DELETE(request: NextRequest) {
   try {
-    console.log('🗑️ DELETE /api/weights called - SIMPLIFIED VERSION');
+    console.log('🗑️ DELETE /api/weights called');
     
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -848,6 +895,7 @@ export async function DELETE(request: NextRequest) {
         pallet_id: true,
         supplier: true,
         supplier_id: true,
+        gate_entry_id: true
       }
     });
 
@@ -864,8 +912,7 @@ export async function DELETE(request: NextRequest) {
 
     console.log(`📋 Found weight entry to delete:`, weightEntry);
 
-    // SIMPLIFIED: Just delete the weight entry
-    // Let Prisma handle cascade deletes if set up in schema
+    // Delete the weight entry
     await prisma.weight_entries.delete({
       where: { id },
     });
@@ -879,6 +926,7 @@ export async function DELETE(request: NextRequest) {
         id: weightEntry.id,
         pallet_id: weightEntry.pallet_id,
         supplier: weightEntry.supplier,
+        gate_entry_id: weightEntry.gate_entry_id,
         deleted_at: new Date().toISOString()
       }
     });

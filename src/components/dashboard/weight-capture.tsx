@@ -247,7 +247,11 @@ export function WeightCapture({
         throw new Error('Failed to fetch supplier intake records');
       }
       const data = await response.json();
-      const weightEntries = Array.isArray(data) ? data : data.weights || [];
+      const weightEntries = Array.isArray(data)
+        ? data
+        : Array.isArray(data.weights)
+          ? data.weights
+          : [];
 
       // Group by supplier (like Weight History & Export)
       const supplierMap: Record<string, SupplierIntakeRecord[]> = {};
@@ -462,14 +466,6 @@ export function WeightCapture({
         totalCrates
       });
 
-      if (totalWeight <= 0) {
-        toast({
-          title: "Weight Required",
-          description: "Please enter weight for at least one variety (Fuerte or Hass)",
-          variant: "destructive",
-        });
-        return;
-      }
 
       if (totalCrates <= 0) {
         toast({

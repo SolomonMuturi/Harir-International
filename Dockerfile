@@ -2,7 +2,12 @@ FROM node:18-bullseye-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    procps \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
@@ -23,7 +28,13 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    procps \
+    dumb-init \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV production
 
@@ -47,8 +58,11 @@ USER nextjs
 
 EXPOSE 3000
 
+
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
+ENV NODE_OPTIONS="--max-old-space-size=1024 --expose-gc"
 
-ENTRYPOINT ["./docker-entrypoint.sh"]
+# Use dumb-init to handle signals properly (prevents zombie processes)
+ENTRYPOINT ["dumb-init", "--", "./docker-entrypoint.sh"]
 CMD ["node", "server.js"]

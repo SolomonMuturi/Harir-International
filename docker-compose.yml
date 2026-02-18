@@ -19,13 +19,10 @@ services:
     restart: unless-stopped
     networks:
       - warehouse-network
-    resources:
-      limits:
-        cpus: '1'
-        memory: 1G
-      reservations:
-        cpus: '0.5'
-        memory: 512M
+    # Fixed: replaced resources with standard compose limits
+    mem_limit: 1g
+    cpus: '1'
+    # For reservations (minimum), you'd need to use deploy with swarm mode
 
   app:
     build:
@@ -53,13 +50,9 @@ services:
       start_period: 40s
     networks:
       - warehouse-network
-    resources:
-      limits:
-        cpus: '2'
-        memory: 2G
-      reservations:
-        cpus: '1'
-        memory: 1G
+    # Fixed: replaced resources with standard compose limits
+    mem_limit: 2g
+    cpus: '2'
     # KEY: Prevents zombie processes
     init: true
     logging:

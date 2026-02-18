@@ -37,7 +37,7 @@ services:
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - NEXT_PUBLIC_API_URL=${NEXTAUTH_URL}/api
       - NODE_ENV=production
-      - NODE_OPTIONS=--max-old-space-size=1024 --expose-gc
+      - NODE_OPTIONS=--max-old-space-size=1024
     depends_on:
       db:
         condition: service_healthy

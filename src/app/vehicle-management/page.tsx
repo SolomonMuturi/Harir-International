@@ -906,7 +906,7 @@ export default function VehicleManagementPage() {
           <div className='non-printable'>
             <Header />
           </div>
-          <main className="p-4 md:p-6 space-y-4 md:space-y-6">
+            <main className="p-2 sm:p-4 md:p-6 space-y-3 md:space-y-6">
             {apiError && (
               <Alert variant="destructive" className="mb-4 md:mb-6">
                 <AlertCircle className="h-4 w-4" />
@@ -918,19 +918,19 @@ export default function VehicleManagementPage() {
             )}
 
             {/* Header Section - Mobile Optimized */}
-            <div className="flex flex-col gap-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+            <div className="flex flex-col gap-3 sm:gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 break-words">
                     Vehicle Visit Management
                   </h1>
-                  <p className="text-sm md:text-base text-gray-600 mt-1">
+                  <p className="text-xs sm:text-sm md:text-base text-gray-600 mt-1">
                     Track and manage all vehicle visits
                   </p>
                 </div>
                 
                 {/* Mobile Menu Button */}
-                <div className="flex md:hidden gap-2">
+                <div className="flex md:hidden gap-2 mt-2 sm:mt-0">
                   <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="icon">
@@ -993,7 +993,7 @@ export default function VehicleManagementPage() {
                 </div>
 
                 {/* Desktop Buttons */}
-                <div className="hidden md:flex flex-wrap gap-2">
+                <div className="hidden md:flex flex-wrap gap-2 items-center">
                   <Button 
                     variant="outline" 
                     onClick={refreshAllData}
@@ -1099,7 +1099,7 @@ export default function VehicleManagementPage() {
               <div className="flex md:hidden">
                 <Button
                   onClick={() => setIsRegisterDialogOpen(true)}
-                  className="w-full gap-2 bg-primary hover:bg-primary/90"
+                  className="w-full gap-2 bg-primary hover:bg-primary/90 text-sm py-2"
                 >
                   <Truck className="h-4 w-4" />
                   New Vehicle Visit
@@ -1109,14 +1109,14 @@ export default function VehicleManagementPage() {
 
             {/* Selection Info Banner - Mobile Optimized */}
             {selectedVehicle && (
-              <div className={`border rounded-lg p-3 md:p-4 ${
+              <div className={`border rounded-lg p-2 sm:p-3 md:p-4 ${
                 selectedVehicle.isRecheckIn 
                   ? 'bg-purple-50 border-purple-200' 
                   : 'bg-blue-50 border-blue-200'
               }`}>
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-col xs:flex-row items-start justify-between gap-2 xs:gap-4">
                   <div className="flex items-start gap-2 min-w-0 flex-1">
-                    <div className={`rounded-full p-1.5 md:p-2 flex-shrink-0 ${
+                    <div className={`rounded-full p-1 md:p-1.5 flex-shrink-0 ${
                       selectedVehicle.isRecheckIn ? 'bg-purple-100' : 'bg-blue-100'
                     }`}>
                       {selectedVehicle.gateEntryId ? (
@@ -1130,7 +1130,7 @@ export default function VehicleManagementPage() {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className={`font-medium text-sm md:text-base truncate ${
+                      <p className={`font-medium text-xs sm:text-sm md:text-base truncate ${
                         selectedVehicle.isRecheckIn ? 'text-purple-800' : 'text-blue-800'
                       }`}>
                         Visit #{selectedVehicle.visitNumber} - {selectedVehicle.driverName}
@@ -1141,7 +1141,7 @@ export default function VehicleManagementPage() {
                           <span className="hidden xs:inline">•</span>
                           <span className="block xs:inline">Type: {selectedVehicle.vehicleType}</span>
                         </div>
-                        <div className="flex flex-wrap gap-2 items-center">
+                        <div className="flex flex-wrap gap-2 items-center mt-1">
                           <Badge variant="outline" className={`text-xs ${
                             selectedVehicle.status === 'Checked-out' ? 'bg-purple-50 text-purple-700' : 
                             selectedVehicle.status === 'Checked-in' ? 'bg-green-50 text-green-700' : 
@@ -1169,7 +1169,7 @@ export default function VehicleManagementPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setSelectedVehicle(null)}
-                    className={`flex-shrink-0 h-8 px-2 ${
+                    className={`flex-shrink-0 h-8 px-2 mt-2 xs:mt-0 ${
                       selectedVehicle.isRecheckIn 
                         ? 'text-purple-600 hover:text-purple-800' 
                         : 'text-blue-600 hover:text-blue-800'
@@ -1180,7 +1180,7 @@ export default function VehicleManagementPage() {
                 </div>
                 
                 {/* Mobile Action Sheet for Selected Vehicle */}
-                <div className="mt-3 pt-3 border-t border-blue-200 flex md:hidden">
+                <div className="mt-2 pt-2 border-t border-blue-200 flex md:hidden">
                   <Sheet open={isActionsSheetOpen} onOpenChange={setIsActionsSheetOpen}>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="sm" className="w-full">
@@ -1239,7 +1239,7 @@ export default function VehicleManagementPage() {
             )}
 
             {/* Stats Cards - Mobile Optimized Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-4">
+            <div className="grid grid-cols-2 xs:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4">
               <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-3 md:p-4">
                   <div className="flex justify-between items-start">
@@ -1303,9 +1303,9 @@ export default function VehicleManagementPage() {
 
             {/* Main Content Tabs - Mobile Optimized */}
             <Card className="border shadow-sm">
-              <CardHeader className="pb-2 md:pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg md:text-xl">Vehicle Visit Logs</CardTitle>
+              <CardHeader className="pb-2 md:pb-3 px-2 sm:px-4">
+                <div className="flex flex-col xs:flex-row items-start xs:items-center justify-between gap-2">
+                  <CardTitle className="text-base sm:text-lg md:text-xl">Vehicle Visit Logs</CardTitle>
                   <Badge variant="outline" className="text-xs">
                     {filteredVehicles.length}/{vehicles.length}
                   </Badge>

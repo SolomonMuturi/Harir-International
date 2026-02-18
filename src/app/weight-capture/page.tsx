@@ -327,6 +327,30 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
+  // Delete checked-in supplier
+  const handleDeleteSupplier = useCallback(async (supplierId: string) => {
+    if (!window.confirm('Are you sure you want to delete this supplier from checked-in list?')) return;
+    try {
+      const response = await fetch(`/api/suppliers/checked-in?id=${supplierId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete supplier');
+      }
+      setCheckedInSuppliers(prev => prev.filter(s => s.id !== supplierId));
+      toast({
+        title: 'Supplier Deleted',
+        description: 'Supplier has been removed from checked-in list.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Delete Failed',
+        description: error.message || 'Failed to delete supplier',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
+
 // Fetch all weight entries - FIXED
 const fetchWeights = useCallback(async () => {
   try {
@@ -2004,24 +2028,24 @@ const fetchWeights = useCallback(async () => {
       </Sidebar>
       <SidebarInset>
         <Header />
-        <main className="p-6 space-y-6">
+        <main className="p-2 sm:p-4 md:p-6 space-y-3 md:space-y-6">
           {/* Header Section */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between sm:gap-4">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                <Scale className="w-8 h-8" />
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+                <Scale className="w-6 h-6 sm:w-8 sm:h-8" />
                 Weight Capture Station
               </h1>
-              <p className="text-muted-foreground mt-1">
+              <p className="text-xs sm:text-sm md:text-base text-muted-foreground mt-1">
                 Record pallet weights with supplier details from check-in system
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mt-2 sm:mt-0">
               <Button
                 onClick={refreshAllData}
                 disabled={isRefreshing || isLoading}
                 variant="outline"
-                className="gap-2"
+                className="gap-2 text-xs sm:text-sm"
               >
                 {isRefreshing ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -2030,7 +2054,7 @@ const fetchWeights = useCallback(async () => {
                 )}
                 {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
               </Button>
-              <Badge variant="outline" className="px-3 py-1">
+              <Badge variant="outline" className="px-2 py-1 text-xs sm:px-3 sm:py-1">
                 <Scale className="w-3 h-3 mr-1" />
                 Live
               </Badge>
@@ -2046,7 +2070,7 @@ const fetchWeights = useCallback(async () => {
           )}
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4">
             <Card className="border-l-4 border-l-blue-500">
               <CardContent className="p-4">
                 <div className="flex flex-col">
@@ -2290,7 +2314,7 @@ const fetchWeights = useCallback(async () => {
                                 )}
                               </div>
                             </div>
-                            <div className="text-right flex flex-col items-end">
+                            <div className="text-right flex flex-col items-end min-w-[120px] gap-2">
                               <div className={`text-sm font-semibold ${
                                 isWeighed ? 'text-green-700' : 'text-amber-700'
                               }`}>
@@ -2299,36 +2323,47 @@ const fetchWeights = useCallback(async () => {
                               <div className="text-xs text-muted-foreground mt-1">
                                 Checked in: {new Date(supplier.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </div>
-                              {isWeighed ? (
-                                <div className="flex gap-2 mt-2">
-                                  <Badge 
+                              <div className="flex gap-2 mt-2">
+                                {isWeighed ? (
+                                  <>
+                                    <Badge 
+                                      variant="outline" 
+                                      className="px-3 py-1 text-xs bg-green-100 text-green-800 border-green-300"
+                                    >
+                                      <CheckCheck className="w-3 h-3 mr-1" />
+                                      Weighed
+                                    </Badge>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-xs gap-1"
+                                      onClick={() => downloadSupplierGRN(supplier.id)}
+                                    >
+                                      <FileText className="w-3 h-3" />
+                                      Download GRN
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button 
+                                    size="sm" 
                                     variant="outline" 
-                                    className="px-3 py-1 text-xs bg-green-100 text-green-800 border-green-300"
+                                    className="text-xs bg-white hover:bg-amber-50 border-amber-300 text-amber-700"
+                                    onClick={() => handleSelectSupplierForWeighing(supplier)}
                                   >
-                                    <CheckCheck className="w-3 h-3 mr-1" />
-                                    Weighed
-                                  </Badge>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-xs gap-1"
-                                    onClick={() => downloadSupplierGRN(supplier.id)}
-                                  >
-                                    <FileText className="w-3 h-3" />
-                                    Download GRN
+                                    <Scale className="w-3 h-3 mr-1" />
+                                    Weigh Now
                                   </Button>
-                                </div>
-                              ) : (
-                                <Button 
-                                  size="sm" 
-                                  variant="outline" 
-                                  className="mt-2 text-xs bg-white hover:bg-amber-50 border-amber-300 text-amber-700"
-                                  onClick={() => handleSelectSupplierForWeighing(supplier)}
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs text-red-600 border border-red-200 hover:bg-red-50"
+                                  title="Delete Supplier"
+                                  onClick={() => handleDeleteSupplier(supplier.id)}
                                 >
-                                  <Scale className="w-3 h-3 mr-1" />
-                                  Weigh Now
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
-                              )}
+                              </div>
                             </div>
                           </div>
                         );

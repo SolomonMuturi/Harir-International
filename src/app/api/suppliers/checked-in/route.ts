@@ -1,3 +1,26 @@
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ error: 'Missing supplier id' }, { status: 400 });
+    }
+
+    // Remove supplier from checked-in status (set vehicle_status to something else, e.g., 'Checked-out')
+    const updated = await prisma.suppliers.update({
+      where: { id },
+      data: { vehicle_status: 'Checked-out' },
+    });
+
+    return NextResponse.json({ success: true, id });
+  } catch (error: any) {
+    console.error('❌ Error deleting checked-in supplier:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete checked-in supplier', details: error.message },
+      { status: 500 }
+    );
+  }
+}
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 

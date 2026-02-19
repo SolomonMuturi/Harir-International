@@ -75,7 +75,7 @@ import autoTable from 'jspdf-autotable';
 // Types
 type EmployeeContract = 'Full-time' | 'Part-time' | 'Contract';
 type AttendanceStatus = 'Present' | 'Absent' | 'Late' | 'On Leave' | 'Early Departure';
-type Designation = 'dipping' | 'intake' | 'qualityControl' | 'qualityAssurance' | 'packing' | 'loading' | 'palletizing' | 'porter';
+type Designation = 'dipping' | 'intake' | 'qualityControl' | 'qualityAssurance' | 'packing' | 'loading' | 'palletizing' | 'porter' | 'counting';
 
 interface Employee {
   id: string;
@@ -166,7 +166,8 @@ const designationLabels: Record<Designation, string> = {
   packing: 'Packing',
   loading: 'Loading',
   palletizing: 'Palletizing',
-  porter: 'Porter'
+  porter: 'Porter',
+  counting: 'Counting'
 };
 
 const designationColors: Record<Designation, string> = {
@@ -177,7 +178,8 @@ const designationColors: Record<Designation, string> = {
   packing: 'bg-pink-50 text-pink-700 border-pink-200',
   loading: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   palletizing: 'bg-orange-50 text-orange-700 border-orange-200',
-  porter: 'bg-cyan-50 text-cyan-700 border-cyan-200'
+  porter: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  counting: 'bg-gray-50 text-gray-700 border-gray-200'
 };
 
 // Employee Check Card for Gate In Tab
@@ -2271,7 +2273,7 @@ export default function EmployeesPage() {
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium">Contract</span>
+                          <span className="text-sm font-medium">Casual</span>
                           <span className="text-sm text-muted-foreground">{stats.contractCount}</span>
                         </div>
                         <Progress value={(stats.contractCount / stats.totalEmployees) * 100} className="h-2" />

@@ -384,8 +384,13 @@ const AdminDashboard = () => {
     try {
       const response = await fetch('/api/weights?limit=1000');
       if (response.ok) {
-        const weightEntries = await response.json();
-        
+        const data = await response.json();
+        // Accept both array and object with weights property
+        const weightEntries = Array.isArray(data)
+          ? data
+          : Array.isArray(data.weights)
+            ? data.weights
+            : [];
         const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => ({
           id: entry.id,
           pallet_id: entry.pallet_id || `WE-${entry.id}`,
@@ -406,7 +411,6 @@ const AdminDashboard = () => {
           timestamp: entry.timestamp || entry.created_at || new Date().toISOString(),
           status: 'processed'
         }));
-        
         setSupplierIntakeRecords(intakeRecords);
         return intakeRecords;
       }

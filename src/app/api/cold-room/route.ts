@@ -725,23 +725,40 @@ export async function POST(request: NextRequest) {
     }
 
     // Dissolve pallet
+
+    // Lock pallet
+    if (action === 'lock-pallet') {
+      const { palletId } = body;
+      const pallet = await prisma.cold_room_pallets.update({
+        where: { id: palletId },
+        data: { locked: true },
+      });
+      return NextResponse.json({ success: true, data: pallet });
+    }
+
+    // Unlock pallet
+    if (action === 'unlock-pallet') {
+      const { palletId } = body;
+      const pallet = await prisma.cold_room_pallets.update({
+        where: { id: palletId },
+        data: { locked: false },
+      });
+      return NextResponse.json({ success: true, data: pallet });
+    }
+
+    // Dissolve pallet (only if not locked)
     if (action === 'dissolve-pallet') {
       const { palletId, coldRoomId } = body;
-
-      // Find the pallet with boxes
       const pallet = await prisma.cold_room_pallets.findUnique({
         where: { id: palletId },
         include: { boxes: true },
       });
-
       if (!pallet) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Pallet not found' 
-        }, { status: 404 });
+        return NextResponse.json({ success: false, error: 'Pallet not found' }, { status: 404 });
       }
-
-      // Return boxes to available inventory
+      if (pallet.locked) {
+        return NextResponse.json({ success: false, error: 'Pallet is locked. Unlock before dissolving.' }, { status: 403 });
+      }
       await prisma.cold_room_boxes.updateMany({
         where: { pallet_id: palletId },
         data: {
@@ -750,12 +767,7 @@ export async function POST(request: NextRequest) {
           converted_to_pallet_at: null,
         },
       });
-
-      // Delete the pallet
-      await prisma.cold_room_pallets.delete({
-        where: { id: palletId },
-      });
-
+      await prisma.cold_room_pallets.delete({ where: { id: palletId } });
       return NextResponse.json({
         success: true,
         data: {

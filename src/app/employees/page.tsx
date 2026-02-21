@@ -984,12 +984,15 @@ export default function EmployeesPage() {
 
   // Attendance History state
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    to: new Date()
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0), // Start of day
+    to: new Date() // Current date and time
   });
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
   const [attendanceEmployeeFilter, setAttendanceEmployeeFilter] = useState<string>('all');
   const [attendanceTypeFilter, setAttendanceTypeFilter] = useState<string>('all');
+  // New: time filter state
+  const [attendanceStartTime, setAttendanceStartTime] = useState('');
+  const [attendanceEndTime, setAttendanceEndTime] = useState('');
 
   // New Employee form state
   const [newEmployee, setNewEmployee] = useState<EmployeeFormValues>({
@@ -1862,11 +1865,41 @@ export default function EmployeesPage() {
     }
 
     const filtered = attendance.filter(record => {
-      const recordDate = parseISO(record.date);
-      const withinDateRange = recordDate >= dateRange.from && recordDate <= dateRange.to;
-      
+      // Date/time filter
+      let recordDateTime: Date | null = null;
+      if (record.clockInTime) {
+        recordDateTime = parseISO(record.clockInTime);
+      } else if (record.date) {
+        recordDateTime = parseISO(record.date);
+      }
+      if (!recordDateTime) return false;
+      const withinDateRange = recordDateTime >= dateRange.from && recordDateTime <= dateRange.to;
       if (!withinDateRange) return false;
-      
+
+      // Time filter
+      if (attendanceStartTime) {
+        const [startHour, startMinute] = attendanceStartTime.split(":").map(Number);
+        const recordHour = recordDateTime.getHours();
+        const recordMinute = recordDateTime.getMinutes();
+        if (
+          recordHour < startHour ||
+          (recordHour === startHour && recordMinute < startMinute)
+        ) {
+          return false;
+        }
+      }
+      if (attendanceEndTime) {
+        const [endHour, endMinute] = attendanceEndTime.split(":").map(Number);
+        const recordHour = recordDateTime.getHours();
+        const recordMinute = recordDateTime.getMinutes();
+        if (
+          recordHour > endHour ||
+          (recordHour === endHour && recordMinute > endMinute)
+        ) {
+          return false;
+        }
+      }
+
       // Filter by employee name/search term
       if (attendanceSearchTerm) {
         const employee = employees.find(emp => emp.id === record.employeeId);
@@ -1874,23 +1907,23 @@ export default function EmployeesPage() {
                              (employee?.employeeId && employee.employeeId.includes(attendanceSearchTerm));
         if (!matchesSearch) return false;
       }
-      
+
       // Filter by employee type
       if (attendanceEmployeeFilter !== 'all') {
         const employee = employees.find(emp => emp.id === record.employeeId);
         if (!employee || employee.contract !== attendanceEmployeeFilter) return false;
       }
-      
+
       // Filter by status
       if (attendanceTypeFilter !== 'all') {
         if (record.status !== attendanceTypeFilter) return false;
       }
-      
+
       return true;
     });
-    
+
     setFilteredAttendance(filtered);
-  }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees]);
+  }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees, attendanceStartTime, attendanceEndTime]);
 
   // Export attendance to CSV with enhanced headers
   const exportToCSV = () => {
@@ -1903,8 +1936,11 @@ export default function EmployeesPage() {
       return;
     }
 
-    // Calculate number of days in the date range
-    const numberOfDays = getNumberOfDays(dateRange.from, dateRange.to);
+    // Calculate number of days in the date range (inclusive)
+    let numberOfDays = 1;
+    if (dateRange.from && dateRange.to) {
+      numberOfDays = getNumberOfDays(dateRange.from, dateRange.to);
+    }
     
     // Create the header row
     const headers = [
@@ -3024,7 +3060,7 @@ export default function EmployeesPage() {
                     View and filter attendance records. Download reports as CSV or PDF.
                   </CardDescription>
                   <div className="flex flex-col md:flex-row gap-4">
-                    <div className="flex-1">
+                    <div className="flex-1 flex flex-col gap-2 md:gap-0 md:flex-row md:items-center">
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button
@@ -3070,6 +3106,28 @@ export default function EmployeesPage() {
                           />
                         </PopoverContent>
                       </Popover>
+                      <div className="flex gap-2 mt-2 md:mt-0 md:ml-4">
+                        <div>
+                          <Label htmlFor="startTime" className="text-xs mb-1 block">Start Time</Label>
+                          <Input
+                            id="startTime"
+                            type="time"
+                            value={attendanceStartTime}
+                            onChange={e => setAttendanceStartTime(e.target.value)}
+                            className="w-[110px]"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="endTime" className="text-xs mb-1 block">End Time</Label>
+                          <Input
+                            id="endTime"
+                            type="time"
+                            value={attendanceEndTime}
+                            onChange={e => setAttendanceEndTime(e.target.value)}
+                            className="w-[110px]"
+                          />
+                        </div>
+                      </div>
                     </div>
                     
                     <div className="flex flex-wrap gap-2">
@@ -3152,7 +3210,6 @@ export default function EmployeesPage() {
                             const employee = employees.find(emp => emp.id === record.employeeId);
                             let hoursWorked = 'N/A';
                             let shift = 'N/A';
-                            
                             if (record.clockInTime && record.clockOutTime) {
                               const inTime = parseISO(record.clockInTime);
                               const outTime = parseISO(record.clockOutTime);
@@ -3160,14 +3217,14 @@ export default function EmployeesPage() {
                               hoursWorked = `${hours} hours`;
                               shift = getShiftType(record.clockInTime, record.clockOutTime);
                             }
-                            
                             const StatusIcon = statusInfo[record.status as keyof typeof statusInfo]?.icon || Clock;
                             const statusColor = statusInfo[record.status as keyof typeof statusInfo]?.color || 'bg-gray-100 text-gray-800';
-                            
                             return (
                               <TableRow key={record.id}>
                                 <TableCell className="font-medium">
-                                  {format(parseISO(record.date), 'MMM dd, yyyy')}
+                                  {record.clockInTime
+                                    ? format(parseISO(record.clockInTime), 'MMM dd, yyyy HH:mm')
+                                    : format(parseISO(record.date), 'MMM dd, yyyy')}
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-3">
@@ -3246,4 +3303,3 @@ export default function EmployeesPage() {
       </SidebarInset>
     </SidebarProvider>
   );
-}

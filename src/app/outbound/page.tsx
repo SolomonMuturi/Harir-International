@@ -1216,7 +1216,7 @@ function LoadingSheet() {
     const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
     headers.push(tableHeaders.join(','));
     
-    const rows = sheetData.pallets.map((pallet, index) => {
+    const rows = sheetData.pallets.map((pallet) => {
       const quantity = getQuantityFromBoxes(pallet);
       const boxType = getSafeBoxType(pallet);
       const totalWeight = getSafeWeight(pallet);
@@ -1225,9 +1225,8 @@ function LoadingSheet() {
       const varietyDisplay = formatVarietyForDisplay(pallet);
       const gradeDisplay = formatGradeForDisplay(pallet);
       const boxTypeDisplay = formatBoxTypeForDisplay(pallet);
-      
       return [
-        index + 1,
+        pallet.pallet_no,
         pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
         varietyDisplay,
         boxTypeDisplay,
@@ -1834,7 +1833,6 @@ function LoadingSheet() {
                   <thead>
                     <tr className="bg-black-100">
                       <th className="border border-gray-300 p-2 text-left font-bold text-sm uppercase">PALLET NO</th>
-                      <th className="border border-gray-300 p-2 text-left font-bold text-sm uppercase">COLD ROOM</th>
                       <th className="border border-gray-300 p-2 text-left font-bold text-sm uppercase">VARIETY</th>
                       <th className="border border-gray-300 p-2 text-left font-bold text-sm uppercase">TYPE</th>
                       <th className="border border-gray-300 p-2 text-left font-bold text-sm uppercase">SIZE</th>
@@ -1855,10 +1853,7 @@ function LoadingSheet() {
                       
                       return (
                         <tr key={`${pallet.id}-${index}`} className="hover:bg-black-50">
-                          <td className="border border-gray-300 p-2 text-center font-medium">{index + 1}</td>
-                          <td className="border border-gray-300 p-2">
-                            {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                          </td>
+                          <td className="border border-gray-300 p-2 text-center font-medium">{pallet.pallet_no}</td>
                           <td className="border border-gray-300 p-2">
                             <Badge className={
                               varietyDisplay === 'Fuerte' ? "bg-green-100 text-green-800" : 

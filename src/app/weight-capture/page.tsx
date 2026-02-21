@@ -1207,44 +1207,47 @@ const fetchWeights = useCallback(async () => {
       const totalWeight = totalFuerteWeight + totalHassWeight;
       const totalCrates = totalFuerteCrates + totalHassCrates;
       
-      const doc = new jsPDF('p', 'mm', 'a4');
+      const doc = new jsPDF('p', 'mm', 'a5');
       
       let hasLogo = false;
       let logoHeight = 0;
       
-      try {
-        const logoPaths = [
-          '/Harirlogo.svg',
-          '/Harirlogo.png',
-          '/Harirlogo.jpg',
-          '/logo.png',
-          '/logo.jpg',
-          '/favicon.ico',
-          '/public/favicon.ico'
-        ];
-        
-        for (const path of logoPaths) {
-          try {
-            const response = await fetch(path);
-            if (response.ok) {
-              const blob = await response.blob();
-              const base64String = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(blob);
-              });
-              
-              doc.addImage(base64String as string, 'PNG', 92.5, 10, 15, 15);
-              hasLogo = true;
-              logoHeight = 15;
-              break;
-            }
-          } catch (e) {
-            continue;
+      const logoPaths = [
+        '/images/HLogo.png',
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico',
+        '/public/favicon.ico'
+      ];
+      
+      // Define A5 layout variables at the top of the function
+      const pageWidth = 148;
+      const leftMargin = 8;
+      const contentWidth = pageWidth - 2 * leftMargin;
+      for (const path of logoPaths) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) {
+            const blob = await response.blob();
+            const base64String = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+            const logoWidth = 80;
+            const logoHeightRect = 14;
+            const x = (pageWidth - logoWidth) / 2;
+            doc.addImage(base64String as string, 'PNG', x, 6, logoWidth, logoHeightRect);
+            hasLogo = true;
+            logoHeight = 15;
+            break;
           }
+        } catch (e) {
+          continue;
         }
-      } catch (error) {
-        console.log('Logo loading failed:', error);
       }
       
       if (!hasLogo) {
@@ -1258,89 +1261,60 @@ const fetchWeights = useCallback(async () => {
         hasLogo = true;
       }
       
-      const startY = hasLogo ? 30 : 15;
-      doc.setTextColor(34, 139, 34);
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text('HARIR INTERNATIONAL', 105, startY, { align: 'center' });
-      
-      doc.setFontSize(11);
-      doc.text('FRESH PRODUCE EXPORTER', 105, startY + 6, { align: 'center' });
-      
+      const startY = 24;
       doc.setDrawColor(34, 139, 34);
       doc.setLineWidth(0.5);
-      doc.line(10, startY + 10, 200, startY + 10);
-      
-      doc.setFontSize(12);
+      doc.line(leftMargin, startY, pageWidth - leftMargin, startY);
+      doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('GOODS RECEIVED NOTE (GRN)', 105, startY + 20, { align: 'center' });
+      doc.text('GOODS RECEIVED NOTE - BOX COUNTING', pageWidth / 2, startY + 7, { align: 'center' });
+      let yPos = startY + 13;
       
-      let yPos = startY + 30;
-      
+      // Document Details bar (horizontal)
       doc.setFillColor(248, 249, 250);
-      doc.rect(10, yPos, 190, 15, 'F');
-      
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('GRN Details', 15, yPos + 6);
-      
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      
-      doc.text(`GRN: GRN-${supplierId.slice(0, 8)}`, 15, yPos + 12);
-      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 50, yPos + 12);
-      doc.text(`Time: ${format(new Date(), 'HH:mm')}`, 85, yPos + 12);
-      doc.text(`Code: ${supplier?.supplier_code || 'N/A'}`, 120, yPos + 12);
-      
-      // NEW: Add Gate Entry ID
-      if (gateEntryId) {
-        doc.text(`Gate ID: ${gateEntryId}`, 155, yPos + 12);
-      }
-      
-      yPos += 20;
+      doc.text(`GRN: GRN-${supplierId.slice(0, 8)}`, leftMargin + 2, yPos + 7);
+      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, leftMargin + 35, yPos + 7);
+      doc.text(`Time: ${format(new Date(), 'HH:mm')}`, leftMargin + 70, yPos + 7);
+      yPos += 13;
       
       doc.setFillColor(233, 236, 239);
-      doc.rect(10, yPos, 190, 20, 'F');
-      
-      doc.setFontSize(9);
+      doc.rect(leftMargin, yPos, contentWidth, 14, 'F');
+      doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
-      doc.text('Supplier Information', 15, yPos + 6);
-      
+      doc.text('Supplier Information', leftMargin + 2, yPos + 3);
       doc.setFont('helvetica', 'normal');
-      doc.text(`Supplier: ${supplierName}`, 15, yPos + 12);
-      doc.text(`Phone: ${supplierPhone}`, 80, yPos + 12);
-      doc.text(`Driver: ${driverName || 'N/A'}`, 120, yPos + 12);
-      doc.text(`Vehicle: ${vehiclePlate || 'N/A'}`, 160, yPos + 12);
-      
-      doc.text(`Check-in: ${format(new Date(supplier?.check_in_time || new Date()), 'dd/MM/yyyy HH:mm')}`, 15, yPos + 18);
-      
-      yPos += 25;
+      doc.setFontSize(7);
+      doc.text(`Supplier: ${supplierName}`, leftMargin + 2, yPos + 7);
+      doc.text(`Phone: ${supplierPhone || 'N/A'}`, leftMargin + 50, yPos + 7);
+      doc.text(`Driver: ${driverName || 'N/A'}`, leftMargin + 95, yPos + 7);
+      doc.text(`Region: ${supplier?.region || 'N/A'}`, leftMargin + 2, yPos + 10);
+      doc.text(`Vehicle: ${vehiclePlate || 'N/A'}`, leftMargin + 50, yPos + 10);
+      doc.text(`Check-in: ${format(new Date(supplier?.check_in_time || new Date()), 'dd/MM/yyyy HH:mm')}`, leftMargin + 95, yPos + 10);
+      yPos += 14;
       
       if (varietyData.length > 0) {
         doc.setFillColor(52, 58, 64);
-        doc.rect(10, yPos, 190, 8, 'F');
-        
+        doc.rect(leftMargin, yPos, contentWidth, 8, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(255, 255, 255);
-        doc.text('Received Goods Details', 15, yPos + 5.5);
-        
-        yPos += 10;
-        
+        doc.setFontSize(8);
+        doc.text('Received Goods Details', leftMargin + 2, yPos + 5.5);
+        yPos += 8;
         doc.setFillColor(248, 249, 250);
-        doc.rect(10, yPos, 190, 7, 'F');
+        doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
         doc.setTextColor(0, 0, 0);
-        
-        doc.text('Fruit Variety', 15, yPos + 4.5);
-        doc.text('Weight (kg)', 130, yPos + 4.5, { align: 'right' });
-        doc.text('Crates', 180, yPos + 4.5, { align: 'right' });
-        
+        doc.setFontSize(7);
+        doc.text('Fruit Variety', leftMargin + 2, yPos + 4.5);
+        doc.text('Weight (kg)', leftMargin + 70, yPos + 4.5);
+        doc.text('Crates', leftMargin + 110, yPos + 4.5);
         yPos += 7;
-        
         varietyData.forEach((item, index) => {
           doc.setFillColor(index % 2 === 0 ? 255 : 248, 249, 250);
-          doc.rect(10, yPos, 190, 7, 'F');
-          
+          doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
           if (item.variety.toLowerCase().includes('fuerte')) {
             doc.setTextColor(0, 102, 204);
           } else if (item.variety.toLowerCase().includes('hass')) {
@@ -1348,65 +1322,54 @@ const fetchWeights = useCallback(async () => {
           } else {
             doc.setTextColor(102, 102, 102);
           }
-          
           doc.setFont('helvetica', 'bold');
-          doc.text(item.variety, 15, yPos + 4.5);
-          
+          doc.text(item.variety, leftMargin + 2, yPos + 4.5);
           doc.setTextColor(0, 0, 0);
           doc.setFont('helvetica', 'normal');
-          doc.text(item.weight.toFixed(2), 130, yPos + 4.5, { align: 'right' });
-          doc.text(item.crates.toString(), 180, yPos + 4.5, { align: 'right' });
-          
+          doc.text(item.weight.toFixed(2), leftMargin + 70, yPos + 4.5);
+          doc.text(item.crates.toString(), leftMargin + 110, yPos + 4.5);
           yPos += 7;
         });
-        
         yPos += 3;
         doc.setFillColor(40, 167, 69);
-        doc.rect(10, yPos, 190, 8, 'F');
-        
+        doc.rect(leftMargin, yPos, contentWidth, 8, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(255, 255, 255);
-        doc.text('GRAND TOTAL', 15, yPos + 5);
-        doc.text(totalWeight.toFixed(2), 130, yPos + 5, { align: 'right' });
-        doc.text(totalCrates.toString(), 180, yPos + 5, { align: 'right' });
-        
-        yPos += 12;
+        doc.setFontSize(8);
+        doc.text('GRAND TOTAL', leftMargin + 2, yPos + 5);
+        doc.text(totalWeight.toFixed(2), leftMargin + 70, yPos + 5);
+        doc.text(totalCrates.toString(), leftMargin + 110, yPos + 5);
+        yPos += 10;
       }
-      
+      // Notes section
       doc.setFontSize(7);
       doc.setTextColor(108, 117, 125);
       doc.setFont('helvetica', 'italic');
-      
       const notes = [
         '• All weights in kilograms (kg) • Quality inspection within 24 hours • Discrepancies must be reported immediately'
       ];
-      
       notes.forEach((note, index) => {
-        doc.text(note, 105, yPos + (index * 5), { align: 'center' });
+        doc.text(note, pageWidth / 2, yPos + (index * 5), { align: 'center' });
       });
-      
-      yPos += 10;
-      
+      yPos += 8;
+      // Signature lines
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.2);
-      
-      doc.line(20, yPos, 90, yPos);
+      doc.line(leftMargin + 2, yPos, leftMargin + 60, yPos);
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(0, 0, 0);
-      doc.text('Received By (Name & Signature)', 55, yPos + 3, { align: 'center' });
-      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 55, yPos + 6, { align: 'center' });
-      
-      doc.line(120, yPos, 190, yPos);
-      doc.text('Supplier/Driver (Name & Signature)', 155, yPos + 3, { align: 'center' });
-      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 155, yPos + 6, { align: 'center' });
-      
-      yPos += 15;
-      
+      doc.text('Received By (Name & Signature)', leftMargin + 31, yPos + 3, { align: 'center' });
+      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, leftMargin + 31, yPos + 6, { align: 'center' });
+      doc.line(leftMargin + 70, yPos, leftMargin + 130, yPos);
+      doc.text('Supplier/Driver (Name & Signature)', leftMargin + 100, yPos + 3, { align: 'center' });
+      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, leftMargin + 100, yPos + 6, { align: 'center' });
+      yPos += 12;
+      // Footer
       doc.setFontSize(6);
       doc.setTextColor(128, 128, 128);
-      doc.text('This is a computer-generated document. No physical signature required.', 105, yPos, { align: 'center' });
-      doc.text('Harir International © 2024 | GRN System v1.0', 105, yPos + 3, { align: 'center' });
+      doc.text('This is a computer-generated document. No physical signature required.', pageWidth / 2, yPos, { align: 'center' });
+      doc.text('Harir International © 2024 | GRN System v1.0', pageWidth / 2, yPos + 3, { align: 'center' });
       
       const fileName = `GRN_${supplierName.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.pdf`;
       doc.save(fileName);
@@ -2032,7 +1995,7 @@ const fetchWeights = useCallback(async () => {
           {/* Header Section */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between sm:gap-4">
             <div>
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+              <h1 className="text-lg sm:text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
                 <Scale className="w-6 h-6 sm:w-8 sm:h-8" />
                 Weight Capture Station
               </h1>
@@ -2040,7 +2003,7 @@ const fetchWeights = useCallback(async () => {
                 Record pallet weights with supplier details from check-in system
               </p>
             </div>
-            <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
               <Button
                 onClick={refreshAllData}
                 disabled={isRefreshing || isLoading}
@@ -2071,7 +2034,7 @@ const fetchWeights = useCallback(async () => {
 
           {/* Quick Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4">
-            <Card className="border-l-4 border-l-blue-500">
+            <Card className="border-l-4 border-l-blue-500 min-w-0">
               <CardContent className="p-4">
                 <div className="flex flex-col">
                   <p className="text-sm font-medium text-gray-500">Pallets Today</p>
@@ -2086,7 +2049,7 @@ const fetchWeights = useCallback(async () => {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-green-500">
+            <Card className="border-l-4 border-l-green-500 min-w-0">
               <CardContent className="p-4">
                 <div className="flex flex-col">
                   <p className="text-sm font-medium text-gray-500">Total Weight Today</p>
@@ -2105,7 +2068,7 @@ const fetchWeights = useCallback(async () => {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-amber-500">
+            <Card className="border-l-4 border-l-amber-500 min-w-0">
               <CardContent className="p-4">
                 <div className="flex flex-col">
                   <p className="text-sm font-medium text-gray-500">Pending Weighing</p>
@@ -2118,7 +2081,7 @@ const fetchWeights = useCallback(async () => {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-purple-500">
+            <Card className="border-l-4 border-l-purple-500 min-w-0">
               <CardContent className="p-4">
                 <div className="flex flex-col">
                   <p className="text-sm font-medium text-gray-500">Gate Entries Today</p>
@@ -2131,7 +2094,7 @@ const fetchWeights = useCallback(async () => {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-red-500">
+            <Card className="border-l-4 border-l-red-500 min-w-0">
               <CardContent className="p-4">
                 <div className="flex flex-col">
                   <p className="text-sm font-medium text-gray-500">Rejects Today</p>
@@ -2147,7 +2110,7 @@ const fetchWeights = useCallback(async () => {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-5 w-full">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
               <TabsTrigger value="overview" className="flex items-center gap-2">
                 <Boxes className="h-4 w-4" />
                 Dashboard
@@ -2174,7 +2137,7 @@ const fetchWeights = useCallback(async () => {
             <TabsContent value="overview" className="space-y-6 mt-6">
               {/* KPI Cards */}
               {kpiData && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {(Object.entries(kpiData) as [keyof KPIData, any][]).map(([key, data]) => (
                     <Card key={key} className="hover:shadow-md transition-shadow">
                       <CardContent className="p-6">
@@ -2228,13 +2191,13 @@ const fetchWeights = useCallback(async () => {
                         return (
                           <div 
                             key={supplier.id} 
-                            className={`flex items-center justify-between p-4 rounded-lg border ${
+                            className={`flex flex-col sm:flex-row items-center justify-between p-4 rounded-lg border ${
                               isWeighed 
                                 ? 'border-green-200 bg-black-50 hover:bg-black-100' 
                                 : 'border-amber-200 bg-black-50 hover:bg-black-100'
                             } transition-colors`}
                           >
-                            <div className="flex items-center gap-4 flex-1">
+                            <div className="flex items-center gap-4 flex-1 w-full">
                               <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
                                 isWeighed 
                                   ? 'bg-green-100 border border-green-200' 
@@ -2246,7 +2209,7 @@ const fetchWeights = useCallback(async () => {
                                   <Clock className="w-6 h-6 text-amber-600" />
                                 )}
                               </div>
-                              <div className="flex-1">
+                              <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-lg">{supplier.driver_name}</div>
                                 <div className="text-sm text-muted-foreground">
                                   {supplier.company_name} • {supplier.vehicle_plate} • {supplier.region}
@@ -2314,7 +2277,7 @@ const fetchWeights = useCallback(async () => {
                                 )}
                               </div>
                             </div>
-                            <div className="text-right flex flex-col items-end min-w-[120px] gap-2">
+                            <div className="text-right flex flex-row sm:flex-col items-end min-w-[120px] gap-2 mt-2 sm:mt-0">
                               <div className={`text-sm font-semibold ${
                                 isWeighed ? 'text-green-700' : 'text-amber-700'
                               }`}>
@@ -2323,7 +2286,7 @@ const fetchWeights = useCallback(async () => {
                               <div className="text-xs text-muted-foreground mt-1">
                                 Checked in: {new Date(supplier.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </div>
-                              <div className="flex gap-2 mt-2">
+                              <div className="flex flex-wrap gap-2 mt-2">
                                 {isWeighed ? (
                                   <>
                                     <Badge 
@@ -3579,7 +3542,7 @@ const fetchWeights = useCallback(async () => {
                             <div className="space-y-2">
                               <Label htmlFor="hass_crates">Hass Crates Rejected</Label>
                               <Input
-                                id="hass_crates"
+                                id="hass-crates"
                                 type="number"
                                 min="0"
                                 value={newRejection.hass_crates}

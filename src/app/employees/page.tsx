@@ -3303,3 +3303,4 @@ export default function EmployeesPage() {
       </SidebarInset>
     </SidebarProvider>
   );
+}

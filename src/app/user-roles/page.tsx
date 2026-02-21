@@ -1,4 +1,6 @@
-'use client';
+"use client";
+// ...existing code...
+// ...existing code...
 
 import { useState, useEffect } from 'react';
 import {
@@ -104,6 +106,9 @@ type UserAssignmentState = {
 
 // Default permissions based on your schema - UPDATED WITH EMPLOYEE PERMISSIONS
 const DEFAULT_PERMISSIONS: Permission[] = [
+    // Vehicle Management
+    { id: 'vehicle_log.view', name: 'View Vehicle Logs', description: 'View vehicle log entries and history', category: 'Vehicle Management' },
+    { id: 'vehicle_log.manage', name: 'Manage Vehicle Logs', description: 'Add, edit, or delete vehicle log entries', category: 'Vehicle Management' },
   // Dashboard Permissions
   { id: 'dashboard.view', name: 'View Dashboard', description: 'Access to main dashboard', category: 'Dashboard' },
   { id: 'dashboard.analytics', name: 'View Analytics', description: 'Access to analytics charts and reports', category: 'Dashboard' },
@@ -230,6 +235,10 @@ const PREDEFINED_ROLES = [
     description: 'Manage warehouse operations, inventory, and quality control',
     isDefault: false,
     permissions: [
+      'vehicle_log.view',
+      'vehicle_log.manage',
+      'vehicle_log.view',
+      'vehicle_log.manage',
       'dashboard.view',
       'dashboard.analytics',
       'cold_room.view',
@@ -278,6 +287,8 @@ const PREDEFINED_ROLES = [
     description: 'Perform quality checks and inspections',
     isDefault: false,
     permissions: [
+      'vehicle_log.view',
+      'vehicle_log.view',
       'qc.view',
       'qc.perform',
       'cold_room.view',
@@ -297,6 +308,8 @@ const PREDEFINED_ROLES = [
     description: 'Manage shipments and carrier assignments',
     isDefault: false,
     permissions: [
+      'vehicle_log.view',
+      'vehicle_log.view',
       'shipments.view',
       'shipments.create',
       'shipments.update',
@@ -1618,7 +1631,7 @@ const createNewUser = async () => {
                 </Card>
               </TabsContent>
               
-              {/* Permissions Reference Tab */}
+              {/* Permissions Reference Tab - Enhanced */}
               <TabsContent value="permissions" className="space-y-6">
                 <Card>
                   <CardHeader>
@@ -1626,192 +1639,135 @@ const createNewUser = async () => {
                       <Key className="h-5 w-5" />
                       Available Permissions
                     </CardTitle>
-                    <CardDescription>
-                      {DEFAULT_PERMISSIONS.length} system permissions across {permissionCategories.length} categories
-                    </CardDescription>
+                    <div className="w-full mb-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-lg p-4 shadow-sm">
+                          <Key className="h-8 w-8 text-primary" />
+                          <div>
+                            <div className="text-2xl font-bold text-primary">{DEFAULT_PERMISSIONS.length}</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wide">Total Permissions</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 bg-blue-100 border border-blue-200 rounded-lg p-4 shadow-sm">
+                          <Users className="h-8 w-8 text-blue-600" />
+                          <div>
+                            <div className="text-2xl font-bold text-blue-600">{permissionCategories.length}</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wide">Categories</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 bg-green-100 border border-green-200 rounded-lg p-4 shadow-sm">
+                          <Check className="h-8 w-8 text-green-600" />
+                          <div>
+                            <div className="text-2xl font-bold text-green-600">{selectedPermissions.length}</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wide">Selected</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </CardHeader>
                   <CardContent>
-                    <Tabs defaultValue="all">
-                      <TabsList className="mb-4">
-                        <TabsTrigger value="all">All Permissions</TabsTrigger>
-                        {permissionCategories.map(category => (
-                          <TabsTrigger key={category} value={category}>
-                            {category}
-                            {category === 'Employee Management' && (
-                              <Users className="ml-2 h-3 w-3" />
-                            )}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
-                      
-                      <TabsContent value="all" className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="relative flex-1 max-w-md">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              placeholder="Search permissions..."
-                              className="pl-8"
-                              value={permissionSearch}
-                              onChange={(e) => setPermissionSearch(e.target.value)}
-                            />
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={selectAllPermissions}
-                          >
-                            {selectedPermissions.length === DEFAULT_PERMISSIONS.length ? (
-                              <>
-                                <Check className="h-4 w-4 mr-2" />
-                                Deselect All
-                              </>
-                            ) : (
-                              'Select All Permissions'
-                            )}
-                          </Button>
-                        </div>
-                        
-                        <ScrollArea className="h-[400px]">
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {filteredPermissions.map((permission) => {
-                              // Get icon based on permission category/type
+                    <div className="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                      <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search permissions..."
+                          className="pl-8"
+                          value={permissionSearch}
+                          onChange={(e) => setPermissionSearch(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={selectAllPermissions}
+                      >
+                        {selectedPermissions.length === DEFAULT_PERMISSIONS.length ? (
+                          <>
+                            <Check className="h-4 w-4 mr-2" />
+                            Deselect All
+                          </>
+                        ) : (
+                          'Select All Permissions'
+                        )}
+                      </Button>
+                    </div>
+                    {/* Collapsible panels for each category */}
+                    <div className="space-y-4">
+                      {permissionCategories.map(category => (
+                        <details key={category} className="border rounded-md bg-muted/30">
+                          <summary className="flex items-center justify-between px-4 py-2 cursor-pointer select-none font-semibold text-base">
+                            <span className="flex items-center gap-2">
+                              {category}
+                              {category === 'Employee Management' && <Users className="ml-2 h-4 w-4" />}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={e => {
+                                e.preventDefault();
+                                selectAllInCategory(category);
+                              }}
+                            >
+                              {DEFAULT_PERMISSIONS.filter(p => p.category === category).every(p => selectedPermissions.includes(p.id))
+                                ? 'Deselect All'
+                                : 'Select All'}
+                            </Button>
+                          </summary>
+                          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {DEFAULT_PERMISSIONS.filter(p => p.category === category &&
+                              (p.name.toLowerCase().includes(permissionSearch.toLowerCase()) ||
+                               p.description.toLowerCase().includes(permissionSearch.toLowerCase()) ||
+                               p.id.toLowerCase().includes(permissionSearch.toLowerCase())
+                              )
+                            ).map(permission => {
                               const getPermissionIcon = () => {
                                 if (permission.id.includes('checkin')) return DoorOpen;
                                 if (permission.id.includes('checkout')) return DoorClosed;
                                 if (permission.id.includes('designation')) return MapPin;
                                 if (permission.id.includes('attendance')) return ListChecks;
                                 if (permission.id.includes('overview')) return BarChart;
-                                if (permission.id.includes('employees')) return Users;
-                                if (permission.id.includes('counting')) return ListChecks; // New icon for counting
+                                if (permission.id.includes('employees.list')) return Users;
+                                if (permission.id.includes('employees.create')) return UserPlus;
+                                if (permission.id.includes('employees.edit')) return Edit;
+                                if (permission.id.includes('employees.delete')) return Trash2;
+                                if (permission.id.includes('employees.export')) return Download;
+                                if (permission.id.includes('employees.attendance')) return Clock;
+                                if (permission.id.includes('employees')) return UserCog;
+                                if (permission.id.includes('counting')) return ListChecks;
                                 return Key;
                               };
-                              
                               const PermissionIcon = getPermissionIcon();
-                              
                               return (
-                                <Card 
+                                <Card
                                   key={permission.id}
-                                  className={`cursor-pointer transition-colors ${
+                                  className={`cursor-pointer transition-colors shadow-sm hover:shadow-md border-2 ${
                                     selectedPermissions.includes(permission.id)
-                                      ? 'border-primary bg-primary/5'
-                                      : ''
+                                      ? 'border-primary bg-primary/10'
+                                      : 'border-muted'
                                   }`}
                                   onClick={() => togglePermission(permission.id)}
                                 >
-                                  <CardContent className="p-4">
-                                    <div className="flex items-start justify-between">
-                                      <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
-                                          <PermissionIcon className="h-4 w-4 text-muted-foreground" />
-                                          <h4 className="font-medium">{permission.name}</h4>
-                                          {selectedPermissions.includes(permission.id) && (
-                                            <Check className="h-4 w-4 text-primary" />
-                                          )}
-                                        </div>
-                                        <p className="text-sm text-muted-foreground">
-                                          {permission.description}
-                                        </p>
-                                        <Badge variant="outline" className="mt-2">
-                                          {permission.category}
-                                        </Badge>
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {permission.id}
-                                      </div>
+                                  <CardContent className="p-4 flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <PermissionIcon className="h-4 w-4 text-muted-foreground" />
+                                      <span className="font-medium">{permission.name}</span>
+                                      {selectedPermissions.includes(permission.id) && (
+                                        <Check className="h-4 w-4 text-primary" />
+                                      )}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{permission.description}</div>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <Badge variant="outline">{permission.category}</Badge>
+                                      <span className="text-xs text-muted-foreground">{permission.id}</span>
                                     </div>
                                   </CardContent>
                                 </Card>
                               );
                             })}
                           </div>
-                        </ScrollArea>
-                      </TabsContent>
-                      
-                      {permissionCategories.map(category => (
-                        <TabsContent key={category} value={category} className="space-y-4">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-semibold flex items-center gap-2">
-                              {category} Permissions
-                              {category === 'Employee Management' && (
-                                <Users className="h-4 w-4" />
-                              )}
-                            </h3>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => selectAllInCategory(category)}
-                            >
-                              {DEFAULT_PERMISSIONS
-                                .filter(p => p.category === category)
-                                .every(p => selectedPermissions.includes(p.id))
-                                ? 'Deselect All'
-                                : 'Select All in Category'
-                              }
-                            </Button>
-                          </div>
-                          
-                          <ScrollArea className="h-[400px]">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {DEFAULT_PERMISSIONS
-                                .filter(p => p.category === category)
-                                .map((permission) => {
-                                  // Get icon for employee management permissions
-                                  const getPermissionIcon = () => {
-                                    if (permission.id.includes('checkin')) return DoorOpen;
-                                    if (permission.id.includes('checkout')) return DoorClosed;
-                                    if (permission.id.includes('designation')) return MapPin;
-                                    if (permission.id.includes('attendance')) return ListChecks;
-                                    if (permission.id.includes('overview')) return BarChart;
-                                    if (permission.id.includes('employees.list')) return Users;
-                                    if (permission.id.includes('employees.create')) return UserPlus;
-                                    if (permission.id.includes('employees.edit')) return Edit;
-                                    if (permission.id.includes('employees.delete')) return Trash2;
-                                    if (permission.id.includes('employees.export')) return Download;
-                                    if (permission.id.includes('employees.attendance')) return Clock;
-                                    if (permission.id.includes('employees')) return UserCog;
-                                    if (permission.id.includes('counting')) return ListChecks; // New icon for counting
-                                    return Key;
-                                  };
-                                  
-                                  const PermissionIcon = getPermissionIcon();
-                                  
-                                  return (
-                                    <Card 
-                                      key={permission.id}
-                                      className={`cursor-pointer transition-colors ${
-                                        selectedPermissions.includes(permission.id)
-                                          ? 'border-primary bg-primary/5'
-                                          : ''
-                                      }`}
-                                      onClick={() => togglePermission(permission.id)}
-                                    >
-                                      <CardContent className="p-4">
-                                        <div className="flex items-start justify-between">
-                                          <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                              <PermissionIcon className="h-4 w-4 text-muted-foreground" />
-                                              <h4 className="font-medium">{permission.name}</h4>
-                                              {selectedPermissions.includes(permission.id) && (
-                                                <Check className="h-4 w-4 text-primary" />
-                                              )}
-                                            </div>
-                                            <p className="text-sm text-muted-foreground">
-                                              {permission.description}
-                                            </p>
-                                            <div className="text-xs text-muted-foreground mt-1">
-                                              {permission.id}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  );
-                                })}
-                            </div>
-                          </ScrollArea>
-                        </TabsContent>
+                        </details>
                       ))}
-                    </Tabs>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>

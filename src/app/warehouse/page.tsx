@@ -461,19 +461,25 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const totals = record.totals || {};
     const today = new Date();
     
-    const doc = new jsPDF('p', 'mm', 'a4');
+    const doc = new jsPDF('p', 'mm', 'a5');
     
     let hasLogo = false;
     let logoHeight = 0;
+    // A5 width: 148mm, height: 210mm
+    // Adjusted margins and widths for A5
+    const pageWidth = 148;
+    const leftMargin = 8;
+    const contentWidth = pageWidth - 2 * leftMargin;
     
     try {
       const logoPaths = [
+        '/images/HLogo.png',
         '/Harirlogo.svg',
         '/Harirlogo.png',
         '/Harirlogo.jpg',
         '/logo.png',
         '/logo.jpg',
-       '/favicon.ico'
+        '/favicon.ico'
       ];
       
       for (const path of logoPaths) {
@@ -486,10 +492,22 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
               reader.onloadend = () => resolve(reader.result);
               reader.readAsDataURL(blob);
             });
-            
-            doc.addImage(base64String as string, 'PNG', 91, 6, 18, 18);
+            // If using HLogo.png, use a wide rectangle and center it
+            if (path === '/images/HLogo.png') {
+              // Centered, wide logo for A5
+              const logoWidth = 80;
+              const logoHeightRect = 14;
+              const x = (pageWidth - logoWidth) / 2;
+              doc.addImage(base64String as string, 'PNG', x, 6, logoWidth, logoHeightRect);
+              logoHeight = logoHeightRect;
+            } else {
+              // Default: square logo
+              const logoSize = 14;
+              const x = (pageWidth - logoSize) / 2;
+              doc.addImage(base64String as string, 'PNG', x, 6, logoSize, logoSize);
+              logoHeight = logoSize;
+            }
             hasLogo = true;
-            logoHeight = 18;
             break;
           }
         } catch (e) {
@@ -502,79 +520,60 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     if (!hasLogo) {
       doc.setFillColor(34, 139, 34);
-      doc.circle(100, 15, 8, 'F');
+      doc.circle(pageWidth / 2, 13, 7, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(12);
+      doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text('HI', 100, 18, { align: 'center' });
-      logoHeight = 16;
+      doc.text('HI', pageWidth / 2, 16, { align: 'center' });
+      logoHeight = 14;
     }
     
-    const startY = 30;
-    doc.setTextColor(34, 139, 34);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('HARIR INTERNATIONAL', 105, startY, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.text('FRESH PRODUCE EXPORTER', 105, startY + 6, { align: 'center' });
-    
+    // Only logo at the top, adjust yPos accordingly
+    const startY = 24;
     doc.setDrawColor(34, 139, 34);
     doc.setLineWidth(0.5);
-    doc.line(10, startY + 10, 200, startY + 10);
-    
-    doc.setFontSize(12);
+    doc.line(leftMargin, startY, pageWidth - leftMargin, startY);
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text('GOODS RECEIVED NOTE - BOX COUNTING', 105, startY + 18, { align: 'center' });
-    
-    let yPos = startY + 26;
+    doc.text('GOODS RECEIVED NOTE - BOX COUNTING', pageWidth / 2, startY + 7, { align: 'center' });
+    let yPos = startY + 13;
     
     // Document Details
     doc.setFillColor(248, 249, 250);
-    doc.rect(10, yPos, 190, 12, 'F');
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Document Details', 15, yPos + 5);
-    
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
     doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Document Details', leftMargin + 2, yPos + 4);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    doc.text(`GRN: WH-${record.id.slice(0, 8).toUpperCase()}`, 15, yPos + 10);
-    doc.text(`Date: ${format(new Date(record.submitted_at), 'dd/MM/yyyy')}`, 60, yPos + 10);
-    doc.text(`Time: ${format(new Date(record.submitted_at), 'HH:mm')}`, 100, yPos + 10);
-    doc.text(`By: ${record.processed_by}`, 140, yPos + 10);
-    
-    yPos += 16;
+    doc.text(`GRN: WH-${record.id.slice(0, 8).toUpperCase()}`, leftMargin + 2, yPos + 8);
+    doc.text(`Date: ${format(new Date(record.submitted_at), 'dd/MM/yyyy')}`, leftMargin + 35, yPos + 8);
+    doc.text(`Time: ${format(new Date(record.submitted_at), 'HH:mm')}`, leftMargin + 70, yPos + 8);
+    doc.text(`By: ${record.processed_by}`, leftMargin + 95, yPos + 8);
+    yPos += 13;
     
     // Supplier Information
     doc.setFillColor(233, 236, 239);
-    doc.rect(10, yPos, 190, 20, 'F');
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Supplier Information', 15, yPos + 5);
-    
-    doc.setFont('helvetica', 'normal');
+    doc.rect(leftMargin, yPos, contentWidth, 12, 'F');
     doc.setFontSize(8);
-    doc.text(`Supplier: ${record.supplier_name}`, 15, yPos + 11);
-    doc.text(`Phone: ${record.supplier_phone || 'N/A'}`, 80, yPos + 11);
-    doc.text(`Driver: ${record.driver_name || 'N/A'}`, 140, yPos + 11);
-    
-    doc.text(`Pallet: ${record.pallet_id}`, 15, yPos + 17);
-    doc.text(`Region: ${record.region}`, 80, yPos + 17);
-    doc.text(`Vehicle: ${record.vehicle_plate || 'N/A'}`, 140, yPos + 17);
-    
-    yPos += 24;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Supplier Information', leftMargin + 2, yPos + 3);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`Supplier: ${record.supplier_name}`, leftMargin + 2, yPos + 7);
+    doc.text(`Phone: ${record.supplier_phone || 'N/A'}`, leftMargin + 50, yPos + 7);
+    doc.text(`Driver: ${record.driver_name || 'N/A'}`, leftMargin + 95, yPos + 7);
+    doc.text(`Region: ${record.region}`, leftMargin + 2, yPos + 10);
+    doc.text(`Vehicle: ${record.vehicle_plate || 'N/A'}`, leftMargin + 50, yPos + 10);
+    yPos += 14;
     
     // Weight Summary with Rejected Weight
     doc.setFillColor(220, 252, 231);
-    doc.rect(10, yPos, 190, 15, 'F');
-    
-    doc.setFontSize(9);
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.text('Weight Summary (kg)', 15, yPos + 5);
-    
+    doc.text('Weight Summary (kg)', leftMargin + 2, yPos + 5);
     const fuerte4kgWeight = (record.fuerte_4kg_total || 0) * 4;
     const fuerte10kgWeight = (record.fuerte_10kg_total || 0) * 10;
     const hass4kgWeight = (record.hass_4kg_total || 0) * 4;
@@ -584,52 +583,44 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const rejectedWeight = record.rejected_weight || 0;
     const totalCountedWeight = totalFuerteWeight + totalHassWeight;
     const intakeWeight = record.total_weight;
-    
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    
-    doc.text(`Intake: ${safeToFixed(intakeWeight, 2)} kg`, 15, yPos + 10);
-    doc.text(`Counted: ${safeToFixed(totalCountedWeight, 2)} kg`, 80, yPos + 10);
-    doc.text(`Rejected: ${safeToFixed(rejectedWeight, 2)} kg`, 140, yPos + 10);
-    
-    yPos += 24;
+    doc.text(`Intake: ${safeToFixed(intakeWeight, 2)} kg`, leftMargin + 2, yPos + 9);
+    doc.text(`Counted: ${safeToFixed(totalCountedWeight, 2)} kg`, leftMargin + 50, yPos + 9);
+    doc.text(`Rejected: ${safeToFixed(rejectedWeight, 2)} kg`, leftMargin + 95, yPos + 9);
+    yPos += 13;
     
     if (rejectedWeight > 0) {
       doc.setFillColor(255, 243, 243);
-      doc.rect(10, yPos, 190, 15, 'F');
-      
-      doc.setFontSize(8);
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+      doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(220, 38, 38);
-      doc.text('REJECTED WEIGHT', 15, yPos + 6);
-      
+      doc.text('REJECTED WEIGHT', leftMargin + 2, yPos + 6);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(0, 0, 0);
-      doc.setFontSize(7);
-      
+      doc.setFontSize(6);
       const rejectionPercentage = ((rejectedWeight / intakeWeight) * 100).toFixed(1);
-      doc.text(`Total Rejected: ${safeToFixed(rejectedWeight, 2)} kg (${rejectionPercentage}% of intake)`, 15, yPos + 12);
-      
+      doc.text(`Total Rejected: ${safeToFixed(rejectedWeight, 2)} kg (${rejectionPercentage}% of intake)`, leftMargin + 2, yPos + 10);
+      let extraY = 13;
       if (record.rejection_reason) {
-        doc.text(`Reason: ${record.rejection_reason}`, 15, yPos + 17);
+        doc.text(`Reason: ${record.rejection_reason}`, leftMargin + 2, yPos + extraY);
+        extraY += 4;
       }
-      
       if (record.rejection_notes) {
-        doc.text(`Notes: ${record.rejection_notes}`, 15, yPos + 22);
+        doc.text(`Notes: ${record.rejection_notes}`, leftMargin + 2, yPos + extraY);
+        extraY += 4;
       }
-      
-      yPos += 30;
+      yPos += extraY;
     }
     
     doc.setFillColor(52, 58, 64);
-    doc.rect(10, yPos, 190, 8, 'F');
-    
-    doc.setFontSize(9);
+    doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('DETAILED BOX SIZE COUNTS', 15, yPos + 5.5);
-    
-    yPos += 15;
+    doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 5);
+    yPos += 13; // Add extra space after the section heading
     
     const getSizeCounts = (prefix: string, boxType: string) => {
       const sizes = boxType === '4kg' 
@@ -664,8 +655,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const hasFuerte = fuerte4kgSizes.length > 0 || fuerte10kgSizes.length > 0;
     const hasHass = hass4kgSizes.length > 0 || hass10kgSizes.length > 0;
     
-    const tableWidth = hasFuerte && hasHass ? 90 : 190;
-    const leftMargin = 10;
+    const tableWidth = hasFuerte && hasHass ? (contentWidth / 2 - 2.5) : contentWidth;
     const rightMargin = hasFuerte && hasHass ? leftMargin + tableWidth + 5 : leftMargin;
     
     // Fuerte Tables
@@ -673,23 +663,21 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     if (hasFuerte) {
       if (!hasHass) {
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
-        doc.text('FUERTE AVOCADO - SIZE BREAKDOWN', 105, leftY - 2, { align: 'center' });
+        doc.text('FUERTE AVOCADO - SIZE BREAKDOWN', pageWidth / 2, leftY - 2, { align: 'center' });
+        leftY += 4; // Add extra space after the centered heading
       }
-      
       if (fuerte4kgSizes.length > 0) {
-        doc.setFontSize(8);
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
         doc.text('Fuerte 4kg Boxes - Size Breakdown:', leftMargin, leftY);
-        
-        leftY += 3;
-        
+        leftY += 4; // Add extra space after the subheading
         autoTable(doc, {
           startY: leftY,
-          margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : 20 },
+          margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
           body: fuerte4kgSizes.map(s => [
             `Size ${s.size}`,
@@ -700,41 +688,44 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           headStyles: { 
             fillColor: [22, 101, 52],
             textColor: [255, 255, 255],
-            fontSize: 7,
+            fontSize: fuerte4kgSizes.length > 8 ? 5 : 6,
             fontStyle: 'bold'
           },
           styles: { 
-            fontSize: 7,
-            cellPadding: 2,
+            fontSize: fuerte4kgSizes.length > 8 ? 5 : 6,
+            cellPadding: fuerte4kgSizes.length > 8 ? 1 : 1.5,
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 25 : 35 },
-            1: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
+            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
           },
-          tableWidth: tableWidth
+          tableWidth: tableWidth,
+          didDrawPage: (data) => {
+            // If still doesn't fit, shrink further
+            if (fuerte4kgSizes.length > 12) {
+              doc.setFontSize(4);
+            }
+          }
         });
-        
-        leftY = (doc as any).lastAutoTable.finalY + 5;
-        
-        doc.setFontSize(8);
+        // Add extra spacing to avoid overlap
+        leftY = (doc as any).lastAutoTable.finalY + 8;
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
         doc.text(`Total Fuerte 4kg: ${record.fuerte_4kg_total || 0} boxes`, leftMargin, leftY);
-        leftY += 8;
+        leftY += 6;
       }
 
       if (fuerte10kgSizes.length > 0) {
-        doc.setFontSize(8);
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
         doc.text('Fuerte 10kg Crates - Size Breakdown:', leftMargin, leftY);
-        
         leftY += 3;
-        
         autoTable(doc, {
           startY: leftY,
-          margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : 20 },
+          margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
           body: fuerte10kgSizes.map(s => [
             `Size ${s.size}`,
@@ -745,28 +736,31 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           headStyles: { 
             fillColor: [22, 101, 52],
             textColor: [255, 255, 255],
-            fontSize: 7,
+            fontSize: fuerte10kgSizes.length > 8 ? 5 : 6,
             fontStyle: 'bold'
           },
           styles: { 
-            fontSize: 7,
-            cellPadding: 2,
+            fontSize: fuerte10kgSizes.length > 8 ? 5 : 6,
+            cellPadding: fuerte10kgSizes.length > 8 ? 1 : 1.5,
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 25 : 35 },
-            1: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
+            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
           },
-          tableWidth: tableWidth
+          tableWidth: tableWidth,
+          didDrawPage: (data) => {
+            if (fuerte10kgSizes.length > 12) {
+              doc.setFontSize(4);
+            }
+          }
         });
-        
-        leftY = (doc as any).lastAutoTable.finalY + 5;
-        
-        doc.setFontSize(8);
+        leftY = (doc as any).lastAutoTable.finalY + 4;
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
         doc.text(`Total Fuerte 10kg: ${record.fuerte_10kg_total || 0} crates`, leftMargin, leftY);
-        leftY += 8;
+        leftY += 6;
       }
       
       if (!hasHass) {
@@ -779,25 +773,23 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     if (hasHass) {
       if (!hasFuerte) {
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(124, 58, 237);
-        doc.text('HASS AVOCADO - SIZE BREAKDOWN', 105, rightY - 2, { align: 'center' });
+        doc.text('HASS AVOCADO - SIZE BREAKDOWN', pageWidth / 2, rightY - 2, { align: 'center' });
+        rightY += 5; // Add extra space after the centered heading
       }
-      
       if (hass4kgSizes.length > 0) {
         if (hasFuerte && hasHass) {
-          doc.setFontSize(8);
+          doc.setFontSize(7);
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(124, 58, 237);
           doc.text('Hass 4kg Boxes - Size Breakdown:', rightMargin, rightY);
         }
-        
         rightY += 3;
-        
         autoTable(doc, {
           startY: rightY,
-          margin: { left: hasFuerte && hasHass ? rightMargin : 10, right: 20 },
+          margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
           body: hass4kgSizes.map(s => [
             `Size ${s.size}`,
@@ -808,43 +800,44 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           headStyles: { 
             fillColor: [124, 58, 237],
             textColor: [255, 255, 255],
-            fontSize: 7,
+            fontSize: hass4kgSizes.length > 8 ? 5 : 6,
             fontStyle: 'bold'
           },
           styles: { 
-            fontSize: 7,
-            cellPadding: 2,
+            fontSize: hass4kgSizes.length > 8 ? 5 : 6,
+            cellPadding: hass4kgSizes.length > 8 ? 1 : 1.5,
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 25 : 35 },
-            1: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
+            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
           },
-          tableWidth: hasFuerte && hasHass ? 90 : 190
+          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
+          didDrawPage: (data) => {
+            if (hass4kgSizes.length > 12) {
+              doc.setFontSize(4);
+            }
+          }
         });
-        
-        rightY = (doc as any).lastAutoTable.finalY + 5;
-        
-        doc.setFontSize(8);
+        rightY = (doc as any).lastAutoTable.finalY + 4;
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Hass 4kg: ${record.hass_4kg_total || 0} boxes`, hasFuerte && hasHass ? rightMargin : 10, rightY);
-        rightY += 8;
+        doc.text(`Total Hass 4kg: ${record.hass_4kg_total || 0} boxes`, hasFuerte && hasHass ? rightMargin : leftMargin, rightY);
+        rightY += 6;
       }
 
       if (hass10kgSizes.length > 0) {
         if (hasFuerte && hasHass) {
-          doc.setFontSize(8);
+          doc.setFontSize(7);
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(124, 58, 237);
           doc.text('Hass 10kg Crates - Size Breakdown:', rightMargin, rightY);
         }
-        
         rightY += 3;
-        
         autoTable(doc, {
           startY: rightY,
-          margin: { left: hasFuerte && hasHass ? rightMargin : 10, right: 20 },
+          margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
           body: hass10kgSizes.map(s => [
             `Size ${s.size}`,
@@ -855,96 +848,87 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           headStyles: { 
             fillColor: [124, 58, 237],
             textColor: [255, 255, 255],
-            fontSize: 7,
+            fontSize: hass10kgSizes.length > 8 ? 5 : 6,
             fontStyle: 'bold'
           },
           styles: { 
-            fontSize: 7,
-            cellPadding: 2,
+            fontSize: hass10kgSizes.length > 8 ? 5 : 6,
+            cellPadding: hass10kgSizes.length > 8 ? 1 : 1.5,
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 25 : 35 },
-            1: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 20 : 30, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
+            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
           },
-          tableWidth: hasFuerte && hasHass ? 90 : 190
+          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
+          didDrawPage: (data) => {
+            if (hass10kgSizes.length > 12) {
+              doc.setFontSize(4);
+            }
+          }
         });
-        
-        rightY = (doc as any).lastAutoTable.finalY + 5;
-        
-        doc.setFontSize(8);
+        rightY = (doc as any).lastAutoTable.finalY + 4;
+        doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Hass 10kg: ${record.hass_10kg_total || 0} crates`, hasFuerte && hasHass ? rightMargin : 10, rightY);
-        rightY += 8;
+        doc.text(`Total Hass 10kg: ${record.hass_10kg_total || 0} crates`, hasFuerte && hasHass ? rightMargin : leftMargin, rightY);
+        rightY += 6;
       }
     }
     
-    yPos = Math.max(leftY, rightY) + 5;
+    yPos = Math.max(leftY, rightY) + 4;
     
     if (record.bank_name || record.bank_account || record.kra_pin) {
       doc.setFillColor(249, 250, 251);
-      doc.rect(10, yPos, 190, 15, 'F');
-      
-      doc.setFontSize(8);
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+      doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('Payment Information', 15, yPos + 6);
-      
+      doc.text('Payment Information', leftMargin + 2, yPos + 6);
       doc.setFont('helvetica', 'normal');
-      
-      if (record.bank_name) doc.text(`Bank: ${record.bank_name}`, 15, yPos + 12);
-      if (record.bank_account) doc.text(`Account: ${record.bank_account}`, 80, yPos + 12);
-      if (record.kra_pin) doc.text(`KRA PIN: ${record.kra_pin}`, 140, yPos + 12);
-      
-      yPos += 20;
+      if (record.bank_name) doc.text(`Bank: ${record.bank_name}`, leftMargin + 2, yPos + 9);
+      if (record.bank_account) doc.text(`Account: ${record.bank_account}`, leftMargin + 50, yPos + 9);
+      if (record.kra_pin) doc.text(`KRA PIN: ${record.kra_pin}`, leftMargin + 95, yPos + 9);
+      yPos += 13;
     }
     
     if (record.notes && record.notes.trim() !== '') {
       doc.setFillColor(255, 248, 225);
-      doc.rect(10, yPos, 190, 15, 'F');
-      
-      doc.setFontSize(8);
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+      doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('Notes', 15, yPos + 6);
-      
+      doc.text('Notes', leftMargin + 2, yPos + 6);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      
+      doc.setFontSize(6);
       const notes = record.notes;
-      const maxLength = 100;
-      let notesY = yPos + 12;
-      
+      const maxLength = 70;
+      let notesY = yPos + 9;
       for (let i = 0; i < notes.length; i += maxLength) {
         const line = notes.substring(i, Math.min(i + maxLength, notes.length));
-        doc.text(line, 15, notesY);
+        doc.text(line, leftMargin + 2, notesY);
         notesY += 3;
       }
-      
-      yPos = notesY + 5;
+      yPos = notesY + 3;
     }
     
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
-    
-    doc.line(20, yPos, 90, yPos);
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Counting Clerk', 55, yPos + 3, { align: 'center' });
-    doc.text('Name & Signature', 55, yPos + 6, { align: 'center' });
-    
-    doc.line(120, yPos, 190, yPos);
-    doc.text('Warehouse Receiver', 155, yPos + 3, { align: 'center' });
-    doc.text('Name & Signature', 155, yPos + 6, { align: 'center' });
-    
-    yPos += 12;
-    
+    // Signature lines
+    doc.line(leftMargin + 5, yPos, leftMargin + 55, yPos);
     doc.setFontSize(6);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Counting Clerk', leftMargin + 30, yPos + 3, { align: 'center' });
+    doc.text('Name & Signature', leftMargin + 30, yPos + 6, { align: 'center' });
+    doc.line(pageWidth - leftMargin - 55, yPos, pageWidth - leftMargin - 5, yPos);
+    doc.text('Warehouse Receiver', pageWidth - leftMargin - 30, yPos + 3, { align: 'center' });
+    doc.text('Name & Signature', pageWidth - leftMargin - 30, yPos + 6, { align: 'center' });
+    yPos += 10;
+    doc.setFontSize(5);
     doc.setTextColor(128, 128, 128);
-    doc.text('Harir International - Warehouse Counting System', 105, yPos, { align: 'center' });
-    doc.text(`Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()} • Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 105, yPos + 3, { align: 'center' });
-    doc.text('This is a computer-generated document', 105, yPos + 6, { align: 'center' });
+    doc.text('Harir International - Warehouse Counting System', pageWidth / 2, yPos, { align: 'center' });
+    doc.text(`Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()} • Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, pageWidth / 2, yPos + 2, { align: 'center' });
+    doc.text('This is a computer-generated document', pageWidth / 2, yPos + 4, { align: 'center' });
     
     const fileName = `Warehouse_GRN_${record.supplier_name.replace(/\s+/g, '_')}.pdf`;
     doc.save(fileName);

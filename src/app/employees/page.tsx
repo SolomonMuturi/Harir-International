@@ -32,7 +32,7 @@ import {
   Phone, Mail, Building, BadgeCheck, Award, DollarSign, CalendarDays,
   Shield, FileText, Download, Filter, MoreVertical, UserPlus,
   ChevronLeft, ChevronRight, DownloadCloud, UploadCloud, BarChart,
-  DoorOpen, DoorClosed, MapPin, ListChecks, Save, FileDown
+  DoorOpen, DoorClosed, MapPin, ListChecks, Save, FileDown, Copy, Trash
 } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { useToast } from '@/hooks/use-toast';
@@ -349,6 +349,7 @@ interface DesignationCardProps {
   designation?: Designation;
   onDesignationChange: (designation: Designation) => void;
   onSave: (employeeId: string, designation: Designation) => void;
+  setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
   disabled?: boolean;
   isSaving?: boolean;
 }
@@ -359,6 +360,7 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
   designation = 'dipping',
   onDesignationChange,
   onSave,
+  setAttendance,
   disabled = false,
   isSaving = false
 }) => {
@@ -371,8 +373,67 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
     onDesignationChange(value);
   };
   
+  const { toast } = useToast();
+
   const handleSave = () => {
     onSave(employee.id, selectedDesignation);
+  };
+
+  // Duplicate logic: create a new designation record for today with same designation and status
+  // Duplicate logic: create a new attendance record for today with same designation and status
+  const handleDuplicate = async () => {
+    if (!todayRecord) {
+      toast({ title: 'No record to duplicate', description: 'No attendance record found for today.', variant: 'destructive' });
+      return;
+    }
+    try {
+      // Remove id if present to ensure backend creates a new unique id
+      const { id, ...attendanceData } = todayRecord;
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...attendanceData,
+          employeeId: employee.id,
+          date: todayRecord.date,
+          status: todayRecord.status,
+          clockInTime: todayRecord.clockInTime,
+          clockOutTime: todayRecord.clockOutTime,
+          designation: todayRecord.designation
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to duplicate attendance');
+      }
+      const data = await response.json();
+      setAttendance(prev => [...prev, data]);
+      toast({ title: 'Attendance duplicated', description: 'A duplicate attendance record has been created.' });
+    } catch (error: any) {
+      toast({ title: 'Duplicate Failed', description: error.message || 'Failed to duplicate attendance', variant: 'destructive' });
+    }
+  };
+
+  // Delete logic: delete today's attendance record from database
+  const handleDelete = async () => {
+    if (!todayRecord) {
+      toast({ title: 'No record to delete', description: 'No attendance record found for today.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const response = await fetch(`/api/attendance?id=${todayRecord.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete attendance');
+      }
+      // Only update local state, do not re-fetch all attendance
+      setAttendance(prev => prev.filter(record => record.id !== todayRecord.id));
+      toast({ title: 'Attendance deleted', description: 'This attendance record has been deleted.' });
+    } catch (error: any) {
+      toast({ title: 'Delete Failed', description: error.message || 'Failed to delete attendance', variant: 'destructive' });
+    }
   };
   
   return (
@@ -466,29 +527,40 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
               </SelectContent>
             </Select>
           </div>
-          
-          {/* Save Button */}
-          {hasCheckedIn && (
+          {/* Action Buttons */}
+          <div className="flex gap-2 mt-2">
+            {hasCheckedIn && (
+              <Button
+                onClick={handleSave}
+                disabled={disabled || !hasCheckedIn || isSaving}
+                className="bg-green-600 hover:bg-green-700"
+                size="sm"
+              >
+                {isSaving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save
+                  </>
+                )}
+              </Button>
+            )}
+            {/* Delete Button */}
             <Button
-              onClick={handleSave}
-              disabled={disabled || !hasCheckedIn || isSaving}
-              className="w-full bg-green-600 hover:bg-green-700"
+              variant="outline"
               size="sm"
+              className="bg-red-100 hover:bg-red-200 text-red-700"
+              onClick={handleDelete}
+              disabled={disabled}
             >
-              {isSaving ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save & Continue to Gate Out
-                </>
-              )}
+              <Trash className="w-4 h-4 mr-2" />
+              Delete
             </Button>
-          )}
-          
+          </div>
           {!hasCheckedIn && (
             <p className="text-xs text-amber-600 mt-2 text-center">
               Employee must check in first before assigning designation
@@ -1950,8 +2022,8 @@ export default function EmployeesPage() {
       'ID Number', 
       'Tel Number', 
       'Designation', 
-      'Shift(Full/Half)', 
-      'Number of days'
+      'Designation Assignment Count',
+      'Shift(Full/Half)'
     ];
     
     // Group attendance by employee for the date range
@@ -1980,16 +2052,19 @@ export default function EmployeesPage() {
       // Get unique designations for this employee in the date range
       const designations = [...new Set(records.map(r => r.designation))].filter(d => d !== 'N/A');
       const designation = designations.length > 0 ? designations.join(', ') : 'N/A';
-      
+
+      // Count the number of times the employee was assigned any designation (excluding 'N/A')
+      const designationAssignmentCount = records.filter(r => r.designation !== 'N/A').length;
+
       // Get most common shift type
       const shiftCounts = records.reduce((acc, record) => {
         acc[record.shift] = (acc[record.shift] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
-      
+
       const mostCommonShift = Object.entries(shiftCounts).sort((a, b) => b[1] - a[1])[0];
-      const shift = mostCommonShift ? `${mostCommonShift[0]} (${mostCommonShift[1]} days)` : 'N/A';
-      
+      const shift = mostCommonShift ? `${mostCommonShift[0]} (${mostCommonShift[1]} days)` : '';
+
       return [
         format(dateRange.from, 'yyyy-MM-dd'),
         format(dateRange.to, 'yyyy-MM-dd'),
@@ -1997,8 +2072,8 @@ export default function EmployeesPage() {
         employee?.id_number || 'N/A',
         employee?.phone || 'N/A',
         designation,
-        shift,
-        numberOfDays.toString()
+        designationAssignmentCount.toString(),
+        shift
       ];
     }).filter(row => row !== null);
     
@@ -2661,7 +2736,6 @@ export default function EmployeesPage() {
                           {format(selectedDate, 'MMM d, yyyy')}
                         </Badge>
                       </div>
-                      
                       <div className="flex items-center gap-2">
                         <Select value={bulkDesignation} onValueChange={(value: Designation) => setBulkDesignation(value)}>
                           <SelectTrigger className="w-[150px] h-8 text-xs">
@@ -2675,7 +2749,6 @@ export default function EmployeesPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                        
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
                           <Input
@@ -2687,7 +2760,6 @@ export default function EmployeesPage() {
                         </div>
                       </div>
                     </div>
-
                     {assignDesignationEmployees.length === 0 ? (
                       <div className="text-center py-12 border rounded-lg">
                         <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
@@ -2696,27 +2768,32 @@ export default function EmployeesPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {assignDesignationEmployees.map((employee) => {
-                          const todayRecord = getAttendanceForDate.find(r => r.employeeId === employee.id);
-                          const designation = designationForEmployee[employee.id] || bulkDesignation;
-                          const isSaving = savingDesignation[employee.id] || false;
-                          
-                          return (
-                            <DesignationCard
-                              key={employee.id}
-                              employee={employee}
-                              todayRecord={todayRecord}
-                              designation={designation}
-                              onDesignationChange={(newDesignation) => {
-                                setDesignationForEmployee(prev => ({
-                                  ...prev,
-                                  [employee.id]: newDesignation
-                                }));
-                              }}
-                              onSave={handleAssignDesignation}
-                              isSaving={isSaving}
-                            />
-                          );
+                        {assignDesignationEmployees.flatMap(employee => {
+                          const records = attendance.filter(record => record.employeeId === employee.id && record.date === format(selectedDate, 'yyyy-MM-dd'));
+                          if (records.length === 0) return null;
+                          return records.map((record, idx) => {
+                            const designation = designationForEmployee[employee.id] || bulkDesignation;
+                            const isSaving = savingDesignation[employee.id] || false;
+                            // Ensure key is unique even for duplicate records
+                            const uniqueKey = `${record.id}-${idx}`;
+                            return (
+                              <DesignationCard
+                                key={uniqueKey}
+                                employee={employee}
+                                todayRecord={record}
+                                designation={designation}
+                                onDesignationChange={(newDesignation) => {
+                                  setDesignationForEmployee(prev => ({
+                                    ...prev,
+                                    [employee.id]: newDesignation
+                                  }));
+                                }}
+                                onSave={handleAssignDesignation}
+                                setAttendance={setAttendance}
+                                isSaving={isSaving}
+                              />
+                            );
+                          });
                         })}
                       </div>
                     )}

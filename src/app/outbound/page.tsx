@@ -1330,16 +1330,44 @@ function LoadingSheet() {
                     </DropdownMenuItem>
                   ) : (
                     existingSheets.slice(0, 10).map(sheet => (
-                      <DropdownMenuItem 
-                        key={sheet.id} 
-                        onClick={() => handleLoadSheet(sheet.id)}
-                        className="flex flex-col items-start"
-                      >
-                        <div className="font-medium">{sheet.bill_number || 'No Bill'}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {sheet.client || 'No Client'} • {new Date(sheet.loading_date).toLocaleDateString()}
-                        </div>
-                      </DropdownMenuItem>
+                      <div key={sheet.id} className="flex items-center justify-between w-full">
+                        <DropdownMenuItem 
+                          onClick={() => handleLoadSheet(sheet.id)}
+                          className="flex flex-col items-start flex-1"
+                        >
+                          <div className="font-medium">{sheet.bill_number || 'No Bill'}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {sheet.client || 'No Client'} • {new Date(sheet.loading_date).toLocaleDateString()}
+                          </div>
+                        </DropdownMenuItem>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="ml-2 text-red-500 hover:text-red-700"
+                          title="Delete loading sheet"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (window.confirm('Are you sure you want to delete this loading sheet?')) {
+                              try {
+                                const response = await fetch(`/api/loading-sheets?id=${sheet.id}`, {
+                                  method: 'DELETE',
+                                });
+                                const result = await response.json();
+                                if (result.success) {
+                                  toast.success('Loading sheet deleted successfully');
+                                  await fetchLoadingSheets();
+                                } else {
+                                  toast.error(result.error || 'Failed to delete loading sheet');
+                                }
+                              } catch (error) {
+                                toast.error('Failed to delete loading sheet');
+                              }
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     ))
                   )}
                   {existingSheets.length > 10 && (

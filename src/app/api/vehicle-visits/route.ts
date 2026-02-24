@@ -298,10 +298,28 @@ export async function POST(request: NextRequest) {
         console.log(`✅ Created new supplier: ${supplier.name}`)
       }
     } else {
-      return NextResponse.json(
-        { error: 'Either supplierId or name and contact_phone are required' },
-        { status: 400 }
-      )
+      // Create a blank supplier
+      const blankSupplierData = {
+        id: generateTinyId(),
+        name: '',
+        location: '',
+        contact_name: '',
+        contact_phone: '',
+        produce_types: JSON.stringify(['']),
+        status: 'Active',
+        logo_url: '',
+        active_contracts: 0,
+        supplier_code: '',
+        vehicle_number_plate: '',
+        vehicle_type: '',
+        driver_name: '',
+        driver_id_number: '',
+        vehicle_status: 'Pre-registered'
+      };
+      supplier = await prisma.suppliers.create({ data: blankSupplierData });
+      visitNumber = 1;
+      isNewSupplier = true;
+      console.log('✅ Created blank supplier for vehicle visit');
     }
 
     // Create the vehicle visit (without gate entry ID initially - will be set on check-in)

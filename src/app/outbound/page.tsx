@@ -707,93 +707,65 @@ function LoadingSheet() {
   const fetchColdRoomPallets = useCallback(async () => {
     try {
       setLoadingColdRoomPallets(true);
-      console.log(`📦 Fetching available pallets from ${selectedColdRoom}...`);
-      
       const response = await fetch(`/api/cold-room?action=pallets&coldRoomId=${selectedColdRoom}&withBoxes=true`);
-      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
       const result = await response.json();
-      console.log('📊 Cold room pallets response:', result);
-      
       if (result.success && Array.isArray(result.data)) {
-        const processedPallets: ColdRoomPallet[] = [];
-        
-        result.data.forEach((pallet: any, index: number) => {
-          console.log(`📦 Processing pallet ${index + 1}:`, pallet);
-          
-          if (pallet.loading_sheet_id) {
-            console.log(`⚠️ Skipping pallet ${pallet.id || pallet.pallet_id} - already assigned to loading sheet ${pallet.loading_sheet_id}`);
-            return;
-          }
-          
-          const palletId = pallet.id || `pallet-${Date.now()}-${index}`;
-          const palletNo = pallet.pallet_name || `PAL-${palletId.substring(0, 8).toUpperCase()}`;
-          
-          // Determine variety from boxes if available
-          let variety: 'fuerte' | 'hass' | 'mixed' = 'fuerte';
-          if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
-            const varietyStr = determineVarietyFromBoxes(pallet.boxes);
-            if (varietyStr.includes('Hass') && !varietyStr.includes('Fuerte')) {
-              variety = 'hass';
-            } else if (varietyStr.includes('Mixed')) {
-              variety = 'mixed';
+        // Filter out pallets assigned to a loading sheet
+        const processedPallets: ColdRoomPallet[] = result.data
+          .filter((pallet: any) => !pallet.loading_sheet_id)
+          .map((pallet: any, index: number) => {
+            const palletId = pallet.id || `pallet-${Date.now()}-${index}`;
+            const palletNo = pallet.pallet_name || `PAL-${palletId.substring(0, 8).toUpperCase()}`;
+            let variety: 'fuerte' | 'hass' | 'mixed' = 'fuerte';
+            if (pallet.boxes && Array.isArray(pallet.boxes) && pallet.boxes.length > 0) {
+              const varietyStr = determineVarietyFromBoxes(pallet.boxes);
+              if (varietyStr.includes('Hass') && !varietyStr.includes('Fuerte')) {
+                variety = 'hass';
+              } else if (varietyStr.includes('Mixed')) {
+                variety = 'mixed';
+              }
+            } else {
+              const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
+              if (varietyStr === 'hass') {
+                variety = 'hass';
+              } else if (varietyStr === 'mixed' || varietyStr.includes('mix')) {
+                variety = 'mixed';
+              }
             }
-          } else {
-            const varietyStr = String(pallet.variety || 'fuerte').toLowerCase();
-            if (varietyStr === 'hass') {
-              variety = 'hass';
-            } else if (varietyStr === 'mixed' || varietyStr.includes('mix')) {
-              variety = 'mixed';
+            const boxTypeStr = determineBoxTypeFromBoxes(pallet.boxes || []);
+            const boxType = boxTypeStr === '10kg' ? '10kg' : '4kg' as '4kg' | '10kg';
+            let size = determineSizeFromBoxes(pallet.boxes || []);
+            if (size.includes('Size ')) {
+              size = size.toLowerCase().replace('size ', 'size');
+            } else if (size.includes('Mixed')) {
+              size = 'mixed';
             }
-          }
-          
-          // Determine box type from boxes if available
-          const boxTypeStr = determineBoxTypeFromBoxes(pallet.boxes || []);
-          const boxType = boxTypeStr === '10kg' ? '10kg' : '4kg' as '4kg' | '10kg';
-          
-          // Determine size from boxes if available
-          let size = determineSizeFromBoxes(pallet.boxes || []);
-          if (size.includes('Size ')) {
-            size = size.toLowerCase().replace('size ', 'size');
-          } else if (size.includes('Mixed')) {
-            size = 'mixed';
-          }
-          
-          // Determine grade from boxes if available
-          const gradeStr = determineGradeFromBoxes(pallet.boxes || []);
-          const grade = gradeStr === 'Class 2' ? 'class2' : 'class1' as 'class1' | 'class2';
-          
-          // Get quantity from boxes if available
-          const quantity = getQuantityFromBoxes(pallet);
-          
-          const processedPallet: ColdRoomPallet = {
-            id: palletId,
-            pallet_no: palletNo,
-            cold_room_id: pallet.cold_room_id || selectedColdRoom,
-            variety: variety,
-            box_type: boxType,
-            size: size,
-            grade: grade,
-            quantity: quantity,
-            created_at: pallet.created_at || new Date().toISOString(),
-            updated_at: pallet.updated_at || new Date().toISOString(),
-            supplier_name: pallet.supplier_name || 'Unknown Supplier',
-            pallet_id: pallet.pallet_id,
-            region: pallet.region || '',
-            counting_record_id: pallet.counting_record_id,
-            loading_sheet_id: pallet.loading_sheet_id || null,
-            boxes: pallet.boxes || []
-          };
-          
-          processedPallets.push(processedPallet);
-        });
-        
-        console.log(`✅ Found ${processedPallets.length} available pallets`);
+            const gradeStr = determineGradeFromBoxes(pallet.boxes || []);
+            const grade = gradeStr === 'Class 2' ? 'class2' : 'class1' as 'class1' | 'class2';
+            const quantity = getQuantityFromBoxes(pallet);
+            return {
+              id: palletId,
+              pallet_no: palletNo,
+              cold_room_id: pallet.cold_room_id || selectedColdRoom,
+              variety: variety,
+              box_type: boxType,
+              size: size,
+              grade: grade,
+              quantity: quantity,
+              created_at: pallet.created_at || new Date().toISOString(),
+              updated_at: pallet.updated_at || new Date().toISOString(),
+              supplier_name: pallet.supplier_name || 'Unknown Supplier',
+              pallet_id: pallet.pallet_id,
+              region: pallet.region || '',
+              counting_record_id: pallet.counting_record_id,
+              loading_sheet_id: pallet.loading_sheet_id || null,
+              boxes: pallet.boxes || []
+            };
+          });
         setColdRoomPallets(processedPallets);
-        
         const summary = {
           totalPallets: processedPallets.length,
           totalBoxes: processedPallets.reduce((sum, pallet) => sum + getQuantityFromBoxes(pallet), 0),
@@ -809,12 +781,8 @@ function LoadingSheet() {
             return acc;
           }, {} as { [key: string]: number })
         };
-        
         setPalletsSummary(summary);
-        console.log('📊 Available pallet summary:', summary);
-        
       } else {
-        console.warn('⚠️ No pallets found or API error:', result.message);
         setColdRoomPallets([]);
         setPalletsSummary({
           totalPallets: 0,
@@ -823,12 +791,9 @@ function LoadingSheet() {
           varietyCount: {},
           boxTypeCount: {}
         });
-        
         toast.warning('No available pallets found in the selected cold room.');
       }
-      
     } catch (error) {
-      console.error('❌ Error fetching cold room pallets:', error);
       toast.error('Failed to fetch cold room pallets. Please check your connection.');
       setColdRoomPallets([]);
       setPalletsSummary({

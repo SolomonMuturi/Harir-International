@@ -1194,6 +1194,7 @@ export default function ColdRoomPage() {
   };
 
   const calculateAvailablePallets = (pallets: Pallet[]) => {
+    // Exclude pallets assigned to a loading sheet
     return pallets.filter(pallet => !pallet.loading_sheet_id);
   };
 

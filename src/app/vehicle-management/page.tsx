@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import {
   SidebarProvider,
   Sidebar,
@@ -141,27 +140,6 @@ interface VisitStats {
 }
 
 export default function VehicleManagementPage() {
-  // Permission check: Only allow users with 'vehicle_log.view'
-  const { data: session, status } = useSession();
-  const userPermissions = session?.user?.permissions || [];
-  const hasVehicleLogPermission = userPermissions.includes('vehicle_log.view');
-  if (status === 'loading') {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <span className="text-muted-foreground">Checking permissions...</span>
-      </div>
-    );
-  }
-  if (!hasVehicleLogPermission) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <h2 className="text-xl font-bold mb-2">Unauthorized</h2>
-          <p className="text-gray-500">You do not have permission to view vehicle logs.</p>
-        </div>
-      </div>
-    );
-  }
   // State for visits
   const [vehicles, setVehicles] = useState<VehicleVisit[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<VehicleVisit[]>([]);
@@ -1683,7 +1661,7 @@ export default function VehicleManagementPage() {
                             onCheckIn={handleCheckIn}
                             onCheckOut={handleCheckOut}
                             onRowClick={handleRowClick}
-                            highlightedVehicleId={selectedVehicle?.id}
+                            selectedVehicleId={selectedVehicle?.id}
                           />
                         </>
                       )}
@@ -1718,7 +1696,7 @@ export default function VehicleManagementPage() {
                           onCheckIn={handleCheckIn}
                           onCheckOut={handleCheckOut}
                           onRowClick={handleRowClick}
-                          highlightedVehicleId={selectedVehicle?.id}
+                          selectedVehicleId={selectedVehicle?.id}
                         />
                       )}
                     </div>
@@ -1752,7 +1730,7 @@ export default function VehicleManagementPage() {
                           onCheckIn={handleCheckIn}
                           onCheckOut={handleCheckOut}
                           onRowClick={handleRowClick}
-                          highlightedVehicleId={selectedVehicle?.id}
+                          selectedVehicleId={selectedVehicle?.id}
                         />
                       )}
                     </div>
@@ -1829,7 +1807,7 @@ export default function VehicleManagementPage() {
                           onCheckIn={handleCheckIn}
                           onCheckOut={handleCheckOut}
                           onRowClick={handleRowClick}
-                          highlightedVehicleId={selectedVehicle?.id}
+                          selectedVehicleId={selectedVehicle?.id}
                         />
                       )}
                     </div>
@@ -1923,7 +1901,7 @@ export default function VehicleManagementPage() {
                           <div className="border rounded-lg overflow-hidden">
                             <div className="overflow-x-auto">
                               <table className="w-full min-w-[600px] md:min-w-full">
-                                <thead className="bg-gray-50">
+                                <thead className="bg-black-50">
                                   <tr>
                                     <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Gate ID</th>
                                     <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
@@ -1938,7 +1916,7 @@ export default function VehicleManagementPage() {
                                     <tr 
                                       key={vehicle.id}
                                       onClick={() => handleRowClick(vehicle)}
-                                      className={`hover:bg-gray-50 cursor-pointer text-sm ${
+                                      className={`hover:bg-black-50 cursor-pointer text-sm ${
                                         selectedVehicle?.id === vehicle.id ? 'bg-blue-50' : ''
                                       }`}
                                     >
@@ -2014,26 +1992,17 @@ export default function VehicleManagementPage() {
       {/* Hidden printable report */}
       <div className="hidden">
         <div ref={printRef}>
-                          <PrintableVehicleReport 
-                            visitors={vehicles.map(v => ({
-                              id: v.id,
-                              name: v.driverName,
-                              company: v.company,
-                              hostId: v.hostId,
-                              idNumber: v.idNumber,
-                              email: v.email,
-                              phone: v.phone,
-                              visitorCode: v.vehicleCode,
-                              vehiclePlate: v.vehiclePlate,
-                              vehicleType: v.vehicleType,
-                              cargoDescription: v.cargoDescription,
-                              status: v.status,
-                              expectedCheckInTime: v.expectedCheckInTime,
-                              checkInTime: v.checkInTime,
-                              checkOutTime: v.checkOutTime
-                            }))} 
-                            shipments={[]} 
-                          />
+          <PrintableVehicleReport 
+            visitors={vehicles.map(v => ({
+              ...v,
+              name: v.driverName,
+              company: v.company,
+              vehicleRegNo: v.vehiclePlate,
+              phoneNumber: v.phone,
+              gateEntryId: v.gateEntryId
+            }))} 
+            shipments={[]} 
+          />
         </div>
       </div>
     </>

@@ -33,12 +33,12 @@ import {
   Download, FileSpreadsheet, ChevronRight, Phone, Banknote, CreditCard,
   FileText, ClipboardList, Printer, FileDown, Eye, EyeOff, Info,
   Wallet, Smartphone, Building, Fingerprint, Apple, PieChart,
-  Grid3x3, Layers, BarChart, Table as TableIcon, Edit
+  Grid3x3, Layers, BarChart, Table as TableIcon, Edit, Clock
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CountingFormData } from '@/types/counting';
-import { format, isSameDay } from 'date-fns';
+import { format, isSameDay, parseISO, isWithinInterval } from 'date-fns';
 import {
   Select,
   SelectContent,
@@ -1071,8 +1071,11 @@ export default function WarehousePage() {
   const [isEditingMode, setIsEditingMode] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
+  // UPDATED: Start and end date-time states
   const [startDate, setStartDate] = useState<string>('');
+  const [startTime, setStartTime] = useState<string>('00:00');
   const [endDate, setEndDate] = useState<string>('');
+  const [endTime, setEndTime] = useState<string>('23:59');
 
   const [expandedFuerteClass2, setExpandedFuerteClass2] = useState(false);
   const [expandedFuerte10kg, setExpandedFuerte10kg] = useState(false);
@@ -2502,6 +2505,7 @@ export default function WarehousePage() {
     }
   };
 
+  // UPDATED: Filter history with date and time
   const filteredHistory = countingRecords.filter(record => {
     const matchesSearch = searchTerm === '' || 
       record.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -2509,17 +2513,18 @@ export default function WarehousePage() {
       record.region.toLowerCase().includes(searchTerm.toLowerCase());
     
     const recordDate = new Date(record.submitted_at);
-    const start = startDate ? new Date(startDate) : null;
-    const end = endDate ? new Date(endDate) : null;
     
+    // Create start and end datetime with time
     let matchesDate = true;
-    if (start) {
-      start.setHours(0, 0, 0, 0);
-      matchesDate = matchesDate && recordDate >= start;
+    
+    if (startDate) {
+      const startDateTime = new Date(`${startDate}T${startTime || '00:00'}`);
+      matchesDate = matchesDate && recordDate >= startDateTime;
     }
-    if (end) {
-      end.setHours(23, 59, 59, 999);
-      matchesDate = matchesDate && recordDate <= end;
+    
+    if (endDate) {
+      const endDateTime = new Date(`${endDate}T${endTime || '23:59'}`);
+      matchesDate = matchesDate && recordDate <= endDateTime;
     }
     
     return matchesSearch && matchesDate;
@@ -2537,7 +2542,9 @@ export default function WarehousePage() {
 
   const clearDateFilter = () => {
     setStartDate('');
+    setStartTime('00:00');
     setEndDate('');
+    setEndTime('23:59');
   };
 
   const clearSearchFilter = () => {
@@ -4130,7 +4137,7 @@ const downloadCSV = (records: CountingRecord[]) => {
               </div>
             </TabsContent>
 
-            {/* History Tab */}
+            {/* History Tab - UPDATED with date-time filters */}
             <TabsContent value="history" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -4165,6 +4172,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4 mb-6">
+                    {/* UPDATED: Date-time filter grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="search-history">Search</Label>
@@ -4187,33 +4195,64 @@ const downloadCSV = (records: CountingRecord[]) => {
                           )}
                         </div>
                       </div>
+                      
+                      {/* Start Date-Time */}
                       <div className="space-y-2">
-                        <Label htmlFor="start-date">Start Date</Label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                          <Input
-                            id="start-date"
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className="pl-10"
-                          />
+                        <Label htmlFor="start-date">Start Date & Time</Label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2 relative">
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <Input
+                              id="start-date"
+                              type="date"
+                              value={startDate}
+                              onChange={(e) => setStartDate(e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                          <div className="col-span-1 relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <Input
+                              id="start-time"
+                              type="time"
+                              value={startTime}
+                              onChange={(e) => setStartTime(e.target.value)}
+                              className="pl-10"
+                              step="60"
+                            />
+                          </div>
                         </div>
                       </div>
+                      
+                      {/* End Date-Time */}
                       <div className="space-y-2">
-                        <Label htmlFor="end-date">End Date</Label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                          <Input
-                            id="end-date"
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            className="pl-10"
-                          />
+                        <Label htmlFor="end-date">End Date & Time</Label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2 relative">
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <Input
+                              id="end-date"
+                              type="date"
+                              value={endDate}
+                              onChange={(e) => setEndDate(e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                          <div className="col-span-1 relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <Input
+                              id="end-time"
+                              type="time"
+                              value={endTime}
+                              onChange={(e) => setEndTime(e.target.value)}
+                              className="pl-10"
+                              step="60"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
+                    
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-muted-foreground">
                         Showing {filteredHistory.length} of {countingRecords.length} records
@@ -4296,7 +4335,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {/* NEW: Edit Button */}
+                                    {/* Edit Button */}
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -4306,8 +4345,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                                       }}
                                       className="gap-2"
                                     >
-                                    <Edit className="w-4 h-4" />
-                                      
+                                      <Edit className="w-4 h-4" />
                                     </Button>
                                     
                                     <Button

@@ -3499,7 +3499,7 @@ export default function WeightCapturePage() {
                               onOpenChange={() => toggleRejectDetails(reject.id)}
                               className="border rounded-lg overflow-hidden"
                             >
-                              <div className={`p-4 hover:bg-gray-50 ${expandedRejectId === reject.id ? 'bg-gray-50' : ''}`}>
+                              <div className={`p-4 hover:bg-black-50 ${expandedRejectId === reject.id ? 'bg-black-50' : ''}`}>
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-2">

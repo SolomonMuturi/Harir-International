@@ -472,27 +472,27 @@ export default function UtilityManagementPage() {
 
   // Section toggle states
   const [openSections, setOpenSections] = useState({
-    power: false,
+    power: true, // Set to true by default for better UX
     water: false,
     internet: false,
     generator: false,
   });
 
-  // Power States
+  // Power States - All fields unlocked for manual entry
   const [powerReadings, setPowerReadings] = useState({
-    office: { opening: '', closing: '', disabled: true },
-    machine: { opening: '', closing: '', disabled: true },
-    coldroom1: { opening: '', closing: '', disabled: true },
-    coldroom2: { opening: '', closing: '', disabled: true },
-    other: { opening: '', closing: '', disabled: true },
+    office: { opening: '', closing: '', disabled: false },
+    machine: { opening: '', closing: '', disabled: false },
+    coldroom1: { opening: '', closing: '', disabled: false },
+    coldroom2: { opening: '', closing: '', disabled: false },
+    other: { opening: '', closing: '', disabled: false },
   });
   const [otherActivity, setOtherActivity] = useState('');
   const [isSavingPower, setIsSavingPower] = useState(false);
 
-  // Water States
+  // Water States - All fields unlocked for manual entry
   const [waterReadings, setWaterReadings] = useState({
-    meter1: { opening: '', closing: '', disabled: true },
-    meter2: { opening: '', closing: '', disabled: true },
+    meter1: { opening: '', closing: '', disabled: false },
+    meter2: { opening: '', closing: '', disabled: false },
   });
   const [isSavingWater, setIsSavingWater] = useState(false);
 
@@ -511,6 +511,9 @@ export default function UtilityManagementPage() {
   const [dieselRefill, setDieselRefill] = useState('');
   const [dieselConsumed, setDieselConsumed] = useState('');
   const [isSavingGenerator, setIsSavingGenerator] = useState(false);
+
+  // Auto-fill opening readings from last saved readings (optional helper)
+  const [autoFillEnabled, setAutoFillEnabled] = useState(true);
 
   // Check if today's readings are filled
   const checkTodayReadings = useCallback((): boolean => {
@@ -771,8 +774,10 @@ export default function UtilityManagementPage() {
     }
   };
 
-  // Load last readings for opening values
+  // Load last readings for opening values (optional auto-fill)
   const loadLastReadings = async () => {
+    if (!autoFillEnabled) return;
+    
     try {
       const response = await fetch('/api/utility-readings?limit=1');
       if (response.ok) {
@@ -781,46 +786,46 @@ export default function UtilityManagementPage() {
           const lastReading = data.readings[0];
           const metadata = lastReading.metadata || {};
           
-          // Set power opening readings (disabled)
+          // Set power opening readings from last closing readings (optional suggestion)
           setPowerReadings({
             office: { 
-              opening: metadata.powerOfficeClosing?.toString() || '0', 
+              opening: metadata.powerOfficeClosing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
             machine: { 
-              opening: metadata.powerMachineClosing?.toString() || '0', 
+              opening: metadata.powerMachineClosing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
             coldroom1: { 
-              opening: metadata.powerColdroom1Closing?.toString() || '0', 
+              opening: metadata.powerColdroom1Closing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
             coldroom2: { 
-              opening: metadata.powerColdroom2Closing?.toString() || '0', 
+              opening: metadata.powerColdroom2Closing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
             other: { 
-              opening: metadata.powerOtherClosing?.toString() || '0', 
+              opening: metadata.powerOtherClosing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
           });
           
-          // Set water opening readings (disabled)
+          // Set water opening readings from last closing readings (optional suggestion)
           setWaterReadings({
             meter1: { 
-              opening: metadata.waterMeter1Closing?.toString() || '0', 
+              opening: metadata.waterMeter1Closing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
             meter2: { 
-              opening: metadata.waterMeter2Closing?.toString() || '0', 
+              opening: metadata.waterMeter2Closing?.toString() || '', 
               closing: '', 
-              disabled: true 
+              disabled: false 
             },
           });
           
@@ -830,6 +835,37 @@ export default function UtilityManagementPage() {
     } catch (error) {
       console.error('Error fetching last readings:', error);
     }
+  };
+
+  // Clear all fields for new entry
+  const clearAllFields = () => {
+    setPowerReadings({
+      office: { opening: '', closing: '', disabled: false },
+      machine: { opening: '', closing: '', disabled: false },
+      coldroom1: { opening: '', closing: '', disabled: false },
+      coldroom2: { opening: '', closing: '', disabled: false },
+      other: { opening: '', closing: '', disabled: false },
+    });
+    setOtherActivity('');
+    
+    setWaterReadings({
+      meter1: { opening: '', closing: '', disabled: false },
+      meter2: { opening: '', closing: '', disabled: false },
+    });
+    
+    setInternetCosts({
+      safaricom: '',
+      internet5G: '',
+      syokinet: '',
+    });
+    setInternetBillingCycle('');
+    
+    setGeneratorStart('08:00');
+    setGeneratorStop('10:30');
+    setDieselRefill('');
+    setDieselConsumed('');
+    
+    setNotes('');
   };
 
   // Handle section toggle
@@ -904,6 +940,20 @@ export default function UtilityManagementPage() {
       return;
     }
 
+    // Validate that at least one reading has both opening and closing
+    const hasValidReading = Object.values(powerReadings).some(
+      reading => reading.opening && reading.closing
+    );
+
+    if (!hasValidReading) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter at least one complete reading (opening and closing)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSavingPower(true);
     
     try {
@@ -943,18 +993,17 @@ export default function UtilityManagementPage() {
         localStorage.setItem('recordedBy', recordedBy);
         localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
-        // Reset closing readings
+        // Clear only closing readings, keep opening readings as they become next day's opening
         setPowerReadings(prev => ({
-          office: { ...prev.office, closing: '', disabled: true },
-          machine: { ...prev.machine, closing: '', disabled: true },
-          coldroom1: { ...prev.coldroom1, closing: '', disabled: true },
-          coldroom2: { ...prev.coldroom2, closing: '', disabled: true },
-          other: { ...prev.other, closing: '', disabled: true },
+          office: { ...prev.office, closing: '' },
+          machine: { ...prev.machine, closing: '' },
+          coldroom1: { ...prev.coldroom1, closing: '' },
+          coldroom2: { ...prev.coldroom2, closing: '' },
+          other: { ...prev.other, closing: '' },
         }));
         
         setOtherActivity('');
         fetchUtilityData();
-        loadLastReadings();
       } else {
         throw new Error('Failed to save power readings');
       }
@@ -975,6 +1024,20 @@ export default function UtilityManagementPage() {
       toast({
         title: 'Validation Error',
         description: 'Please enter your name',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate that at least one meter has both opening and closing
+    const hasValidReading = Object.values(waterReadings).some(
+      reading => reading.opening && reading.closing
+    );
+
+    if (!hasValidReading) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter at least one complete reading (opening and closing)',
         variant: 'destructive',
       });
       return;
@@ -1012,14 +1075,13 @@ export default function UtilityManagementPage() {
         localStorage.setItem('recordedBy', recordedBy);
         localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
-        // Reset closing readings
+        // Clear only closing readings, keep opening readings as they become next day's opening
         setWaterReadings(prev => ({
-          meter1: { ...prev.meter1, closing: '', disabled: true },
-          meter2: { ...prev.meter2, closing: '', disabled: true },
+          meter1: { ...prev.meter1, closing: '' },
+          meter2: { ...prev.meter2, closing: '' },
         }));
         
         fetchUtilityData();
-        loadLastReadings();
       } else {
         throw new Error('Failed to save water readings');
       }
@@ -1225,12 +1287,16 @@ export default function UtilityManagementPage() {
   // Initialize on component mount
   useEffect(() => {
     fetchUtilityData();
-    loadLastReadings();
     
     // Load recorded by from localStorage
     const savedName = localStorage.getItem('recordedBy') || '';
     if (savedName) setRecordedBy(savedName);
   }, []);
+
+  // Auto-fill opening readings when component mounts
+  useEffect(() => {
+    loadLastReadings();
+  }, [autoFillEnabled]);
 
   // Fetch data when date filter changes
   useEffect(() => {
@@ -1288,6 +1354,14 @@ export default function UtilityManagementPage() {
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV
               </Button>
+              <Button 
+                onClick={clearAllFields}
+                variant="outline"
+                className="border-gray-700 bg-gray-900 hover:bg-gray-800"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Clear All
+              </Button>
             </div>
           </div>
 
@@ -1297,6 +1371,30 @@ export default function UtilityManagementPage() {
               <StatCard key={`energy-${index}`} data={card} />
             ))}
           </div>
+
+          {/* Auto-fill Toggle */}
+          <Card className="bg-gray-900 border-gray-800">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-900/30 rounded-lg">
+                    <RefreshCw className="h-4 w-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-200">Auto-fill Opening Readings</h3>
+                    <p className="text-sm text-gray-500">
+                      Automatically populate opening readings from yesterday's closing readings
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={autoFillEnabled}
+                  onCheckedChange={setAutoFillEnabled}
+                  className="data-[state=checked]:bg-blue-600"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Today's Status Alert */}
           {!todayReadingsFilled && !isLoading && (
@@ -1450,9 +1548,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (kWh)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={powerReadings.office.opening}
-                      disabled
+                      onChange={(e) => setPowerReadings(prev => ({
+                        ...prev,
+                        office: { ...prev.office, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1466,6 +1570,7 @@ export default function UtilityManagementPage() {
                         office: { ...prev.office, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -1482,9 +1587,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (kWh)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={powerReadings.machine.opening}
-                      disabled
+                      onChange={(e) => setPowerReadings(prev => ({
+                        ...prev,
+                        machine: { ...prev.machine, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1498,6 +1609,7 @@ export default function UtilityManagementPage() {
                         machine: { ...prev.machine, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -1514,9 +1626,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (kWh)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={powerReadings.coldroom1.opening}
-                      disabled
+                      onChange={(e) => setPowerReadings(prev => ({
+                        ...prev,
+                        coldroom1: { ...prev.coldroom1, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1530,6 +1648,7 @@ export default function UtilityManagementPage() {
                         coldroom1: { ...prev.coldroom1, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -1546,9 +1665,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (kWh)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={powerReadings.coldroom2.opening}
-                      disabled
+                      onChange={(e) => setPowerReadings(prev => ({
+                        ...prev,
+                        coldroom2: { ...prev.coldroom2, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1562,6 +1687,7 @@ export default function UtilityManagementPage() {
                         coldroom2: { ...prev.coldroom2, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -1587,9 +1713,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (kWh)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={powerReadings.other.opening}
-                      disabled
+                      onChange={(e) => setPowerReadings(prev => ({
+                        ...prev,
+                        other: { ...prev.other, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1603,6 +1735,7 @@ export default function UtilityManagementPage() {
                         other: { ...prev.other, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-3 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -1635,9 +1768,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (m³)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={waterReadings.meter1.opening}
-                      disabled
+                      onChange={(e) => setWaterReadings(prev => ({
+                        ...prev,
+                        meter1: { ...prev.meter1, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1651,6 +1790,7 @@ export default function UtilityManagementPage() {
                         meter1: { ...prev.meter1, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-4 bg-gray-800/50 rounded-lg border border-gray-700">
@@ -1667,9 +1807,15 @@ export default function UtilityManagementPage() {
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Opening (m³)</Label>
                     <Input
+                      type="number"
+                      step="0.01"
                       value={waterReadings.meter2.opening}
-                      disabled
+                      onChange={(e) => setWaterReadings(prev => ({
+                        ...prev,
+                        meter2: { ...prev.meter2, opening: e.target.value }
+                      }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1683,6 +1829,7 @@ export default function UtilityManagementPage() {
                         meter2: { ...prev.meter2, closing: e.target.value }
                       }))}
                       className="bg-gray-800 border-gray-700"
+                      placeholder="0.00"
                     />
                   </div>
                   <div className="text-center p-4 bg-gray-800/50 rounded-lg border border-gray-700">

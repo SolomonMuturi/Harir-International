@@ -14,7 +14,7 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { WeightCapture } from '@/components/dashboard/weight-capture';
 import { FinalTagDialog } from '@/components/dashboard/final-tag-dialog';
-import { Scale, Boxes, Truck, Loader2, RefreshCw, AlertCircle, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Printer, FileText, AlertTriangle, XCircle, Trash2, Plus, Filter, Eye, EyeOff, Users, Apple, PieChart, History, Calculator, BarChart3, Layers, ChevronDown, ChevronUp, MoreVertical, Edit, SortAsc, SortDesc, CalendarDays, Save, X, AlertOctagon, Fingerprint } from 'lucide-react';
+import { Scale, Boxes, Truck, Loader2, RefreshCw, AlertCircle, CheckCircle, Package, TrendingUp, TrendingDown, Minus, Clock, CheckCheck, Download, Calendar, FileSpreadsheet, Search, Printer, FileText, AlertTriangle, XCircle, Trash2, Plus, Filter, Eye, EyeOff, Users, Apple, PieChart, History, Calculator, BarChart3, Layers, ChevronDown, ChevronUp, MoreVertical, Edit, SortAsc, SortDesc, CalendarDays, Save, X, AlertOctagon, Fingerprint, CalendarRange, Clock as ClockIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { format, isSameDay, parseISO, startOfDay, endOfDay, subDays } from 'date-fns';
+import { format, isSameDay, parseISO, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isWithinInterval, parse, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -38,7 +38,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-// Define types
+// Define types (keeping all existing types from your original code)
 interface WeightEntry {
   id: string;
   pallet_id: string;
@@ -78,7 +78,7 @@ interface WeightEntry {
   bank_account: string;
   kra_pin: string;
   check_in_session?: string;
-  gate_entry_id?: string; // NEW: Gate entry ID from check-in
+  gate_entry_id?: string;
 }
 
 interface CheckedInSupplier {
@@ -93,7 +93,7 @@ interface CheckedInSupplier {
   region?: string;
   check_in_time: string;
   check_in_session?: string;
-  gate_entry_id?: string; // NEW: Gate entry ID from check-in
+  gate_entry_id?: string;
   status?: 'pending' | 'weighed';
 }
 
@@ -207,11 +207,23 @@ interface EditWeightFormData {
   hass_weight: number;
   hass_crates: number;
   notes: string;
-  gate_entry_id?: string; // NEW
+  gate_entry_id?: string;
 }
 
 type RejectSortField = 'date' | 'supplier' | 'weight' | 'status';
 type RejectSortDirection = 'asc' | 'desc';
+
+// NEW: Date range filter type
+interface DateRangeFilter {
+  from: Date | undefined;
+  to: Date | undefined;
+  includeTime: boolean;
+  fromTime?: string; // Format: "HH:mm"
+  toTime?: string;   // Format: "HH:mm"
+}
+
+// Preset date ranges
+type DateRangePreset = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'custom';
 
 const getChangeIcon = (changeType: 'increase' | 'decrease' | 'neutral') => {
   switch (changeType) {
@@ -255,7 +267,15 @@ export default function WeightCapturePage() {
   const [processedCheckIns, setProcessedCheckIns] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<CheckedInSupplier | null>(null);
   
-  const [historyDate, setHistoryDate] = useState<Date | undefined>(new Date());
+  // NEW: Enhanced date range filtering
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>({
+    from: startOfDay(new Date()),
+    to: endOfDay(new Date()),
+    includeTime: false,
+    fromTime: '00:00',
+    toTime: '23:59'
+  });
+  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>('today');
   const [historyWeights, setHistoryWeights] = useState<WeightEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -327,6 +347,87 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
+  // Helper function to apply time to date
+  const applyTimeToDate = (date: Date | undefined, timeStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
+    if (!date) return undefined;
+    
+    const newDate = new Date(date);
+    
+    if (timeStr && timeStr.includes(':')) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      newDate.setHours(hours, minutes, 0, 0);
+    } else if (isEndOfDay) {
+      newDate.setHours(23, 59, 59, 999);
+    } else {
+      newDate.setHours(0, 0, 0, 0);
+    }
+    
+    return newDate;
+  };
+
+  // Apply preset date range
+  const applyDateRangePreset = useCallback((preset: DateRangePreset) => {
+    const now = new Date();
+    let from: Date, to: Date;
+    
+    switch (preset) {
+      case 'today':
+        from = startOfDay(now);
+        to = endOfDay(now);
+        break;
+      case 'yesterday':
+        const yesterday = subDays(now, 1);
+        from = startOfDay(yesterday);
+        to = endOfDay(yesterday);
+        break;
+      case 'thisWeek':
+        const currentDay = now.getDay();
+        const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
+        from = startOfDay(subDays(now, diffToMonday));
+        to = endOfDay(now);
+        break;
+      case 'thisMonth':
+        from = startOfMonth(now);
+        to = endOfDay(now);
+        break;
+      case 'lastMonth':
+        const lastMonth = subDays(startOfMonth(now), 1);
+        from = startOfMonth(lastMonth);
+        to = endOfMonth(lastMonth);
+        break;
+      default:
+        return;
+    }
+    
+    setDateRangeFilter({
+      from,
+      to,
+      includeTime: dateRangeFilter.includeTime,
+      fromTime: '00:00',
+      toTime: '23:59'
+    });
+    setDateRangePreset(preset);
+  }, [dateRangeFilter.includeTime]);
+
+  // Check if an entry falls within the date range
+  const isWithinDateRange = useCallback((entryDate: Date): boolean => {
+    const { from, to, includeTime, fromTime, toTime } = dateRangeFilter;
+    
+    if (!from) return true;
+    
+    const rangeStart = applyTimeToDate(from, includeTime ? fromTime : undefined, false);
+    const rangeEnd = to ? applyTimeToDate(to, includeTime ? toTime : undefined, true) : undefined;
+    
+    if (!rangeStart) return false;
+    
+    if (rangeEnd) {
+      return entryDate >= rangeStart && entryDate <= rangeEnd;
+    } else {
+      // Single day filter
+      return isSameDay(entryDate, rangeStart);
+    }
+  }, [dateRangeFilter]);
+
   // Delete checked-in supplier
   const handleDeleteSupplier = useCallback(async (supplierId: string) => {
     if (!window.confirm('Are you sure you want to delete this supplier from checked-in list?')) return;
@@ -351,104 +452,95 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-// Fetch all weight entries - FIXED
-const fetchWeights = useCallback(async () => {
-  try {
-    setError(null);
-    const response = await fetch('/api/weights?limit=1000&order=desc');
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch weights: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log('📊 Fetched weights data:', data);
-    
-    // FIX: Handle both array and object responses
-    let weightsArray: WeightEntry[] = [];
-    let gateIds = new Set<string>();
-    
-    if (Array.isArray(data)) {
-      // Old format: direct array
-      weightsArray = data;
-      weightsArray.forEach((entry: WeightEntry) => {
-        if (entry.gate_entry_id) {
-          gateIds.add(entry.gate_entry_id);
-        }
-      });
-      setWeights(data);
-    } else if (data && typeof data === 'object') {
-      // New format: { weights: [], processedGateIds: [] }
-      if (Array.isArray(data.weights)) {
-        weightsArray = data.weights;
+  // Fetch all weight entries - FIXED
+  const fetchWeights = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await fetch('/api/weights?limit=1000&order=desc');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch weights: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('📊 Fetched weights data:', data);
+      
+      let weightsArray: WeightEntry[] = [];
+      let gateIds = new Set<string>();
+      
+      if (Array.isArray(data)) {
+        weightsArray = data;
         weightsArray.forEach((entry: WeightEntry) => {
           if (entry.gate_entry_id) {
             gateIds.add(entry.gate_entry_id);
           }
         });
-        setWeights(data.weights);
+        setWeights(data);
+      } else if (data && typeof data === 'object') {
+        if (Array.isArray(data.weights)) {
+          weightsArray = data.weights;
+          weightsArray.forEach((entry: WeightEntry) => {
+            if (entry.gate_entry_id) {
+              gateIds.add(entry.gate_entry_id);
+            }
+          });
+          setWeights(data.weights);
+        } else {
+          setWeights([]);
+        }
+        
+        if (Array.isArray(data.processedGateIds)) {
+          data.processedGateIds.forEach((id: string) => {
+            gateIds.add(id);
+          });
+        }
       } else {
-        // Fallback to empty array
         setWeights([]);
       }
       
-      // Also handle processedGateIds if provided
-      if (Array.isArray(data.processedGateIds)) {
-        data.processedGateIds.forEach((id: string) => {
-          gateIds.add(id);
-        });
-      }
-    } else {
-      setWeights([]);
-    }
-    
-    // Update processed gate IDs
-    setProcessedGateIds(gateIds);
-    console.log('🔑 Processed gate IDs:', Array.from(gateIds));
-    
-    // Process check-in sessions (keep existing logic)
-    const processedSet = new Set<string>();
-    weightsArray.forEach((entry: WeightEntry) => {
-      if (entry.check_in_session) {
-        processedSet.add(entry.check_in_session);
-      } else if (entry.supplier_id && entry.created_at) {
-        const sessionId = `${entry.supplier_id}_${new Date(entry.created_at).toISOString().split('T')[0]}`;
-        processedSet.add(sessionId);
-      }
-    });
-    setProcessedCheckIns(processedSet);
-    
-    // Calculate pallet counter (keep existing logic)
-    const today = new Date();
-    const todayString = today.toISOString().split('T')[0];
-    const todayPallets = weightsArray
-      .filter((entry: WeightEntry) => entry.created_at?.startsWith(todayString))
-      .filter((entry: WeightEntry) => entry.pallet_id && entry.pallet_id.startsWith('PAL-'));
-    
-    if (todayPallets.length > 0) {
-      const palletNumbers = todayPallets.map((entry: WeightEntry) => {
-        const match = entry.pallet_id.match(/PAL-(\d+)/);
-        return match ? parseInt(match[1]) : 0;
-      }).filter(num => num > 0);
+      setProcessedGateIds(gateIds);
+      console.log('🔑 Processed gate IDs:', Array.from(gateIds));
       
-      if (palletNumbers.length > 0) {
-        setPalletCounter(Math.max(...palletNumbers) + 1);
+      const processedSet = new Set<string>();
+      weightsArray.forEach((entry: WeightEntry) => {
+        if (entry.check_in_session) {
+          processedSet.add(entry.check_in_session);
+        } else if (entry.supplier_id && entry.created_at) {
+          const sessionId = `${entry.supplier_id}_${new Date(entry.created_at).toISOString().split('T')[0]}`;
+          processedSet.add(sessionId);
+        }
+      });
+      setProcessedCheckIns(processedSet);
+      
+      const today = new Date();
+      const todayString = today.toISOString().split('T')[0];
+      const todayPallets = weightsArray
+        .filter((entry: WeightEntry) => entry.created_at?.startsWith(todayString))
+        .filter((entry: WeightEntry) => entry.pallet_id && entry.pallet_id.startsWith('PAL-'));
+      
+      if (todayPallets.length > 0) {
+        const palletNumbers = todayPallets.map((entry: WeightEntry) => {
+          const match = entry.pallet_id.match(/PAL-(\d+)/);
+          return match ? parseInt(match[1]) : 0;
+        }).filter(num => num > 0);
+        
+        if (palletNumbers.length > 0) {
+          setPalletCounter(Math.max(...palletNumbers) + 1);
+        }
       }
+      
+    } catch (error: any) {
+      console.error('Error fetching weights:', error);
+      setError(error.message || 'Failed to load weight data');
+      setWeights([]);
+      
+      toast({
+        title: 'Error Loading Data',
+        description: 'Could not load weight entries. Please try refreshing.',
+        variant: 'destructive',
+      });
     }
-    
-  } catch (error: any) {
-    console.error('Error fetching weights:', error);
-    setError(error.message || 'Failed to load weight data');
-    setWeights([]);
-    
-    toast({
-      title: 'Error Loading Data',
-      description: 'Could not load weight entries. Please try refreshing.',
-      variant: 'destructive',
-    });
-  }
-}, [toast]);
-
+  }, [toast]);
 
   // Fetch checked-in suppliers
   const fetchCheckedInSuppliers = useCallback(async () => {
@@ -462,12 +554,9 @@ const fetchWeights = useCallback(async () => {
       const data: CheckedInSupplier[] = await response.json();
       console.log('🚚 Fetched checked-in suppliers:', data);
       
-      // Add gate_entry_id from vehicle_visits if available
-      // This assumes your API returns suppliers with their latest visit's gate_entry_id
       const suppliersWithSession = data.map(supplier => ({
         ...supplier,
         check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
-        // If the API doesn't return gate_entry_id, you'd need to fetch it separately
         gate_entry_id: (supplier as any).gate_entry_id || (supplier as any).latest_visit?.gate_entry_id
       }));
       
@@ -615,13 +704,10 @@ const fetchWeights = useCallback(async () => {
         todayEntries.map(entry => entry.supplier_id).filter(Boolean)
       ).size;
       
-      // Calculate pending suppliers based on gate entry IDs
       const pendingSuppliers = checkedInSuppliers.filter(supplier => {
-        // If supplier has gate_entry_id and it's in processedGateIds, they're weighed
         if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
           return false;
         }
-        // Fallback to check_in_session if gate_entry_id not available
         if (supplier.check_in_session && processedCheckIns.has(supplier.check_in_session)) {
           return false;
         }
@@ -686,12 +772,12 @@ const fetchWeights = useCallback(async () => {
     }
   }, [weights, fetchKpiData, calculateStatistics, isLoading]);
 
-  // Fetch history when date changes
+  // NEW: Fetch history when date range changes
   useEffect(() => {
-    if (activeTab === 'history' && historyDate) {
-      fetchHistoryWeights(historyDate);
+    if (activeTab === 'history') {
+      fetchHistoryWeights();
     }
-  }, [historyDate, activeTab]);
+  }, [dateRangeFilter, activeTab]);
 
   // Filter and sort rejects
   useEffect(() => {
@@ -772,23 +858,36 @@ const fetchWeights = useCallback(async () => {
     });
   }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, toast]);
 
-  // Fetch history weights by date
-  const fetchHistoryWeights = useCallback(async (date: Date) => {
-    if (!date) return;
-    
+  // NEW: Fetch history weights by date range
+  const fetchHistoryWeights = useCallback(() => {
     setIsHistoryLoading(true);
     try {
       const filteredWeights = weights.filter(entry => {
         const entryDate = new Date(entry.created_at);
-        return isSameDay(entryDate, date);
+        return isWithinDateRange(entryDate);
       });
       
       setHistoryWeights(filteredWeights);
       
       if (filteredWeights.length === 0) {
+        const { from, to } = dateRangeFilter;
+        let dateDescription = '';
+        
+        if (from && to) {
+          dateDescription = `${format(from, 'MMM d, yyyy')} to ${format(to, 'MMM d, yyyy')}`;
+          if (dateRangeFilter.includeTime) {
+            dateDescription += ` (${dateRangeFilter.fromTime} - ${dateRangeFilter.toTime})`;
+          }
+        } else if (from) {
+          dateDescription = format(from, 'MMMM d, yyyy');
+          if (dateRangeFilter.includeTime) {
+            dateDescription += ` from ${dateRangeFilter.fromTime}`;
+          }
+        }
+        
         toast({
           title: 'No Data Found',
-          description: `No weight entries found for ${format(date, 'MMMM d, yyyy')}`,
+          description: `No weight entries found for ${dateDescription}`,
           variant: 'default',
         });
       }
@@ -803,7 +902,7 @@ const fetchWeights = useCallback(async () => {
     } finally {
       setIsHistoryLoading(false);
     }
-  }, [weights, toast]);
+  }, [weights, dateRangeFilter, isWithinDateRange, toast]);
 
   // Generate pallet ID
   const generatePalletId = useCallback(() => {
@@ -850,7 +949,6 @@ const fetchWeights = useCallback(async () => {
       
       const generatedPalletId = weightData.pallet_id || generatePalletId();
       
-      // NEW: Get gate_entry_id from selected supplier or weightData
       const gateEntryId = weightData.gate_entry_id || selectedSupplier?.gate_entry_id;
       
       console.log('🔑 Using gate entry ID for weight:', gateEntryId);
@@ -877,7 +975,7 @@ const fetchWeights = useCallback(async () => {
         image_url: weightData.image_url || '',
         notes: weightData.notes || '',
         check_in_session: checkInSession,
-        gate_entry_id: gateEntryId, // NEW: Include gate entry ID
+        gate_entry_id: gateEntryId,
       };
       
       console.log('📦 Sending weight payload:', payload);
@@ -906,7 +1004,6 @@ const fetchWeights = useCallback(async () => {
       setWeights(prev => [savedEntry, ...prev]);
       setLastWeightEntry(savedEntry);
       
-      // NEW: Add gate entry ID to processed set
       if (gateEntryId) {
         setProcessedGateIds(prev => {
           const newSet = new Set(prev);
@@ -933,7 +1030,6 @@ const fetchWeights = useCallback(async () => {
           : `Pallet ${savedEntry.pallet_id} has been recorded.`,
       });
       
-      // Clear selected supplier after successful save
       setSelectedSupplier(null);
       
     } catch (error: any) {
@@ -950,7 +1046,6 @@ const fetchWeights = useCallback(async () => {
 
   // Handle supplier selection
   const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier) => {
-    // Check if supplier has already been weighed using gate_entry_id
     if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
       toast({
         title: 'Already Weighed',
@@ -960,7 +1055,6 @@ const fetchWeights = useCallback(async () => {
       return;
     }
     
-    // Fallback to check_in_session check
     if (supplier.check_in_session && processedCheckIns.has(supplier.check_in_session)) {
       toast({
         title: 'Already Weighed',
@@ -1034,17 +1128,19 @@ const fetchWeights = useCallback(async () => {
     
     weights.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
+      const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
       const phoneKey = entry.supplier_phone || entry.driver_phone || '';
       const vehicleKey = entry.vehicle_plate || '';
       const regionKey = entry.region || '';
       const gateKey = entry.gate_entry_id || '';
       
-      const key = `${date}_${supplierKey}_${vehicleKey}`;
+      const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
       
       if (!supplierMap.has(key)) {
         supplierMap.set(key, {
           date,
+          time,
           supplier_name: supplierKey,
           phone_number: phoneKey,
           vehicle_plate_number: vehicleKey,
@@ -1055,7 +1151,8 @@ const fetchWeights = useCallback(async () => {
           fuerte_crates_in: 0,
           hass_crates_in: 0,
           total_crates: 0,
-          region: regionKey
+          region: regionKey,
+          pallet_id: entry.pallet_id || ''
         });
       }
       
@@ -1073,13 +1170,13 @@ const fetchWeights = useCallback(async () => {
   }, []);
 
   // Download CSV with totals row
-  const downloadCSV = useCallback((weights: WeightEntry[], date: Date) => {
+  const downloadCSV = useCallback((weights: WeightEntry[]) => {
     const csvData = generateCSVData(weights);
     
     if (csvData.length === 0) {
       toast({
         title: 'No Data',
-        description: 'No data available to download for the selected date.',
+        description: 'No data available to download for the selected date range.',
         variant: 'destructive',
       });
       return;
@@ -1103,6 +1200,8 @@ const fetchWeights = useCallback(async () => {
     
     const headers = [
       'Date',
+      'Time',
+      'Pallet ID',
       'Supplier Name',
       'Phone Number',
       'Vehicle Plate Number',
@@ -1116,6 +1215,8 @@ const fetchWeights = useCallback(async () => {
     
     const rows = csvData.map(row => [
       row.date,
+      row.time,
+      `"${row.pallet_id}"`,
       `"${row.supplier_name}"`,
       `"${row.phone_number}"`,
       `"${row.vehicle_plate_number}"`,
@@ -1127,10 +1228,12 @@ const fetchWeights = useCallback(async () => {
       `"${row.region}"`
     ]);
     
-    rows.push(['', '', '', '', '', '', '', '', '', '']);
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '']);
     
     rows.push([
       'TOTALS',
+      '',
+      '',
       '',
       '',
       '',
@@ -1144,6 +1247,8 @@ const fetchWeights = useCallback(async () => {
     
     rows.push([
       'GRAND TOTAL',
+      '',
+      '',
       '',
       '',
       '',
@@ -1164,7 +1269,16 @@ const fetchWeights = useCallback(async () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `weight_data_${format(date, 'yyyy-MM-dd')}.csv`);
+    
+    const { from, to } = dateRangeFilter;
+    let filename = 'weight_data';
+    if (from && to) {
+      filename += `_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`;
+    } else if (from) {
+      filename += `_${format(from, 'yyyy-MM-dd')}`;
+    }
+    link.setAttribute('download', `${filename}.csv`);
+    
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -1172,9 +1286,9 @@ const fetchWeights = useCallback(async () => {
     
     toast({
       title: 'CSV Downloaded',
-      description: `Weight data for ${format(date, 'MMMM d, yyyy')} has been downloaded with totals.`,
+      description: `Weight data for selected period has been downloaded with totals.`,
     });
-  }, [generateCSVData, toast]);
+  }, [generateCSVData, dateRangeFilter, toast]);
 
   // Download Supplier GRN - UPDATED to include gate entry ID
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {
@@ -1223,10 +1337,10 @@ const fetchWeights = useCallback(async () => {
         '/public/favicon.ico'
       ];
       
-      // Define A5 layout variables at the top of the function
       const pageWidth = 148;
       const leftMargin = 8;
       const contentWidth = pageWidth - 2 * leftMargin;
+      
       for (const path of logoPaths) {
         try {
           const response = await fetch(path);
@@ -1271,7 +1385,6 @@ const fetchWeights = useCallback(async () => {
       doc.text('GOODS RECEIVED NOTE - BOX COUNTING', pageWidth / 2, startY + 7, { align: 'center' });
       let yPos = startY + 13;
       
-      // Document Details bar (horizontal)
       doc.setFillColor(248, 249, 250);
       doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
       doc.setFontSize(8);
@@ -1293,7 +1406,9 @@ const fetchWeights = useCallback(async () => {
       doc.text(`Driver: ${driverName || 'N/A'}`, leftMargin + 95, yPos + 7);
       doc.text(`Region: ${supplier?.region || 'N/A'}`, leftMargin + 2, yPos + 10);
       doc.text(`Vehicle: ${vehiclePlate || 'N/A'}`, leftMargin + 50, yPos + 10);
-      doc.text(`Check-in: ${format(new Date(supplier?.check_in_time || new Date()), 'dd/MM/yyyy HH:mm')}`, leftMargin + 95, yPos + 10);
+      if (gateEntryId) {
+        doc.text(`Gate ID: ${gateEntryId}`, leftMargin + 95, yPos + 10);
+      }
       yPos += 14;
       
       if (varietyData.length > 0) {
@@ -1341,7 +1456,7 @@ const fetchWeights = useCallback(async () => {
         doc.text(totalCrates.toString(), leftMargin + 110, yPos + 5);
         yPos += 10;
       }
-      // Notes section
+      
       doc.setFontSize(7);
       doc.setTextColor(108, 117, 125);
       doc.setFont('helvetica', 'italic');
@@ -1352,7 +1467,7 @@ const fetchWeights = useCallback(async () => {
         doc.text(note, pageWidth / 2, yPos + (index * 5), { align: 'center' });
       });
       yPos += 8;
-      // Signature lines
+      
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.2);
       doc.line(leftMargin + 2, yPos, leftMargin + 60, yPos);
@@ -1365,7 +1480,7 @@ const fetchWeights = useCallback(async () => {
       doc.text('Supplier/Driver (Name & Signature)', leftMargin + 100, yPos + 3, { align: 'center' });
       doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, leftMargin + 100, yPos + 6, { align: 'center' });
       yPos += 12;
-      // Footer
+      
       doc.setFontSize(6);
       doc.setTextColor(128, 128, 128);
       doc.text('This is a computer-generated document. No physical signature required.', pageWidth / 2, yPos, { align: 'center' });
@@ -1835,7 +1950,6 @@ const fetchWeights = useCallback(async () => {
       setWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
       setHistoryWeights(prev => prev.filter(w => w.id !== weightToDelete.id));
       
-      // NEW: Remove gate entry ID from processed set if this was the only entry with that ID
       if (weightToDelete.gate_entry_id) {
         const hasOtherEntriesWithSameGateId = weights.some(w => 
           w.id !== weightToDelete.id && w.gate_entry_id === weightToDelete.gate_entry_id
@@ -1934,7 +2048,7 @@ const fetchWeights = useCallback(async () => {
       (entry.driver_name?.toLowerCase().includes(query)) ||
       (entry.vehicle_plate?.toLowerCase().includes(query)) ||
       (entry.pallet_id?.toLowerCase().includes(query)) ||
-      (entry.gate_entry_id?.toLowerCase().includes(query)); // NEW: Search by gate entry ID
+      (entry.gate_entry_id?.toLowerCase().includes(query));
     
     const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
     
@@ -2215,7 +2329,6 @@ const fetchWeights = useCallback(async () => {
                                   {supplier.company_name} • {supplier.vehicle_plate} • {supplier.region}
                                 </div>
                                 
-                                {/* Show Gate Entry ID if available */}
                                 {supplier.gate_entry_id && (
                                   <div className="mt-1 flex items-center gap-1">
                                     <Fingerprint className="w-3 h-3 text-purple-500" />
@@ -2394,7 +2507,7 @@ const fetchWeights = useCallback(async () => {
               </Card>
             </TabsContent>
 
-            {/* History Tab - UPDATED to show gate_entry_id in table */}
+            {/* History Tab - UPDATED with enhanced date range filtering */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2405,7 +2518,7 @@ const fetchWeights = useCallback(async () => {
                     </div>
                     <div className="flex gap-2">
                       <Button
-                        onClick={() => historyDate && downloadCSV(filteredHistoryWeights, historyDate)}
+                        onClick={() => downloadCSV(filteredHistoryWeights)}
                         disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
                         className="gap-2"
                         variant="outline"
@@ -2416,64 +2529,207 @@ const fetchWeights = useCallback(async () => {
                     </div>
                   </CardTitle>
                   <CardDescription>
-                    View weight history by date, edit records, and export data in multiple formats
+                    View weight history by date range, edit records, and export data in multiple formats
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* Date Selection and Search */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="history-date">Select Date</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full justify-start text-left font-normal",
-                                !historyDate && "text-muted-foreground"
-                              )}
-                            >
-                              <Calendar className="mr-2 h-4 w-4" />
-                              {historyDate ? format(historyDate, "PPP") : "Pick a date"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <CalendarComponent
-                              mode="single"
-                              selected={historyDate}
-                              onSelect={setHistoryDate}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                    {/* Enhanced Date Range Selection */}
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant={dateRangePreset === 'today' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => applyDateRangePreset('today')}
+                        >
+                          Today
+                        </Button>
+                        <Button
+                          variant={dateRangePreset === 'yesterday' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => applyDateRangePreset('yesterday')}
+                        >
+                          Yesterday
+                        </Button>
+                        <Button
+                          variant={dateRangePreset === 'thisWeek' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => applyDateRangePreset('thisWeek')}
+                        >
+                          This Week
+                        </Button>
+                        <Button
+                          variant={dateRangePreset === 'thisMonth' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => applyDateRangePreset('thisMonth')}
+                        >
+                          This Month
+                        </Button>
+                        <Button
+                          variant={dateRangePreset === 'lastMonth' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => applyDateRangePreset('lastMonth')}
+                        >
+                          Last Month
+                        </Button>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="search-history">Search Entries</Label>
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                          <Input
-                            id="search-history"
-                            placeholder="Search by supplier, driver, vehicle plate, gate ID..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10"
-                          />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Date Range</Label>
+                          <div className="flex gap-2">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "flex-1 justify-start text-left font-normal",
+                                    !dateRangeFilter.from && "text-muted-foreground"
+                                  )}
+                                >
+                                  <Calendar className="mr-2 h-4 w-4" />
+                                  {dateRangeFilter.from ? (
+                                    dateRangeFilter.to ? (
+                                      <>
+                                        {format(dateRangeFilter.from, "LLL dd, yyyy")} -{" "}
+                                        {format(dateRangeFilter.to, "LLL dd, yyyy")}
+                                      </>
+                                    ) : (
+                                      format(dateRangeFilter.from, "LLL dd, yyyy")
+                                    )
+                                  ) : (
+                                    <span>Pick a date range</span>
+                                  )}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <CalendarComponent
+                                  mode="range"
+                                  selected={{
+                                    from: dateRangeFilter.from,
+                                    to: dateRangeFilter.to
+                                  }}
+                                  onSelect={(range) => {
+                                    setDateRangeFilter(prev => ({
+                                      ...prev,
+                                      from: range?.from,
+                                      to: range?.to
+                                    }));
+                                    setDateRangePreset('custom');
+                                  }}
+                                  numberOfMonths={2}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label>Time Filter</Label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="includeTime"
+                                checked={dateRangeFilter.includeTime}
+                                onChange={(e) => {
+                                  setDateRangeFilter(prev => ({
+                                    ...prev,
+                                    includeTime: e.target.checked
+                                  }));
+                                  setDateRangePreset('custom');
+                                }}
+                                className="rounded border-gray-300"
+                              />
+                              <Label htmlFor="includeTime" className="text-sm">Include time</Label>
+                            </div>
+                          </div>
+                          
+                          {dateRangeFilter.includeTime && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label htmlFor="fromTime" className="text-xs">From</Label>
+                                <Input
+                                  id="fromTime"
+                                  type="time"
+                                  value={dateRangeFilter.fromTime}
+                                  onChange={(e) => {
+                                    setDateRangeFilter(prev => ({
+                                      ...prev,
+                                      fromTime: e.target.value
+                                    }));
+                                    setDateRangePreset('custom');
+                                  }}
+                                  className="text-sm"
+                                />
+                              </div>
+                              <div>
+                                <Label htmlFor="toTime" className="text-xs">To</Label>
+                                <Input
+                                  id="toTime"
+                                  type="time"
+                                  value={dateRangeFilter.toTime}
+                                  onChange={(e) => {
+                                    setDateRangeFilter(prev => ({
+                                      ...prev,
+                                      toTime: e.target.value
+                                    }));
+                                    setDateRangePreset('custom');
+                                  }}
+                                  className="text-sm"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="filter-region">Filter by Region</Label>
-                        <Select value={filterRegion} onValueChange={setFilterRegion}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="All Regions" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Regions</SelectItem>
-                            {regions.map(region => (
-                              <SelectItem key={region} value={region}>{region}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+
+                      {/* Search and Region Filters */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="search-history">Search Entries</Label>
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                            <Input
+                              id="search-history"
+                              placeholder="Search by supplier, driver, vehicle plate, gate ID..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="filter-region">Filter by Region</Label>
+                          <Select value={filterRegion} onValueChange={setFilterRegion}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="All Regions" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Regions</SelectItem>
+                              {regions.map(region => (
+                                <SelectItem key={region} value={region}>{region}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Apply Filters Button */}
+                      <div className="flex justify-end">
+                        <Button
+                          onClick={fetchHistoryWeights}
+                          disabled={isHistoryLoading}
+                          className="gap-2"
+                        >
+                          {isHistoryLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Filter className="w-4 h-4" />
+                          )}
+                          Apply Filters
+                        </Button>
                       </div>
                     </div>
 
@@ -2490,7 +2746,7 @@ const fetchWeights = useCallback(async () => {
                             size="sm"
                             variant="outline"
                             className="gap-1"
-                            onClick={() => historyDate && downloadCSV(filteredHistoryWeights, historyDate)}
+                            onClick={() => downloadCSV(filteredHistoryWeights)}
                             disabled={filteredHistoryWeights.length === 0}
                           >
                             <Download className="w-3 h-3" />
@@ -2749,9 +3005,23 @@ const fetchWeights = useCallback(async () => {
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
+                            <CalendarRange className="w-4 h-4" />
                             <span className="font-medium">
-                              {historyDate ? `Entries for ${format(historyDate, 'MMMM d, yyyy')}` : 'Select a date'}
+                              {dateRangeFilter.from ? (
+                                dateRangeFilter.to ? (
+                                  <>
+                                    Entries from {format(dateRangeFilter.from, 'MMM d, yyyy')} 
+                                    {dateRangeFilter.includeTime && ` ${dateRangeFilter.fromTime}`} 
+                                    to {format(dateRangeFilter.to, 'MMM d, yyyy')}
+                                    {dateRangeFilter.includeTime && ` ${dateRangeFilter.toTime}`}
+                                  </>
+                                ) : (
+                                  <>
+                                    Entries for {format(dateRangeFilter.from, 'MMMM d, yyyy')}
+                                    {dateRangeFilter.includeTime && ` from ${dateRangeFilter.fromTime}`}
+                                  </>
+                                )
+                              ) : 'Select a date range'}
                             </span>
                             <Badge variant="outline" className="ml-2">
                               {filteredHistoryWeights.length} entries
@@ -2777,7 +3047,7 @@ const fetchWeights = useCallback(async () => {
                           <table className="w-full">
                             <thead>
                               <tr className="bg-black-50 border-b">
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Time</th>
+                                <th className="text-left p-3 text-sm font-semibold text-gray-700">Date & Time</th>
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Gate Entry ID</th>
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Pallet ID</th>
                                 <th className="text-left p-3 text-sm font-semibold text-gray-700">Supplier</th>
@@ -2800,10 +3070,14 @@ const fetchWeights = useCallback(async () => {
                                 return (
                                   <tr key={entry.id} className="border-b hover:bg-black-50">
                                     <td className="p-3">
-                                      {new Date(entry.created_at).toLocaleTimeString([], { 
-                                        hour: '2-digit', 
-                                        minute: '2-digit' 
-                                      })}
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">
+                                          {format(new Date(entry.created_at), 'MMM d, yyyy')}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          {format(new Date(entry.created_at), 'HH:mm:ss')}
+                                        </span>
+                                      </div>
                                     </td>
                                     <td className="p-3">
                                       {entry.gate_entry_id ? (
@@ -2968,12 +3242,12 @@ const fetchWeights = useCallback(async () => {
                           <div className="text-center">
                             <FileSpreadsheet className="w-16 h-16 mx-auto text-gray-300 mb-4" />
                             <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                              {historyDate ? 'No entries found' : 'Select a date'}
+                              No entries found
                             </h3>
                             <p className="text-gray-500 max-w-md mx-auto">
-                              {historyDate 
-                                ? `No weight entries found for ${format(historyDate, 'MMMM d, yyyy')}. Try selecting a different date.`
-                                : 'Choose a date to view weight history and export options.'
+                              {dateRangeFilter.from 
+                                ? `No weight entries found for the selected period. Try adjusting your filters or selecting a different date range.`
+                                : 'Select a date range to view weight history and export options.'
                               }
                             </p>
                           </div>
@@ -3048,7 +3322,7 @@ const fetchWeights = useCallback(async () => {
                           
                           <div className="mt-4 flex justify-center gap-4">
                             <Button
-                              onClick={() => historyDate && downloadCSV(filteredHistoryWeights, historyDate)}
+                              onClick={() => downloadCSV(filteredHistoryWeights)}
                               className="gap-2"
                             >
                               <Download className="w-4 h-4" />
@@ -3542,7 +3816,7 @@ const fetchWeights = useCallback(async () => {
                             <div className="space-y-2">
                               <Label htmlFor="hass_crates">Hass Crates Rejected</Label>
                               <Input
-                                id="hass-crates"
+                                id="hass_crates"
                                 type="number"
                                 min="0"
                                 value={newRejection.hass_crates}
@@ -3702,7 +3976,7 @@ const fetchWeights = useCallback(async () => {
 
                     {/* Counting History Table */}
                     <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-3 border-b">
+                      <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Calculator className="w-4 h-4" />
@@ -3974,7 +4248,7 @@ const fetchWeights = useCallback(async () => {
                 weight: variety.toLowerCase().includes('fuerte') ? lastWeightEntry.fuerte_weight : lastWeightEntry.hass_weight
               })) || [],
               supplierPhone: lastWeightEntry.supplier_phone || '',
-              gateEntryId: lastWeightEntry.gate_entry_id || '', // NEW
+              gateEntryId: lastWeightEntry.gate_entry_id || '',
             }}
           />
         )}

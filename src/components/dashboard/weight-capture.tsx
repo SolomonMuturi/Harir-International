@@ -467,14 +467,7 @@ export function WeightCapture({
       });
 
 
-      if (totalCrates <= 0) {
-        toast({
-          title: "Crates Required",
-          description: "Please enter number of crates for at least one variety",
-          variant: "destructive",
-        });
-        return;
-      }
+      // Allow saving with zero crates and zero weight
 
       // Create product description
       const productDesc = [];

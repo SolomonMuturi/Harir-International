@@ -347,6 +347,23 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
+  // Helper function to log activity to /api/activity-logs
+  const logActivity = async (action: string, status: 'success' | 'failure' | 'pending', user?: string) => {
+    try {
+      await fetch('/api/activity-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          status,
+          user: user || 'Weight Capture',
+          timestamp: new Date().toISOString(),
+        }),
+      });
+    } catch (err) {
+      // Silent fail
+    }
+  };
   // Helper function to apply time to date
   const applyTimeToDate = (date: Date | undefined, timeStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
     if (!date) return undefined;
@@ -616,26 +633,41 @@ export default function WeightCapturePage() {
     const today = new Date();
     const weekAgo = subDays(today, 7);
     const monthAgo = subDays(today, 30);
-    
-    let periodWeights: WeightEntry[] = [];
-    
+
+    // Merge weights and rejects for statistics
+    let allEntries: Array<any> = [...weights];
+    rejects.forEach(reject => {
+      allEntries.push({
+        ...reject,
+        fuerte_weight: reject.fuerte_weight || 0,
+        fuerte_crates: reject.fuerte_crates || 0,
+        hass_weight: reject.hass_weight || 0,
+        hass_crates: reject.hass_crates || 0,
+        created_at: reject.rejected_at,
+        supplier_id: reject.supplier_id,
+        supplier_name: reject.supplier_name,
+        region: reject.region,
+        status: 'rejected',
+      });
+    });
+
+    let periodWeights: Array<any> = [];
     switch (statsPeriod) {
       case 'today':
-        periodWeights = weights.filter(w => isSameDay(new Date(w.created_at), today));
+        periodWeights = allEntries.filter(w => isSameDay(new Date(w.created_at), today));
         break;
       case 'week':
-        periodWeights = weights.filter(w => new Date(w.created_at) >= weekAgo);
+        periodWeights = allEntries.filter(w => new Date(w.created_at) >= weekAgo);
         break;
       case 'month':
-        periodWeights = weights.filter(w => new Date(w.created_at) >= monthAgo);
+        periodWeights = allEntries.filter(w => new Date(w.created_at) >= monthAgo);
         break;
     }
-    
+
     const summariesMap = new Map<string, DailySummary>();
-    
+
     periodWeights.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
-      
       if (!summariesMap.has(date)) {
         summariesMap.set(date, {
           date,
@@ -646,16 +678,13 @@ export default function WeightCapturePage() {
           varieties: []
         });
       }
-      
       const summary = summariesMap.get(date)!;
       summary.total_weight += (entry.fuerte_weight || 0) + (entry.hass_weight || 0);
       summary.total_crates += (entry.fuerte_crates || 0) + (entry.hass_crates || 0);
       summary.total_pallets++;
-      
       if (entry.supplier_id && !summary.total_suppliers) {
         summary.total_suppliers = 1;
       }
-      
       if (entry.fuerte_weight > 0) {
         let variety = summary.varieties.find(v => v.variety === 'Fuerte');
         if (!variety) {
@@ -665,7 +694,6 @@ export default function WeightCapturePage() {
         variety.total_weight += entry.fuerte_weight;
         variety.total_crates += entry.fuerte_crates || 0;
       }
-      
       if (entry.hass_weight > 0) {
         let variety = summary.varieties.find(v => v.variety === 'Hass');
         if (!variety) {
@@ -676,20 +704,20 @@ export default function WeightCapturePage() {
         variety.total_crates += entry.hass_crates || 0;
       }
     });
-    
+
     summariesMap.forEach(summary => {
       summary.varieties.forEach(variety => {
-        variety.avg_weight_per_crate = variety.total_crates > 0 
-          ? variety.total_weight / variety.total_crates 
+        variety.avg_weight_per_crate = variety.total_crates > 0
+          ? variety.total_weight / variety.total_crates
           : 0;
       });
     });
-    
+
     const summaries = Array.from(summariesMap.values())
       .sort((a, b) => b.date.localeCompare(a.date));
-    
+
     setDailySummaries(summaries);
-  }, [weights, statsPeriod]);
+  }, [weights, rejects, statsPeriod]);
 
   // Fetch KPI data
   const fetchKpiData = useCallback(() => {
@@ -922,37 +950,14 @@ export default function WeightCapturePage() {
       const fuerteCrates = weightData.fuerte_crates ? parseInt(String(weightData.fuerte_crates)) : 0;
       const hassWeight = weightData.hass_weight ? parseFloat(String(weightData.hass_weight)) : 0;
       const hassCrates = weightData.hass_crates ? parseInt(String(weightData.hass_crates)) : 0;
-      
-      if (fuerteWeight <= 0 && hassWeight <= 0) {
-        toast({
-          title: 'Validation Error',
-          description: 'Please enter weight for at least one variety (Fuerte or Hass)',
-          variant: 'destructive',
-        });
-        return;
-      }
-      
-      if (fuerteCrates <= 0 && hassCrates <= 0) {
-        toast({
-          title: 'Validation Error',
-          description: 'Please enter number of crates for at least one variety',
-          variant: 'destructive',
-        });
-        return;
-      }
-      
+      // Allow saving and generating card/QR code even if weight is 0
       setError(null);
-      
       const submittedSupplierId = weightData.supplier_id;
       const checkInSession = weightData.check_in_session || 
         (submittedSupplierId ? `${submittedSupplierId}_${new Date().getTime()}` : undefined);
-      
       const generatedPalletId = weightData.pallet_id || generatePalletId();
-      
       const gateEntryId = weightData.gate_entry_id || selectedSupplier?.gate_entry_id;
-      
       console.log('🔑 Using gate entry ID for weight:', gateEntryId);
-      
       const payload = {
         pallet_id: generatedPalletId,
         unit: weightData.unit || 'kg',
@@ -977,9 +982,7 @@ export default function WeightCapturePage() {
         check_in_session: checkInSession,
         gate_entry_id: gateEntryId,
       };
-      
       console.log('📦 Sending weight payload:', payload);
-      
       const response = await fetch('/api/weights', {
         method: 'POST',
         headers: {
@@ -987,7 +990,6 @@ export default function WeightCapturePage() {
         },
         body: JSON.stringify(payload),
       });
-      
       if (!response.ok) {
         let errorMessage = 'Failed to save weight';
         try {
@@ -996,14 +998,12 @@ export default function WeightCapturePage() {
         } catch (parseError) {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
+        await logActivity('Weight entry save failed', 'failure', payload.supplier);
         throw new Error(errorMessage);
       }
-
       const savedEntry = await response.json();
-      
       setWeights(prev => [savedEntry, ...prev]);
       setLastWeightEntry(savedEntry);
-      
       if (gateEntryId) {
         setProcessedGateIds(prev => {
           const newSet = new Set(prev);
@@ -1012,7 +1012,6 @@ export default function WeightCapturePage() {
         });
         console.log('✅ Added gate entry ID to processed set:', gateEntryId);
       }
-      
       if (checkInSession) {
         setProcessedCheckIns(prev => {
           const newSet = new Set(prev);
@@ -1020,22 +1019,18 @@ export default function WeightCapturePage() {
           return newSet;
         });
       }
-      
       setIsReceiptOpen(true);
-      
       toast({
         title: 'Weight Saved Successfully',
         description: gateEntryId 
           ? `Pallet ${savedEntry.pallet_id} recorded for Gate ID: ${gateEntryId}`
           : `Pallet ${savedEntry.pallet_id} has been recorded.`,
       });
-      
+      await logActivity(`Weight entry saved: ${savedEntry.pallet_id}`, 'success', savedEntry.supplier);
       setSelectedSupplier(null);
-      
     } catch (error: any) {
       console.error('Error adding weight:', error);
       setError(error.message || 'Failed to save weight entry');
-      
       toast({
         title: 'Save Failed',
         description: error.message || 'Failed to save weight entry to server',
@@ -1125,8 +1120,39 @@ export default function WeightCapturePage() {
   // Generate CSV data
   const generateCSVData = useCallback((weights: WeightEntry[]) => {
     const supplierMap = new Map<string, any>();
-    
-    weights.forEach(entry => {
+
+    // Merge weights and rejects for supplier intake/history
+    const allEntries = [
+      ...weights.map(w => ({
+        ...w,
+        supplier_phone: (w as any).supplier_phone || '',
+        driver_phone: (w as any).driver_phone || '',
+        vehicle_plate: (w as any).vehicle_plate || '',
+        gate_entry_id: (w as any).gate_entry_id || '',
+        driver_name: (w as any).driver_name || '',
+        status: undefined,
+      })),
+      ...rejects.map(reject => ({
+        ...reject,
+        fuerte_weight: reject.fuerte_weight || 0,
+        fuerte_crates: reject.fuerte_crates || 0,
+        hass_weight: reject.hass_weight || 0,
+        hass_crates: reject.hass_crates || 0,
+        created_at: reject.rejected_at,
+        supplier: reject.supplier_name,
+        supplier_id: reject.supplier_id,
+        region: reject.region,
+        pallet_id: reject.pallet_id || '',
+        status: 'rejected',
+        supplier_phone: '',
+        driver_phone: '',
+        vehicle_plate: '',
+        gate_entry_id: '',
+        driver_name: '',
+      }))
+    ];
+
+    allEntries.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
       const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
@@ -1134,9 +1160,9 @@ export default function WeightCapturePage() {
       const vehicleKey = entry.vehicle_plate || '';
       const regionKey = entry.region || '';
       const gateKey = entry.gate_entry_id || '';
-      
+
       const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
-      
+
       if (!supplierMap.has(key)) {
         supplierMap.set(key, {
           date,
@@ -1152,12 +1178,13 @@ export default function WeightCapturePage() {
           hass_crates_in: 0,
           total_crates: 0,
           region: regionKey,
-          pallet_id: entry.pallet_id || ''
+          pallet_id: entry.pallet_id || '',
+          status: entry.status === 'rejected' ? 'rejected' : undefined,
         });
       }
-      
+
       const row = supplierMap.get(key)!;
-      
+
       row.fuerte_weight += entry.fuerte_weight || 0;
       row.fuerte_crates_in += entry.fuerte_crates || 0;
       row.hass_weight += entry.hass_weight || 0;
@@ -1165,7 +1192,7 @@ export default function WeightCapturePage() {
       row.total_weight = row.fuerte_weight + row.hass_weight;
       row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
     });
-    
+
     return Array.from(supplierMap.values());
   }, []);
 
@@ -1615,7 +1642,6 @@ export default function WeightCapturePage() {
       });
       return;
     }
-    
     if (newRejection.total_rejected_weight <= 0) {
       toast({
         title: 'Validation Error',
@@ -1624,24 +1650,20 @@ export default function WeightCapturePage() {
       });
       return;
     }
-    
     try {
       setIsAddingRejection(true);
-      
       let intakeWeight = 0;
       if (selectedWeightForReject) {
         intakeWeight = (selectedWeightForReject.fuerte_weight || 0) + (selectedWeightForReject.hass_weight || 0);
       } else if (selectedCountingRecordForReject) {
         intakeWeight = selectedCountingRecordForReject.total_weight || 0;
       }
-      
       const rejectionData = {
         ...newRejection,
         rejected_at: new Date().toISOString(),
         created_by: 'Weight Capture Station',
         variance: intakeWeight - (newRejection.counted_weight + newRejection.total_rejected_weight)
       };
-      
       const response = await fetch('/api/rejects', {
         method: 'POST',
         headers: {
@@ -1649,15 +1671,12 @@ export default function WeightCapturePage() {
         },
         body: JSON.stringify(rejectionData),
       });
-      
       if (!response.ok) {
+        await logActivity('Weight rejection save failed', 'failure', rejectionData.supplier_name);
         throw new Error('Failed to save rejection entry');
       }
-      
       const savedRejection = await response.json();
-      
       setRejects(prev => [savedRejection, ...prev]);
-      
       setNewRejection({
         id: '',
         weight_entry_id: '',
@@ -1681,15 +1700,13 @@ export default function WeightCapturePage() {
         created_by: 'Weight Capture Station',
         status: 'pending'
       });
-      
       setSelectedWeightForReject(null);
       setSelectedCountingRecordForReject(null);
-      
       toast({
         title: 'Rejection Saved',
         description: `Rejection entry saved for ${savedRejection.supplier_name}. Variance: ${savedRejection.variance.toFixed(1)} kg`,
       });
-      
+      await logActivity(`Weight rejection saved: ${savedRejection.pallet_id}`, 'success', savedRejection.supplier_name);
     } catch (error: any) {
       console.error('Error saving rejection:', error);
       toast({
@@ -1700,7 +1717,7 @@ export default function WeightCapturePage() {
     } finally {
       setIsAddingRejection(false);
     }
-  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast]);
+  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast, logActivity]);
 
   // Delete rejection
   const handleDeleteRejection = useCallback(async (rejectionId: string) => {
@@ -3711,7 +3728,7 @@ export default function WeightCapturePage() {
 
                         {/* Selected Record Info */}
                         {(selectedWeightForReject || selectedCountingRecordForReject) && (
-                          <div className="bg-gray-50 p-4 rounded-lg border border-blue-200">
+                          <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
                             <div className="flex items-center justify-between mb-2">
                               <div className="font-semibold text-blue-800">
                                 {selectedWeightForReject ? 'Selected Weight Entry' : 'Selected Counting Record'}
@@ -3859,7 +3876,7 @@ export default function WeightCapturePage() {
                           </div>
 
                           {/* Summary */}
-                          <div className="bg-gray-50 p-4 rounded-lg border">
+                          <div className="bg-black-50 p-4 rounded-lg border">
                             <div className="grid grid-cols-2 gap-4 mb-4">
                               <div>
                                 <div className="text-sm text-gray-500">Total Rejected Weight</div>
@@ -4089,7 +4106,7 @@ export default function WeightCapturePage() {
                     {/* Daily Summaries */}
                     {dailySummaries.length > 0 && (
                       <div className="border rounded-lg overflow-hidden">
-                        <div className="bg-gray-50 px-4 py-3 border-b">
+                        <div className="bg-black-50 px-4 py-3 border-b">
                           <div className="flex items-center gap-2">
                             <BarChart3 className="w-4 h-4" />
                             <span className="font-medium">Daily Weight Summary ({statsPeriod === 'today' ? 'Today' : statsPeriod === 'week' ? 'Last 7 Days' : 'Last 30 Days'})</span>

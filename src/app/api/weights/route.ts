@@ -267,26 +267,7 @@ export async function POST(request: NextRequest) {
     });
     
     // Validate at least one weight is provided
-    if (fuerteWeight === 0 && hassWeight === 0) {
-      return NextResponse.json(
-        { 
-          error: 'Validation failed',
-          details: 'Please enter weight for at least one variety (Fuerte or Hass)'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate at least one crate count is provided
-    if (fuerteCrates === 0 && hassCrates === 0) {
-      return NextResponse.json(
-        { 
-          error: 'Validation failed',
-          details: 'Please enter number of crates for at least one variety'
-        },
-        { status: 400 }
-      );
-    }
+    // Allow saving with zero weight and zero crates
     
     // Calculate totals
     const totalWeight = fuerteWeight + hassWeight;

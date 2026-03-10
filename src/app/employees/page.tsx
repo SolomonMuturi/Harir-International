@@ -32,7 +32,7 @@ import {
   Phone, Mail, Building, BadgeCheck, Award, DollarSign, CalendarDays,
   Shield, FileText, Download, Filter, MoreVertical, UserPlus,
   ChevronLeft, ChevronRight, DownloadCloud, UploadCloud, BarChart,
-  DoorOpen, DoorClosed, MapPin, ListChecks, Save, FileDown, Copy, Trash
+  DoorOpen, DoorClosed, MapPin, ListChecks, Save, FileDown, Copy, Trash, MoreHorizontal
 } from 'lucide-react';
 import { OverviewCard } from '@/components/dashboard/overview-card';
 import { useToast } from '@/hooks/use-toast';
@@ -71,6 +71,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Switch } from '@/components/ui/switch';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
 
 // Types
 type EmployeeContract = 'Full-time' | 'Part-time' | 'Contract';
@@ -2500,15 +2501,23 @@ export default function EmployeesPage() {
                         Today
                       </Button>
                       
-                      <Button
-                        onClick={handleBulkCheckInAll}
-                        disabled={gateInEmployees.length === 0}
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <DoorOpen className="mr-2 w-4 h-4" />
-                        Check In All
-                      </Button>
+<DropdownMenu>
+  <DropdownMenuTrigger asChild>
+    <Button variant="ghost" size="sm">
+      <MoreHorizontal className="h-4 w-4" />
+    </Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent align="end">
+    <DropdownMenuItem 
+      onClick={handleBulkCheckInAll}
+      disabled={gateInEmployees.length === 0}
+      className="text-green-600 focus:text-green-700 cursor-pointer"
+    >
+      <DoorOpen className="mr-2 h-4 w-4" />
+      <span>Check In All</span>
+    </DropdownMenuItem>
+  </DropdownMenuContent>
+</DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>
@@ -2667,14 +2676,23 @@ export default function EmployeesPage() {
                         </Button>
                       </div>
                       
-                      <Button
-                        onClick={handleBulkAssignDesignation}
-                        disabled={assignDesignationEmployees.length === 0}
-                        size="sm"
-                      >
-                        <MapPin className="mr-2 w-4 h-4" />
-                        Assign All
-                      </Button>
+<DropdownMenu>
+  <DropdownMenuTrigger asChild>
+    <Button variant="ghost" size="sm">
+      <MoreHorizontal className="h-4 w-4" />
+    </Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent align="end">
+    <DropdownMenuItem 
+      onClick={handleBulkAssignDesignation}
+      disabled={assignDesignationEmployees.length === 0}
+      className="text-blue-600 focus:text-blue-700 cursor-pointer"
+    >
+      <MapPin className="mr-2 h-4 w-4" />
+      <span>Assign All</span>
+    </DropdownMenuItem>
+  </DropdownMenuContent>
+</DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>
@@ -2845,15 +2863,23 @@ export default function EmployeesPage() {
                         </Button>
                       </div>
                       
-                      <Button
-                        onClick={handleBulkCheckOutAll}
-                        disabled={gateOutEmployees.length === 0}
-                        size="sm"
-                        variant="destructive"
-                      >
-                        <DoorClosed className="mr-2 w-4 h-4" />
-                        Check Out All
-                      </Button>
+<DropdownMenu>
+  <DropdownMenuTrigger asChild>
+    <Button variant="ghost" size="sm">
+      <MoreHorizontal className="h-4 w-4" />
+    </Button>
+  </DropdownMenuTrigger>
+  <DropdownMenuContent align="end">
+    <DropdownMenuItem 
+      onClick={handleBulkCheckOutAll}
+      disabled={gateOutEmployees.length === 0}
+      className="text-red-600 focus:text-red-700 cursor-pointer"
+    >
+      <DoorClosed className="mr-2 h-4 w-4" />
+      <span>Check Out All ({gateOutEmployees.length})</span>
+    </DropdownMenuItem>
+  </DropdownMenuContent>
+</DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>

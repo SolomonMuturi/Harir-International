@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -20,9 +20,32 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FlaskConical, CheckCircle, XCircle, ThumbsUp, ThumbsDown, History } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  FlaskConical,
+  CheckCircle,
+  XCircle,
+  ThumbsUp,
+  ThumbsDown,
+  History,
+  Printer,
+  Plus,
+  Trash2,
+  Layers,
+  Sticker,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { useReactToPrint } from 'react-to-print';
 
 interface QualityCheck {
   id: string;
@@ -44,11 +67,45 @@ interface QualityCheck {
   hass_overall: number;
 }
 
+interface LabelItem {
+  id: string;
+  code: string;
+  class: 'C1' | 'C2' | 'Reject';
+}
+
 export default function QualityControlPage() {
   const { toast } = useToast();
   const [qualityChecks, setQualityChecks] = useState<QualityCheck[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'accepted' | 'declined' | 'history'>('accepted');
+  const [activeTab, setActiveTab] = useState<'accepted' | 'declined' | 'history' | 'print'>('accepted');
+  
+  // Print label state
+  const [labels, setLabels] = useState<LabelItem[]>([]);
+  const [currentCode, setCurrentCode] = useState('');
+  const [currentClass, setCurrentClass] = useState<'C1' | 'C2' | 'Reject'>('C1');
+  
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    pageStyle: `
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      @media print {
+        body {
+          margin: 0;
+          padding: 0;
+          background: white;
+        }
+        * {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      }
+    `,
+  });
 
   // Load quality checks from database
   const loadQualityChecks = async () => {
@@ -102,6 +159,44 @@ export default function QualityControlPage() {
   useEffect(() => {
     loadQualityChecks();
   }, [toast]);
+
+  // Add a new label
+  const addLabel = () => {
+    if (!currentCode.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a code',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const newLabel: LabelItem = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      code: currentCode.trim(),
+      class: currentClass,
+    };
+
+    setLabels([...labels, newLabel]);
+    setCurrentCode('');
+  };
+
+  // Remove a label
+  const removeLabel = (id: string) => {
+    setLabels(labels.filter(label => label.id !== id));
+  };
+
+  // Clear all labels
+  const clearAllLabels = () => {
+    setLabels([]);
+  };
+
+  // Handle key press (Enter to add)
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addLabel();
+    }
+  };
 
   // Use quality checks for Accepted/Declined tabs
   const acceptedQualityChecks = qualityChecks.filter(qc => qc.overall_status === 'approved');
@@ -160,6 +255,168 @@ export default function QualityControlPage() {
     </div>
   );
 
+  // Printable Stickers Component - Full bleed A4 with 4 stickers (2x2 grid) - Even larger font
+  const PrintableStickers = ({ labels }: { labels: LabelItem[] }) => (
+    <div ref={printRef}>
+      <style type="text/css" dangerouslySetInnerHTML={{
+        __html: `
+          @media print {
+            @page {
+              size: A4;
+              margin: 0;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: 210mm;
+              height: 297mm;
+              background: white;
+            }
+            .sticker-page {
+              page-break-after: always;
+              width: 210mm;
+              height: 297mm;
+              margin: 0;
+              padding: 0;
+              position: relative;
+            }
+            .sticker-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              grid-template-rows: 1fr 1fr;
+              width: 210mm;
+              height: 297mm;
+              margin: 0;
+              padding: 0;
+            }
+            .sticker-cell {
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              border: 2px solid #000;
+              box-sizing: border-box;
+              width: 105mm;
+              height: 148.5mm;
+              margin: 0;
+              padding: 5mm;
+            }
+            .sticker-code {
+              font-size: 56px;
+              font-family: Arial, Helvetica, sans-serif;
+              font-weight: bold;
+              margin-bottom: 20px;
+              text-align: center;
+              word-break: break-word;
+              line-height: 1.2;
+            }
+            .sticker-class {
+              font-size: 84px;
+              font-family: Arial, Helvetica, sans-serif;
+              font-weight: bold;
+              text-align: center;
+              line-height: 1.2;
+            }
+            .sticker-cell.empty {
+              border: 2px dashed #ccc;
+            }
+            .sticker-cell.empty .sticker-code {
+              color: #ccc;
+            }
+          }
+          .sticker-page {
+            width: 210mm;
+            height: 297mm;
+            margin: 0;
+            padding: 0;
+            background: white;
+          }
+          .sticker-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            width: 210mm;
+            height: 297mm;
+            margin: 0;
+            padding: 0;
+          }
+          .sticker-cell {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border: 2px solid #000;
+            box-sizing: border-box;
+            width: 105mm;
+            height: 148.5mm;
+            margin: 0;
+            padding: 5mm;
+          }
+          .sticker-code {
+            font-size: 56px;
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-align: center;
+            word-break: break-word;
+            line-height: 1.2;
+          }
+          .sticker-class {
+            font-size: 84px;
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: bold;
+            text-align: center;
+            line-height: 1.2;
+          }
+          .sticker-cell.empty {
+            border: 2px dashed #ccc;
+          }
+          .print-header {
+            display: none;
+          }
+        `
+      }} />
+      
+      <div className="print-header mb-4 p-2 bg-gray-100 print:hidden">
+        <h3 className="text-lg font-bold">Sticker Preview - {labels.length} Stickers</h3>
+        <p className="text-sm text-gray-600">4 stickers per A4 sheet (full bleed) - 56pt code, 84pt class</p>
+      </div>
+      
+      {/* Group stickers into pages of 4 */}
+      {labels.length > 0 ? (
+        Array.from({ length: Math.ceil(labels.length / 4) }).map((_, pageIndex) => (
+          <div key={pageIndex} className="sticker-page">
+            <div className="sticker-grid">
+              {[0, 1, 2, 3].map((position) => {
+                const labelIndex = pageIndex * 4 + position;
+                const label = labels[labelIndex];
+                
+                return (
+                  <div key={position} className={`sticker-cell ${!label ? 'empty' : ''}`}>
+                    {label ? (
+                      <>
+                        <div className="sticker-code">{label.code}</div>
+                        <div className="sticker-class">{label.class}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="sticker-code">Empty</div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="text-center py-8 text-gray-500">
+          No stickers to print. Please add stickers first.
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <SidebarProvider>
       <Sidebar>
@@ -188,9 +445,9 @@ export default function QualityControlPage() {
             </p>
           </div>
 
-          {/* Tabs for viewing QC History - Only 3 tabs now */}
+          {/* Tabs */}
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="accepted" className="flex items-center gap-2">
                 <ThumbsUp className="w-4 h-4" />
                 Accepted ({acceptedQualityChecks.length})
@@ -202,6 +459,10 @@ export default function QualityControlPage() {
               <TabsTrigger value="history" className="flex items-center gap-2">
                 <History className="w-4 h-4" />
                 QC History ({qualityChecks.length})
+              </TabsTrigger>
+              <TabsTrigger value="print" className="flex items-center gap-2">
+                <Sticker className="w-4 h-4" />
+                Print Stickers
               </TabsTrigger>
             </TabsList>
 
@@ -339,7 +600,7 @@ export default function QualityControlPage() {
               </Card>
             </TabsContent>
 
-            {/* QC History Tab - Simple view */}
+            {/* QC History Tab */}
             <TabsContent value="history" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -407,7 +668,149 @@ export default function QualityControlPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* Print Stickers Tab */}
+            <TabsContent value="print" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sticker className="w-4 h-4" />
+                    Print Stickers
+                  </CardTitle>
+                  <CardDescription>
+                    Enter codes to print on stickers - 4 per A4 sheet (full bleed) - Large bold text (56pt code, 84pt class)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Input Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="code">Code / Number</Label>
+                      <Input
+                        id="code"
+                        placeholder="Enter code (e.g., 0603202617)"
+                        value={currentCode}
+                        onChange={(e) => setCurrentCode(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="class">Class</Label>
+                      <Select value={currentClass} onValueChange={(value: any) => setCurrentClass(value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="C1">C1</SelectItem>
+                          <SelectItem value="C2">C2</SelectItem>
+                          <SelectItem value="Reject">Reject</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={addLabel} className="flex items-center gap-2">
+                      <Plus className="w-4 h-4" />
+                      Add Sticker
+                    </Button>
+                    <Button variant="outline" onClick={clearAllLabels} className="flex items-center gap-2">
+                      <Trash2 className="w-4 h-4" />
+                      Clear All
+                    </Button>
+                    <Button 
+                      onClick={handlePrint}
+                      disabled={labels.length === 0}
+                      className="flex items-center gap-2 ml-auto"
+                      size="lg"
+                    >
+                      <Printer className="w-4 h-4" />
+                      Print {labels.length} Sticker{labels.length !== 1 ? 's' : ''}
+                    </Button>
+                  </div>
+
+                  {/* Stickers List */}
+                  {labels.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Code</th>
+                            <th className="px-4 py-2 text-left">Class</th>
+                            <th className="px-4 py-2 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {labels.map((label) => (
+                            <tr key={label.id} className="border-t hover:bg-gray-50">
+                              <td className="px-4 py-3 font-mono">{label.code}</td>
+                              <td className="px-4 py-3">
+                                <Badge variant="outline" className={
+                                  label.class === 'C1' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  label.class === 'C2' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                  'bg-red-50 text-red-700 border-red-200'
+                                }>
+                                  {label.class}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeLabel(label.id)}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Statistics */}
+                  {labels.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="font-semibold flex items-center gap-2 mb-2">
+                        <Layers className="w-4 h-4" />
+                        Sticker Summary
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <div className="text-gray-600">Total Stickers</div>
+                          <div className="font-bold text-lg">{labels.length}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600">C1</div>
+                          <div className="font-bold text-lg text-green-600">{labels.filter(l => l.class === 'C1').length}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600">C2</div>
+                          <div className="font-bold text-lg text-blue-600">{labels.filter(l => l.class === 'C2').length}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600">Reject</div>
+                          <div className="font-bold text-lg text-red-600">{labels.filter(l => l.class === 'Reject').length}</div>
+                        </div>
+                        <div className="col-span-2 md:col-span-4">
+                          <div className="text-gray-600">Sheets (4 stickers per sheet)</div>
+                          <div className="font-bold text-lg">{Math.ceil(labels.length / 4)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
+
+          {/* Printable Stickers Component - Hidden */}
+          <div style={{ display: 'none' }}>
+            <PrintableStickers labels={labels} />
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>

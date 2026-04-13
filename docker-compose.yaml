@@ -11,9 +11,11 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      timeout: 10s
       retries: 10
+      interval: 10s
+      start_period: 30s
     restart: unless-stopped
     networks:
       - warehouse-network
@@ -39,7 +41,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/session"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -57,7 +59,7 @@ services:
 
 volumes:
   mysql_data:
-    driver: local
+    name: system_mysql_data
 
 networks:
   warehouse-network:

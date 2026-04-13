@@ -173,7 +173,7 @@ interface CSVRow {
   fuerte_10kg_crates: number;
   hass_4kg_boxes: number;
   hass_10kg_crates: number;
-  total_boxes: number;
+  total_boxes: number; 
   processed_by: string;
   notes: string;
   rejection_reason?: string;
@@ -653,7 +653,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.text(`GRN: WH-${record.id.slice(0, 8).toUpperCase()}`, leftMargin + 2, yPos + 8);
     doc.text(`Date: ${format(new Date(record.submitted_at), 'dd/MM/yyyy')}`, leftMargin + 35, yPos + 8);
     doc.text(`Time: ${format(new Date(record.submitted_at), 'HH:mm')}`, leftMargin + 70, yPos + 8);
-    doc.text(`By: ${record.processed_by}`, leftMargin + 95, yPos + 8);
+    doc.text(`By: Counting Clerk`, leftMargin + 95, yPos + 8);
     yPos += 13;
     
     // Supplier Information
@@ -2287,7 +2287,7 @@ export default function WarehousePage() {
         total_weight: intakeWeight,
         counting_data: { ...countingForm },
         submitted_at: new Date().toISOString(),
-        processed_by: "Warehouse Staff",
+        processed_by: "Counting Clerk",
         totals,
         total_counted_weight: totalCountedWeight,
         // Add rejected weight
@@ -2520,7 +2520,7 @@ export default function WarehousePage() {
         total_weight: intakeWeight,
         counting_data: { ...countingForm },
         submitted_at: new Date().toISOString(),
-        processed_by: "Warehouse Staff (Updated)",
+        processed_by: "Counting Clerk",
         totals,
         total_counted_weight: totalCountedWeight,
         rejected_weight: rejectedWeight > 0 ? rejectedWeight : 0,

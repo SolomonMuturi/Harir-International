@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
         fuerte_crates: body.fuerte_crates || 0,
         hass_weight: body.hass_weight || 0,
         hass_crates: body.hass_crates || 0,
-        total_rejected_weight: body.total_rejected_weight || 
+        total_rejected_weight: body.total_rejected_weight ?? 
           ((body.fuerte_weight || 0) + (body.hass_weight || 0)),
-        total_rejected_crates: body.total_rejected_crates || 
+        total_rejected_crates: body.total_rejected_crates ?? 
           ((body.fuerte_crates || 0) + (body.hass_crates || 0)),
         variance: body.variance || 0,
         reason: body.reason || '',

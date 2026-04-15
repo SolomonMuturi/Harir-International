@@ -97,6 +97,9 @@ export interface CountingFormData {
   hass_10kg_class2_size32: number;
   
   notes: string;
+  bank_name: string;
+  bank_account: string;
+  kra_pin: string;
 }
 
 export interface CountingRecord {

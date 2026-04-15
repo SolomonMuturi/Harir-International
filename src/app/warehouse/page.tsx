@@ -489,34 +489,51 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     try {
       // Fetch the rejection record for this counting record
-      const rejectResponse = await fetch(`/api/rejects?weight_entry_id=${record.id}`);
+      // Try multiple search criteria since rejection might be linked differently
+      let rejectResponse = await fetch(`/api/rejects?pallet_id=${record.pallet_id}`);
+      let rejectResult = [];
+      
       if (rejectResponse.ok) {
-        const rejectResult = await rejectResponse.json();
-        const rejectEntries = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
-        
-        // Find matching rejection by supplier_id, pallet_id, or weight_entry_id
-        rejectionData = rejectEntries.find((r: any) => 
-          r.weight_entry_id === record.id || 
-          r.pallet_id === record.pallet_id ||
-          r.supplier_id === record.supplier_id
-        );
-        
-        if (rejectionData) {
-          rejectedFuerteCrates = rejectionData.fuerte_crates || 0;
-          rejectedHassCrates = rejectionData.hass_crates || 0;
-          rejectedTotalCrates = rejectedFuerteCrates + rejectedHassCrates;
-          rejectionReason = rejectionData.reason || rejectionReason;
-          rejectionNotes = rejectionData.notes || rejectionNotes;
-          
-          console.log('🚫 Found rejection record with crates:', {
-            supplier: record.supplier_name,
-            pallet: record.pallet_id,
-            rejected_fuerte_crates: rejectedFuerteCrates,
-            rejected_hass_crates: rejectedHassCrates,
-            rejected_total_crates: rejectedTotalCrates,
-            reason: rejectionData.reason
-          });
+        rejectResult = await rejectResponse.json();
+        rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
+      }
+      
+      // If no results by pallet_id, try by supplier_name
+      if (rejectResult.length === 0) {
+        rejectResponse = await fetch(`/api/rejects?supplier_name=${encodeURIComponent(record.supplier_name)}`);
+        if (rejectResponse.ok) {
+          rejectResult = await rejectResponse.json();
+          rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
         }
+      }
+      
+      // Find the most recent matching rejection
+      rejectionData = rejectResult.find((r: any) => 
+        r.pallet_id === record.pallet_id || 
+        r.supplier_name === record.supplier_name
+      );
+      
+      if (rejectionData) {
+        rejectedFuerteCrates = rejectionData.fuerte_crates || 0;
+        rejectedHassCrates = rejectionData.hass_crates || 0;
+        rejectedTotalCrates = rejectedFuerteCrates + rejectedHassCrates;
+        
+        // If no variety breakdown, use total rejected crates
+        if (rejectedTotalCrates === 0) {
+          rejectedTotalCrates = rejectionData.total_rejected_crates || 0;
+        }
+        
+        rejectionReason = rejectionData.reason || rejectionReason;
+        rejectionNotes = rejectionData.notes || rejectionNotes;
+        
+        console.log('🚫 Found rejection record with crates:', {
+          supplier: record.supplier_name,
+          pallet: record.pallet_id,
+          rejected_fuerte_crates: rejectedFuerteCrates,
+          rejected_hass_crates: rejectedHassCrates,
+          rejected_total_crates: rejectedTotalCrates,
+          reason: rejectionData.reason
+        });
       }
     } catch (error) {
       console.warn('Could not fetch rejection record:', error);

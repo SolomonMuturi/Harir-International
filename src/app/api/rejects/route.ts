@@ -10,8 +10,28 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '100');
     const order = searchParams.get('order') || 'desc';
+    const weight_entry_id = searchParams.get('weight_entry_id');
+    const pallet_id = searchParams.get('pallet_id');
+    const supplier_id = searchParams.get('supplier_id');
+    const supplier_name = searchParams.get('supplier_name');
+    
+    let whereClause: any = {};
+    
+    if (weight_entry_id) {
+      whereClause.weight_entry_id = weight_entry_id;
+    }
+    if (pallet_id) {
+      whereClause.pallet_id = pallet_id;
+    }
+    if (supplier_id) {
+      whereClause.weight_entry_id = supplier_id; // supplier_id is stored in weight_entry_id
+    }
+    if (supplier_name) {
+      whereClause.supplier_name = supplier_name;
+    }
     
     const rejects = await prisma.rejects.findMany({
+      where: whereClause,
       take: limit,
       orderBy: {
         rejected_at: order as 'asc' | 'desc'
@@ -30,6 +50,7 @@ const transformedRejects = rejects.map(reject => {
     id: reject.id,
     weight_entry_id: reject.weight_entry_id || '',
     pallet_id: reject.pallet_id,
+    supplier_id: reject.weight_entry_id || '', // supplier_id is stored in weight_entry_id
     supplier_name: reject.supplier_name,
     driver_name: reject.driver_name || '',
     vehicle_plate: reject.vehicle_plate || '',
@@ -40,6 +61,7 @@ const transformedRejects = rejects.map(reject => {
     hass_crates: reject.hass_crates || 0,
     total_rejected_weight: reject.total_rejected_weight ? parseFloat(reject.total_rejected_weight.toString()) : 0,
     total_rejected_crates: reject.total_rejected_crates || 0,
+    counted_weight: reject.fuerte_weight ? parseFloat(reject.fuerte_weight.toString()) : 0 + reject.hass_weight ? parseFloat(reject.hass_weight.toString()) : 0, // intake weight
     variance: reject.variance ? parseFloat(reject.variance.toString()) : 0,
     reason: reject.reason || '',
     notes: reject.notes || '',

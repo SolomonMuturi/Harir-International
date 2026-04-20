@@ -7,8 +7,42 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const boxes = searchParams.get('boxes') === 'true';
     
     console.log('📡 GET /api/counting?action=', action);
+    
+    if (boxes) {
+      // Get total boxes counted within date range
+      const where: any = {
+        status: { in: ['pending_coldroom', 'completed'] }
+      };
+      
+      if (startDate && endDate) {
+        where.submitted_at = {
+          gte: new Date(startDate + 'T00:00:00.000Z'),
+          lte: new Date(endDate + 'T23:59:59.999Z')
+        };
+      }
+      
+      const result = await prisma.counting_records.aggregate({
+        where,
+        _sum: {
+          fuerte_4kg_total: true,
+          fuerte_10kg_total: true,
+          hass_4kg_total: true,
+          hass_10kg_total: true
+        }
+      });
+      
+      const totalBoxes = (result._sum.fuerte_4kg_total || 0) + 
+                        (result._sum.fuerte_10kg_total || 0) + 
+                        (result._sum.hass_4kg_total || 0) + 
+                        (result._sum.hass_10kg_total || 0);
+      
+      return NextResponse.json({ totalBoxes });
+    }
     
     if (action === 'size-stats') {
       // FIXED: Enhanced size statistics endpoint

@@ -8,12 +8,19 @@ export async function GET(request: Request) {
     
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
     const employeeId = searchParams.get('employeeId');
     
     // Build where clause
     const where: any = {};
     
-    if (date) {
+    if (startDate && endDate) {
+      where.date = {
+        gte: startDate,
+        lte: endDate
+      };
+    } else if (date) {
       where.date = date;
     }
     

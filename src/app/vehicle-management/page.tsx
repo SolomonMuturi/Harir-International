@@ -54,7 +54,7 @@ import {
 import { GatePassDialog } from '@/components/dashboard/gate-pass-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { RegistrationSuccess } from '@/components/dashboard/registration-success';
-import { format, parseISO, startOfDay, endOfDay, isWithinInterval, subDays } from 'date-fns';
+import { format, parseISO, startOfDay, endOfDay, isWithinInterval, subDays, subWeeks, subMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -129,6 +129,8 @@ type DateRange = {
   to: Date;
 };
 
+type PresetDateRange = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+
 interface VisitStats {
   totalVisits: number;
   uniqueSuppliers: number;
@@ -176,11 +178,67 @@ export default function VehicleManagementPage() {
     from: subDays(new Date(), 30),
     to: new Date()
   });
+  const [historyTimeRange, setHistoryTimeRange] = useState<{from: string, to: string}>({
+    from: '00:00',
+    to: '23:59'
+  });
+  const [presetDateRange, setPresetDateRange] = useState<PresetDateRange>('custom');
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isExportingCSV, setIsExportingCSV] = useState(false);
   
   const { toast } = useToast();
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Function to get date range based on preset
+  const getDateRangeFromPreset = (preset: PresetDateRange): DateRange => {
+    const now = new Date();
+    switch (preset) {
+      case 'today':
+        return {
+          from: startOfDay(now),
+          to: endOfDay(now)
+        };
+      case 'yesterday':
+        const yesterday = subDays(now, 1);
+        return {
+          from: startOfDay(yesterday),
+          to: endOfDay(yesterday)
+        };
+      case 'week':
+        return {
+          from: startOfWeek(now, { weekStartsOn: 1 }),
+          to: endOfWeek(now, { weekStartsOn: 1 })
+        };
+      case 'month':
+        return {
+          from: startOfMonth(now),
+          to: endOfMonth(now)
+        };
+      default:
+        return historyDateRange;
+    }
+  };
+
+  // Handle preset date range change
+  const handlePresetDateChange = (preset: PresetDateRange) => {
+    setPresetDateRange(preset);
+    if (preset !== 'custom') {
+      const newRange = getDateRangeFromPreset(preset);
+      setHistoryDateRange(newRange);
+    }
+  };
+
+  // Handle custom date range change
+  const handleCustomDateRangeChange = (range: { from: Date; to: Date } | undefined) => {
+    if (range?.from && range?.to) {
+      setHistoryDateRange({
+        from: range.from,
+        to: range.to
+      });
+      setPresetDateRange('custom');
+      setIsDatePickerOpen(false);
+    }
+  };
 
   // Fetch all visits
   const fetchSupplierVehicles = useCallback(async () => {
@@ -321,13 +379,24 @@ export default function VehicleManagementPage() {
       filtered = filtered.filter(v => v.status === 'Pending Exit');
     } else if (activeTab === 'completed') {
       filtered = filtered.filter(v => v.status === 'Checked-out');
-      // Apply date range for completed
+      // Apply date and time range for completed
       filtered = filtered.filter(v => {
         if (!v.checkOutTime) return false;
         const checkOutDate = parseISO(v.checkOutTime);
+        const startDateTime = new Date(historyDateRange.from);
+        const endDateTime = new Date(historyDateRange.to);
+
+        // Set time for start date
+        const [startHour, startMinute] = historyTimeRange.from.split(':').map(Number);
+        startDateTime.setHours(startHour, startMinute, 0, 0);
+
+        // Set time for end date
+        const [endHour, endMinute] = historyTimeRange.to.split(':').map(Number);
+        endDateTime.setHours(endHour, endMinute, 59, 999);
+
         return isWithinInterval(checkOutDate, {
-          start: startOfDay(historyDateRange.from),
-          end: endOfDay(historyDateRange.to)
+          start: startDateTime,
+          end: endDateTime
         });
       });
     } else if (activeTab === 'gate-entries') {
@@ -360,7 +429,7 @@ export default function VehicleManagementPage() {
     }
     
     setFilteredVehicles(filtered);
-  }, [vehicles, searchQuery, statusFilter, gateEntryFilter, activeTab, historyDateRange]);
+  }, [vehicles, searchQuery, statusFilter, gateEntryFilter, activeTab, historyDateRange, historyTimeRange]);
 
   const refreshAllData = async () => {
     setIsRefreshing(true);
@@ -656,15 +725,26 @@ export default function VehicleManagementPage() {
     }
   };
 
-  // Calculate filtered completed vehicles based on date range
+  // Calculate filtered completed vehicles based on date and time range
   const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
   
   const filteredCompletedVehicles = checkedOutVehicles.filter(vehicle => {
     if (!vehicle.checkOutTime) return false;
     const checkOutDate = parseISO(vehicle.checkOutTime);
+    const startDateTime = new Date(historyDateRange.from);
+    const endDateTime = new Date(historyDateRange.to);
+
+    // Set time for start date
+    const [startHour, startMinute] = historyTimeRange.from.split(':').map(Number);
+    startDateTime.setHours(startHour, startMinute, 0, 0);
+
+    // Set time for end date
+    const [endHour, endMinute] = historyTimeRange.to.split(':').map(Number);
+    endDateTime.setHours(endHour, endMinute, 59, 999);
+
     return isWithinInterval(checkOutDate, {
-      start: startOfDay(historyDateRange.from),
-      end: endOfDay(historyDateRange.to)
+      start: startDateTime,
+      end: endDateTime
     });
   });
 
@@ -921,7 +1001,7 @@ export default function VehicleManagementPage() {
             <div className="flex flex-col gap-3 sm:gap-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
                 <div className="flex-1 min-w-0">
-                  <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 break-words">
+                  <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-300 break-words">
                     Vehicle Visit Management
                   </h1>
                   <p className="text-xs sm:text-sm md:text-base text-gray-600 mt-1">
@@ -1245,7 +1325,7 @@ export default function VehicleManagementPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-xs md:text-sm font-medium text-gray-500">Total</p>
-                      <h3 className="text-lg md:text-2xl font-bold mt-1 text-gray-900">{stats.totalVisits}</h3>
+                      <h3 className="text-lg md:text-2xl font-bold mt-1 text-gray-600">{stats.totalVisits}</h3>
                     </div>
                     <History className="h-4 w-4 md:h-5 md:w-5 text-blue-500" />
                   </div>
@@ -1450,24 +1530,83 @@ export default function VehicleManagementPage() {
                           <PopoverTrigger asChild>
                             <Button variant="outline" className="gap-2">
                               <Calendar className="h-4 w-4" />
-                              {format(historyDateRange.from, 'MMM dd')} - {format(historyDateRange.to, 'MMM dd')}
+                              {presetDateRange !== 'custom' ? (
+                                presetDateRange === 'today' ? `Today ${historyTimeRange.from}-${historyTimeRange.to}` :
+                                presetDateRange === 'yesterday' ? `Yesterday ${historyTimeRange.from}-${historyTimeRange.to}` :
+                                presetDateRange === 'week' ? `This Week ${historyTimeRange.from}-${historyTimeRange.to}` :
+                                presetDateRange === 'month' ? `This Month ${historyTimeRange.from}-${historyTimeRange.to}` :
+                                `${format(historyDateRange.from, 'MMM dd')} - ${format(historyDateRange.to, 'MMM dd')} ${historyTimeRange.from}-${historyTimeRange.to}`
+                              ) : (
+                                `${format(historyDateRange.from, 'MMM dd')} - ${format(historyDateRange.to, 'MMM dd')} ${historyTimeRange.from}-${historyTimeRange.to}`
+                              )}
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent className="w-auto p-0" align="end">
-                            <CalendarComponent
-                              mode="range"
-                              selected={historyDateRange}
-                              onSelect={(range) => {
-                                if (range?.from && range?.to) {
-                                  setHistoryDateRange({
-                                    from: range.from,
-                                    to: range.to
-                                  });
-                                  setIsDatePickerOpen(false);
-                                }
-                              }}
-                              numberOfMonths={2}
-                            />
+                            <div className="p-4 space-y-4">
+                              <div className="flex gap-2 flex-wrap">
+                                <Button 
+                                  variant={presetDateRange === 'today' ? 'default' : 'outline'} 
+                                  size="sm"
+                                  onClick={() => handlePresetDateChange('today')}
+                                >
+                                  Today
+                                </Button>
+                                <Button 
+                                  variant={presetDateRange === 'yesterday' ? 'default' : 'outline'} 
+                                  size="sm"
+                                  onClick={() => handlePresetDateChange('yesterday')}
+                                >
+                                  Yesterday
+                                </Button>
+                                <Button 
+                                  variant={presetDateRange === 'week' ? 'default' : 'outline'} 
+                                  size="sm"
+                                  onClick={() => handlePresetDateChange('week')}
+                                >
+                                  This Week
+                                </Button>
+                                <Button 
+                                  variant={presetDateRange === 'month' ? 'default' : 'outline'} 
+                                  size="sm"
+                                  onClick={() => handlePresetDateChange('month')}
+                                >
+                                  This Month
+                                </Button>
+                              </div>
+                              <Separator />
+                              <CalendarComponent
+                                mode="range"
+                                selected={historyDateRange}
+                                onSelect={handleCustomDateRangeChange}
+                                numberOfMonths={2}
+                              />
+                              <Separator />
+                              <div className="space-y-2">
+                                <Label className="text-sm font-medium">Time Range</Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <Label htmlFor="start-time" className="text-xs text-gray-600">Start Time</Label>
+                                    <Input
+                                      id="start-time"
+                                      type="time"
+                                      value={historyTimeRange.from}
+                                      onChange={(e) => setHistoryTimeRange(prev => ({ ...prev, from: e.target.value }))}
+                                      className="h-8"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="end-time" className="text-xs text-gray-600">End Time</Label>
+                                    <Input
+                                      id="end-time"
+                                      type="time"
+                                      value={historyTimeRange.to}
+                                      onChange={(e) => setHistoryTimeRange(prev => ({ ...prev, to: e.target.value }))}
+                                      className="h-8"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           </PopoverContent>
                         </Popover>
                       )}
@@ -1561,25 +1700,86 @@ export default function VehicleManagementPage() {
                         <SheetHeader>
                           <SheetTitle>Select Date Range</SheetTitle>
                           <SheetDescription>
-                            Filter completed visits by checkout date
+                            Filter completed visits by checkout date and time
                           </SheetDescription>
                         </SheetHeader>
-                        <div className="py-4">
+                        <div className="py-4 space-y-4">
+                          <div className="flex gap-2 flex-wrap">
+                            <Button 
+                              variant={presetDateRange === 'today' ? 'default' : 'outline'} 
+                              size="sm"
+                              onClick={() => {
+                                handlePresetDateChange('today');
+                                setIsDatePickerOpen(false);
+                              }}
+                            >
+                              Today
+                            </Button>
+                            <Button 
+                              variant={presetDateRange === 'yesterday' ? 'default' : 'outline'} 
+                              size="sm"
+                              onClick={() => {
+                                handlePresetDateChange('yesterday');
+                                setIsDatePickerOpen(false);
+                              }}
+                            >
+                              Yesterday
+                            </Button>
+                            <Button 
+                              variant={presetDateRange === 'week' ? 'default' : 'outline'} 
+                              size="sm"
+                              onClick={() => {
+                                handlePresetDateChange('week');
+                                setIsDatePickerOpen(false);
+                              }}
+                            >
+                              This Week
+                            </Button>
+                            <Button 
+                              variant={presetDateRange === 'month' ? 'default' : 'outline'} 
+                              size="sm"
+                              onClick={() => {
+                                handlePresetDateChange('month');
+                                setIsDatePickerOpen(false);
+                              }}
+                            >
+                              This Month
+                            </Button>
+                          </div>
+                          <Separator />
                           <CalendarComponent
                             mode="range"
                             selected={historyDateRange}
-                            onSelect={(range) => {
-                              if (range?.from && range?.to) {
-                                setHistoryDateRange({
-                                  from: range.from,
-                                  to: range.to
-                                });
-                                setIsDatePickerOpen(false);
-                              }
-                            }}
+                            onSelect={handleCustomDateRangeChange}
                             numberOfMonths={1}
                             className="rounded-md border"
                           />
+                          <Separator />
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Time Range</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label htmlFor="mobile-start-time" className="text-xs text-gray-600">Start Time</Label>
+                                <Input
+                                  id="mobile-start-time"
+                                  type="time"
+                                  value={historyTimeRange.from}
+                                  onChange={(e) => setHistoryTimeRange(prev => ({ ...prev, from: e.target.value }))}
+                                  className="h-8"
+                                />
+                              </div>
+                              <div>
+                                <Label htmlFor="mobile-end-time" className="text-xs text-gray-600">End Time</Label>
+                                <Input
+                                  id="mobile-end-time"
+                                  type="time"
+                                  value={historyTimeRange.to}
+                                  onChange={(e) => setHistoryTimeRange(prev => ({ ...prev, to: e.target.value }))}
+                                  className="h-8"
+                                />
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </SheetContent>
                     </Sheet>
@@ -1781,7 +1981,7 @@ export default function VehicleManagementPage() {
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = url;
-                              a.download = `completed_visits_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+                              a.download = `completed_visits_${format(historyDateRange.from, 'yyyy-MM-dd')}_${historyTimeRange.from.replace(':', '')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}_${historyTimeRange.to.replace(':', '')}.csv`;
                               a.click();
                             }}
                             disabled={filteredCompletedVehicles.length === 0}
@@ -1798,7 +1998,7 @@ export default function VehicleManagementPage() {
                           <CardContent className="p-6 md:p-8 text-center">
                             <CheckCircle className="h-10 w-10 md:h-12 md:w-12 mx-auto text-gray-400 mb-4" />
                             <h3 className="text-base md:text-lg font-semibold mb-2">No Completed Visits</h3>
-                            <p className="text-sm md:text-base text-gray-500">No completed visits found.</p>
+                            <p className="text-sm md:text-base text-gray-500">No completed visits found in the selected date range.</p>
                           </CardContent>
                         </Card>
                       ) : (

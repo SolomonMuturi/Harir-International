@@ -86,7 +86,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
 
   // Check if user has filled readings today
   const checkIfFilledToday = useCallback((): boolean => {
-    const lastFilledDate = localStorage.getItem('lastFilledDate');
+    const lastFilledDate = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('lastFilledDate') : null : null : null;
     const today = new Date().toISOString().split('T')[0];
     const filled = lastFilledDate === today;
     setIsTodayFilled(filled);
@@ -166,7 +166,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
           description: 'You can enable them later in browser settings.',
         });
         setNotificationSettings(prev => ({ ...prev, enabled: false }));
-        localStorage.setItem('notificationSettings', JSON.stringify({
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
           ...notificationSettings,
           enabled: false
         }));
@@ -245,7 +245,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
     const hasPermission = await checkNotificationPermission();
     if (!hasPermission) {
       setNotificationSettings(prev => ({ ...prev, enabled: false }));
-      localStorage.setItem('notificationSettings', JSON.stringify({
+      if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
         ...notificationSettings,
         enabled: false
       }));
@@ -265,7 +265,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
 
   // Initialize notifications
   const initializeNotifications = useCallback(async () => {
-    const savedSettings = localStorage.getItem('notificationSettings');
+    const savedSettings = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('notificationSettings') : null : null : null;
     if (savedSettings) {
       try {
         const settings = JSON.parse(savedSettings);
@@ -284,7 +284,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       }
     }
 
-    const savedName = localStorage.getItem('recordedBy') || '';
+    const savedName = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('recordedBy') : null : null : null || '';
     if (savedName) setRecordedBy(savedName);
 
     checkIfFilledToday();
@@ -315,7 +315,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       }
       
       setNotificationSettings(prev => ({ ...prev, enabled: true }));
-      localStorage.setItem('notificationSettings', JSON.stringify({
+      if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
         ...notificationSettings,
         enabled: true
       }));
@@ -328,7 +328,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       });
     } else {
       setNotificationSettings(prev => ({ ...prev, enabled: false }));
-      localStorage.setItem('notificationSettings', JSON.stringify({
+      if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
         ...notificationSettings,
         enabled: false
       }));
@@ -348,7 +348,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
   // Handle notification time change
   const handleNotificationTimeChange = (newTime: string) => {
     setNotificationSettings(prev => ({ ...prev, time: newTime }));
-    localStorage.setItem('notificationSettings', JSON.stringify({
+    if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
       ...notificationSettings,
       time: newTime
     }));
@@ -577,8 +577,8 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       const result = await response.json();
       
       if (response.ok) {
-        localStorage.setItem('recordedBy', recordedBy);
-        localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
         checkIfFilledToday();
         

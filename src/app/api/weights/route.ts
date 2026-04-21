@@ -31,8 +31,13 @@ export async function GET(request: NextRequest) {
     const order = searchParams.get('order') || 'desc';
     const supplierId = searchParams.get('supplierId');
     const date = searchParams.get('date');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
     const region = searchParams.get('region');
-    const gateEntryId = searchParams.get('gateEntryId'); // New filter
+    const gateEntryId = searchParams.get('gateEntryId');
+    const count = searchParams.get('count') === 'true';
+    const crates = searchParams.get('crates') === 'true';
+    const varietyCrates = searchParams.get('varietyCrates') === 'true';
 
     console.log(`📊 Fetching ${limit} weights, order: ${order}`);
 
@@ -48,20 +53,74 @@ export async function GET(request: NextRequest) {
     }
     
     if (date) {
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
+      const startDateFilter = new Date(date);
+      startDateFilter.setHours(0, 0, 0, 0);
+      const endDateFilter = new Date(date);
+      endDateFilter.setHours(23, 59, 59, 999);
       
       where.timestamp = {
-        gte: startDate,
-        lte: endDate
+        gte: startDateFilter,
+        lte: endDateFilter
+      };
+    }
+    
+    if (startDate && endDate) {
+      const startTime = searchParams.get('startTime') || '00:00';
+      const endTime = searchParams.get('endTime') || '23:59';
+
+      const parseDateTime = (dateStr: string, timeStr: string, endOfRange = false) => {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        const date = new Date(`${dateStr}T00:00:00.000Z`);
+        date.setUTCHours(hours || 0, minutes || 0, endOfRange ? 59 : 0, endOfRange ? 999 : 0);
+        return date;
+      };
+
+      where.timestamp = {
+        gte: parseDateTime(startDate, startTime),
+        lte: parseDateTime(endDate, endTime, true)
       };
     }
     
     // New: Filter by gate entry ID
     if (gateEntryId) {
       where.gate_entry_id = gateEntryId;
+    }
+
+    // Special handling for count and crates requests
+    if (count) {
+      const suppliersCount = await prisma.weight_entries.findMany({
+        where,
+        select: { supplier_id: true },
+        distinct: ['supplier_id']
+      });
+      return NextResponse.json({ count: suppliersCount.length });
+    }
+
+    if (crates) {
+      const result = await prisma.weight_entries.aggregate({
+        where,
+        _sum: {
+          fuerte_crates: true,
+          hass_crates: true
+        }
+      });
+      const totalCrates = (result._sum.fuerte_crates || 0) + (result._sum.hass_crates || 0);
+      return NextResponse.json({ totalCrates });
+    }
+
+    if (varietyCrates) {
+      const result = await prisma.weight_entries.aggregate({
+        where,
+        _sum: {
+          fuerte_crates: true,
+          hass_crates: true
+        }
+      });
+      return NextResponse.json({
+        fuerteBoxes: result._sum.fuerte_crates || 0,
+        hassBoxes: result._sum.hass_crates || 0,
+        totalBoxes: (result._sum.fuerte_crates || 0) + (result._sum.hass_crates || 0)
+      });
     }
 
     // Fetch weights with all necessary fields

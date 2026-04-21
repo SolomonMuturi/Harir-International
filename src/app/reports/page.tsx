@@ -207,10 +207,12 @@ export default function ReportsPage() {
   const [selectedPdfReport, setSelectedPdfReport] = useState<string>('');
   const [selectedCsvReport, setSelectedCsvReport] = useState<string>('supplierReport');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [timeRange, setTimeRange] = useState({ from: '00:00', to: '23:59' });
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [supplierData, setSupplierData] = useState<Supplier[]>([]);
   const [employeeAttendanceData, setEmployeeAttendanceData] = useState<EmployeeAttendance[]>([]);
+  const [productionReportData, setProductionReportData] = useState<any>(null);
 
   // Fetch supplier data on component mount
   React.useEffect(() => {
@@ -246,6 +248,128 @@ export default function ReportsPage() {
     }
   };
 
+  const fetchProductionReportData = async (startDate: Date, endDate: Date, startTime: string = '00:00', endTime: string = '23:59') => {
+    try {
+      const startDateStr = format(startDate, 'yyyy-MM-dd');
+      const endDateStr = format(endDate, 'yyyy-MM-dd');
+      
+      // Fetch suppliers count from weights
+      const suppliersResponse = await fetch(`/api/weights?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&count=true`);
+      const suppliersCount = suppliersResponse.ok ? (await suppliersResponse.json()).count || 0 : 0;
+      
+      // Fetch total crates received
+      const cratesResponse = await fetch(`/api/weights?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&crates=true`);
+      const totalCratesReceived = cratesResponse.ok ? (await cratesResponse.json()).totalCrates || 0 : 0;
+
+      // Fetch box counts by variety from warehouse weights
+      const varietyBoxesResponse = await fetch(`/api/weights?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&varietyCrates=true`);
+      const varietyBoxesData = varietyBoxesResponse.ok ? await varietyBoxesResponse.json() : { fuerteBoxes: 0, hassBoxes: 0, totalBoxes: 0 };
+      const fuerteBoxes = Number(varietyBoxesData.fuerteBoxes || 0);
+      const hassBoxes = Number(varietyBoxesData.hassBoxes || 0);
+      const totalBoxesByVariety = Number(varietyBoxesData.totalBoxes || 0);
+      
+      // Fetch rejects count
+      const rejectsResponse = await fetch(`/api/rejects?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&count=true`);
+      const totalRejects = rejectsResponse.ok ? (await rejectsResponse.json()).count || 0 : 0;
+      
+      // Fetch employees
+      const employeesResponse = await fetch('/api/employees');
+      const employeesData = employeesResponse.ok ? await employeesResponse.json() : [];
+      const employees = Array.isArray(employeesData) ? employeesData.map((emp: any) => ({
+        name: emp.name || emp.first_name + ' ' + emp.last_name,
+        designation: emp.position || emp.designation || 'Staff'
+      })) : [];
+      
+      // Fetch total boxes counted from warehouse
+      const countingResponse = await fetch(`/api/counting?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&boxes=true`);
+      const totalBoxesCounted = countingResponse.ok ? (await countingResponse.json()).totalBoxes || 0 : 0;
+      
+      // Fetch utility readings
+      const utilityResponse = await fetch(`/api/utility-readings?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&summary=true`);
+      const utilityData = utilityResponse.ok ? await utilityResponse.json() : {
+        electricity: { initial: 0, final: 0, units: 0 },
+        water: { initial: 0, final: 0, units: 0 }
+      };
+
+      // Fetch attendance for the selected date range and count labour by role
+      const attendanceResponse = await fetch(`/api/attendance?startDate=${startDateStr}&endDate=${endDateStr}`);
+      const attendanceData = attendanceResponse.ok ? await attendanceResponse.json() : [];
+      const presentStatuses = ['present', 'on duty', 'working', 'in'];
+      const normalizeText = (text: string | undefined | null) => String(text || '').toLowerCase();
+
+      const labourCounts = Array.isArray(attendanceData)
+        ? attendanceData.reduce((counts, record: any) => {
+            const status = normalizeText(record.status);
+            const isPresent = presentStatuses.some(s => status.includes(s));
+            if (!isPresent) return counts;
+
+            const designationText = normalizeText(record.designation || record.employee?.designation || record.employee?.role || record.employee?.position);
+            if (designationText.includes('qc') || designationText.includes('quality')) {
+              counts.QC += 1;
+            } else if (designationText.includes('pack') || designationText.includes('packing')) {
+              counts.Packers += 1;
+            } else if (designationText.includes('dip')) {
+              counts.Dipping += 1;
+            } else if (designationText.includes('porter')) {
+              counts.Porters += 1;
+            } else if (designationText.includes('pallet') || designationText.includes('load')) {
+              counts.Palletizers += 1;
+            }
+
+            return counts;
+          }, {
+            QC: 0,
+            Packers: 0,
+            Dipping: 0,
+            Porters: 0,
+            Palletizers: 0
+          })
+        : {
+            QC: 0,
+            Packers: 0,
+            Dipping: 0,
+            Porters: 0,
+            Palletizers: 0
+          };
+      
+      return {
+        dateRange: { from: startDate, to: endDate },
+        timeRange: { from: startTime, to: endTime },
+        suppliersCount,
+        totalCratesReceived,
+        fuerteBoxes,
+        hassBoxes,
+        totalBoxesByVariety,
+        totalRejects,
+        employees,
+        totalBoxesCounted,
+        labourCounts,
+        utilityData: utilityData.utilityData || utilityData
+      };
+    } catch (error) {
+      console.error('Error fetching production report data:', error);
+      throw error;
+    }
+  };
+
+  const getDateTimeBounds = (range: DateRange | undefined, currentTimeRange: { from: string; to: string }) => {
+    if (!range?.from) return null;
+    const start = new Date(range.from);
+    const end = range.to ? new Date(range.to) : new Date(range.from);
+    const [startHour, startMinute] = currentTimeRange.from.split(':').map(Number);
+    const [endHour, endMinute] = currentTimeRange.to.split(':').map(Number);
+    start.setHours(startHour, startMinute, 0, 0);
+    end.setHours(endHour, endMinute, 59, 999);
+    return { start, end };
+  };
+
+  const formatDateTimeFilterLabel = (range: DateRange | undefined, currentTimeRange: { from: string; to: string }) => {
+    if (!range?.from) return 'Pick a date range';
+    const fromLabel = `${format(range.from, 'LLL dd, y')} ${currentTimeRange.from}`;
+    if (!range?.to) return fromLabel;
+    return `${fromLabel} - ${format(range.to, 'LLL dd, y')} ${currentTimeRange.to}`;
+  };
+
   const handleDateSelect = (range: DateRange | undefined) => {
     setDateRange(range);
     if (range?.from && range?.to) {
@@ -253,25 +377,114 @@ export default function ReportsPage() {
     }
   };
 
-  const generateAndDownloadPdf = async (reportType: { id: string, label: string }) => {
-    const element = printRef.current;
-    if (element) {
-        const canvas = await html2canvas(element, { scale: 2 });
-        const data = canvas.toDataURL('image/jpeg');
-        
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(data, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`report-${reportType.id}-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-    } else {
-        toast({
-            variant: 'destructive',
-            title: 'Generation Failed',
-            description: 'Could not find the content to generate the report.',
+  const generateProductionReportPDF = async (data: any) => {
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const topMargin = 15;
+    const logoPaths = [
+      '/images/HLogo.png',
+      '/Harirlogo.svg',
+      '/Harirlogo.png',
+      '/Harirlogo.jpg',
+      '/logo.png',
+      '/logo.jpg',
+      '/favicon.ico',
+      '/public/favicon.ico'
+    ];
+
+    for (const path of logoPaths) {
+      try {
+        const response = await fetch(path);
+        if (!response.ok) continue;
+        const blob = await response.blob();
+        const base64String = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
         });
+        const logoWidth = 150;
+        const logoHeight = 25;
+        const x = (pageWidth - logoWidth) / 2;
+        pdf.addImage(base64String, 'PNG', x, topMargin, logoWidth, logoHeight);
+        break;
+      } catch (error) {
+        continue;
+      }
     }
+
+    const headingY = topMargin + 40;
+    pdf.setFontSize(18);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SHIFT PRODUCTION REPORT', pageWidth / 2, headingY, { align: 'center' });
+
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(
+      `Date and Time: ${format(data.dateRange.from, 'MMM dd, yyyy')} ${data.timeRange.from} - ${format(data.dateRange.to, 'MMM dd, yyyy')} ${data.timeRange.to}`,
+      pageWidth / 2,
+      headingY + 10,
+      { align: 'center' }
+    );
+
+    const sectionStartY = headingY + 22;
+    pdf.setFontSize(13);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Production Details', 20, sectionStartY);
+
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    const detailLines = [
+      `Fuerte Boxes: ${data.fuerteBoxes ?? 0}`,
+      `Hass Boxes: ${data.hassBoxes ?? 0}`,
+      `Total Boxes: ${data.totalBoxesByVariety ?? 0}`
+    ];
+
+    detailLines.forEach((line, index) => {
+      pdf.text(line, 25, sectionStartY + 10 + index * 7);
+    });
+
+    const labourSectionStartY = sectionStartY + 10 + detailLines.length * 7 + 12;
+    pdf.setFontSize(13);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Labour Used', 20, labourSectionStartY);
+
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    const labourLines = [
+      `QC: ${data.labourCounts?.QC ?? 0}`,
+      `Packers: ${data.labourCounts?.Packers ?? 0}`,
+      `Dipping: ${data.labourCounts?.Dipping ?? 0}`,
+      `Porters: ${data.labourCounts?.Porters ?? 0}`,
+      `Palletizers: ${data.labourCounts?.Palletizers ?? 0}`
+    ];
+
+    labourLines.forEach((line, index) => {
+      pdf.text(line, 25, labourSectionStartY + 10 + index * 7);
+    });
+
+    const utilitySectionStartY = labourSectionStartY + 10 + labourLines.length * 7 + 12;
+    const utilityData = data.utilityData || { electricity: { initial: 0, final: 0, units: 0 }, water: { initial: 0, final: 0, units: 0 } };
+
+    pdf.setFontSize(13);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Utility Readings', 20, utilitySectionStartY);
+
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    const utilityLines = [
+      `Water Initial: ${utilityData.water.initial}`,
+      `Water Final: ${utilityData.water.final}`,
+      `Water Units Consumed: ${utilityData.water.units}`,
+      `Electricity Initial: ${utilityData.electricity.initial}`,
+      `Electricity Final: ${utilityData.electricity.final}`,
+      `Electricity Units Consumed: ${utilityData.electricity.units}`
+    ];
+
+    utilityLines.forEach((line, index) => {
+      pdf.text(line, 25, utilitySectionStartY + 10 + index * 7);
+    });
+
+    pdf.save(`production-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleGeneratePdf = async () => {
@@ -282,6 +495,45 @@ export default function ReportsPage() {
     
     const reportType = pdfReportTypes.find(r => r.id === selectedPdfReport);
     if (!reportType) return;
+    
+    // Special handling for production report - requires date range
+    if (selectedPdfReport === 'productionReport') {
+      if (!dateRange?.from || !dateRange?.to) {
+        toast({
+          variant: 'destructive',
+          title: 'Date Range Required',
+          description: 'Please select a date range to generate the Production Report.',
+        });
+        return;
+      }
+      
+      setIsGenerating(true);
+      toast({ title: 'Generating Production Report...', description: 'Fetching data and generating comprehensive production report.' });
+      
+      try {
+        // Fetch production report data with date+time bounds
+        const productionData = await fetchProductionReportData(dateRange.from, dateRange.to, timeRange.from, timeRange.to);
+        setProductionReportData(productionData);
+        
+        // Generate PDF directly with the data
+        await generateProductionReportPDF(productionData);
+        
+        toast({
+          title: 'Production Report Generated',
+          description: `Production report for ${format(dateRange.from, 'MMM dd, yyyy')} ${timeRange.from} to ${format(dateRange.to, 'MMM dd, yyyy')} ${timeRange.to} has been downloaded.`,
+        });
+      } catch (error) {
+        console.error('Error generating production report:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Generation Failed',
+          description: 'Failed to generate production report. Please try again.',
+        });
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
     
     setIsGenerating(true);
     toast({ title: 'Generating PDF Report...', description: `Please wait while we generate the ${reportType.label} report.` });
@@ -322,9 +574,11 @@ export default function ReportsPage() {
 
           const startDateStr = format(dateRange.from, 'yyyy-MM-dd');
           const endDateStr = format(dateRange.to, 'yyyy-MM-dd');
+          const startTimeStr = timeRange.from;
+          const endTimeStr = timeRange.to;
           
           try {
-            const response = await fetch(`/api/suppliers?startDate=${startDateStr}&endDate=${endDateStr}&format=csv`);
+            const response = await fetch(`/api/suppliers?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTimeStr}&endTime=${endTimeStr}&format=csv`);
             
             if (!response.ok) {
               throw new Error(`Failed to fetch supplier data: ${response.statusText}`);
@@ -387,9 +641,11 @@ export default function ReportsPage() {
 
           const attendanceStartDateStr = format(dateRange.from, 'yyyy-MM-dd');
           const attendanceEndDateStr = format(dateRange.to, 'yyyy-MM-dd');
+          const attendanceStartTimeStr = timeRange.from;
+          const attendanceEndTimeStr = timeRange.to;
           
           try {
-            const response = await fetch(`/api/attendance?startDate=${attendanceStartDateStr}&endDate=${attendanceEndDateStr}&format=csv`);
+            const response = await fetch(`/api/attendance?startDate=${attendanceStartDateStr}&endDate=${attendanceEndDateStr}&startTime=${attendanceStartTimeStr}&endTime=${attendanceEndTimeStr}&format=csv`);
             
             if (!response.ok) {
               throw new Error(`Failed to fetch attendance data: ${response.statusText}`);
@@ -434,12 +690,13 @@ export default function ReportsPage() {
             console.log('Falling back to local data...');
             
             // Use the locally fetched attendance data
+            const bounds = getDateTimeBounds(dateRange, timeRange);
             const filteredData = employeeAttendanceData.filter(item => {
-              if (!dateRange?.from || !dateRange?.to) return true;
+              if (!bounds) return true;
               const itemDate = parseISO(item.date);
               return isWithinInterval(itemDate, { 
-                start: dateRange.from, 
-                end: dateRange.to 
+                start: bounds.start, 
+                end: bounds.end 
               });
             });
 
@@ -591,11 +848,11 @@ export default function ReportsPage() {
   };
 
   const filterByDateRange = (items: any[], dateKey: string) => {
-    if (!dateRange?.from) return items;
+    const bounds = getDateTimeBounds(dateRange, timeRange);
+    if (!bounds) return items;
     return items.filter(item => {
         const itemDate = parseISO(item[dateKey]);
-        const endOfToDate = dateRange.to ? new Date(dateRange.to.setHours(23, 59, 59, 999)) : dateRange.from;
-        return isWithinInterval(itemDate, { start: dateRange.from!, end: endOfToDate });
+        return isWithinInterval(itemDate, { start: bounds.start, end: bounds.end });
     });
   };
 
@@ -633,45 +890,62 @@ export default function ReportsPage() {
                 <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
                  <p className="text-muted-foreground">Generate custom PDF reports or export raw data as CSV.</p>
             </div>
-             <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/50">
-                <Label className="font-semibold">Global Date Filter:</Label>
-                <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-                  <PopoverTrigger asChild>
-                      <Button
-                      id="date"
-                      variant={"outline"}
-                      className={cn(
-                          "w-[300px] justify-start text-left font-normal",
-                          !dateRange && "text-muted-foreground"
-                      )}
-                      >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange?.from ? (
-                          dateRange.to ? (
-                          <>
-                              {format(dateRange.from, "LLL dd, y")} -{" "}
-                              {format(dateRange.to, "LLL dd, y")}
-                          </>
-                          ) : (
-                          format(dateRange.from, "LLL dd, y")
-                          )
-                      ) : (
+             <div className="grid gap-4 p-4 border rounded-lg bg-muted/50 md:grid-cols-[minmax(0,1fr)_minmax(0,280px)]">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                  <Label className="font-semibold">Global Date Filter:</Label>
+                  <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                        id="date"
+                        variant={"outline"}
+                        className={cn(
+                            "w-[300px] justify-start text-left font-normal",
+                            !dateRange && "text-muted-foreground"
+                        )}
+                        >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange?.from ? (
+                          formatDateTimeFilterLabel(dateRange, timeRange)
+                        ) : (
                           <span>Pick a date range</span>
-                      )}
-                      </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange?.from}
-                      selected={dateRange}
-                      onSelect={handleDateSelect}
-                      numberOfMonths={2}
-                      />
-                  </PopoverContent>
-                </Popover>
-                <p className="text-sm text-muted-foreground">
+                        )}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange?.from}
+                        selected={dateRange}
+                        onSelect={handleDateSelect}
+                        numberOfMonths={2}
+                        />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="report-start-time" className="text-sm font-medium">Start Time</Label>
+                    <input
+                      id="report-start-time"
+                      type="time"
+                      value={timeRange.from}
+                      onChange={(e) => setTimeRange(prev => ({ ...prev, from: e.target.value }))}
+                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="report-end-time" className="text-sm font-medium">End Time</Label>
+                    <input
+                      id="report-end-time"
+                      type="time"
+                      value={timeRange.to}
+                      onChange={(e) => setTimeRange(prev => ({ ...prev, to: e.target.value }))}
+                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground md:col-span-2">
                   Applies to all generated reports and exports. Required for Supplier and Employee Attendance reports.
                 </p>
             </div>
@@ -713,6 +987,11 @@ export default function ReportsPage() {
                       </div>
                     ))}
                   </div>
+                  {selectedPdfReport === 'productionReport' && (!dateRange?.from || !dateRange?.to) && (
+                    <p className="text-sm text-muted-foreground mt-2 text-amber-600">
+                      📅 Production Report requires a date range selection above to generate comprehensive operational data.
+                    </p>
+                  )}
                   <Button className="w-full mt-4" onClick={handleGeneratePdf} disabled={!selectedPdfReport || isGenerating}>
                     {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Download className="mr-2" />}
                     {isGenerating ? 'Generating...' : 'Generate PDF Report'}
@@ -757,12 +1036,12 @@ export default function ReportsPage() {
                   </Button>
                   {selectedCsvReport === 'employeeAttendanceLog' && dateRange?.from && dateRange?.to && (
                     <p className="text-sm text-muted-foreground mt-2">
-                      Generating employee attendance report for: {format(dateRange.from, 'MMM dd, yyyy')} to {format(dateRange.to, 'MMM dd, yyyy')}
+                      Generating employee attendance report for: {format(dateRange.from, 'MMM dd, yyyy')} {timeRange.from} to {format(dateRange.to, 'MMM dd, yyyy')} {timeRange.to}
                     </p>
                   )}
                   {selectedCsvReport === 'supplierReport' && dateRange?.from && dateRange?.to && (
                     <p className="text-sm text-muted-foreground mt-2">
-                      Generating supplier report for: {format(dateRange.from, 'MMM dd, yyyy')} to {format(dateRange.to, 'MMM dd, yyyy')}
+                      Generating supplier report for: {format(dateRange.from, 'MMM dd, yyyy')} {timeRange.from} to {format(dateRange.to, 'MMM dd, yyyy')} {timeRange.to}
                     </p>
                   )}
                 </CardContent>
@@ -775,7 +1054,7 @@ export default function ReportsPage() {
         <div ref={printRef}>
           {selectedPdfReport === 'visitorManifest' && <PrintableVisitorReport visitors={visitorData} employees={employeeData} attendance={timeAttendanceData} />}
           {selectedPdfReport === 'shipmentManifest' && <PrintableShipmentReport shipments={shipmentData} />}
-          {selectedPdfReport === 'productionReport' && <PrintableProductionReport reportData={productionReportData} />}
+          {selectedPdfReport === 'productionReport' && productionReportData && <PrintableProductionReport reportData={productionReportData} />}
           {selectedPdfReport === 'inventoryReport' && <PrintableInventoryReport inventory={coldRoomInventoryData} />}
           {selectedPdfReport === 'packagingReport' && <PrintablePackagingReport materials={packagingMaterialData} />}
           {selectedPdfReport === 'weightReconciliation' && <PrintableWeightReport weights={weightData} />}

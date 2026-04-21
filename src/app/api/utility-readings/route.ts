@@ -384,9 +384,61 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const period = searchParams.get('period'); // day, week, month
+    const summary = searchParams.get('summary') === 'true';
 
     // Build where clause
     const where: any = {};
+    
+    if (summary) {
+      // Return summary of utility consumption
+      const readings = await prisma.utility_readings.findMany({
+        where,
+        orderBy: { date: 'asc' },
+      });
+
+      let electricityInitial = 0;
+      let electricityFinal = 0;
+      let waterInitial = 0;
+      let waterFinal = 0;
+
+      if (readings.length > 0) {
+        // Get first and last readings for the period
+        const firstReading = readings[0];
+        const lastReading = readings[readings.length - 1];
+
+        // Parse metadata for power readings
+        const firstMetadata = firstReading.metadata ? JSON.parse(firstReading.metadata as string) : {};
+        const lastMetadata = lastReading.metadata ? JSON.parse(lastReading.metadata as string) : {};
+
+        // Calculate electricity consumption (sum of all power readings)
+        electricityInitial = Number(firstMetadata.powerOfficeOpening || 0) + Number(firstMetadata.powerMachineOpening || 0) + 
+                           Number(firstMetadata.powerColdroom1Opening || 0) + Number(firstMetadata.powerColdroom2Opening || 0) +
+                           Number(firstMetadata.powerOtherOpening || 0);
+        
+        electricityFinal = Number(lastMetadata.powerOfficeClosing || 0) + Number(lastMetadata.powerMachineClosing || 0) + 
+                         Number(lastMetadata.powerColdroom1Closing || 0) + Number(lastMetadata.powerColdroom2Closing || 0) +
+                         Number(lastMetadata.powerOtherClosing || 0);
+
+        // Calculate water consumption (sum of both meters)
+        waterInitial = Number(firstMetadata.waterMeter1Opening || 0) + Number(firstMetadata.waterMeter2Opening || 0);
+        waterFinal = Number(lastMetadata.waterMeter1Closing || 0) + Number(lastMetadata.waterMeter2Closing || 0);
+      }
+
+      return NextResponse.json({
+        utilityData: {
+          electricity: {
+            initial: electricityInitial,
+            final: electricityFinal,
+            units: Math.max(0, electricityFinal - electricityInitial)
+          },
+          water: {
+            initial: waterInitial,
+            final: waterFinal,
+            units: Math.max(0, waterFinal - waterInitial)
+          }
+        }
+      });
+    }
     
     if (date) {
       const queryDate = new Date(date);

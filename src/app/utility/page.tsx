@@ -517,7 +517,7 @@ export default function UtilityManagementPage() {
 
   // Check if today's readings are filled
   const checkTodayReadings = useCallback((): boolean => {
-    const lastFilledDate = localStorage.getItem('lastFilledDate');
+    const lastFilledDate = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('lastFilledDate') : null : null : null;
     const today = new Date().toISOString().split('T')[0];
     return lastFilledDate === today;
   }, []);
@@ -990,8 +990,8 @@ export default function UtilityManagementPage() {
           description: 'Power readings saved successfully',
         });
         
-        localStorage.setItem('recordedBy', recordedBy);
-        localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
         // Clear only closing readings, keep opening readings as they become next day's opening
         setPowerReadings(prev => ({
@@ -1072,8 +1072,8 @@ export default function UtilityManagementPage() {
           description: 'Water readings saved successfully',
         });
         
-        localStorage.setItem('recordedBy', recordedBy);
-        localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
         // Clear only closing readings, keep opening readings as they become next day's opening
         setWaterReadings(prev => ({
@@ -1137,8 +1137,8 @@ export default function UtilityManagementPage() {
           description: 'Internet costs saved successfully',
         });
         
-        localStorage.setItem('recordedBy', recordedBy);
-        localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
         setInternetCosts({
           safaricom: '',
@@ -1201,8 +1201,8 @@ export default function UtilityManagementPage() {
           description: 'Generator readings saved successfully',
         });
         
-        localStorage.setItem('recordedBy', recordedBy);
-        localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
         
         setDieselRefill('');
         setDieselConsumed('');
@@ -1289,7 +1289,7 @@ export default function UtilityManagementPage() {
     fetchUtilityData();
     
     // Load recorded by from localStorage
-    const savedName = localStorage.getItem('recordedBy') || '';
+    const savedName = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('recordedBy') : null : null : null || '';
     if (savedName) setRecordedBy(savedName);
   }, []);
 

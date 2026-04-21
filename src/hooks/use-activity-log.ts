@@ -18,8 +18,8 @@ export function useActivityLog() {
   }: ActivityLogOptions) => {
     try {
       // Get user info from localStorage or context
-      const user = localStorage.getItem('user') ? 
-        JSON.parse(localStorage.getItem('user') || '{}') : null;
+      const user = typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('user') : null : null ? 
+        JSON.parse(typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('user') : null : null || '{}') : null;
       
       // Get IP address (optional - you might want to get this server-side)
       const ipResponse = await fetch('https://api.ipify.org?format=json').catch(() => null);

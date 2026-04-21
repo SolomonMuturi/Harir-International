@@ -364,7 +364,9 @@ const saveBalanceData = (sizeGroups: SizeGroup[]) => {
       remainingQuantity: group.remainingQuantity,
       loadingHistory: group.loadingHistory
     }));
-    localStorage.setItem('coldRoomBalanceData', JSON.stringify(balanceData));
+    if (typeof window !== "undefined") {
+      localStorage.setItem('coldRoomBalanceData', JSON.stringify(balanceData));
+    }
   } catch (error) {
     console.warn('Failed to save balance data to localStorage:', error);
   }
@@ -372,7 +374,7 @@ const saveBalanceData = (sizeGroups: SizeGroup[]) => {
 
 const loadBalanceData = (): Record<string, Partial<SizeGroup>> => {
   try {
-    const saved = localStorage.getItem('coldRoomBalanceData');
+    const saved = typeof window !== "undefined" ? localStorage.getItem('coldRoomBalanceData') : null;
     if (!saved) return {};
     
     const balanceData = JSON.parse(saved);
@@ -394,7 +396,9 @@ const loadBalanceData = (): Record<string, Partial<SizeGroup>> => {
 };
 
 const clearBalanceData = () => {
-  localStorage.removeItem('coldRoomBalanceData');
+  if (typeof window !== "undefined") {
+    localStorage.removeItem('coldRoomBalanceData');
+  }
 };
 
 const checkForExistingBoxes = async (

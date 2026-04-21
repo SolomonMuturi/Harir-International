@@ -1,4 +1,4 @@
-// src/app/page.tsx 
+// src/app/page.tsx
 'use client';
 
 import { Suspense, useState, useEffect } from 'react';
@@ -12,13 +12,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
-import { FreshTraceLogo } from '@/components/icons'; // Added this import
+import { FreshTraceLogo } from '@/components/icons';
 
 // Wrapper component that handles search params
 function LoginFormWrapper() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
-  
+
   return <LoginFormContent callbackUrl={callbackUrl} />;
 }
 
@@ -35,19 +35,17 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
 
   // Load remembered credentials (client-side only)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const rememberedEmail = localStorage.getItem('rememberedEmail');
-      const rememberedPassword = localStorage.getItem('rememberedPassword');
-      
-      if (rememberedEmail) {
-        setEmail(rememberedEmail);
-        setRememberMe(true);
-      }
-      
-      if (rememberedPassword) {
-        setPassword(rememberedPassword);
-        setRememberPassword(true);
-      }
+    const rememberedEmail = localStorage.getItem('rememberedEmail');
+    const rememberedPassword = localStorage.getItem('rememberedPassword');
+
+    if (rememberedEmail) {
+      setEmail(rememberedEmail);
+      setRememberMe(true);
+    }
+
+    if (rememberedPassword) {
+      setPassword(rememberedPassword);
+      setRememberPassword(true);
     }
   }, []);
 
@@ -56,18 +54,16 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     setError('');
     setIsLoading(true);
 
-    if (typeof window !== 'undefined') {
-      if (rememberMe) {
-        localStorage.setItem('rememberedEmail', email);
-      } else {
-        localStorage.removeItem('rememberedEmail');
-      }
+    if (rememberMe) {
+      localStorage.setItem('rememberedEmail', email);
+    } else {
+      localStorage.removeItem('rememberedEmail');
+    }
 
-      if (rememberPassword) {
-        localStorage.setItem('rememberedPassword', password);
-      } else {
-        localStorage.removeItem('rememberedPassword');
-      }
+    if (rememberPassword) {
+      localStorage.setItem('rememberedPassword', password);
+    } else {
+      localStorage.removeItem('rememberedPassword');
     }
 
     try {
@@ -79,8 +75,8 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
       });
 
       if (result?.error) {
-        const errorMessage = result.error === 'CredentialsSignin' 
-          ? 'Invalid email or password' 
+        const errorMessage = result.error === 'CredentialsSignin'
+          ? 'Invalid email or password'
           : result.error;
         setError(errorMessage);
         toast.error(errorMessage);
@@ -105,7 +101,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-2">
             <div className="w-20 h-20 bg-primary rounded-lg flex items-center justify-center">
-              <FreshTraceLogo className="w-40 h-20 text-primary-foreground" /> {/* Made logo bigger */}
+              <FreshTraceLogo className="w-40 h-20 text-primary-foreground" />
             </div>
           </div>
           <CardTitle className="text-2xl font-bold text-center">Harir International</CardTitle>
@@ -120,7 +116,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -134,7 +130,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
                 autoComplete="email"
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -181,7 +177,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
                   Remember me
                 </Label>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="remember-password"
@@ -197,7 +193,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
                 </Label>
               </div>
             </div>
-            
+
             <Button
               type="submit"
               className="w-full"
@@ -217,7 +213,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
             </Button>
           </form>
         </CardContent>
-       </Card>
+      </Card>
     </div>
   );
 }

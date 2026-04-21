@@ -14,6 +14,9 @@ export async function GET(request: NextRequest) {
     const pallet_id = searchParams.get('pallet_id');
     const supplier_id = searchParams.get('supplier_id');
     const supplier_name = searchParams.get('supplier_name');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const count = searchParams.get('count') === 'true';
     
     let whereClause: any = {};
     
@@ -28,6 +31,17 @@ export async function GET(request: NextRequest) {
     }
     if (supplier_name) {
       whereClause.supplier_name = supplier_name;
+    }
+    if (startDate && endDate) {
+      whereClause.rejected_at = {
+        gte: new Date(startDate + 'T00:00:00.000Z'),
+        lte: new Date(endDate + 'T23:59:59.999Z')
+      };
+    }
+
+    if (count) {
+      const rejectsCount = await prisma.rejects.count({ where: whereClause });
+      return NextResponse.json({ count: rejectsCount });
     }
     
     const rejects = await prisma.rejects.findMany({

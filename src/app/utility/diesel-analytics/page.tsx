@@ -154,7 +154,7 @@ export default function DieselAnalyticsPage() {
     // Handle saving alert threshold
     const handleSaveThreshold = () => {
         // In a real app, you would save this to your database
-        localStorage.setItem('dieselAlertThreshold', alertThreshold.toString());
+        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('dieselAlertThreshold', alertThreshold.toString());
         
         toast({
             title: 'Threshold Saved',
@@ -179,7 +179,7 @@ export default function DieselAnalyticsPage() {
 
     // Load alert threshold from localStorage
     useEffect(() => {
-        const savedThreshold = localStorage.getItem('dieselAlertThreshold');
+        const savedThreshold = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('dieselAlertThreshold') : null : null : null;
         if (savedThreshold) {
             setAlertThreshold(parseInt(savedThreshold));
         }

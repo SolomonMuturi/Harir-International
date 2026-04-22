@@ -12,18 +12,18 @@ import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 
-import { 
-  DollarSign, 
-  Thermometer, 
-  Bolt, 
-  Zap, 
-  Droplet, 
-  Fuel, 
-  Clock, 
-  AlertTriangle, 
-  Download, 
-  Filter, 
-  Wifi, 
+import {
+  DollarSign,
+  Thermometer,
+  Bolt,
+  Zap,
+  Droplet,
+  Fuel,
+  Clock,
+  AlertTriangle,
+  Download,
+  Filter,
+  Wifi,
   Building,
   Cpu,
   Snowflake,
@@ -159,7 +159,7 @@ const initialOverviewCards = {
 // StatCard Component
 function StatCard({ data }: { data: OverviewCardData }) {
   const { title, value, change, changeType, icon: Icon, color, bgColor } = data;
-  
+
   const getChangeColor = () => {
     switch (changeType) {
       case 'increase':
@@ -236,7 +236,7 @@ function UtilitySection({
 }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-      <div 
+      <div
         className="flex items-center justify-between p-6 cursor-pointer hover:bg-gray-800/50 transition-colors"
         onClick={onToggle}
       >
@@ -251,7 +251,7 @@ function UtilitySection({
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-3">
           {(totalConsumed || totalCost) && (
             <div className="flex items-center gap-2">
@@ -267,7 +267,7 @@ function UtilitySection({
               )}
             </div>
           )}
-          
+
           <Button
             size="sm"
             onClick={(e) => {
@@ -289,7 +289,7 @@ function UtilitySection({
               </>
             )}
           </Button>
-          
+
           {isOpen ? (
             <ChevronUp className="h-5 w-5 text-gray-400" />
           ) : (
@@ -297,7 +297,7 @@ function UtilitySection({
           )}
         </div>
       </div>
-      
+
       {isOpen && (
         <div className="px-6 pb-6 pt-2 border-t border-gray-800">
           {children}
@@ -308,11 +308,11 @@ function UtilitySection({
 }
 
 // DateRangePicker Component
-function DateRangePicker({ 
-  onDateRangeChange, 
-  dateFilter, 
-  setDateFilter 
-}: { 
+function DateRangePicker({
+  onDateRangeChange,
+  dateFilter,
+  setDateFilter
+}: {
   onDateRangeChange: (start: string, end: string) => void;
   dateFilter: 'today' | 'week' | 'month' | 'custom';
   setDateFilter: (filter: 'today' | 'week' | 'month' | 'custom') => void;
@@ -326,12 +326,12 @@ function DateRangePicker({
     const today = new Date();
     const start = new Date();
     start.setDate(today.getDate() - days);
-    
+
     setCustomRange({
       start: start.toISOString().split('T')[0],
       end: today.toISOString().split('T')[0]
     });
-    
+
     setDateFilter('custom');
     onDateRangeChange(start.toISOString().split('T')[0], today.toISOString().split('T')[0]);
   };
@@ -347,9 +347,9 @@ function DateRangePicker({
       <PopoverTrigger asChild>
         <Button variant="outline" className="border-gray-700 bg-gray-800 hover:bg-gray-700">
           <Calendar className="mr-2 h-4 w-4" />
-          {dateFilter === 'today' ? 'Today' : 
-           dateFilter === 'week' ? 'Last 7 Days' : 
-           dateFilter === 'month' ? 'Last 30 Days' : 
+          {dateFilter === 'today' ? 'Today' :
+           dateFilter === 'week' ? 'Last 7 Days' :
+           dateFilter === 'month' ? 'Last 30 Days' :
            `${new Date(customRange.start).toLocaleDateString()} - ${new Date(customRange.end).toLocaleDateString()}`}
         </Button>
       </PopoverTrigger>
@@ -358,24 +358,24 @@ function DateRangePicker({
           <div className="space-y-2">
             <h4 className="font-medium text-gray-200">Quick Select</h4>
             <div className="flex gap-2">
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant={dateFilter === 'today' ? 'default' : 'outline'}
                 onClick={() => handleQuickSelect(0)}
                 className={dateFilter === 'today' ? 'bg-blue-600 hover:bg-blue-700' : 'border-gray-700'}
               >
                 Today
               </Button>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant={dateFilter === 'week' ? 'default' : 'outline'}
                 onClick={() => handleQuickSelect(7)}
                 className={dateFilter === 'week' ? 'bg-blue-600 hover:bg-blue-700' : 'border-gray-700'}
               >
                 Last 7 Days
               </Button>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant={dateFilter === 'month' ? 'default' : 'outline'}
                 onClick={() => handleQuickSelect(30)}
                 className={dateFilter === 'month' ? 'bg-blue-600 hover:bg-blue-700' : 'border-gray-700'}
@@ -384,9 +384,9 @@ function DateRangePicker({
               </Button>
             </div>
           </div>
-          
+
           <Separator className="bg-gray-700" />
-          
+
           <div className="space-y-2">
             <h4 className="font-medium text-gray-200">Custom Range</h4>
             <div className="space-y-2">
@@ -410,8 +410,8 @@ function DateRangePicker({
                   />
                 </div>
               </div>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 onClick={handleApplyCustomRange}
                 className="w-full bg-blue-600 hover:bg-blue-700"
               >
@@ -428,10 +428,10 @@ function DateRangePicker({
 // Main Dashboard Component
 export default function UtilityManagementPage() {
   const { toast } = useToast();
-  
+
   // State for overview cards
   const [overviewCards, setOverviewCards] = useState(initialOverviewCards);
-  
+
   // Main state
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -441,7 +441,7 @@ export default function UtilityManagementPage() {
   const [totalInternet, setTotalInternet] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<string>('Never');
   const [todayReadingsFilled, setTodayReadingsFilled] = useState(false);
-  
+
   // Breakdown data
   const [powerBreakdown, setPowerBreakdown] = useState<AreaBreakdown>({
     office: 0,
@@ -450,7 +450,7 @@ export default function UtilityManagementPage() {
     coldroom2: 0,
     other: 0
   });
-  
+
   const [waterBreakdown, setWaterBreakdown] = useState({
     meter1: 0,
     meter2: 0
@@ -472,13 +472,13 @@ export default function UtilityManagementPage() {
 
   // Section toggle states
   const [openSections, setOpenSections] = useState({
-    power: true, // Set to true by default for better UX
+    power: true,
     water: false,
     internet: false,
     generator: false,
   });
 
-  // Power States - All fields unlocked for manual entry
+  // Power States
   const [powerReadings, setPowerReadings] = useState({
     office: { opening: '', closing: '', disabled: false },
     machine: { opening: '', closing: '', disabled: false },
@@ -489,7 +489,7 @@ export default function UtilityManagementPage() {
   const [otherActivity, setOtherActivity] = useState('');
   const [isSavingPower, setIsSavingPower] = useState(false);
 
-  // Water States - All fields unlocked for manual entry
+  // Water States
   const [waterReadings, setWaterReadings] = useState({
     meter1: { opening: '', closing: '', disabled: false },
     meter2: { opening: '', closing: '', disabled: false },
@@ -512,14 +512,17 @@ export default function UtilityManagementPage() {
   const [dieselConsumed, setDieselConsumed] = useState('');
   const [isSavingGenerator, setIsSavingGenerator] = useState(false);
 
-  // Auto-fill opening readings from last saved readings (optional helper)
+  // Auto-fill opening readings
   const [autoFillEnabled, setAutoFillEnabled] = useState(true);
 
   // Check if today's readings are filled
   const checkTodayReadings = useCallback((): boolean => {
-    const lastFilledDate = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('lastFilledDate') : null : null : null;
-    const today = new Date().toISOString().split('T')[0];
-    return lastFilledDate === today;
+    if (typeof window !== "undefined") {
+      const lastFilledDate = localStorage.getItem('lastFilledDate');
+      const today = new Date().toISOString().split('T')[0];
+      return lastFilledDate === today;
+    }
+    return false;
   }, []);
 
   // Fetch utility data
@@ -527,33 +530,31 @@ export default function UtilityManagementPage() {
     try {
       setIsLoading(true);
       setError(null);
-      
+
       let url = '/api/utility-readings?limit=100';
       if (dateFilter !== 'custom') {
         url += `&period=${dateFilter}`;
       } else {
         url += `&startDate=${dateRange.start}&endDate=${dateRange.end}`;
       }
-      
+
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch data: ${response.status}`);
       }
-      
+
       const data = await response.json();
       setReadings(data.readings || []);
-      
-      // Check if today's readings are filled
+
       const todayFilled = checkTodayReadings();
       setTodayReadingsFilled(todayFilled);
-      
-      // Calculate totals
+
       let powerTotal = 0;
       let waterTotal = 0;
       let dieselTotal = 0;
       let internetTotal = 0;
-      
+
       const powerBreakdown: AreaBreakdown = {
         office: 0,
         machine: 0,
@@ -561,86 +562,80 @@ export default function UtilityManagementPage() {
         coldroom2: 0,
         other: 0
       };
-      
+
       const waterBreakdown = {
         meter1: 0,
         meter2: 0
       };
-      
+
       data.readings.forEach((reading: UtilityReading) => {
         const metadata = reading.metadata || {};
-        
-        // Power breakdown
+
         powerBreakdown.office += metadata.powerOfficeConsumed || 0;
         powerBreakdown.machine += metadata.powerMachineConsumed || 0;
         powerBreakdown.coldroom1 += metadata.powerColdroom1Consumed || 0;
         powerBreakdown.coldroom2 += metadata.powerColdroom2Consumed || 0;
         powerBreakdown.other += metadata.powerOtherConsumed || 0;
-        
-        // Water breakdown
+
         waterBreakdown.meter1 += metadata.waterMeter1Consumed || 0;
         waterBreakdown.meter2 += metadata.waterMeter2Consumed || 0;
-        
-        // Internet costs
-        internetTotal += (metadata.internetSafaricom || 0) + 
-                        (metadata.internet5G || 0) + 
+
+        internetTotal += (metadata.internetSafaricom || 0) +
+                        (metadata.internet5G || 0) +
                         (metadata.internetSyokinet || 0);
-        
-        // Totals
+
         powerTotal += parseFloat(reading.powerConsumed) || 0;
         waterTotal += parseFloat(reading.waterConsumed) || 0;
         dieselTotal += parseFloat(reading.dieselConsumed) || 0;
       });
-      
+
       setTotalPower(powerTotal);
       setTotalWater(waterTotal);
       setTotalDiesel(dieselTotal);
       setTotalInternet(internetTotal);
       setPowerBreakdown(powerBreakdown);
       setWaterBreakdown(waterBreakdown);
-      
-      // Calculate monthly costs
-      const daysInPeriod = dateFilter === 'today' ? 1 : dateFilter === 'week' ? 7 : dateFilter === 'month' ? 30 : 
+
+      const daysInPeriod = dateFilter === 'today' ? 1 : dateFilter === 'week' ? 7 : dateFilter === 'month' ? 30 :
         Math.ceil((new Date(dateRange.end).getTime() - new Date(dateRange.start).getTime()) / (1000 * 60 * 60 * 24)) || 30;
-      
+
       const powerCost = powerTotal * UTILITY_RATES.electricity * (30 / daysInPeriod);
       const waterCost = waterTotal * UTILITY_RATES.water * (30 / daysInPeriod);
       const dieselCost = dieselTotal * UTILITY_RATES.diesel * (30 / daysInPeriod);
-      
-      // Update overview cards
+
       setOverviewCards({
         energy: [
-          { 
-            title: 'Total Power', 
-            value: `${powerTotal.toFixed(0)} kWh`, 
-            change: '+2% vs yesterday', 
+          {
+            title: 'Total Power',
+            value: `${powerTotal.toFixed(0)} kWh`,
+            change: '+2% vs yesterday',
             changeType: 'increase' as const,
             icon: Zap,
             color: 'text-blue-400',
             bgColor: 'from-blue-900/30 to-blue-900/10'
           },
-          { 
-            title: 'Monthly Cost', 
-            value: `KES ${powerCost.toLocaleString()}`, 
-            change: `KES ${UTILITY_RATES.electricity}/kWh`, 
+          {
+            title: 'Monthly Cost',
+            value: `KES ${powerCost.toLocaleString()}`,
+            change: `KES ${UTILITY_RATES.electricity}/kWh`,
             changeType: 'increase' as const,
             icon: DollarSign,
             color: 'text-emerald-400',
             bgColor: 'from-emerald-900/30 to-emerald-900/10'
           },
-          { 
-            title: 'Peak Demand', 
-            value: `${(powerTotal / 24).toFixed(1)} kW`, 
-            change: 'Within limits', 
+          {
+            title: 'Peak Demand',
+            value: `${(powerTotal / 24).toFixed(1)} kW`,
+            change: 'Within limits',
             changeType: 'increase' as const,
             icon: Bolt,
             color: 'text-amber-400',
             bgColor: 'from-amber-900/30 to-amber-900/10'
           },
-          { 
-            title: 'Efficiency', 
-            value: '0.92', 
-            change: 'Optimal', 
+          {
+            title: 'Efficiency',
+            value: '0.92',
+            change: 'Optimal',
             changeType: 'increase' as const,
             icon: TrendingUp,
             color: 'text-purple-400',
@@ -648,37 +643,37 @@ export default function UtilityManagementPage() {
           },
         ],
         water: [
-          { 
-            title: 'Total Water', 
-            value: `${waterTotal.toFixed(0)} m³`, 
-            change: '-1.3% vs yesterday', 
+          {
+            title: 'Total Water',
+            value: `${waterTotal.toFixed(0)} m³`,
+            change: '-1.3% vs yesterday',
             changeType: 'decrease' as const,
             icon: Droplet,
             color: 'text-cyan-400',
             bgColor: 'from-cyan-900/30 to-cyan-900/10'
           },
-          { 
-            title: 'Water Cost', 
-            value: `KES ${waterCost.toLocaleString()}`, 
-            change: `KES ${UTILITY_RATES.water}/m³`, 
+          {
+            title: 'Water Cost',
+            value: `KES ${waterCost.toLocaleString()}`,
+            change: `KES ${UTILITY_RATES.water}/m³`,
             changeType: 'increase' as const,
             icon: DollarSign,
             color: 'text-blue-400',
             bgColor: 'from-blue-900/30 to-blue-900/10'
           },
-          { 
-            title: 'Water Quality', 
-            value: 'Good', 
-            change: 'Monitoring', 
+          {
+            title: 'Water Quality',
+            value: 'Good',
+            change: 'Monitoring',
             changeType: 'increase' as const,
             icon: Thermometer,
             color: 'text-emerald-400',
             bgColor: 'from-emerald-900/30 to-emerald-900/10'
           },
-          { 
-            title: 'Savings', 
-            value: '15%', 
-            change: 'Recycling rate', 
+          {
+            title: 'Savings',
+            value: '15%',
+            change: 'Recycling rate',
             changeType: 'increase' as const,
             icon: Activity,
             color: 'text-teal-400',
@@ -686,37 +681,37 @@ export default function UtilityManagementPage() {
           },
         ],
         diesel: [
-          { 
-            title: 'Diesel Today', 
-            value: `${dieselTotal.toFixed(1)} L`, 
-            change: 'Generator runtime', 
+          {
+            title: 'Diesel Today',
+            value: `${dieselTotal.toFixed(1)} L`,
+            change: 'Generator runtime',
             changeType: 'increase' as const,
             icon: Fuel,
             color: 'text-orange-400',
             bgColor: 'from-orange-900/30 to-orange-900/10'
           },
-          { 
-            title: 'Avg Daily', 
-            value: `${(dieselTotal / daysInPeriod).toFixed(1)} L`, 
-            change: 'Last 7 days', 
+          {
+            title: 'Avg Daily',
+            value: `${(dieselTotal / daysInPeriod).toFixed(1)} L`,
+            change: 'Last 7 days',
             changeType: 'increase' as const,
             icon: BarChart3,
             color: 'text-rose-400',
             bgColor: 'from-rose-900/30 to-rose-900/10'
           },
-          { 
-            title: 'Monthly Cost', 
-            value: `KES ${dieselCost.toLocaleString()}`, 
-            change: `KES ${UTILITY_RATES.diesel}/L`, 
+          {
+            title: 'Monthly Cost',
+            value: `KES ${dieselCost.toLocaleString()}`,
+            change: `KES ${UTILITY_RATES.diesel}/L`,
             changeType: 'increase' as const,
             icon: DollarSign,
             color: 'text-amber-400',
             bgColor: 'from-amber-900/30 to-amber-900/10'
           },
-          { 
-            title: 'Runtime', 
-            value: `${(dieselTotal / 7).toFixed(0)} hrs`, 
-            change: 'Estimated hours', 
+          {
+            title: 'Runtime',
+            value: `${(dieselTotal / 7).toFixed(0)} hrs`,
+            change: 'Estimated hours',
             changeType: 'increase' as const,
             icon: Clock,
             color: 'text-violet-400',
@@ -724,37 +719,37 @@ export default function UtilityManagementPage() {
           },
         ],
         internet: [
-          { 
-            title: 'Total Internet', 
-            value: `KES ${internetTotal.toLocaleString()}`, 
-            change: 'Monthly cost', 
+          {
+            title: 'Total Internet',
+            value: `KES ${internetTotal.toLocaleString()}`,
+            change: 'Monthly cost',
             changeType: 'increase' as const,
             icon: Wifi,
             color: 'text-violet-400',
             bgColor: 'from-violet-900/30 to-violet-900/10'
           },
-          { 
-            title: 'Safaricom', 
-            value: `KES ${(data.readings[0]?.metadata?.internetSafaricom || 0).toLocaleString()}`, 
-            change: 'Per month', 
+          {
+            title: 'Safaricom',
+            value: `KES ${(data.readings[0]?.metadata?.internetSafaricom || 0).toLocaleString()}`,
+            change: 'Per month',
             changeType: 'neutral' as const,
             icon: Wifi,
             color: 'text-blue-400',
             bgColor: 'from-blue-900/30 to-blue-900/10'
           },
-          { 
-            title: '5G Internet', 
-            value: `KES ${(data.readings[0]?.metadata?.internet5G || 0).toLocaleString()}`, 
-            change: 'Per month', 
+          {
+            title: '5G Internet',
+            value: `KES ${(data.readings[0]?.metadata?.internet5G || 0).toLocaleString()}`,
+            change: 'Per month',
             changeType: 'neutral' as const,
             icon: Wifi,
             color: 'text-emerald-400',
             bgColor: 'from-emerald-900/30 to-emerald-900/10'
           },
-          { 
-            title: 'Syokinet', 
-            value: `KES ${(data.readings[0]?.metadata?.internetSyokinet || 0).toLocaleString()}`, 
-            change: 'Per month', 
+          {
+            title: 'Syokinet',
+            value: `KES ${(data.readings[0]?.metadata?.internetSyokinet || 0).toLocaleString()}`,
+            change: 'Per month',
             changeType: 'neutral' as const,
             icon: Wifi,
             color: 'text-cyan-400',
@@ -763,9 +758,8 @@ export default function UtilityManagementPage() {
         ]
       });
 
-      // Update last updated timestamp
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      
+
     } catch (error) {
       console.error('Error fetching utility data:', error);
       setError('Failed to load utility data. Please try again.');
@@ -774,10 +768,10 @@ export default function UtilityManagementPage() {
     }
   };
 
-  // Load last readings for opening values (optional auto-fill)
+  // Load last readings for opening values
   const loadLastReadings = async () => {
     if (!autoFillEnabled) return;
-    
+
     try {
       const response = await fetch('/api/utility-readings?limit=1');
       if (response.ok) {
@@ -785,50 +779,48 @@ export default function UtilityManagementPage() {
         if (data.readings && data.readings.length > 0) {
           const lastReading = data.readings[0];
           const metadata = lastReading.metadata || {};
-          
-          // Set power opening readings from last closing readings (optional suggestion)
+
           setPowerReadings({
-            office: { 
-              opening: metadata.powerOfficeClosing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            office: {
+              opening: metadata.powerOfficeClosing?.toString() || '',
+              closing: '',
+              disabled: false
             },
-            machine: { 
-              opening: metadata.powerMachineClosing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            machine: {
+              opening: metadata.powerMachineClosing?.toString() || '',
+              closing: '',
+              disabled: false
             },
-            coldroom1: { 
-              opening: metadata.powerColdroom1Closing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            coldroom1: {
+              opening: metadata.powerColdroom1Closing?.toString() || '',
+              closing: '',
+              disabled: false
             },
-            coldroom2: { 
-              opening: metadata.powerColdroom2Closing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            coldroom2: {
+              opening: metadata.powerColdroom2Closing?.toString() || '',
+              closing: '',
+              disabled: false
             },
-            other: { 
-              opening: metadata.powerOtherClosing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            other: {
+              opening: metadata.powerOtherClosing?.toString() || '',
+              closing: '',
+              disabled: false
             },
           });
-          
-          // Set water opening readings from last closing readings (optional suggestion)
+
           setWaterReadings({
-            meter1: { 
-              opening: metadata.waterMeter1Closing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            meter1: {
+              opening: metadata.waterMeter1Closing?.toString() || '',
+              closing: '',
+              disabled: false
             },
-            meter2: { 
-              opening: metadata.waterMeter2Closing?.toString() || '', 
-              closing: '', 
-              disabled: false 
+            meter2: {
+              opening: metadata.waterMeter2Closing?.toString() || '',
+              closing: '',
+              disabled: false
             },
           });
-          
+
           setOtherActivity(metadata.powerOtherActivity || '');
         }
       }
@@ -837,7 +829,7 @@ export default function UtilityManagementPage() {
     }
   };
 
-  // Clear all fields for new entry
+  // Clear all fields
   const clearAllFields = () => {
     setPowerReadings({
       office: { opening: '', closing: '', disabled: false },
@@ -847,28 +839,27 @@ export default function UtilityManagementPage() {
       other: { opening: '', closing: '', disabled: false },
     });
     setOtherActivity('');
-    
+
     setWaterReadings({
       meter1: { opening: '', closing: '', disabled: false },
       meter2: { opening: '', closing: '', disabled: false },
     });
-    
+
     setInternetCosts({
       safaricom: '',
       internet5G: '',
       syokinet: '',
     });
     setInternetBillingCycle('');
-    
+
     setGeneratorStart('08:00');
     setGeneratorStop('10:30');
     setDieselRefill('');
     setDieselConsumed('');
-    
+
     setNotes('');
   };
 
-  // Handle section toggle
   const toggleSection = (section: keyof typeof openSections) => {
     setOpenSections(prev => ({
       ...prev,
@@ -876,7 +867,6 @@ export default function UtilityManagementPage() {
     }));
   };
 
-  // Calculate power consumption
   const calculatePowerConsumption = () => {
     const calculate = (opening: string, closing: string) => {
       const openingNum = Number(opening) || 0;
@@ -893,7 +883,6 @@ export default function UtilityManagementPage() {
     };
   };
 
-  // Calculate water consumption
   const calculateWaterConsumption = () => {
     const calculate = (opening: string, closing: string) => {
       const openingNum = Number(opening) || 0;
@@ -907,20 +896,19 @@ export default function UtilityManagementPage() {
     };
   };
 
-  // Calculate generator data
   const calculateGeneratorData = () => {
     const [startHour, startMin] = generatorStart.split(':').map(Number);
     const [stopHour, stopMin] = generatorStop.split(':').map(Number);
-    
+
     let totalMinutes = (stopHour * 60 + stopMin) - (startHour * 60 + startMin);
     if (totalMinutes < 0) totalMinutes += 24 * 60;
-    
+
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     const totalHours = totalMinutes / 60;
-    
+
     const calculatedDiesel = totalHours * 7;
-    
+
     return {
       hours,
       minutes,
@@ -940,7 +928,6 @@ export default function UtilityManagementPage() {
       return;
     }
 
-    // Validate that at least one reading has both opening and closing
     const hasValidReading = Object.values(powerReadings).some(
       reading => reading.opening && reading.closing
     );
@@ -955,11 +942,11 @@ export default function UtilityManagementPage() {
     }
 
     setIsSavingPower(true);
-    
+
     try {
       const powerConsumption = calculatePowerConsumption();
       const totalPowerConsumed = Object.values(powerConsumption).reduce((a, b) => a + b, 0);
-      
+
       const response = await fetch('/api/utility-readings', {
         method: 'POST',
         headers: {
@@ -989,11 +976,12 @@ export default function UtilityManagementPage() {
           title: 'Success',
           description: 'Power readings saved successfully',
         });
-        
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
-        
-        // Clear only closing readings, keep opening readings as they become next day's opening
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem('recordedBy', recordedBy);
+          localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        }
+
         setPowerReadings(prev => ({
           office: { ...prev.office, closing: '' },
           machine: { ...prev.machine, closing: '' },
@@ -1001,7 +989,7 @@ export default function UtilityManagementPage() {
           coldroom2: { ...prev.coldroom2, closing: '' },
           other: { ...prev.other, closing: '' },
         }));
-        
+
         setOtherActivity('');
         fetchUtilityData();
       } else {
@@ -1029,7 +1017,6 @@ export default function UtilityManagementPage() {
       return;
     }
 
-    // Validate that at least one meter has both opening and closing
     const hasValidReading = Object.values(waterReadings).some(
       reading => reading.opening && reading.closing
     );
@@ -1044,11 +1031,11 @@ export default function UtilityManagementPage() {
     }
 
     setIsSavingWater(true);
-    
+
     try {
       const waterConsumption = calculateWaterConsumption();
       const totalWaterConsumed = Object.values(waterConsumption).reduce((a, b) => a + b, 0);
-      
+
       const response = await fetch('/api/utility-readings', {
         method: 'POST',
         headers: {
@@ -1071,16 +1058,17 @@ export default function UtilityManagementPage() {
           title: 'Success',
           description: 'Water readings saved successfully',
         });
-        
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
-        
-        // Clear only closing readings, keep opening readings as they become next day's opening
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem('recordedBy', recordedBy);
+          localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        }
+
         setWaterReadings(prev => ({
           meter1: { ...prev.meter1, closing: '' },
           meter2: { ...prev.meter2, closing: '' },
         }));
-        
+
         fetchUtilityData();
       } else {
         throw new Error('Failed to save water readings');
@@ -1108,12 +1096,12 @@ export default function UtilityManagementPage() {
     }
 
     setIsSavingInternet(true);
-    
+
     try {
-      const totalInternetCost = (Number(internetCosts.safaricom) || 0) + 
-                               (Number(internetCosts.internet5G) || 0) + 
+      const totalInternetCost = (Number(internetCosts.safaricom) || 0) +
+                               (Number(internetCosts.internet5G) || 0) +
                                (Number(internetCosts.syokinet) || 0);
-      
+
       const response = await fetch('/api/utility-readings', {
         method: 'POST',
         headers: {
@@ -1136,17 +1124,19 @@ export default function UtilityManagementPage() {
           title: 'Success',
           description: 'Internet costs saved successfully',
         });
-        
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
-        
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem('recordedBy', recordedBy);
+          localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        }
+
         setInternetCosts({
           safaricom: '',
           internet5G: '',
           syokinet: '',
         });
         setInternetBillingCycle('');
-        
+
         fetchUtilityData();
       } else {
         throw new Error('Failed to save internet costs');
@@ -1174,10 +1164,10 @@ export default function UtilityManagementPage() {
     }
 
     setIsSavingGenerator(true);
-    
+
     try {
       const generatorData = calculateGeneratorData();
-      
+
       const response = await fetch('/api/utility-readings', {
         method: 'POST',
         headers: {
@@ -1200,13 +1190,15 @@ export default function UtilityManagementPage() {
           title: 'Success',
           description: 'Generator readings saved successfully',
         });
-        
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
-        
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem('recordedBy', recordedBy);
+          localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        }
+
         setDieselRefill('');
         setDieselConsumed('');
-        
+
         fetchUtilityData();
       } else {
         throw new Error('Failed to save generator readings');
@@ -1226,13 +1218,13 @@ export default function UtilityManagementPage() {
   const handleExportCSV = async () => {
     try {
       let url = '/api/utility-readings/export';
-      
+
       if (dateFilter === 'custom') {
         url += `?startDate=${dateRange.start}&endDate=${dateRange.end}`;
       } else {
         const today = new Date();
         let startDate = new Date();
-        
+
         switch (dateFilter) {
           case 'today':
             startDate.setHours(0, 0, 0, 0);
@@ -1244,16 +1236,16 @@ export default function UtilityManagementPage() {
             startDate.setMonth(today.getMonth() - 1);
             break;
         }
-        
+
         url += `?startDate=${startDate.toISOString().split('T')[0]}&endDate=${today.toISOString().split('T')[0]}`;
       }
-      
+
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         throw new Error('Failed to export data');
       }
-      
+
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1263,12 +1255,12 @@ export default function UtilityManagementPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
-      
+
       toast({
         title: 'Export Successful',
         description: 'Data exported to CSV file',
       });
-      
+
     } catch (error) {
       toast({
         title: 'Export Failed',
@@ -1278,27 +1270,24 @@ export default function UtilityManagementPage() {
     }
   };
 
-  // Handle date range change
   const handleDateRangeChange = (start: string, end: string) => {
     setDateRange({ start, end });
     setDateFilter('custom');
   };
 
-  // Initialize on component mount
   useEffect(() => {
     fetchUtilityData();
-    
-    // Load recorded by from localStorage
-    const savedName = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('recordedBy') : null : null : null || '';
-    if (savedName) setRecordedBy(savedName);
+
+    if (typeof window !== "undefined") {
+      const savedName = localStorage.getItem('recordedBy') || '';
+      if (savedName) setRecordedBy(savedName);
+    }
   }, []);
 
-  // Auto-fill opening readings when component mounts
   useEffect(() => {
     loadLastReadings();
   }, [autoFillEnabled]);
 
-  // Fetch data when date filter changes
   useEffect(() => {
     fetchUtilityData();
   }, [dateFilter, dateRange]);
@@ -1327,7 +1316,6 @@ export default function UtilityManagementPage() {
       <SidebarInset className="bg-gray-950">
         <Header />
         <main className="p-4 md:p-6 lg:p-8 space-y-8">
-          {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-white">
@@ -1338,23 +1326,23 @@ export default function UtilityManagementPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button 
-                onClick={fetchUtilityData} 
-                variant="outline" 
+              <Button
+                onClick={fetchUtilityData}
+                variant="outline"
                 className="border-gray-700 bg-gray-900 hover:bg-gray-800"
                 disabled={isLoading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
-              <Button 
+              <Button
                 onClick={handleExportCSV}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV
               </Button>
-              <Button 
+              <Button
                 onClick={clearAllFields}
                 variant="outline"
                 className="border-gray-700 bg-gray-900 hover:bg-gray-800"
@@ -1365,14 +1353,12 @@ export default function UtilityManagementPage() {
             </div>
           </div>
 
-          {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {overviewCards.energy.map((card, index) => (
               <StatCard key={`energy-${index}`} data={card} />
             ))}
           </div>
 
-          {/* Auto-fill Toggle */}
           <Card className="bg-gray-900 border-gray-800">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -1396,7 +1382,6 @@ export default function UtilityManagementPage() {
             </CardContent>
           </Card>
 
-          {/* Today's Status Alert */}
           {!todayReadingsFilled && !isLoading && (
             <div className="bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border border-yellow-800/50 rounded-xl p-5">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1411,7 +1396,7 @@ export default function UtilityManagementPage() {
                     </p>
                   </div>
                 </div>
-                <Button 
+                <Button
                   onClick={() => {
                     const firstSection = document.getElementById('record-info');
                     if (firstSection) {
@@ -1427,20 +1412,19 @@ export default function UtilityManagementPage() {
             </div>
           )}
 
-          {/* Filters and Date Range */}
           <Card className="bg-gray-900 border-gray-800">
             <CardContent className="p-5">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">Date Range:  </Label>
-                    <DateRangePicker 
+                    <DateRangePicker
                       onDateRangeChange={handleDateRangeChange}
                       dateFilter={dateFilter}
                       setDateFilter={setDateFilter}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm text-gray-400">View</Label>
                     <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
@@ -1456,7 +1440,7 @@ export default function UtilityManagementPage() {
                     </Select>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="border-gray-700 text-gray-400">
                     {readings.length} records
@@ -1469,7 +1453,6 @@ export default function UtilityManagementPage() {
             </CardContent>
           </Card>
 
-          {/* Record Information */}
           <Card className="bg-gray-900 border-gray-800" id="record-info">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-gray-200">
@@ -1526,9 +1509,7 @@ export default function UtilityManagementPage() {
             </CardContent>
           </Card>
 
-          {/* Utility Sections */}
           <div className="space-y-4">
-            {/* Power Consumption Section */}
             <UtilitySection
               title="Power Consumption"
               icon={Zap}
@@ -1542,7 +1523,6 @@ export default function UtilityManagementPage() {
               badgeColor="blue"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                {/* Office */}
                 <div className="space-y-3">
                   <Label className="font-medium text-gray-300">Office</Label>
                   <div className="space-y-2">
@@ -1581,7 +1561,6 @@ export default function UtilityManagementPage() {
                   </div>
                 </div>
 
-                {/* Machine */}
                 <div className="space-y-3">
                   <Label className="font-medium text-gray-300">Machine</Label>
                   <div className="space-y-2">
@@ -1620,7 +1599,6 @@ export default function UtilityManagementPage() {
                   </div>
                 </div>
 
-                {/* Coldroom 1 */}
                 <div className="space-y-3">
                   <Label className="font-medium text-gray-300">Coldroom 1</Label>
                   <div className="space-y-2">
@@ -1659,7 +1637,6 @@ export default function UtilityManagementPage() {
                   </div>
                 </div>
 
-                {/* Coldroom 2 */}
                 <div className="space-y-3">
                   <Label className="font-medium text-gray-300">Coldroom 2</Label>
                   <div className="space-y-2">
@@ -1698,7 +1675,6 @@ export default function UtilityManagementPage() {
                   </div>
                 </div>
 
-                {/* Other */}
                 <div className="space-y-3">
                   <Label className="font-medium text-gray-300">Other Activities</Label>
                   <div className="space-y-2">
@@ -1748,7 +1724,6 @@ export default function UtilityManagementPage() {
               </div>
             </UtilitySection>
 
-            {/* Water Consumption Section */}
             <UtilitySection
               title="Water Consumption"
               icon={Droplet}
@@ -1762,7 +1737,6 @@ export default function UtilityManagementPage() {
               badgeColor="cyan"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Meter 1 */}
                 <div className="space-y-4">
                   <Label className="font-medium text-lg text-gray-300">Water Meter 1</Label>
                   <div className="space-y-2">
@@ -1801,7 +1775,6 @@ export default function UtilityManagementPage() {
                   </div>
                 </div>
 
-                {/* Meter 2 */}
                 <div className="space-y-4">
                   <Label className="font-medium text-lg text-gray-300">Water Meter 2</Label>
                   <div className="space-y-2">
@@ -1842,7 +1815,6 @@ export default function UtilityManagementPage() {
               </div>
             </UtilitySection>
 
-            {/* Internet Costs Section */}
             <UtilitySection
               title="Internet Costs"
               icon={Wifi}
@@ -1852,8 +1824,8 @@ export default function UtilityManagementPage() {
               onSave={handleSaveInternet}
               isSaving={isSavingInternet}
               totalCost={`KES ${(
-                (Number(internetCosts.safaricom) || 0) + 
-                (Number(internetCosts.internet5G) || 0) + 
+                (Number(internetCosts.safaricom) || 0) +
+                (Number(internetCosts.internet5G) || 0) +
                 (Number(internetCosts.syokinet) || 0)
               ).toFixed(2)}`}
               badgeColor="violet"
@@ -1900,7 +1872,7 @@ export default function UtilityManagementPage() {
                     />
                   </div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label className="text-gray-300">Billing Cycle</Label>
                   <Input
@@ -1913,7 +1885,6 @@ export default function UtilityManagementPage() {
               </div>
             </UtilitySection>
 
-            {/* Generator Section */}
             <UtilitySection
               title="Generator & Diesel"
               icon={Fuel}
@@ -2012,7 +1983,6 @@ export default function UtilityManagementPage() {
             </UtilitySection>
           </div>
 
-          {/* Recent Readings Table */}
           <Card className="bg-gray-900 border-gray-800">
             <CardHeader>
               <CardTitle className="text-gray-200">Recent Readings</CardTitle>
@@ -2099,7 +2069,6 @@ export default function UtilityManagementPage() {
             )}
           </Card>
 
-          {/* Footer Status */}
           <div className="pt-6 border-t border-gray-800">
             <div className="flex flex-col md:flex-row items-center justify-between text-sm text-gray-400">
               <div className="flex items-center gap-3 mb-4 md:mb-0">

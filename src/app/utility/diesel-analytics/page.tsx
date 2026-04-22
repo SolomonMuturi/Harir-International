@@ -49,27 +49,26 @@ interface DieselAnalytics {
 export default function DieselAnalyticsPage() {
     const router = useRouter();
     const { toast } = useToast();
-    
+
     // State
     const [readings, setReadings] = useState<UtilityReading[]>([]);
     const [analytics, setAnalytics] = useState<DieselAnalytics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [alertThreshold, setAlertThreshold] = useState(25);
-    const [timeRange, setTimeRange] = useState('7'); // 7, 30, 90 days
+    const [timeRange, setTimeRange] = useState('7');
 
     // Fetch diesel data
     const fetchDieselData = async () => {
         try {
             setIsLoading(true);
             const response = await fetch(`/api/utility-readings?limit=${timeRange}`);
-            
+
             if (!response.ok) {
                 throw new Error('Failed to fetch diesel data');
             }
-            
+
             const data = await response.json();
-            
-            // Transform the data for our needs
+
             const dieselReadings: UtilityReading[] = data.readings.map((reading: any) => ({
                 id: reading.id,
                 date: new Date(reading.date).toLocaleDateString(),
@@ -81,12 +80,10 @@ export default function DieselAnalyticsPage() {
                 recordedBy: reading.recordedBy,
                 shift: reading.shift
             }));
-            
+
             setReadings(dieselReadings);
-            
-            // Calculate analytics
             calculateAnalytics(dieselReadings, data.totals?.totalDiesel || 0);
-            
+
         } catch (error) {
             console.error('Error fetching diesel data:', error);
             toast({
@@ -106,39 +103,34 @@ export default function DieselAnalyticsPage() {
                 totalConsumed: 0,
                 totalRefilled: 0,
                 avgDailyConsumption: 0,
-                currentLevel: 100, // Default to full
+                currentLevel: 100,
                 daysWithoutRefill: 0,
                 estimatedRemainingDays: 0
             });
             return;
         }
 
-        // Calculate totals
-        const totalConsumed = readings.reduce((sum, reading) => 
+        const totalConsumed = readings.reduce((sum, reading) =>
             sum + parseFloat(reading.dieselConsumed), 0);
-        
-        const totalRefilled = readings.reduce((sum, reading) => 
+
+        const totalRefilled = readings.reduce((sum, reading) =>
             sum + (reading.dieselRefill ? parseFloat(reading.dieselRefill) : 0), 0);
 
-        // Find last refill
         const lastRefill = readings.find(reading => reading.dieselRefill && parseFloat(reading.dieselRefill) > 0);
-        const daysWithoutRefill = lastRefill 
+        const daysWithoutRefill = lastRefill
             ? Math.floor((new Date().getTime() - new Date(lastRefill.date).getTime()) / (1000 * 60 * 60 * 24))
             : readings.length;
 
-        // Average daily consumption (L/day)
         const uniqueDays = new Set(readings.map(r => r.date)).size;
         const avgDailyConsumption = totalConsumed / (uniqueDays || 1);
 
-        // Current level simulation (this would come from IoT sensor in real app)
-        const tankCapacity = 1000; // Assume 1000L tank
-        const startingLevel = 800; // Assume starting at 800L
+        const tankCapacity = 1000;
+        const startingLevel = 800;
         const currentLevelInLiters = Math.max(0, startingLevel + totalRefilled - totalConsumed);
         const currentLevel = (currentLevelInLiters / tankCapacity) * 100;
-        
-        // Estimated remaining days at current consumption rate
-        const estimatedRemainingDays = avgDailyConsumption > 0 
-            ? Math.floor(currentLevelInLiters / avgDailyConsumption) 
+
+        const estimatedRemainingDays = avgDailyConsumption > 0
+            ? Math.floor(currentLevelInLiters / avgDailyConsumption)
             : 0;
 
         setAnalytics({
@@ -153,9 +145,10 @@ export default function DieselAnalyticsPage() {
 
     // Handle saving alert threshold
     const handleSaveThreshold = () => {
-        // In a real app, you would save this to your database
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('dieselAlertThreshold', alertThreshold.toString());
-        
+        if (typeof window !== "undefined") {
+            localStorage.setItem('dieselAlertThreshold', alertThreshold.toString());
+        }
+
         toast({
             title: 'Threshold Saved',
             description: `You will be alerted when diesel level drops below ${alertThreshold}%.`
@@ -174,14 +167,16 @@ export default function DieselAnalyticsPage() {
         return readings.slice(0, 7).map(reading => ({
             date: reading.date,
             dieselConsumed: parseFloat(reading.dieselConsumed)
-        })).reverse(); // Reverse to show oldest to newest
+        })).reverse();
     };
 
     // Load alert threshold from localStorage
     useEffect(() => {
-        const savedThreshold = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('dieselAlertThreshold') : null : null : null;
-        if (savedThreshold) {
-            setAlertThreshold(parseInt(savedThreshold));
+        if (typeof window !== "undefined") {
+            const savedThreshold = localStorage.getItem('dieselAlertThreshold');
+            if (savedThreshold) {
+                setAlertThreshold(parseInt(savedThreshold));
+            }
         }
     }, []);
 
@@ -223,7 +218,6 @@ export default function DieselAnalyticsPage() {
                         </p>
                     </div>
 
-                    {/* Time Range Selector */}
                     <div className="flex justify-between items-center">
                         <div className="space-y-2">
                             <Label htmlFor="time-range">Time Range</Label>
@@ -238,7 +232,7 @@ export default function DieselAnalyticsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        
+
                         {isLoading && (
                             <div className="flex items-center gap-2 text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -247,7 +241,6 @@ export default function DieselAnalyticsPage() {
                         )}
                     </div>
 
-                    {/* Analytics Overview Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <Card>
                             <CardHeader className="pb-2">
@@ -331,7 +324,7 @@ export default function DieselAnalyticsPage() {
                                     <>
                                         <div className="text-2xl font-bold">
                                             {(readings.reduce((sum, r) => {
-                                                const [hours, minutes] = r.timeConsumed.split(' ').filter(word => 
+                                                const [hours, minutes] = r.timeConsumed.split(' ').filter(word =>
                                                     word.includes('hour') || word.includes('minute')
                                                 );
                                                 let totalHours = 0;
@@ -352,7 +345,6 @@ export default function DieselAnalyticsPage() {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Consumption Chart */}
                         <div className="lg:col-span-2">
                             <Card>
                                 <CardHeader>
@@ -370,8 +362,7 @@ export default function DieselAnalyticsPage() {
                                 </CardContent>
                             </Card>
                         </div>
-                        
-                        {/* Alert Threshold Card */}
+
                         <Card>
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2">
@@ -393,15 +384,15 @@ export default function DieselAnalyticsPage() {
                                         className="text-lg"
                                     />
                                 </div>
-                                
+
                                 <div className="p-4 rounded-lg bg-muted/50">
                                     <div className="flex justify-between items-center mb-2">
                                         <span className="text-sm">Tank Level</span>
                                         <span className="text-sm font-mono">{analytics?.currentLevel}%</span>
                                     </div>
                                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                                        <div 
-                                            className={cn("h-full transition-all duration-500", 
+                                        <div
+                                            className={cn("h-full transition-all duration-500",
                                                 analytics && analytics.currentLevel > 50 ? 'bg-green-500' :
                                                 analytics && analytics.currentLevel > 25 ? 'bg-yellow-500' : 'bg-red-500'
                                             )}
@@ -413,7 +404,7 @@ export default function DieselAnalyticsPage() {
                                         <span>Full</span>
                                     </div>
                                 </div>
-                                
+
                                 {isLow && (
                                     <div className="p-3 bg-destructive/10 text-destructive rounded-lg flex items-center gap-2">
                                         <AlertTriangle className="h-4 w-4" />
@@ -432,8 +423,7 @@ export default function DieselAnalyticsPage() {
                             </CardFooter>
                         </Card>
                     </div>
-                    
-                    {/* Historical Readings Table */}
+
                     <Card>
                         <CardHeader>
                             <CardTitle>Historical Readings</CardTitle>
@@ -468,9 +458,9 @@ export default function DieselAnalyticsPage() {
                                     </TableHeader>
                                     <TableBody>
                                         {readings.map((reading) => {
-                                            const isLowLevel = analytics && 
+                                            const isLowLevel = analytics &&
                                                 (analytics.currentLevel - parseFloat(reading.dieselConsumed) / 10) <= alertThreshold;
-                                            
+
                                             return (
                                                 <TableRow key={reading.id}>
                                                     <TableCell className="font-medium">{reading.date}</TableCell>

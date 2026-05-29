@@ -1176,9 +1176,9 @@ export default function WeightCapturePage() {
           total_weight: 0,
           fuerte_crates_in: 0,
           hass_crates_in: 0,
+          rejected_crates: 0,
           total_crates: 0,
           region: regionKey,
-          pallet_id: entry.pallet_id || '',
           status: entry.status === 'rejected' ? 'rejected' : undefined,
         });
       }
@@ -1189,12 +1189,13 @@ export default function WeightCapturePage() {
       row.fuerte_crates_in += entry.fuerte_crates || 0;
       row.hass_weight += entry.hass_weight || 0;
       row.hass_crates_in += entry.hass_crates || 0;
+      row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
       row.total_weight = row.fuerte_weight + row.hass_weight;
       row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
     });
 
     return Array.from(supplierMap.values());
-  }, []);
+  }, [rejects]);
 
   // Download CSV with totals row
   const downloadCSV = useCallback((weights: WeightEntry[]) => {
@@ -1215,6 +1216,8 @@ export default function WeightCapturePage() {
         totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
         totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
         totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
+        totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
+        totalCrates: acc.totalCrates + (row.total_crates || 0),
         totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
       };
     }, {
@@ -1222,13 +1225,14 @@ export default function WeightCapturePage() {
       totalHassWeight: 0,
       totalFuerteCrates: 0,
       totalHassCrates: 0,
+      totalRejectedCrates: 0,
+      totalCrates: 0,
       totalWeight: 0
     });
     
     const headers = [
       'Date',
       'Time',
-      'Pallet ID',
       'Supplier Name',
       'Phone Number',
       'Vehicle Plate Number',
@@ -1237,13 +1241,14 @@ export default function WeightCapturePage() {
       'Hass Weight (kg)',
       'Fuerte Crates In',
       'Hass Crates In',
+      'Rejected Crates',
+      'Total Crates',
       'Region'
     ];
     
     const rows = csvData.map(row => [
       row.date,
       row.time,
-      `"${row.pallet_id}"`,
       `"${row.supplier_name}"`,
       `"${row.phone_number}"`,
       `"${row.vehicle_plate_number}"`,
@@ -1252,14 +1257,15 @@ export default function WeightCapturePage() {
       row.hass_weight.toFixed(2),
       row.fuerte_crates_in,
       row.hass_crates_in,
+      row.rejected_crates,
+      row.total_crates,
       `"${row.region}"`
     ]);
     
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', '']);
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
     
     rows.push([
       'TOTALS',
-      '',
       '',
       '',
       '',
@@ -1269,6 +1275,8 @@ export default function WeightCapturePage() {
       totals.totalHassWeight.toFixed(2),
       totals.totalFuerteCrates,
       totals.totalHassCrates,
+      totals.totalRejectedCrates,
+      totals.totalCrates,
       ''
     ]);
     
@@ -1279,9 +1287,10 @@ export default function WeightCapturePage() {
       '',
       '',
       '',
-      '',
       'Total Fruits Weight:',
       totals.totalWeight.toFixed(2) + ' kg',
+      '',
+      '',
       '',
       '',
       ''

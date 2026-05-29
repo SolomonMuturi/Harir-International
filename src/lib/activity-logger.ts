@@ -10,10 +10,6 @@ interface LogActivityParams {
   metadata?: Record<string, any>;
 }
 
-/**
- * Log an activity to the database
- * This can be called from any component after user actions
- */
 export async function logActivity(params: LogActivityParams): Promise<boolean> {
   try {
     const response = await fetch('/api/activity-logs', {

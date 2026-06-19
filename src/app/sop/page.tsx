@@ -1,5 +1,4 @@
-
-'use client';
+"use client";
 
 import { useState } from 'react';
 import {
@@ -15,9 +14,9 @@ import { Header } from '@/components/layout/header';
 import { sopData, allSopEmployeeData, type SOP } from '@/lib/sop-data';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { CheckCircle, Circle, Edit, BookOpen, Clock, Users } from 'lucide-react';
+import { CheckCircle, Circle, Edit, BookOpen, Clock, Users, X, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -27,6 +26,17 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useUser } from '@/hooks/use-user';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('');
 
@@ -40,12 +50,12 @@ export default function SOPPage() {
   const { user } = useUser();
   const [sops, setSops] = useState(sopData);
   const [selectedSop, setSelectedSop] = useState<SOP>(sops[0]);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingSop, setEditingSop] = useState<SOP | null>(null);
 
   const handleMarkAsRead = (sopId: string) => {
-    // In a real app, this would be tied to the logged-in user.
-    const userId = user?.id || 'emp-1'; // Use current user or fallback
+    const userId = user?.id || 'emp-1';
     
-    // Update the list of all SOPs
     const newSops = sops.map(sop => {
       if (sop.id === sopId && !sop.readBy.includes(userId)) {
         const newReadBy = [...sop.readBy, userId];
@@ -59,13 +69,90 @@ export default function SOPPage() {
     });
     setSops(newSops);
 
-    // Also update the currently selected SOP state if it's the one being changed
     if (selectedSop.id === sopId) {
       const updatedSop = newSops.find(s => s.id === sopId);
       if (updatedSop) {
         setSelectedSop(updatedSop);
       }
     }
+  };
+
+  const handleEditClick = () => {
+    setEditingSop({ ...selectedSop });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingSop) return;
+    
+    const updatedSops = sops.map(sop => 
+      sop.id === editingSop.id ? { ...editingSop, lastModified: new Date().toISOString() } : sop
+    );
+    
+    setSops(updatedSops);
+    setSelectedSop({ ...editingSop, lastModified: new Date().toISOString() });
+    setIsEditModalOpen(false);
+    setEditingSop(null);
+  };
+
+  const handleSectionChange = (index: number, field: 'title' | 'steps', value: any) => {
+    if (!editingSop) return;
+    
+    const newSections = [...editingSop.sections];
+    if (field === 'title') {
+      newSections[index] = { ...newSections[index], title: value };
+    } else if (field === 'steps') {
+      newSections[index] = { ...newSections[index], steps: value };
+    }
+    
+    setEditingSop({ ...editingSop, sections: newSections });
+  };
+
+  const handleStepChange = (sectionIndex: number, stepIndex: number, field: 'action' | 'detail', value: string) => {
+    if (!editingSop) return;
+    
+    const newSections = [...editingSop.sections];
+    const newSteps = [...newSections[sectionIndex].steps];
+    newSteps[stepIndex] = { ...newSteps[stepIndex], [field]: value };
+    newSections[sectionIndex] = { ...newSections[sectionIndex], steps: newSteps };
+    
+    setEditingSop({ ...editingSop, sections: newSections });
+  };
+
+  const addSection = () => {
+    if (!editingSop) return;
+    
+    const newSections = [
+      ...editingSop.sections,
+      { title: 'New Section', steps: [{ action: 'New Step', detail: 'Step details' }] }
+    ];
+    
+    setEditingSop({ ...editingSop, sections: newSections });
+  };
+
+  const removeSection = (index: number) => {
+    if (!editingSop) return;
+    
+    const newSections = editingSop.sections.filter((_, i) => i !== index);
+    setEditingSop({ ...editingSop, sections: newSections });
+  };
+
+  const addStep = (sectionIndex: number) => {
+    if (!editingSop) return;
+    
+    const newSections = [...editingSop.sections];
+    newSections[sectionIndex].steps.push({ action: 'New Step', detail: 'Step details' });
+    
+    setEditingSop({ ...editingSop, sections: newSections });
+  };
+
+  const removeStep = (sectionIndex: number, stepIndex: number) => {
+    if (!editingSop) return;
+    
+    const newSections = [...editingSop.sections];
+    newSections[sectionIndex].steps = newSections[sectionIndex].steps.filter((_, i) => i !== stepIndex);
+    
+    setEditingSop({ ...editingSop, sections: newSections });
   };
 
   const getReadByAvatars = (readByIds: string[]) => {
@@ -146,7 +233,9 @@ export default function SOPPage() {
                                             Last Modified: {formatDistanceToNow(new Date(selectedSop.lastModified), { addSuffix: true })}
                                         </CardDescription>
                                     </div>
-                                    <Button variant="outline"><Edit className="mr-2" /> Edit</Button>
+                                    <Button variant="outline" onClick={handleEditClick}>
+                                        <Edit className="mr-2 h-4 w-4" /> Edit
+                                    </Button>
                                 </div>
                             </CardHeader>
                             <CardContent className="prose prose-sm max-w-none text-foreground dark:prose-invert">
@@ -167,7 +256,7 @@ export default function SOPPage() {
                             <CardFooter className="flex flex-col items-start gap-4 border-t pt-6">
                                  <div className="w-full">
                                     <div className="flex justify-between items-center mb-2">
-                                        <h4 className="font-semibold flex items-center gap-2"><Users /> Readership</h4>
+                                        <h4 className="font-semibold flex items-center gap-2"><Users className="h-4 w-4" /> Readership</h4>
                                         <span className="text-sm text-muted-foreground">{selectedSop.readBy.length} of {allSopEmployeeData.length} employees</span>
                                     </div>
                                     <Progress value={completionPercentage} />
@@ -195,7 +284,7 @@ export default function SOPPage() {
                                     </TooltipProvider>
                                 </div>
                                 <Button onClick={() => handleMarkAsRead(selectedSop.id)} disabled={hasUserRead}>
-                                    <CheckCircle className="mr-2"/>
+                                    <CheckCircle className="mr-2 h-4 w-4" />
                                     {hasUserRead ? 'Read' : 'Mark as Read'}
                                 </Button>
                             </CardFooter>
@@ -205,6 +294,127 @@ export default function SOPPage() {
             </div>
         </main>
       </SidebarInset>
+
+      {/* Edit Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit SOP</DialogTitle>
+            <DialogDescription>
+              Make changes to the SOP content. Click save when you're done.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {editingSop && (
+            <div className="space-y-6 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="sop-title">Title</Label>
+                <Input 
+                  id="sop-title" 
+                  value={editingSop.title} 
+                  onChange={(e) => setEditingSop({ ...editingSop, title: e.target.value })}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="sop-objective">Objective</Label>
+                <Textarea 
+                  id="sop-objective" 
+                  value={editingSop.objective} 
+                  onChange={(e) => setEditingSop({ ...editingSop, objective: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <Label>Sections</Label>
+                  <Button variant="outline" size="sm" onClick={addSection}>
+                    <Plus className="h-4 w-4 mr-1" /> Add Section
+                  </Button>
+                </div>
+                
+                {editingSop.sections.map((section, sectionIndex) => (
+                  <Card key={sectionIndex}>
+                    <CardContent className="pt-6 space-y-4">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1 space-y-2">
+                          <Label htmlFor={`section-${sectionIndex}-title`}>Section Title</Label>
+                          <Input 
+                            id={`section-${sectionIndex}-title`}
+                            value={section.title} 
+                            onChange={(e) => handleSectionChange(sectionIndex, 'title', e.target.value)}
+                          />
+                        </div>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => removeSection(sectionIndex)}
+                          className="mt-6"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label>Steps</Label>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => addStep(sectionIndex)}
+                          >
+                            <Plus className="h-4 w-4 mr-1" /> Add Step
+                          </Button>
+                        </div>
+                        
+                        {section.steps.map((step, stepIndex) => (
+                          <div key={stepIndex} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start p-3 border rounded-md">
+                            <div className="md:col-span-4 space-y-1">
+                              <Label className="text-xs">Action</Label>
+                              <Input 
+                                value={step.action} 
+                                onChange={(e) => handleStepChange(sectionIndex, stepIndex, 'action', e.target.value)}
+                                placeholder="Action"
+                              />
+                            </div>
+                            <div className="md:col-span-7 space-y-1">
+                              <Label className="text-xs">Detail</Label>
+                              <Input 
+                                value={step.detail} 
+                                onChange={(e) => handleStepChange(sectionIndex, stepIndex, 'detail', e.target.value)}
+                                placeholder="Detail"
+                              />
+                            </div>
+                            <div className="md:col-span-1 flex items-end justify-end">
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={() => removeStep(sectionIndex, stepIndex)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }

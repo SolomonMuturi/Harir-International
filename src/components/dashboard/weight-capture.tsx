@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ImageUpload } from './image-upload';
 import { ScrollArea } from '../ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
+import type { Supplier } from '@/lib/data';
 
 interface CheckedInSupplier {
   id: string;
@@ -25,7 +26,7 @@ interface CheckedInSupplier {
   fruit_varieties: string[];
   region: string;
   check_in_time: string;
-  gate_entry_id?: string; // NEW: Gate entry ID from vehicle visits
+  gate_entry_id?: string;
   status?: 'pending' | 'weighed';
 }
 
@@ -59,7 +60,7 @@ interface WeightCaptureFormData {
   product: string;
   image_url: string;
   notes: string;
-  gate_entry_id?: string; // NEW: Gate entry ID from check-in
+  gate_entry_id?: string;
 }
 
 interface SupplierIntakeRecord {
@@ -77,7 +78,7 @@ interface SupplierIntakeRecord {
   region: string;
   timestamp: string;
   status: 'pending' | 'processed' | 'rejected';
-  gate_entry_id?: string; // NEW: Gate entry ID
+  gate_entry_id?: string;
 }
 
 interface WeightCaptureProps {
@@ -105,6 +106,8 @@ export function WeightCapture({
   const [supplierIntakeRecords, setSupplierIntakeRecords] = useState<SupplierIntakeRecord[]>([]);
   const [intakeLoading, setIntakeLoading] = useState(true);
   const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
+  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
   
   const [formData, setFormData] = useState<WeightCaptureFormData>({
     supplier_id: '',
@@ -123,7 +126,7 @@ export function WeightCapture({
     product: '',
     image_url: '',
     notes: '',
-    gate_entry_id: '', // NEW
+    gate_entry_id: '',
   });
   
   const [isUploading, setIsUploading] = useState(false);
@@ -136,9 +139,50 @@ export function WeightCapture({
     return `PAL-${palletNum}/${dateStr}`;
   };
 
+  // Fetch all suppliers from the database
+  const fetchAllSuppliers = async () => {
+    try {
+      setIsLoadingSuppliers(true);
+      const response = await fetch('/api/suppliers');
+      if (response.ok) {
+        const data = await response.json();
+        // Convert from database format to frontend format
+        const convertedSuppliers = data.map((supplier: any) => ({
+          id: supplier.id,
+          name: supplier.name || supplier.supplier_name,
+          location: supplier.location || supplier.region,
+          contactName: supplier.contact_name || supplier.supplier_name,
+          contactEmail: supplier.contact_email,
+          contactPhone: supplier.contact_phone || supplier.phone_number,
+          produceTypes: supplier.produce_types ? 
+            (typeof supplier.produce_types === 'string' ? JSON.parse(supplier.produce_types) : supplier.produce_types) : [],
+          status: supplier.status || 'Active',
+          logoUrl: supplier.logo_url,
+          activeContracts: supplier.active_contracts || 0,
+          supplierCode: supplier.supplier_code,
+          kraPin: supplier.kra_pin,
+          vehicleNumberPlate: supplier.vehicle_number_plate,
+          driverName: supplier.driver_name,
+          driverIdNumber: supplier.driver_id_number,
+          mpesaPaybill: supplier.mpesa_paybill,
+          mpesaAccountNumber: supplier.mpesa_account_number,
+          bankName: supplier.bank_name,
+          bankAccountNumber: supplier.bank_account_number,
+          createdAt: supplier.created_at,
+        }));
+        setAllSuppliers(convertedSuppliers);
+      }
+    } catch (error) {
+      console.error('Error fetching suppliers:', error);
+    } finally {
+      setIsLoadingSuppliers(false);
+    }
+  };
+
   useEffect(() => {
     fetchCheckedInSuppliers();
     fetchSupplierIntakeRecords();
+    fetchAllSuppliers();
   }, []);
 
   useEffect(() => {
@@ -167,8 +211,7 @@ export function WeightCapture({
         pallet_id: palletId,
         supplier_name: selectedSupplier.company_name,
         region: selectedSupplier.region,
-        gate_entry_id: selectedSupplier.gate_entry_id || '', // NEW: Include gate entry ID
-        // Reset weights for new supplier
+        gate_entry_id: selectedSupplier.gate_entry_id || '',
         fuerte_weight: '',
         fuerte_crates: '',
         hass_weight: '',
@@ -202,8 +245,6 @@ export function WeightCapture({
       
       const data = await response.json();
       
-      // Map the data to include gate_entry_id if available
-      // This assumes your API returns suppliers with their latest visit's gate_entry_id
       const suppliersWithGateIds: CheckedInSupplier[] = data.map((supplier: any) => ({
         id: supplier.id,
         supplier_code: supplier.supplier_code || '',
@@ -215,7 +256,7 @@ export function WeightCapture({
         fruit_varieties: supplier.fruit_varieties || [],
         region: supplier.region || '',
         check_in_time: supplier.check_in_time || new Date().toISOString(),
-        gate_entry_id: supplier.gate_entry_id || supplier.latest_visit?.gate_entry_id, // NEW: Extract gate entry ID
+        gate_entry_id: supplier.gate_entry_id || supplier.latest_visit?.gate_entry_id,
         status: 'pending'
       }));
       
@@ -253,7 +294,6 @@ export function WeightCapture({
           ? data.weights
           : [];
 
-      // Group by supplier (like Weight History & Export)
       const supplierMap: Record<string, SupplierIntakeRecord[]> = {};
       weightEntries.forEach((entry: any) => {
         const supplierKey = entry.supplier || entry.supplier_name || 'Unknown Supplier';
@@ -290,7 +330,6 @@ export function WeightCapture({
         supplierMap[supplierKey].push(record);
       });
 
-      // Flatten to array for display, but keep grouped for UI
       const intakeRecords: SupplierIntakeRecord[] = Object.values(supplierMap).flat();
       setSupplierIntakeRecords(intakeRecords);
       console.log('✅ Intake records (history/export style):', intakeRecords);
@@ -367,7 +406,7 @@ export function WeightCapture({
       driver_id_number: supplier.id_number,
       supplier_name: supplier.company_name,
       region: supplier.region,
-      gate_entry_id: supplier.gate_entry_id || '', // NEW: Include gate entry ID
+      gate_entry_id: supplier.gate_entry_id || '',
     }));
     
     toast({
@@ -418,7 +457,6 @@ export function WeightCapture({
     try {
       console.log('=== FORM SUBMISSION STARTED ===');
       
-      // Debug form data
       console.log('📝 Form Data:', {
         fuerte_weight: formData.fuerte_weight,
         fuerte_crates: formData.fuerte_crates,
@@ -429,7 +467,6 @@ export function WeightCapture({
         gate_entry_id: formData.gate_entry_id,
       });
       
-      // Basic validation
       if (!formData.supplier_name || !formData.supplier_phone) {
         toast({
           title: "Supplier Details Required",
@@ -448,7 +485,6 @@ export function WeightCapture({
         return;
       }
 
-      // Parse values
       const fuerteWeight = parseFloat(formData.fuerte_weight) || 0;
       const fuerteCrates = parseInt(formData.fuerte_crates) || 0;
       const hassWeight = parseFloat(formData.hass_weight) || 0;
@@ -466,47 +502,35 @@ export function WeightCapture({
         totalCrates
       });
 
-
-      // Allow saving with zero crates and zero weight
-
-      // Create product description
       const productDesc = [];
       if (fuerteWeight > 0) productDesc.push('Fuerte');
       if (hassWeight > 0) productDesc.push('Hass');
 
-      // Create fruit variety array for API
       const fruitVarieties = [];
       if (fuerteWeight > 0) fruitVarieties.push('Fuerte');
       if (hassWeight > 0) fruitVarieties.push('Hass');
 
-      // Prepare data for API
       const weightData = {
-        // Pallet and product info
         pallet_id: formData.pallet_id || generatePalletId(),
         product: productDesc.join(', '),
         unit: 'kg',
         timestamp: new Date().toISOString(),
         
-        // Individual fruit weights (as strings for backend parsing)
         fuerte_weight: formData.fuerte_weight || "0",
         fuerte_crates: formData.fuerte_crates || "0",
         hass_weight: formData.hass_weight || "0",
         hass_crates: formData.hass_crates || "0",
         
-        // Fruit variety data
         fruit_variety: JSON.stringify(fruitVarieties),
         number_of_crates: totalCrates,
         
-        // Supplier details
         supplier: formData.supplier_name,
         supplier_name: formData.supplier_name,
         supplier_id: formData.supplier_id,
         supplier_phone: formData.supplier_phone,
         
-        // Region
         region: formData.region,
         
-        // Driver/vehicle details
         driver_name: formData.driver_name,
         driver_phone: formData.driver_phone,
         driver_id_number: formData.driver_id_number,
@@ -514,7 +538,6 @@ export function WeightCapture({
         truck_id: formData.vehicle_plate,
         driver_id: formData.driver_id_number,
         
-        // Weight totals
         weight: totalWeight,
         net_weight: totalWeight,
         gross_weight: totalWeight,
@@ -522,14 +545,11 @@ export function WeightCapture({
         tare_weight: 0,
         rejected_weight: 0,
         
-        // Gate entry ID (NEW)
         gate_entry_id: formData.gate_entry_id || '',
         
-        // Optional fields
         image_url: formData.image_url || '',
         notes: formData.notes || '',
         
-        // Per variety weights
         perVarietyWeights: JSON.stringify([
           ...(fuerteWeight > 0 ? [{ variety: 'Fuerte', weight: fuerteWeight, crates: fuerteCrates }] : []),
           ...(hassWeight > 0 ? [{ variety: 'Hass', weight: hassWeight, crates: hassCrates }] : [])
@@ -540,10 +560,8 @@ export function WeightCapture({
       console.log('📦 Payload with Gate ID:', weightData.gate_entry_id);
       console.log('📄 Full Payload:', JSON.stringify(weightData, null, 2));
 
-      // Call the parent handler
       onAddWeight(weightData);
       
-      // Refresh data
       setTimeout(() => {
         fetchSupplierIntakeRecords();
         fetchCheckedInSuppliers();
@@ -555,7 +573,6 @@ export function WeightCapture({
         }, 1000);
       }
       
-      // Reset form - keep the pallet_id generation
       const newPalletId = generatePalletId();
       setFormData({
         supplier_id: '',
@@ -599,12 +616,9 @@ export function WeightCapture({
     }
   };
 
-  // Hide suppliers whose Gate ID is already in Supplier Intake Records
   const intakeGateIds = new Set(supplierIntakeRecords.map(record => record.gate_entry_id).filter(Boolean));
   const filteredSuppliers = checkedInSuppliers.filter(supplier => {
-    // Hide if supplier's gate_entry_id is in intake records
     if (supplier.gate_entry_id && intakeGateIds.has(supplier.gate_entry_id)) return false;
-    // Search logic
     return (
       supplier.driver_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       supplier.vehicle_plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -614,7 +628,6 @@ export function WeightCapture({
     );
   });
 
-  // Calculate values for display
   const fuerteWeight = parseFloat(formData.fuerte_weight || '0');
   const fuerteCrates = parseInt(formData.fuerte_crates || '0');
   const hassWeight = parseFloat(formData.hass_weight || '0');
@@ -632,7 +645,6 @@ export function WeightCapture({
     });
   };
 
-  // Count only visible suppliers (not hidden)
   const pendingSuppliersCount = filteredSuppliers.length;
   const weighedSuppliersCount = supplierIntakeRecords.length;
 
@@ -751,7 +763,6 @@ export function WeightCapture({
                                 )}
                               </div>
                               
-                              {/* NEW: Show Gate Entry ID if available */}
                               {supplier.gate_entry_id && (
                                 <div className="flex items-center gap-1 mt-1">
                                   <Fingerprint className="w-3 h-3 text-purple-500" />
@@ -867,7 +878,6 @@ export function WeightCapture({
                     </div>
                   </div>
                   
-                  {/* NEW: Show Gate Entry ID if available */}
                   {formData.gate_entry_id && (
                     <div className="mt-2 pt-2 border-t border-blue-200">
                       <div className="flex items-center gap-2 text-sm">
@@ -1169,7 +1179,6 @@ export function WeightCapture({
                       </div>
                     </div>
                     
-                    {/* NEW: Show Gate Entry ID if available */}
                     {formData.gate_entry_id && (
                       <div className="mt-3 pt-3 border-t border-blue-200">
                         <div className="flex items-center gap-2">
@@ -1187,13 +1196,41 @@ export function WeightCapture({
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="supplier_name">Supplier Name *</Label>
-                        <Input
-                          id="supplier_name"
-                          value={formData.supplier_name}
-                          onChange={(e) => setFormData(prev => ({ ...prev, supplier_name: e.target.value }))}
-                          required
-                          placeholder="Enter supplier company name"
-                        />
+                        <div className="relative">
+                          <select
+                            id="supplier_name"
+                            value={formData.supplier_name}
+                            onChange={(e) => {
+                              const selectedSupplier = allSuppliers.find(s => s.name === e.target.value);
+                              setFormData(prev => ({ 
+                                ...prev, 
+                                supplier_name: e.target.value,
+                                supplier_phone: selectedSupplier?.contactPhone || prev.supplier_phone,
+                                region: selectedSupplier?.location || prev.region,
+                              }));
+                            }}
+                            required
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none pr-8"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 0.75rem center',
+                              backgroundSize: '12px 12px',
+                            }}
+                          >
+                            <option value="">Select a supplier...</option>
+                            {allSuppliers.map((supplier) => (
+                              <option key={supplier.id} value={supplier.name}>
+                                {supplier.name} - {supplier.contactPhone || 'No phone'}
+                              </option>
+                            ))}
+                          </select>
+                          {formData.supplier_name && (
+                            <div className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none">
+                              <CheckCircle className="w-4 h-4 text-green-500" />
+                            </div>
+                          )}
+                        </div> 
                       </div>
                       
                       <div className="space-y-2">
@@ -1201,9 +1238,10 @@ export function WeightCapture({
                         <Input
                           id="supplier_phone"
                           value={formData.supplier_phone}
-                          onChange={(e) => setFormData(prev => ({ ...prev, supplier_phone: e.target.value }))}
-                          required
-                          placeholder="Enter supplier phone number"
+                          readOnly
+                          disabled
+                          className="bg-black text-white-1000 cursor-not-allowed border-gray-700"    
+                          placeholder="Phone will auto-fill from supplier selection"
                         />
                       </div>
                     </div>
@@ -1253,7 +1291,6 @@ export function WeightCapture({
                               value={formData.fuerte_weight}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                // Only allow numbers and decimal points
                                 if (value === '' || /^\d*\.?\d*$/.test(value)) {
                                   setFormData(prev => ({ 
                                     ...prev, 
@@ -1277,7 +1314,6 @@ export function WeightCapture({
                               value={formData.fuerte_crates}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                // Only allow whole numbers
                                 if (value === '' || /^\d*$/.test(value)) {
                                   setFormData(prev => ({ 
                                     ...prev, 
@@ -1473,16 +1509,7 @@ export function WeightCapture({
                 <div className="text-sm">
                   {formData.driver_name ? (
                     <div className="space-y-1">
-                      <span className="flex items-center gap-2 text-blue-600">
-                        <CheckCircle className="w-4 h-4" />
-                        Driver details auto-filled from check-in system
-                      </span>
-                      {formData.gate_entry_id && (
-                        <span className="text-sm text-purple-600 flex items-center gap-1">
-                          <Fingerprint className="w-3 h-3" />
-                          Gate ID: {formData.gate_entry_id}
-                        </span>
-                      )}
+                      
                       <span className="text-sm text-green-600 flex items-center gap-1">
                         <CheckCircle className="w-3 h-3" />
                         Ready for weighing

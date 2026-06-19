@@ -12,7 +12,6 @@ import { FreshTraceLogo } from '@/components/icons'
 import { SidebarNav } from '@/components/layout/sidebar-nav'
 import { Header } from '@/components/layout/header'
 import type { Supplier, SupplierFormValues } from '@/lib/data'
-import { SupplierDataTable } from '@/components/dashboard/supplier-data-table'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,8 +21,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { CreateSupplierForm } from '@/components/dashboard/create-supplier-form'
-import { PlusCircle, Grape, Download, Calendar, FileDown, Lock, AlertCircle, Phone, Banknote, Users, FileCheck } from 'lucide-react'
+import { PlusCircle, Grape, Download, Calendar, FileDown, AlertCircle, Phone, Banknote, Users, FileCheck, ChevronRight, Edit, Trash2, Search } from 'lucide-react'
 import { OverviewCard } from '@/components/dashboard/overview-card'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
@@ -47,6 +55,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
+import { Input } from '@/components/ui/input'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface DatabaseSupplier {
   id: string
@@ -90,8 +107,12 @@ interface SupplierStats {
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null)
+  const [isLoadingDelete, setIsLoadingDelete] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -160,6 +181,7 @@ export default function SuppliersPage() {
         }))
         
         setSuppliers(convertedSuppliers)
+        setFilteredSuppliers(convertedSuppliers)
         
         // Calculate stats
         const total = convertedSuppliers.length
@@ -213,6 +235,24 @@ export default function SuppliersPage() {
     }
   }, [dateRange])
 
+  // Search functionality
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredSuppliers(suppliers)
+    } else {
+      const query = searchQuery.toLowerCase().trim()
+      const filtered = suppliers.filter(supplier => 
+        supplier.name.toLowerCase().includes(query) ||
+        supplier.contactPhone?.toLowerCase().includes(query) ||
+        supplier.contactEmail?.toLowerCase().includes(query) ||
+        supplier.location?.toLowerCase().includes(query) ||
+        supplier.supplierCode?.toLowerCase().includes(query) ||
+        supplier.status.toLowerCase().includes(query)
+      )
+      setFilteredSuppliers(filtered)
+    }
+  }, [searchQuery, suppliers])
+
   const isEditDialogOpen = !!editingSupplier
 
   // Get existing supplier codes for sequential generation
@@ -220,10 +260,10 @@ export default function SuppliersPage() {
 
   // Handle download report
   const handleDownloadReport = async (formatType: 'csv' | 'html') => {
-    if (suppliers.length === 0) {
+    if (filteredSuppliers.length === 0) {
       toast({
         title: 'No Data',
-        description: 'No suppliers found for the selected date range.',
+        description: 'No suppliers found for the selected date range and search criteria.',
         variant: 'destructive',
       })
       return
@@ -355,26 +395,29 @@ export default function SuppliersPage() {
     if (!editingSupplier) return
     
     try {
-      console.log('🔄 Updating supplier with locked name-phone combination:', values)
+      console.log('🔄 Updating supplier:', values)
       
-      const apiData = {
-        name: values.name || '',
-        location: values.location || '',
-        contact_name: values.contactName || '',
-        contact_email: values.contactEmail || '',
-        contact_phone: values.contactPhone || '',
-        produce_types: values.produceTypes || [],
+      // Build API data with only non-empty values (partial update)
+      const apiData: any = {
         status: editingSupplier.status || 'Active',
-        supplier_code: values.supplierCode || '',
-        kra_pin: values.kraPin || '',
-        bank_name: values.bankName || '',
-        bank_account_number: values.bankAccountNumber || '',
-        mpesa_paybill: values.mpesaPaybill || '',
-        mpesa_account_number: values.mpesaAccountNumber || '',
-        vehicle_number_plate: values.vehicleNumberPlate || '',
-        driver_name: values.driverName || '',
-        driver_id_number: values.driverIdNumber || '',
       }
+      
+      // Add fields only if they have values
+      if (values.name?.trim()) apiData.name = values.name.trim()
+      if (values.location?.trim()) apiData.location = values.location.trim()
+      if (values.contactName?.trim()) apiData.contact_name = values.contactName.trim()
+      if (values.contactEmail?.trim()) apiData.contact_email = values.contactEmail.trim()
+      if (values.contactPhone?.trim()) apiData.contact_phone = values.contactPhone.trim()
+      if (values.produceTypes?.length) apiData.produce_types = values.produceTypes
+      if (values.supplierCode?.trim()) apiData.supplier_code = values.supplierCode.trim()
+      if (values.kraPin?.trim()) apiData.kra_pin = values.kraPin.trim()
+      if (values.bankName?.trim()) apiData.bank_name = values.bankName.trim()
+      if (values.bankAccountNumber?.trim()) apiData.bank_account_number = values.bankAccountNumber.trim()
+      if (values.mpesaPaybill?.trim()) apiData.mpesa_paybill = values.mpesaPaybill.trim()
+      if (values.mpesaAccountNumber?.trim()) apiData.mpesa_account_number = values.mpesaAccountNumber.trim()
+      if (values.vehicleNumberPlate?.trim()) apiData.vehicle_number_plate = values.vehicleNumberPlate.trim()
+      if (values.driverName?.trim()) apiData.driver_name = values.driverName.trim()
+      if (values.driverIdNumber?.trim()) apiData.driver_id_number = values.driverIdNumber.trim()
 
       const response = await fetch(`/api/suppliers?id=${editingSupplier.id}`, {
         method: 'PUT',
@@ -394,7 +437,7 @@ export default function SuppliersPage() {
 
       toast({
         title: 'Supplier Updated',
-        description: `${values.name}'s details have been updated. Name-phone combination remains locked.`,
+        description: `${values.name || editingSupplier.name}'s details have been updated successfully.`,
       })
       
       setEditingSupplier(null)
@@ -414,6 +457,67 @@ export default function SuppliersPage() {
 
   const closeEditDialog = () => {
     setEditingSupplier(null)
+  }
+
+  const handleDeleteSupplier = (supplier: Supplier) => {
+    setSupplierToDelete(supplier)
+  }
+
+  const confirmDeleteSupplier = async () => {
+    if (!supplierToDelete) return
+
+    try {
+      setIsLoadingDelete(true)
+      const response = await fetch(`/api/suppliers?id=${supplierToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const responseData = await response.json()
+
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Failed to delete supplier')
+      }
+
+      await fetchSuppliers()
+
+      toast({
+        title: 'Supplier Deleted',
+        description: `${supplierToDelete.name} has been successfully deleted.`,
+      })
+
+      setSupplierToDelete(null)
+    } catch (error: any) {
+      console.error('Error deleting supplier:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete supplier',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoadingDelete(false)
+    }
+  }
+
+  // Get status badge color
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Active':
+        return <Badge className="bg-green-500 hover:bg-green-600">Active</Badge>
+      case 'Inactive':
+        return <Badge variant="destructive">Inactive</Badge>
+      case 'Onboarding':
+        return <Badge variant="secondary" className="bg-yellow-500 hover:bg-yellow-600 text-white">Onboarding</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery('')
   }
 
   if (isLoading) {
@@ -485,13 +589,9 @@ export default function SuppliersPage() {
                 <h2 className="text-2xl font-bold tracking-tight">
                   Supplier Management
                 </h2>
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <Lock className="h-3 w-3" />
-                  <span className="text-xs">Name-Phone Locked</span>
-                </Badge>
               </div>
               <p className="text-muted-foreground">
-                Manage suppliers with locked name-phone-payment details combination
+                Manage and update your suppliers information
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -630,15 +730,9 @@ export default function SuppliersPage() {
                   <DialogHeader>
                     <DialogTitle>Create New Supplier</DialogTitle>
                     <DialogDescription>
-                      Supplier name will be permanently locked to phone number and payment details.
+                      Add a new supplier to the system. All required fields must be filled in.
                     </DialogDescription>
                   </DialogHeader>
-                  <Alert className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      <span className="font-semibold">Note:</span> Supplier name and phone number combination is locked and cannot be changed once created.
-                    </AlertDescription>
-                  </Alert>
                   <CreateSupplierForm 
                     onSubmit={handleAddSupplier}
                     existingSupplierCodes={existingSupplierCodes}
@@ -710,15 +804,12 @@ export default function SuppliersPage() {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="font-semibold">Report Summary</h3>
-                  <Badge variant="secondary" className="text-xs">
-                    Name-Phone Locked
-                  </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Showing suppliers registered from {format(dateRange.from, 'dd/MM/yyyy')} to {format(dateRange.to, 'dd/MM/yyyy')}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  {suppliers.length} supplier(s) found • {stats.completeProfiles} complete profiles
+                  {filteredSuppliers.length} supplier(s) found • {stats.completeProfiles} complete profiles
                 </p>
               </div>
               <div className="text-right">
@@ -755,26 +846,110 @@ export default function SuppliersPage() {
                   {format(dateRange.from, 'MMM dd, yyyy')} - {format(dateRange.to, 'MMM dd, yyyy')}
                 </p>
               </div>
-              <div>
-                <p className="font-medium">Locked Fields</p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs py-0">Name</Badge>
-                  <Badge variant="outline" className="text-xs py-0">Phone</Badge>
-                  <Badge variant="outline" className="text-xs py-0">Payment</Badge>
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* Supplier Table */}
+          {/* Supplier Table - Simplified with Search, Edit and Delete buttons */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">All Suppliers</h3>
+              <div>
+                <h3 className="text-lg font-semibold">All Suppliers</h3>
+                <p className="text-sm text-muted-foreground">
+                  Overview of all produce suppliers. Click a row for more details.
+                </p>
+              </div>
               <div className="text-sm text-muted-foreground">
-                Showing {suppliers.length} supplier{suppliers.length !== 1 ? 's' : ''}
+                Showing {filteredSuppliers.length} supplier{filteredSuppliers.length !== 1 ? 's' : ''}
               </div>
             </div>
-            <SupplierDataTable suppliers={suppliers} onEditSupplier={openEditDialog} />
+
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search suppliers by name, phone, email, location, code, or status..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                  onClick={clearSearch}
+                >
+                  <span className="sr-only">Clear search</span>
+                  <span className="text-muted-foreground hover:text-foreground">✕</span>
+                </Button>
+              )}
+            </div>
+            
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Supplier Name</TableHead>
+                      <TableHead>Phone Number</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSuppliers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                          {searchQuery ? (
+                            <div className="flex flex-col items-center gap-2">
+                              <Search className="h-8 w-8 text-muted-foreground/50" />
+                              <p>No suppliers found matching "{searchQuery}"</p>
+                              <Button variant="link" onClick={clearSearch} className="text-sm">
+                                Clear search
+                              </Button>
+                            </div>
+                          ) : (
+                            'No suppliers found for the selected date range'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredSuppliers.map((supplier) => (
+                        <TableRow 
+                          key={supplier.id}
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => openEditDialog(supplier)}
+                        >
+                          <TableCell className="font-medium">{supplier.name}</TableCell>
+                          <TableCell>{supplier.contactPhone || 'N/A'}</TableCell>
+                          <TableCell>{getStatusBadge(supplier.status)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                onClick={() => openEditDialog(supplier)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteSupplier(supplier)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </div>
         </main>
 
@@ -784,15 +959,9 @@ export default function SuppliersPage() {
             <DialogHeader>
               <DialogTitle>Edit Supplier</DialogTitle>
               <DialogDescription>
-                Update supplier details. Name-phone combination is locked and cannot be changed.
+                Update supplier details. Fill in only the fields you want to change.
               </DialogDescription>
             </DialogHeader>
-            <Alert className="mb-4">
-              <Lock className="h-4 w-4" />
-              <AlertDescription>
-                <span className="font-semibold">Locked Fields:</span> Supplier name and phone number cannot be changed to maintain consistency.
-              </AlertDescription>
-            </Alert>
             <CreateSupplierForm
               supplier={editingSupplier}
               onSubmit={handleUpdateSupplier}
@@ -801,6 +970,28 @@ export default function SuppliersPage() {
             />
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!supplierToDelete} onOpenChange={(open) => !open && setSupplierToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Supplier</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete <strong>{supplierToDelete?.name}</strong>? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="flex justify-end gap-2">
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDeleteSupplier}
+                disabled={isLoadingDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isLoadingDelete ? 'Deleting...' : 'Delete'}
+              </AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
       </SidebarInset>
     </SidebarProvider>
   )

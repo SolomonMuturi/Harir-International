@@ -429,46 +429,12 @@ export async function PUT(request) {
       )
     }
     
-    // Format phone number
+    // Format phone number if provided
     const formattedPhone = body.contact_phone 
       ? formatPhoneNumber(body.contact_phone)
-      : existingSupplier.contact_phone
+      : undefined
     
-    // Check for duplicate name-phone combination
-    if (body.name || body.contact_phone) {
-      const newName = body.name?.trim() || existingSupplier.name
-      const newPhone = formattedPhone
-      
-      const duplicateSupplier = await prisma.suppliers.findFirst({
-        where: {
-          AND: [
-            { id: { not: id } },
-            {
-              OR: [
-                { name: newName },
-                { contact_phone: newPhone }
-              ]
-            }
-          ]
-        }
-      })
-      
-      if (duplicateSupplier) {
-        let errorMessage = 'Cannot update: '
-        if (duplicateSupplier.name === newName) {
-          errorMessage += `Name "${newName}" is already registered to another supplier`
-        } else if (duplicateSupplier.contact_phone === newPhone) {
-          errorMessage += `Phone number "${newPhone}" is already registered to another supplier`
-        }
-        
-        return NextResponse.json(
-          { error: errorMessage },
-          { status: 400 }
-        )
-      }
-    }
-    
-    // Prepare update data
+    // Prepare update data - only include fields that were provided
     const updateData = {
       ...(body.name && { name: body.name.trim() }),
       ...(body.contact_name && { contact_name: body.contact_name.trim() }),
@@ -536,6 +502,56 @@ export async function PUT(request) {
     
     return NextResponse.json(
       { error: 'Failed to update supplier', details: error.message },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Missing supplier ID' },
+        { status: 400 }
+      )
+    }
+    
+    console.log(`📨 DELETE /api/suppliers?id=${id} - Deleting supplier`)
+    
+    // Check if supplier exists
+    const existingSupplier = await prisma.suppliers.findUnique({
+      where: { id }
+    })
+    
+    if (!existingSupplier) {
+      return NextResponse.json(
+        { error: 'Supplier not found' },
+        { status: 404 }
+      )
+    }
+    
+    // Delete the supplier
+    const deletedSupplier = await prisma.suppliers.delete({
+      where: { id }
+    })
+
+    console.log('✅ Supplier deleted successfully:', deletedSupplier.id)
+    return NextResponse.json({ message: 'Supplier deleted successfully', supplier: deletedSupplier })
+  } catch (error) {
+    console.error('❌ Error deleting supplier:', error)
+    
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Supplier not found' },
+        { status: 404 }
+      )
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to delete supplier', details: error.message },
       { status: 500 }
     )
   }

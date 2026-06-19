@@ -19,26 +19,32 @@ import type { Supplier, SupplierFormValues } from '@/lib/data'
 import { useEffect, useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Lock, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
-// Updated schema with locked name-phone-payment validation
+// Schema with flexible validation for create and edit modes
 const formSchema = z.object({
-  // Required and locked fields
+  // Fields that can be optional during edit
   name: z.string()
-    .min(2, "Supplier name is required (2-100 characters).")
+    .min(2, "Supplier name must be at least 2 characters.")
     .max(100, "Supplier name must be less than 100 characters.")
-    .regex(/^[a-zA-Z0-9\s&.-]+$/, "Name can only contain letters, numbers, spaces, &, ., and -"),
+    .regex(/^[a-zA-Z0-9\s&.-]+$/, "Name can only contain letters, numbers, spaces, &, ., and -")
+    .optional()
+    .or(z.literal('')),
   
   supplierCode: z.string()
-    .min(3, "Supplier code is required (3-20 characters).")
+    .min(3, "Supplier code must be 3-20 characters.")
     .max(20, "Supplier code must be less than 20 characters.")
-    .regex(/^[A-Z0-9-]+$/, "Supplier code can only contain uppercase letters, numbers, and hyphens"),
+    .regex(/^[A-Z0-9-]+$/, "Supplier code can only contain uppercase letters, numbers, and hyphens")
+    .optional()
+    .or(z.literal('')),
   
   contactPhone: z.string()
     .min(10, "A valid 10-digit phone number is required.")
     .max(20, "Phone number must be less than 20 digits.")
-    .regex(/^\+?[\d\s\-\(\)]+$/, "Invalid phone number format"),
+    .regex(/^\+?[\d\s\-\(\)]+$/, "Invalid phone number format")
+    .optional()
+    .or(z.literal('')),
   
   // Optional fields
   location: z.string().optional(),
@@ -112,18 +118,6 @@ interface CreateSupplierFormProps {
   existingSupplierCodes?: string[]
   isEditing?: boolean
 }
-
-const RequiredLabel = ({ children, locked = false }: { children: React.ReactNode, locked?: boolean }) => (
-  <div className="flex items-center gap-1">
-    <FormLabel>{children} <span className="text-destructive">*</span></FormLabel>
-    {locked && (
-      <Badge variant="outline" className="h-5 text-xs ml-1">
-        <Lock className="h-3 w-3 mr-1" />
-        Locked
-      </Badge>
-    )}
-  </div>
-)
 
 const OptionalLabel = ({ children }: { children: React.ReactNode }) => (
   <FormLabel>
@@ -269,18 +263,48 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
       
       console.log('📝 Form values before transformation:', values)
 
-      // Validate phone number
-      const phoneValidation = validatePhoneNumber(values.contactPhone)
-      if (!phoneValidation.isValid) {
-        toast({
-          title: 'Invalid Phone Number',
-          description: phoneValidation.message,
-          variant: 'destructive',
-        })
-        return
+      // Validate required fields for creation mode
+      if (!isEditing) {
+        if (!values.name?.trim()) {
+          toast({
+            title: 'Required Field',
+            description: 'Supplier name is required',
+            variant: 'destructive',
+          })
+          return
+        }
+        if (!values.contactPhone?.trim()) {
+          toast({
+            title: 'Required Field',
+            description: 'Contact phone is required',
+            variant: 'destructive',
+          })
+          return
+        }
+        if (!values.supplierCode?.trim()) {
+          toast({
+            title: 'Required Field',
+            description: 'Supplier code is required',
+            variant: 'destructive',
+          })
+          return
+        }
       }
 
-      // Check for duplicate supplier code
+      // Validate phone number only if provided
+      if (values.contactPhone?.trim()) {
+        const phoneValidation = validatePhoneNumber(values.contactPhone)
+        if (!phoneValidation.isValid) {
+          toast({
+            title: 'Invalid Phone Number',
+            description: phoneValidation.message,
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+
+      // Check for duplicate supplier code during creation
       if (!isEditing) {
         const isDuplicateCode = existingSupplierCodes.includes(values.supplierCode)
         if (isDuplicateCode) {
@@ -293,17 +317,16 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
         }
       }
 
+      const phoneValidation = validatePhoneNumber(values.contactPhone || '')
+      
       const finalValues: SupplierFormValues = {
-        // Locked fields
-        name: values.name.trim(),
-        contactPhone: phoneValidation.formatted,
-        supplierCode: values.supplierCode.trim(),
-        
-        // Required fields
-        contactName: values.contactName?.trim() || values.name.trim(),
-        status: 'Active',
+        name: values.name?.trim() || '',
+        contactPhone: values.contactPhone?.trim() ? phoneValidation.formatted : '',
+        supplierCode: values.supplierCode?.trim() || '',
         
         // Optional fields
+        contactName: values.contactName?.trim() || '',
+        status: 'Active',
         location: values.location?.trim() || '',
         contactEmail: values.contactEmail?.trim() || '',
         produceTypes: values.produceType ? [values.produceType] : ['Fuerte'],
@@ -339,19 +362,12 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        {/* Locked Fields Alert */}
-        {!isEditing ? (
+        {/* Edit Mode Alert */}
+        {isEditing && (
           <Alert>
-            <Lock className="h-4 w-4" />
-            <AlertDescription>
-              <span className="font-semibold">Note:</span> Supplier name, phone number, and supplier code will be permanently locked and cannot be changed after creation.
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <Alert variant="warning">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              <span className="font-semibold">Editing Mode:</span> Name, phone number, and supplier code are locked and cannot be changed to maintain data consistency.
+              <span className="font-semibold">Note:</span> Fill in only the fields you want to update. Leave fields blank to keep their current values.
             </AlertDescription>
           </Alert>
         )}
@@ -365,19 +381,14 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                 {/* Name Field */}
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem>
-                    <RequiredLabel locked={isEditing}>Supplier Name</RequiredLabel>
+                    <FormLabel>{isEditing ? "Supplier Name" : "Supplier Name"}  {!isEditing && <span className="text-destructive">*</span>}</FormLabel>
                     <FormControl>
                       <Input 
                         placeholder="Enter supplier name" 
                         {...field} 
-                        disabled={isEditing}
-                        className={isEditing ? "bg-muted" : ""}
                       />
                     </FormControl>
-                    <FormDescription className={isEditing ? "flex items-center gap-1" : ""}>
-                      {isEditing && <Lock className="h-3 w-3" />}
-                      {isEditing ? "Locked - cannot be changed" : "This will be locked to phone number"}
-                    </FormDescription>
+                    {isEditing && <FormDescription>Leave blank to keep current name</FormDescription>}
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -386,7 +397,7 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                   {/* Supplier Code */}
                   <FormField control={form.control} name="supplierCode" render={({ field }) => (
                     <FormItem>
-                      <RequiredLabel locked={isEditing}>Supplier Code</RequiredLabel>
+                      <FormLabel>{isEditing ? "Supplier Code" : "Supplier Code"}  {!isEditing && <span className="text-destructive">*</span>}</FormLabel>
                       <FormControl>
                         <Input 
                           placeholder="" 
@@ -396,7 +407,7 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                         />
                       </FormControl>
                       <FormDescription>
-                        {isEditing ? "Locked" : "Auto-generated"}
+                        {isEditing ? "Cannot be changed" : "Auto-generated"}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -440,10 +451,10 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                     </FormItem>
                   )} />
                   
-                  {/* Contact Phone - Locked Field */}
+                  {/* Contact Phone */}
                   <FormField control={form.control} name="contactPhone" render={({ field }) => (
                     <FormItem>
-                      <RequiredLabel locked={isEditing}>Contact Phone</RequiredLabel>
+                      <FormLabel>Contact Phone {!isEditing && <span className="text-destructive">*</span>}</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <Input 
@@ -451,8 +462,7 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                             placeholder="0712345678" 
                             {...field}
                             onChange={(e) => handlePhoneChange(e.target.value)}
-                            disabled={isEditing}
-                            className={isEditing ? "bg-muted pr-10" : "pr-10"}
+                            className="pr-10"
                           />
                           {phoneValidation && (
                             <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -470,6 +480,7 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                           {phoneValidation.message}
                         </FormDescription>
                       )}
+                      {isEditing && <FormDescription>Leave blank to keep current phone</FormDescription>}
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -552,17 +563,13 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
             <div>
               <h3 className="text-md font-medium mb-4">Payment Details</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Provide at least one payment method. These details will be locked to the supplier.
+                Provide at least one payment method.
               </p>
               
               {/* Bank Details Section */}
               <div className="space-y-4 mb-6 p-4 border rounded-md">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium">Bank Details</h4>
-                  <Badge variant="outline" className="text-xs">
-                    <Lock className="h-3 w-3 mr-1" />
-                    Locked
-                  </Badge>
                 </div>
                 <div className="space-y-3">
                   <FormField control={form.control} name="bankName" render={({ field }) => (
@@ -601,10 +608,6 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
               <div className="space-y-4 p-4 border rounded-md">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium">M-Pesa Details</h4>
-                  <Badge variant="outline" className="text-xs">
-                    <Lock className="h-3 w-3 mr-1" />
-                    Locked
-                  </Badge>
                 </div>
                 <div className="space-y-3">
                   <FormField control={form.control} name="mpesaPaybill" render={({ field }) => (
@@ -630,24 +633,20 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
               </div>
               
               {/* Payment Summary */}
-              <Alert className="mt-6">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <span className="font-semibold">Payment Details are Locked:</span> Once set, payment details cannot be changed to a different supplier's information. This ensures payment consistency.
-                </AlertDescription>
-              </Alert>
+              {!isEditing && (
+                <Alert className="mt-6">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <span className="font-semibold">Note:</span> Provide at least one payment method to complete supplier setup.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           </div>
         </div>
         
         {/* Form Submission */}
-        <div className="flex justify-between items-center pt-4 border-t">
-          <div className="text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Lock className="h-3 w-3" />
-              <span>Locked fields cannot be changed after creation</span>
-            </div>
-          </div>
+        <div className="flex justify-end items-center pt-4 border-t">
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Supplier'}
           </Button>

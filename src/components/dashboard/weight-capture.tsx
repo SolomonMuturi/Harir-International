@@ -1197,35 +1197,37 @@ export function WeightCapture({
                       <div className="space-y-2">
                         <Label htmlFor="supplier_name">Supplier Name *</Label>
                         <div className="relative">
-                          <select
-                            id="supplier_name"
-                            value={formData.supplier_name}
-                            onChange={(e) => {
-                              const selectedSupplier = allSuppliers.find(s => s.name === e.target.value);
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                supplier_name: e.target.value,
-                                supplier_phone: selectedSupplier?.contactPhone || prev.supplier_phone,
-                                region: selectedSupplier?.location || prev.region,
-                              }));
-                            }}
-                            required
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none pr-8"
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                              backgroundRepeat: 'no-repeat',
-                              backgroundPosition: 'right 0.75rem center',
-                              backgroundSize: '12px 12px',
-                            }}
-                          >
-                            <option value="">Select a supplier...</option>
-                            {allSuppliers.map((supplier) => (
-                              <option key={supplier.id} value={supplier.name}>
-                                {supplier.name} - {supplier.contactPhone || 'No phone'}
-                              </option>
-                            ))}
-                          </select>
-                          {formData.supplier_name && (
+                            <select
+                              id="supplier_name"
+                              value={formData.supplier_name}
+                              onChange={(e) => {
+                                const selectedSupplier = allSuppliers.find(s => s.name === e.target.value);
+                                setFormData(prev => ({ 
+                                  ...prev, 
+                                  supplier_name: e.target.value,
+                                  supplier_phone: selectedSupplier?.contactPhone || prev.supplier_phone,
+                                  region: selectedSupplier?.location || prev.region,
+                                }));
+                              }}
+                              required
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none pr-8"
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 0.75rem center',
+                                backgroundSize: '12px 12px',
+                              }}
+                            >
+                              <option value="">Select a supplier...</option>
+                              {/* Sort suppliers alphabetically by name */}
+                              {[...allSuppliers]
+                                .sort((a, b) => a.name.localeCompare(b.name))
+                                .map((supplier) => (
+                                  <option key={supplier.id} value={supplier.name}>
+                                    {supplier.name} - {supplier.contactPhone || 'No phone'}
+                                  </option>
+                                ))}
+                            </select>                          {formData.supplier_name && (
                             <div className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none">
                               <CheckCircle className="w-4 h-4 text-green-500" />
                             </div>

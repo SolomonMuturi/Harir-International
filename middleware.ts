@@ -26,7 +26,7 @@ const routePermissions: Record<string, string[]> = {
   '/analytics': ['dashboard.analytics'],
   '/bi-features': ['dashboard.analytics'],
   
-  // Customers (commented but keeping for reference)
+  // Customers
   '/customers': ['customers.view'],
   '/customers/manage': ['customers.manage'],
   '/customers/quotes': ['customers.quotes'],
@@ -40,14 +40,13 @@ const routePermissions: Record<string, string[]> = {
   '/suppliers/visitors': ['suppliers.visitors'],
   
   // HR - Employees
-  '/employees': ['employees.view'],
-  '/employees/manage': ['employees.manage'],
-  '/employees/attendance': ['employees.attendance'],
-  '/employees/payroll': ['employees.payroll'],
+  '/employees': ['employees.overview.view', 'employees.list.view'],
+  '/employees/manage': ['employees.edit', 'employees.create'],
+  '/employees/attendance': ['employees.attendance.view'],
   
   // Access Management
   '/visitor-management': ['suppliers.visitors'],
-  '/vehicle-management': ['carriers.view'],
+  '/vehicle-management': ['vehicle_log.view', 'vehicle_log.manage'],
   
   // Operations
   '/traceability': ['inventory.view'],
@@ -103,6 +102,69 @@ const adminOnlyRoutes = [
   '/branches',
 ];
 
+// ✅ Function to determine first accessible page based on permissions
+const getFirstAccessiblePage = (permissions: string[]): string => {
+  // Check permissions in priority order
+  if (permissions.includes('vehicle_log.view') || permissions.includes('vehicle_log.manage')) {
+    return '/vehicle-management';
+  }
+  if (permissions.includes('suppliers.weigh')) {
+    return '/weight-capture';
+  }
+  if (permissions.includes('counting.perform')) {
+    return '/warehouse';
+  }
+  if (permissions.includes('cold_room.view') || permissions.includes('cold_room.manage') || 
+      permissions.includes('cold_room.temperature') || permissions.includes('cold_room.inventory')) {
+    return '/cold-room';
+  }
+  if (permissions.includes('shipments.view') || permissions.includes('shipments.create') || 
+      permissions.includes('shipments.update') || permissions.includes('shipments.track') || 
+      permissions.includes('shipments.manifest')) {
+    return '/shipments';
+  }
+  if (permissions.includes('qc.view') || permissions.includes('qc.perform') || 
+      permissions.includes('qc.approve') || permissions.includes('qc.export')) {
+    return '/quality-control';
+  }
+  if (permissions.includes('inventory.view') || permissions.includes('inventory.manage') || 
+      permissions.includes('inventory.packaging') || permissions.includes('inventory.reports')) {
+    return '/inventory';
+  }
+  if (permissions.includes('loading.view') || permissions.includes('loading.create') || 
+      permissions.includes('loading.manage') || permissions.includes('loading.assign') || 
+      permissions.includes('loading.transit')) {
+    return '/outbound';
+  }
+  if (permissions.includes('carriers.view') || permissions.includes('carriers.manage') || 
+      permissions.includes('carriers.assign') || permissions.includes('carriers.track')) {
+    return '/carriers';
+  }
+  if (permissions.includes('utilities.view') || permissions.includes('utilities.record') || 
+      permissions.includes('utilities.analyze') || permissions.includes('utilities.reports')) {
+    return '/utility';
+  }
+  if (permissions.includes('suppliers.view') || permissions.includes('suppliers.manage') || 
+      permissions.includes('suppliers.visitors')) {
+    return '/suppliers';
+  }
+  if (permissions.some(p => p.startsWith('employees.'))) {
+    return '/employees';
+  }
+  if (permissions.includes('customers.view') || permissions.includes('customers.manage') || 
+      permissions.includes('customers.quotes') || permissions.includes('customers.invoices') || 
+      permissions.includes('customers.receivables')) {
+    return '/customers';
+  }
+  if (permissions.includes('admin.users') || permissions.includes('admin.roles') || 
+      permissions.includes('admin.settings') || permissions.includes('admin.audit') || 
+      permissions.includes('admin.backup')) {
+    return '/user-roles';
+  }
+  // Fallback to dashboard
+  return '/dashboard';
+};
+
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|public/).*)',
@@ -153,7 +215,16 @@ export async function middleware(request: NextRequest) {
     }
   }
   
-  // 5. Check route-specific permissions
+  // 5. ✅ Redirect from root or dashboard to first accessible page
+  if (pathname === '/' || pathname === '/dashboard') {
+    const redirectUrl = getFirstAccessiblePage(userPermissions);
+    // Only redirect if not already on the right page
+    if (pathname !== redirectUrl) {
+      return NextResponse.redirect(new URL(redirectUrl, request.url));
+    }
+  }
+  
+  // 6. Check route-specific permissions
   let routePermissionChecked = false;
   
   for (const [route, requiredPermissions] of Object.entries(routePermissions)) {
@@ -174,6 +245,6 @@ export async function middleware(request: NextRequest) {
     }
   }
   
-  // 6. For authenticated routes without specific permissions, allow access
+  // 7. For authenticated routes without specific permissions, allow access
   return NextResponse.next();
 }

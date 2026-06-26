@@ -176,14 +176,24 @@ model accounts_receivable {
 
 model activity_logs {
   id         String               @id @default(cuid()) @db.VarChar(20)
-  user       String?              @db.VarChar(100)
+  userId     String?              @map("user_id") @db.VarChar(20)
+  username   String?              @db.VarChar(100)
   avatar     String?              @db.VarChar(255)
   action     String?              @db.Text
+  module     String?              @db.VarChar(50)
+  details    Json?                @db.Json
   ip         String?              @db.VarChar(45)
+  userAgent  String?              @map("user_agent") @db.VarChar(255)
   timestamp  DateTime?            @db.DateTime(0)
   status     activity_logs_status
+  severity   String               @default("info") @db.VarChar(20)
   created_at DateTime             @default(now()) @db.DateTime(0)
 
+  @@index([userId])
+  @@index([timestamp])
+  @@index([action])
+  @@index([status])
+  @@index([module])
   @@map("activity_logs")
 }
 

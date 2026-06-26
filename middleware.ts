@@ -102,8 +102,13 @@ const adminOnlyRoutes = [
   '/branches',
 ];
 
-// ✅ Function to determine first accessible page based on permissions
+// ✅ UPDATED: Function to determine first accessible page - ADMIN FIRST
 const getFirstAccessiblePage = (permissions: string[]): string => {
+  // 👑 ADMIN FIRST - Highest priority
+  if (permissions.some(p => p.startsWith('admin.'))) {
+    return '/dashboard';
+  }
+  
   // Check permissions in priority order
   if (permissions.includes('vehicle_log.view') || permissions.includes('vehicle_log.manage')) {
     return '/vehicle-management';
@@ -155,11 +160,6 @@ const getFirstAccessiblePage = (permissions: string[]): string => {
       permissions.includes('customers.quotes') || permissions.includes('customers.invoices') || 
       permissions.includes('customers.receivables')) {
     return '/customers';
-  }
-  if (permissions.includes('admin.users') || permissions.includes('admin.roles') || 
-      permissions.includes('admin.settings') || permissions.includes('admin.audit') || 
-      permissions.includes('admin.backup')) {
-    return '/user-roles';
   }
   // Fallback to dashboard
   return '/dashboard';
@@ -215,7 +215,7 @@ export async function middleware(request: NextRequest) {
     }
   }
   
-  // 5. ✅ Redirect from root or dashboard to first accessible page
+  // 5. Redirect from root or dashboard to first accessible page
   if (pathname === '/' || pathname === '/dashboard') {
     const redirectUrl = getFirstAccessiblePage(userPermissions);
     // Only redirect if not already on the right page

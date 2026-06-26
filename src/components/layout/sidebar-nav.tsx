@@ -73,20 +73,18 @@ const allNavItems: NavItem[] = [
     ]
   },
   
-  // Access Management
+  // Access Management - FIXED: Changed from 'carriers.view' to 'vehicle_log.view'
   { name: 'Visitor Log', href: '/visitor-management', icon: Users, permission: 'suppliers.visitors' },
-  { name: 'Vehicle Log', href: '/vehicle-management', icon: Truck, permission: 'carriers.view' },
+  { name: 'Vehicle Log', href: '/vehicle-management', icon: Truck, permissions: ['vehicle_log.view', 'vehicle_log.manage'] },
   
   // Operations
   { name: 'Intake', href: '/weight-capture', icon: Weight, permission: 'suppliers.weigh' },
   { name: 'Quality Control', href: '/quality-control', icon: FlaskConical, permissions: ['qc.view', 'qc.perform'] },
-  // UPDATED: Counting now requires counting.perform instead of inventory.view
   { name: 'Counting', href: '/warehouse', icon: Warehouse, permission: 'counting.perform' },
   { name: 'Cold Room', href: '/cold-room', icon: Thermometer, permissions: ['cold_room.view', 'cold_room.temperature'] },
   { name: 'Shipments', href: '/shipments', icon: Truck, permissions: ['shipments.view', 'shipments.track'] },
   { name: 'Carriers', href: '/carriers', icon: Briefcase, permissions: ['carriers.view', 'carriers.manage'] },
   { name: 'Loading', href: '/outbound', icon: Truck, permissions: ['loading.view', 'loading.create'] },
-  // UPDATED: Inventory requires inventory.view or inventory.manage
   { name: 'Inventory', href: '/inventory', icon: Boxes, permissions: ['inventory.view', 'inventory.manage'] },
   { name: 'Utility Management', href: '/utility', icon: Zap, permissions: ['utilities.view', 'utilities.record'] },
   
@@ -142,7 +140,7 @@ export function SidebarNav() {
     
     // Special handling for Employees section - Check for ANY employee permission
     if (item.href === '/employees') {
-      const hasAnyEmployeePermission = userPermissions.some(perm => 
+      const hasAnyEmployeePermission = userPermissions.some((perm: string) => 
         perm.startsWith('employees.')
       );
       return hasAnyEmployeePermission;
@@ -155,7 +153,7 @@ export function SidebarNav() {
     
     // Check multiple permissions (any of them)
     if (item.permissions && item.permissions.length > 0) {
-      return item.permissions.some(perm => userPermissions.includes(perm));
+      return item.permissions.some((perm: string) => userPermissions.includes(perm));
     }
     
     // If no permission specified, allow access

@@ -191,7 +191,7 @@ model activity_logs {
 
   @@index([userId])
   @@index([timestamp])
-  @@index([action])
+  @@index([action(length: 255)])
   @@index([status])
   @@index([module])
   @@map("activity_logs")

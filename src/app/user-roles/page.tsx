@@ -57,7 +57,8 @@ import {
   BarChart,
   UserCog,
   CalendarCheck,
-  Clock
+  Clock,
+  Truck
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -94,7 +95,7 @@ type UserWithRole = {
   createdAt: Date;
   loginAttempts: number;
   twoFactorEnabled: boolean;
-  password?: string; // Add this if needed
+  password?: string;
 };
 
 type UserAssignmentState = {
@@ -104,11 +105,12 @@ type UserAssignmentState = {
   newRoleId: string | null;
 };
 
-// Default permissions based on your schema - UPDATED WITH EMPLOYEE PERMISSIONS
+// Default permissions - UPDATED WITH NO DUPLICATES
 const DEFAULT_PERMISSIONS: Permission[] = [
-    // Vehicle Management
-    { id: 'vehicle_log.view', name: 'View Vehicle Logs', description: 'View vehicle log entries and history', category: 'Vehicle Management' },
-    { id: 'vehicle_log.manage', name: 'Manage Vehicle Logs', description: 'Add, edit, or delete vehicle log entries', category: 'Vehicle Management' },
+  // Vehicle Management
+  { id: 'vehicle_log.view', name: 'View Vehicle Logs', description: 'View vehicle log entries and history', category: 'Vehicle Management' },
+  { id: 'vehicle_log.manage', name: 'Manage Vehicle Logs', description: 'Add, edit, or delete vehicle log entries', category: 'Vehicle Management' },
+  
   // Dashboard Permissions
   { id: 'dashboard.view', name: 'View Dashboard', description: 'Access to main dashboard', category: 'Dashboard' },
   { id: 'dashboard.analytics', name: 'View Analytics', description: 'Access to analytics charts and reports', category: 'Dashboard' },
@@ -165,7 +167,7 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'inventory.packaging', name: 'Manage Packaging', description: 'Manage packaging materials', category: 'Inventory' },
   { id: 'inventory.reports', name: 'Generate Reports', description: 'Generate inventory reports', category: 'Inventory' },
   
-  // Counting Permission - NEW
+  // Counting Permission
   { id: 'counting.perform', name: 'Perform Counting', description: 'Perform warehouse counting operations', category: 'Inventory' },
   
   // Utility Management
@@ -174,7 +176,7 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'utilities.analyze', name: 'Analyze Consumption', description: 'Analyze utility consumption patterns', category: 'Utilities' },
   { id: 'utilities.reports', name: 'Utility Reports', description: 'Generate utility reports', category: 'Utilities' },
   
-  // Employee Management Permissions - NEWLY ADDED
+  // Employee Management Permissions
   // Overview Tab Permissions
   { id: 'employees.overview.view', name: 'View Employee Overview', description: 'View employee dashboard and statistics', category: 'Employee Management' },
   { id: 'employees.overview.export', name: 'Export Overview Reports', description: 'Export employee overview reports', category: 'Employee Management' },
@@ -222,7 +224,7 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'admin.backup', name: 'System Backup', description: 'Perform system backups', category: 'Administration' },
 ];
 
-// Predefined roles - UPDATED WITH NEW PERMISSION SETS
+// Predefined roles - UPDATED WITH VEHICLE MANAGEMENT PERMISSIONS FOR GATE SECURITY
 const PREDEFINED_ROLES = [
   {
     name: 'Administrator',
@@ -235,8 +237,6 @@ const PREDEFINED_ROLES = [
     description: 'Manage warehouse operations, inventory, and quality control',
     isDefault: false,
     permissions: [
-      'vehicle_log.view',
-      'vehicle_log.manage',
       'vehicle_log.view',
       'vehicle_log.manage',
       'dashboard.view',
@@ -260,7 +260,7 @@ const PREDEFINED_ROLES = [
       'inventory.manage',
       'inventory.packaging',
       'inventory.reports',
-      'counting.perform', // NEW: Added counting permission
+      'counting.perform',
       'utilities.view',
       'utilities.record',
       
@@ -288,18 +288,17 @@ const PREDEFINED_ROLES = [
     isDefault: false,
     permissions: [
       'vehicle_log.view',
-      'vehicle_log.view',
       'qc.view',
       'qc.perform',
       'cold_room.view',
       'cold_room.temperature',
       'inventory.view',
-      'counting.perform', // NEW: Added counting permission
+      'counting.perform',
       'shipments.view',
       
-      // Employee Management Permissions (Limited)
+      // Employee Management Permissions
       'employees.overview.view',
-      'employees.checkin.perform', // Can check themselves in/out
+      'employees.checkin.perform', 
       'employees.checkout.perform',
     ]
   },
@@ -308,7 +307,6 @@ const PREDEFINED_ROLES = [
     description: 'Manage shipments and carrier assignments',
     isDefault: false,
     permissions: [
-      'vehicle_log.view',
       'vehicle_log.view',
       'shipments.view',
       'shipments.create',
@@ -335,6 +333,7 @@ const PREDEFINED_ROLES = [
     description: 'Manage supplier relationships and intake',
     isDefault: false,
     permissions: [
+      'vehicle_log.view',
       'suppliers.view',
       'suppliers.manage',
       'suppliers.weigh',
@@ -374,6 +373,7 @@ const PREDEFINED_ROLES = [
     description: 'Manage employee records and HR operations',
     isDefault: false,
     permissions: [
+      'vehicle_log.view',
       'employees.overview.view',
       'employees.overview.export',
       'employees.checkin.view',
@@ -401,9 +401,14 @@ const PREDEFINED_ROLES = [
   },
   {
     name: 'Gate Security',
-    description: 'Handle employee check-in and check-out operations',
+    description: 'Handle employee check-in/check-out and vehicle management',
     isDefault: false,
     permissions: [
+      // Vehicle Management - NOW INCLUDED
+      'vehicle_log.view',
+      'vehicle_log.manage',
+      
+      // Employee Management
       'employees.checkin.view',
       'employees.checkin.perform',
       'employees.checkin.bulk',
@@ -419,6 +424,7 @@ const PREDEFINED_ROLES = [
     description: 'Supervise department employees and assign work',
     isDefault: false,
     permissions: [
+      'vehicle_log.view',
       'employees.overview.view',
       'employees.checkin.view',
       'employees.designation.view',
@@ -432,7 +438,7 @@ const PREDEFINED_ROLES = [
       'cold_room.view',
       'qc.view',
       'inventory.view',
-      'counting.perform', // NEW: Added counting permission
+      'counting.perform',
     ]
   },
   {
@@ -440,6 +446,7 @@ const PREDEFINED_ROLES = [
     description: 'Read-only access to view data',
     isDefault: true,
     permissions: [
+      'vehicle_log.view',
       'dashboard.view',
       'cold_room.view',
       'qc.view',
@@ -448,7 +455,7 @@ const PREDEFINED_ROLES = [
       'loading.view',
       'suppliers.view',
       'customers.view',
-      'inventory.view', // Has inventory.view but NOT counting.perform
+      'inventory.view',
       'utilities.view',
       'employees.view',
       
@@ -480,7 +487,7 @@ export default function UserRolesPage() {
   const [isDefaultRole, setIsDefaultRole] = useState(false);
   const [permissionSearch, setPermissionSearch] = useState('');
 
-  // NEW: User Assignment states
+  // User Assignment states
   const [activeTab, setActiveTab] = useState('roles');
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [userSearch, setUserSearch] = useState('');
@@ -519,7 +526,7 @@ export default function UserRolesPage() {
     }
   };
 
-  // NEW: Fetch users with their roles
+  // Fetch users with their roles
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -552,7 +559,7 @@ export default function UserRolesPage() {
     }
   };
 
-  // NEW: Assign role to single user
+  // Assign role to single user
   const assignRoleToUser = async (userId: string, roleId: string | null) => {
     try {
       setSaving(true);
@@ -568,8 +575,8 @@ export default function UserRolesPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Role assigned successfully');
-        fetchUsers(); // Refresh user list
-        fetchRoles(); // Refresh role counts
+        fetchUsers();
+        fetchRoles();
       } else {
         const error = await response.json();
         throw new Error(error.error || 'Failed to assign role');
@@ -582,7 +589,7 @@ export default function UserRolesPage() {
     }
   };
 
-  // NEW: Bulk assign roles
+  // Bulk assign roles
   const bulkAssignRoles = async () => {
     if (selectedUsers.length === 0) {
       toast.error('No users selected');
@@ -620,60 +627,57 @@ export default function UserRolesPage() {
     }
   };
 
-// NEW: Create new user
-const createNewUser = async () => {
-  if (!newUserEmail || !newUserName || !newUserPassword) {
-    toast.error('Please fill all required fields');
-    return;
-  }
-  
-  try {
-    setSaving(true);
-    
-    // Convert 'no-role' to null
-    const roleIdToAssign = newUserRoleId === 'no-role' ? null : newUserRoleId;
-    
-    const response = await fetch('/api/user-roles/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: newUserEmail,
-        name: newUserName,
-        password: newUserPassword,
-        roleId: roleIdToAssign,
-      }),
-    });
-    
-    // First, get the response text to debug
-    const responseText = await response.text();
-    
-    // Try to parse it as JSON
-    let result;
-    try {
-      result = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('Failed to parse response as JSON:', responseText);
-      toast.error('Server returned invalid response');
+  // Create new user
+  const createNewUser = async () => {
+    if (!newUserEmail || !newUserName || !newUserPassword) {
+      toast.error('Please fill all required fields');
       return;
     }
     
-    if (response.ok) {
-      toast.success(result.message || 'User created successfully');
-      setShowCreateUserDialog(false);
-      resetNewUserForm();
-      fetchUsers();
-    } else {
-      throw new Error(result.error || 'Failed to create user');
+    try {
+      setSaving(true);
+      
+      const roleIdToAssign = newUserRoleId === 'no-role' ? null : newUserRoleId;
+      
+      const response = await fetch('/api/user-roles/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newUserEmail,
+          name: newUserName,
+          password: newUserPassword,
+          roleId: roleIdToAssign,
+        }),
+      });
+      
+      const responseText = await response.text();
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', responseText);
+        toast.error('Server returned invalid response');
+        return;
+      }
+      
+      if (response.ok) {
+        toast.success(result.message || 'User created successfully');
+        setShowCreateUserDialog(false);
+        resetNewUserForm();
+        fetchUsers();
+      } else {
+        throw new Error(result.error || 'Failed to create user');
+      }
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      toast.error(error.message || 'Failed to create user');
+    } finally {
+      setSaving(false);
     }
-  } catch (error: any) {
-    console.error('Error creating user:', error);
-    toast.error(error.message || 'Failed to create user');
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
-  // NEW: Save all pending assignments
+  // Save all pending assignments
   const saveAllAssignments = async () => {
     const changes = userAssignments.filter(
       assignment => assignment.newRoleId !== assignment.currentRoleId
@@ -859,7 +863,7 @@ const createNewUser = async () => {
     setSelectedRole(null);
   };
 
-  // NEW: Reset new user form
+  // Reset new user form
   const resetNewUserForm = () => {
     setNewUserEmail('');
     setNewUserName('');
@@ -868,7 +872,7 @@ const createNewUser = async () => {
     setShowPassword(false);
   };
 
-  // NEW: Toggle user selection
+  // Toggle user selection
   const toggleUserSelection = (userId: string) => {
     setSelectedUsers(prev =>
       prev.includes(userId)
@@ -877,7 +881,7 @@ const createNewUser = async () => {
     );
   };
 
-  // NEW: Select all users
+  // Select all users
   const selectAllUsers = () => {
     if (selectedUsers.length === filteredUsers.length) {
       setSelectedUsers([]);
@@ -886,7 +890,7 @@ const createNewUser = async () => {
     }
   };
 
-  // NEW: Update user assignment
+  // Update user assignment
   const updateUserAssignment = (userId: string, roleId: string | null) => {
     setUserAssignments(prev =>
       prev.map(assignment =>
@@ -969,7 +973,7 @@ const createNewUser = async () => {
     return matchesSearch;
   });
 
-  // NEW: Filter users based on search and role filter
+  // Filter users based on search and role filter
   const filteredUsers = users.filter(user => {
     const matchesSearch = 
       user.email.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -1240,7 +1244,10 @@ const createNewUser = async () => {
                                     <Shield className="h-4 w-4 text-primary" />
                                     {role.name}
                                     {role.name === 'Gate Security' && (
-                                      <DoorOpen className="h-4 w-4 text-blue-500" />
+                                      <div className="flex gap-1">
+                                        <DoorOpen className="h-4 w-4 text-blue-500" />
+                                        <Truck className="h-4 w-4 text-orange-500" />
+                                      </div>
                                     )}
                                     {role.name === 'HR Manager' && (
                                       <UserCog className="h-4 w-4 text-green-500" />
@@ -1396,7 +1403,6 @@ const createNewUser = async () => {
                                   <SelectValue placeholder="Select role to assign" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {/* ✅ Fixed: Changed from value="" to value="no-role" */}
                                   <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                   {roles.map(role => (
                                     <SelectItem key={role.id} value={role.id}>
@@ -1529,7 +1535,6 @@ const createNewUser = async () => {
                                           <SelectValue placeholder="Select role..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          {/* ✅ Fixed: Changed from value="" to value="no-role" */}
                                           <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                           {roles.map(role => (
                                             <SelectItem key={role.id} value={role.id}>
@@ -1699,6 +1704,7 @@ const createNewUser = async () => {
                             <span className="flex items-center gap-2">
                               {category}
                               {category === 'Employee Management' && <Users className="ml-2 h-4 w-4" />}
+                              {category === 'Vehicle Management' && <Truck className="ml-2 h-4 w-4" />}
                             </span>
                             <Button
                               variant="ghost"
@@ -1721,6 +1727,7 @@ const createNewUser = async () => {
                               )
                             ).map(permission => {
                               const getPermissionIcon = () => {
+                                if (permission.id.includes('vehicle')) return Truck;
                                 if (permission.id.includes('checkin')) return DoorOpen;
                                 if (permission.id.includes('checkout')) return DoorClosed;
                                 if (permission.id.includes('designation')) return MapPin;
@@ -1834,15 +1841,15 @@ const createNewUser = async () => {
               <ScrollArea className="h-[300px] border rounded-md p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {DEFAULT_PERMISSIONS.map((permission) => {
-                    // Get icon for permission
                     const getPermissionIcon = () => {
+                      if (permission.id.includes('vehicle')) return Truck;
                       if (permission.id.includes('checkin')) return DoorOpen;
                       if (permission.id.includes('checkout')) return DoorClosed;
                       if (permission.id.includes('designation')) return MapPin;
                       if (permission.id.includes('attendance')) return ListChecks;
                       if (permission.id.includes('overview')) return BarChart;
                       if (permission.id.includes('employees')) return Users;
-                      if (permission.id.includes('counting')) return ListChecks; // New icon for counting
+                      if (permission.id.includes('counting')) return ListChecks;
                       return Key;
                     };
                     
@@ -1969,15 +1976,15 @@ const createNewUser = async () => {
               <ScrollArea className="h-[300px] border rounded-md p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {DEFAULT_PERMISSIONS.map((permission) => {
-                    // Get icon for permission
                     const getPermissionIcon = () => {
+                      if (permission.id.includes('vehicle')) return Truck;
                       if (permission.id.includes('checkin')) return DoorOpen;
                       if (permission.id.includes('checkout')) return DoorClosed;
                       if (permission.id.includes('designation')) return MapPin;
                       if (permission.id.includes('attendance')) return ListChecks;
                       if (permission.id.includes('overview')) return BarChart;
                       if (permission.id.includes('employees')) return Users;
-                      if (permission.id.includes('counting')) return ListChecks; // New icon for counting
+                      if (permission.id.includes('counting')) return ListChecks;
                       return Key;
                     };
                     
@@ -2100,7 +2107,7 @@ const createNewUser = async () => {
         </DialogContent>
       </Dialog>
 
-      {/* NEW: Create User Dialog */}
+      {/* Create User Dialog */}
       <Dialog open={showCreateUserDialog} onOpenChange={setShowCreateUserDialog}>
         <DialogContent>
           <DialogHeader>
@@ -2174,7 +2181,6 @@ const createNewUser = async () => {
                   <SelectValue placeholder="Select a role (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* ✅ FIXED: Changed from value="" to value="no-role" */}
                   <SelectItem value="no-role">No Role</SelectItem>
                   {roles.map(role => (
                     <SelectItem key={role.id} value={role.id}>
@@ -2218,7 +2224,7 @@ const createNewUser = async () => {
         </DialogContent>
       </Dialog>
 
-      {/* NEW: Bulk Assign Dialog */}
+      {/* Bulk Assign Dialog */}
       <Dialog open={showBulkAssignDialog} onOpenChange={setShowBulkAssignDialog}>
         <DialogContent>
           <DialogHeader>

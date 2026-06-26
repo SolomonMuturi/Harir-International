@@ -1,4 +1,5 @@
-"use client";
+// src/app/dashboard/user-roles/page.tsx
+'use client';
 
 import { useState, useEffect } from 'react';
 import {
@@ -18,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -82,6 +83,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Define permission types
 type Permission = {
@@ -225,7 +227,7 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'admin.backup', name: 'System Backup', description: 'Perform system backups', category: 'Administration', icon: Database },
 ];
 
-// Predefined roles - UPDATED WITH NEW PERMISSION SETS (keeping same functionality)
+// Predefined roles - UPDATED WITH NEW PERMISSION SETS
 const PREDEFINED_ROLES = [
   {
     name: 'Administrator',
@@ -453,6 +455,7 @@ export default function UserRolesPage() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [currentUser, setCurrentUser] = useState<{ name: string; id: string } | null>(null);
   
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -484,6 +487,25 @@ export default function UserRolesPage() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRoleId, setNewUserRoleId] = useState<string>('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Get current user
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const response = await fetch('/api/auth/session');
+        const session = await response.json();
+        if (session?.user) {
+          setCurrentUser({
+            name: session.user.name || 'Admin',
+            id: session.user.id || 'system'
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+    getUser();
+  }, []);
 
   // Fetch roles from database
   const fetchRoles = async () => {
@@ -539,10 +561,14 @@ export default function UserRolesPage() {
     }
   };
 
-  // Assign role to single user
+  // Assign role to single user with logging
   const assignRoleToUser = async (userId: string, roleId: string | null) => {
     try {
       setSaving(true);
+      
+      const user = users.find(u => u.id === userId);
+      const role = roleId ? roles.find(r => r.id === roleId) : null;
+      
       const response = await fetch('/api/user-roles/assign', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -555,6 +581,23 @@ export default function UserRolesPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Role assigned successfully');
+        
+        // ✅ LOG ROLE ASSIGNMENT
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: ActivityTypes.USER_ROLE_ASSIGNED,
+          status: 'success',
+          metadata: {
+            assignedBy: currentUser?.id,
+            userId: userId,
+            userEmail: user?.email,
+            userName: user?.name,
+            roleId: roleId,
+            roleName: role?.name || 'No Role (Unassigned)',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         fetchUsers();
         fetchRoles();
       } else {
@@ -564,12 +607,25 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error assigning role:', error);
       toast.error(error.message || 'Failed to assign role');
+      
+      // ✅ LOG ROLE ASSIGNMENT FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: ActivityTypes.USER_ROLE_ASSIGNED,
+        status: 'failure',
+        metadata: {
+          assignedBy: currentUser?.id,
+          userId: userId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Bulk assign roles
+  // Bulk assign roles with logging
   const bulkAssignRoles = async () => {
     if (selectedUsers.length === 0) {
       toast.error('No users selected');
@@ -578,6 +634,9 @@ export default function UserRolesPage() {
     
     try {
       setSaving(true);
+      
+      const role = bulkAssignRoleId ? roles.find(r => r.id === bulkAssignRoleId) : null;
+      
       const response = await fetch('/api/user-roles/assign', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -590,6 +649,22 @@ export default function UserRolesPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Roles assigned successfully');
+        
+        // ✅ LOG BULK ROLE ASSIGNMENT
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'BULK_ROLE_ASSIGNMENT',
+          status: 'success',
+          metadata: {
+            assignedBy: currentUser?.id,
+            userCount: selectedUsers.length,
+            userIds: selectedUsers,
+            roleId: bulkAssignRoleId,
+            roleName: role?.name || 'No Role (Unassigned)',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setSelectedUsers([]);
         setBulkAssignRoleId('');
         setShowBulkAssignDialog(false);
@@ -602,12 +677,25 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error bulk assigning roles:', error);
       toast.error(error.message || 'Failed to assign roles');
+      
+      // ✅ LOG BULK ROLE ASSIGNMENT FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'BULK_ROLE_ASSIGNMENT',
+        status: 'failure',
+        metadata: {
+          assignedBy: currentUser?.id,
+          userCount: selectedUsers.length,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Create new user
+  // Create new user with logging
   const createNewUser = async () => {
     if (!newUserEmail || !newUserName || !newUserPassword) {
       toast.error('Please fill all required fields');
@@ -618,6 +706,7 @@ export default function UserRolesPage() {
       setSaving(true);
       
       const roleIdToAssign = newUserRoleId === 'no-role' ? null : newUserRoleId;
+      const role = roleIdToAssign ? roles.find(r => r.id === roleIdToAssign) : null;
       
       const response = await fetch('/api/user-roles/users', {
         method: 'POST',
@@ -643,6 +732,23 @@ export default function UserRolesPage() {
       
       if (response.ok) {
         toast.success(result.message || 'User created successfully');
+        
+        // ✅ LOG USER CREATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: ActivityTypes.USER_CREATED,
+          status: 'success',
+          metadata: {
+            createdBy: currentUser?.id,
+            newUserId: result.user?.id,
+            userEmail: newUserEmail,
+            userName: newUserName,
+            roleId: roleIdToAssign,
+            roleName: role?.name || 'No Role',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowCreateUserDialog(false);
         resetNewUserForm();
         fetchUsers();
@@ -652,12 +758,26 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error creating user:', error);
       toast.error(error.message || 'Failed to create user');
+      
+      // ✅ LOG USER CREATION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: ActivityTypes.USER_CREATED,
+        status: 'failure',
+        metadata: {
+          createdBy: currentUser?.id,
+          userEmail: newUserEmail,
+          userName: newUserName,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Save all pending assignments
+  // Save all pending assignments with logging
   const saveAllAssignments = async () => {
     const changes = userAssignments.filter(
       assignment => assignment.newRoleId !== assignment.currentRoleId
@@ -675,9 +795,40 @@ export default function UserRolesPage() {
       );
       
       await Promise.all(promises);
+      
+      // ✅ LOG BULK ROLE UPDATES
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'BULK_ROLE_UPDATE',
+        status: 'success',
+        metadata: {
+          updatedBy: currentUser?.id,
+          updateCount: changes.length,
+          changes: changes.map(c => ({
+            userId: c.userId,
+            userEmail: c.email,
+            oldRoleId: c.currentRoleId,
+            newRoleId: c.newRoleId,
+          })),
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast.success(`Updated ${changes.length} user(s)`);
     } catch (error) {
       console.error('Error saving assignments:', error);
+      
+      // ✅ LOG BULK ROLE UPDATE FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'BULK_ROLE_UPDATE',
+        status: 'failure',
+        metadata: {
+          updatedBy: currentUser?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
@@ -698,6 +849,19 @@ export default function UserRolesPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Roles initialized successfully');
+        
+        // ✅ LOG ROLE INITIALIZATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLES_INITIALIZED',
+          status: 'success',
+          metadata: {
+            initializedBy: currentUser?.id,
+            roleCount: PREDEFINED_ROLES.length,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         fetchRoles();
       } else {
         throw new Error('Failed to initialize roles');
@@ -710,7 +874,7 @@ export default function UserRolesPage() {
     }
   };
 
-  // Create new role
+  // Create new role with logging
   const createRole = async () => {
     if (!roleName.trim()) {
       toast.error('Role name is required');
@@ -735,6 +899,23 @@ export default function UserRolesPage() {
       if (response.ok) {
         const newRole = await response.json();
         toast.success('Role created successfully');
+        
+        // ✅ LOG ROLE CREATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLE_CREATED',
+          status: 'success',
+          metadata: {
+            createdBy: currentUser?.id,
+            roleId: newRole.id,
+            roleName: roleName,
+            description: roleDescription,
+            permissionsCount: selectedPermissions.length,
+            isDefault: isDefaultRole,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowCreateDialog(false);
         resetForm();
         fetchRoles();
@@ -745,12 +926,25 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error creating role:', error);
       toast.error(error.message || 'Failed to create role');
+      
+      // ✅ LOG ROLE CREATION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'ROLE_CREATED',
+        status: 'failure',
+        metadata: {
+          createdBy: currentUser?.id,
+          roleName: roleName,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Update existing role
+  // Update existing role with logging
   const updateRole = async () => {
     if (!selectedRole || !roleName.trim()) {
       toast.error('Role name is required');
@@ -775,6 +969,25 @@ export default function UserRolesPage() {
       if (response.ok) {
         const updatedRole = await response.json();
         toast.success('Role updated successfully');
+        
+        // ✅ LOG ROLE UPDATE
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLE_UPDATED',
+          status: 'success',
+          metadata: {
+            updatedBy: currentUser?.id,
+            roleId: selectedRole.id,
+            oldName: selectedRole.name,
+            newName: roleName,
+            oldPermissionsCount: selectedRole.permissions.length,
+            newPermissionsCount: selectedPermissions.length,
+            oldIsDefault: selectedRole.isDefault,
+            newIsDefault: isDefaultRole,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowEditDialog(false);
         resetForm();
         fetchRoles();
@@ -785,12 +998,25 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error updating role:', error);
       toast.error(error.message || 'Failed to update role');
+      
+      // ✅ LOG ROLE UPDATE FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'ROLE_UPDATED',
+        status: 'failure',
+        metadata: {
+          updatedBy: currentUser?.id,
+          roleId: selectedRole.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete role
+  // Delete role with logging
   const deleteRole = async () => {
     if (!selectedRole) return;
 
@@ -802,6 +1028,22 @@ export default function UserRolesPage() {
 
       if (response.ok) {
         toast.success('Role deleted successfully');
+        
+        // ✅ LOG ROLE DELETION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLE_DELETED',
+          status: 'success',
+          metadata: {
+            deletedBy: currentUser?.id,
+            roleId: selectedRole.id,
+            roleName: selectedRole.name,
+            permissionsCount: selectedRole.permissions.length,
+            wasDefault: selectedRole.isDefault,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowDeleteDialog(false);
         setSelectedRole(null);
         fetchRoles();
@@ -812,6 +1054,19 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error deleting role:', error);
       toast.error(error.message || 'Failed to delete role');
+      
+      // ✅ LOG ROLE DELETION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'ROLE_DELETED',
+        status: 'failure',
+        metadata: {
+          deletedBy: currentUser?.id,
+          roleId: selectedRole.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
@@ -971,7 +1226,7 @@ export default function UserRolesPage() {
     ];
   };
 
-  // Copy role permissions as JSON
+  // Copy role permissions as JSON with logging
   const copyPermissionsAsJson = (role: UserRole) => {
     const permissionData = DEFAULT_PERMISSIONS.filter(p => 
       role.permissions.includes(p.id)
@@ -985,9 +1240,23 @@ export default function UserRolesPage() {
     
     navigator.clipboard.writeText(jsonString);
     toast.success('Permissions copied to clipboard as JSON');
+    
+    // ✅ LOG PERMISSION COPY
+    logActivity({
+      user: currentUser?.name || 'System',
+      action: 'PERMISSIONS_COPIED',
+      status: 'success',
+      metadata: {
+        copiedBy: currentUser?.id,
+        roleId: role.id,
+        roleName: role.name,
+        permissionCount: role.permissions.length,
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(console.error);
   };
 
-  // Export roles as CSV
+  // Export roles as CSV with logging
   const exportRolesAsCSV = () => {
     const headers = ['Role Name', 'Description', 'Permissions Count', 'Default Role', 'Created At', 'Updated At'];
     const rows = roles.map(role => [
@@ -1014,6 +1283,18 @@ export default function UserRolesPage() {
     window.URL.revokeObjectURL(url);
     
     toast.success('Roles exported as CSV');
+    
+    // ✅ LOG EXPORT
+    logActivity({
+      user: currentUser?.name || 'System',
+      action: 'ROLES_EXPORTED',
+      status: 'success',
+      metadata: {
+        exportedBy: currentUser?.id,
+        roleCount: roles.length,
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(console.error);
   };
 
   // Load data on component mount

@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { FreshTraceLogo } from '@/components/icons';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Wrapper component that handles search params
 function LoginFormWrapper() {
@@ -49,7 +50,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     }
   }, []);
 
-  // ✅ UPDATED: Function to determine redirect based on permissions - ADMIN FIRST
+  // Function to determine redirect based on permissions - ADMIN FIRST
   const getRedirectUrl = (permissions: string[]): string => {
     // 👑 ADMIN FIRST - Highest priority
     if (permissions.some(p => p.startsWith('admin.'))) {
@@ -146,23 +147,68 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
           : result.error;
         setError(errorMessage);
         toast.error(errorMessage);
+
+        // ✅ LOG FAILED LOGIN ATTEMPT
+        await logActivity({
+          user: email,
+          action: ActivityTypes.USER_LOGIN,
+          status: 'failure',
+          metadata: {
+            email,
+            error: errorMessage,
+            timestamp: new Date().toISOString(),
+            attemptType: 'credentials',
+          },
+        });
+
       } else if (result?.ok) {
         // Get session to check permissions
         const session = await getSession();
-        const permissions = (session?.user as any)?.permissions || [];
+        const user = session?.user as any;
+        const permissions = user?.permissions || [];
+        const userName = user?.name || email;
+        
+        // ✅ LOG SUCCESSFUL LOGIN
+        await logActivity({
+          user: userName,
+          action: ActivityTypes.USER_LOGIN,
+          status: 'success',
+          avatar: user?.image || userName.substring(0, 2).toUpperCase(),
+          metadata: {
+            userId: user?.id,
+            email: user?.email || email,
+            permissions: permissions,
+            loginTime: new Date().toISOString(),
+            rememberMe: rememberMe,
+          },
+        });
         
         // Determine where to redirect based on permissions
         const redirectUrl = getRedirectUrl(permissions);
         
-        toast.success('Login successful!');
+        toast.success(`Welcome back, ${userName}!`);
         router.push(redirectUrl);
         router.refresh();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
       const errorMessage = 'An error occurred. Please try again.';
       setError(errorMessage);
       toast.error(errorMessage);
+
+      // ✅ LOG ERROR DURING LOGIN
+      await logActivity({
+        user: email,
+        action: ActivityTypes.USER_LOGIN,
+        status: 'failure',
+        metadata: {
+          email,
+          error: error.message || 'Unknown error',
+          stack: error.stack,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
     } finally {
       setIsLoading(false);
     }

@@ -49,8 +49,13 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     }
   }, []);
 
-  // ✅ NEW: Function to determine redirect based on permissions
+  // ✅ UPDATED: Function to determine redirect based on permissions - ADMIN FIRST
   const getRedirectUrl = (permissions: string[]): string => {
+    // 👑 ADMIN FIRST - Highest priority
+    if (permissions.some(p => p.startsWith('admin.'))) {
+      return '/dashboard';
+    }
+    
     // Check permissions in priority order
     if (permissions.includes('vehicle_log.view') || permissions.includes('vehicle_log.manage')) {
       return '/vehicle-management';
@@ -103,11 +108,6 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
         permissions.includes('customers.receivables')) {
       return '/customers';
     }
-    if (permissions.includes('admin.users') || permissions.includes('admin.roles') || 
-        permissions.includes('admin.settings') || permissions.includes('admin.audit') || 
-        permissions.includes('admin.backup')) {
-      return '/user-roles';
-    }
     // Fallback to dashboard if user has dashboard permission or no specific permissions
     if (permissions.includes('dashboard.view') || permissions.includes('dashboard.analytics')) {
       return '/dashboard';
@@ -147,11 +147,11 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
         setError(errorMessage);
         toast.error(errorMessage);
       } else if (result?.ok) {
-        // ✅ Get session to check permissions
+        // Get session to check permissions
         const session = await getSession();
         const permissions = (session?.user as any)?.permissions || [];
         
-        // ✅ Determine where to redirect based on permissions
+        // Determine where to redirect based on permissions
         const redirectUrl = getRedirectUrl(permissions);
         
         toast.success('Login successful!');

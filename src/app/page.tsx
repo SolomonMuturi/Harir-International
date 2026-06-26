@@ -3,7 +3,7 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,6 +49,73 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     }
   }, []);
 
+  // ✅ NEW: Function to determine redirect based on permissions
+  const getRedirectUrl = (permissions: string[]): string => {
+    // Check permissions in priority order
+    if (permissions.includes('vehicle_log.view') || permissions.includes('vehicle_log.manage')) {
+      return '/vehicle-management';
+    }
+    if (permissions.includes('suppliers.weigh')) {
+      return '/weight-capture';
+    }
+    if (permissions.includes('counting.perform')) {
+      return '/warehouse';
+    }
+    if (permissions.includes('cold_room.view') || permissions.includes('cold_room.manage') || 
+        permissions.includes('cold_room.temperature') || permissions.includes('cold_room.inventory')) {
+      return '/cold-room';
+    }
+    if (permissions.includes('shipments.view') || permissions.includes('shipments.create') || 
+        permissions.includes('shipments.update') || permissions.includes('shipments.track') || 
+        permissions.includes('shipments.manifest')) {
+      return '/shipments';
+    }
+    if (permissions.includes('qc.view') || permissions.includes('qc.perform') || 
+        permissions.includes('qc.approve') || permissions.includes('qc.export')) {
+      return '/quality-control';
+    }
+    if (permissions.includes('inventory.view') || permissions.includes('inventory.manage') || 
+        permissions.includes('inventory.packaging') || permissions.includes('inventory.reports')) {
+      return '/inventory';
+    }
+    if (permissions.includes('loading.view') || permissions.includes('loading.create') || 
+        permissions.includes('loading.manage') || permissions.includes('loading.assign') || 
+        permissions.includes('loading.transit')) {
+      return '/outbound';
+    }
+    if (permissions.includes('carriers.view') || permissions.includes('carriers.manage') || 
+        permissions.includes('carriers.assign') || permissions.includes('carriers.track')) {
+      return '/carriers';
+    }
+    if (permissions.includes('utilities.view') || permissions.includes('utilities.record') || 
+        permissions.includes('utilities.analyze') || permissions.includes('utilities.reports')) {
+      return '/utility';
+    }
+    if (permissions.includes('suppliers.view') || permissions.includes('suppliers.manage') || 
+        permissions.includes('suppliers.visitors')) {
+      return '/suppliers';
+    }
+    if (permissions.some(p => p.startsWith('employees.'))) {
+      return '/employees';
+    }
+    if (permissions.includes('customers.view') || permissions.includes('customers.manage') || 
+        permissions.includes('customers.quotes') || permissions.includes('customers.invoices') || 
+        permissions.includes('customers.receivables')) {
+      return '/customers';
+    }
+    if (permissions.includes('admin.users') || permissions.includes('admin.roles') || 
+        permissions.includes('admin.settings') || permissions.includes('admin.audit') || 
+        permissions.includes('admin.backup')) {
+      return '/user-roles';
+    }
+    // Fallback to dashboard if user has dashboard permission or no specific permissions
+    if (permissions.includes('dashboard.view') || permissions.includes('dashboard.analytics')) {
+      return '/dashboard';
+    }
+    // Final fallback
+    return '/dashboard';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -70,8 +137,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
       const result = await signIn('credentials', {
         email,
         password,
-        redirect: false,
-        callbackUrl,
+        redirect: false, // Don't auto-redirect
       });
 
       if (result?.error) {
@@ -80,9 +146,16 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
           : result.error;
         setError(errorMessage);
         toast.error(errorMessage);
-      } else {
+      } else if (result?.ok) {
+        // ✅ Get session to check permissions
+        const session = await getSession();
+        const permissions = (session?.user as any)?.permissions || [];
+        
+        // ✅ Determine where to redirect based on permissions
+        const redirectUrl = getRedirectUrl(permissions);
+        
         toast.success('Login successful!');
-        router.push(callbackUrl);
+        router.push(redirectUrl);
         router.refresh();
       }
     } catch (error) {

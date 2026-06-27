@@ -739,13 +739,18 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       yPos += extraY;
     }
     
+    // DETAILED BOX SIZE COUNTS - Reduced spacing
     doc.setFillColor(52, 58, 64);
-    doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 6, 'F'); 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 5);
-    yPos += 13;
+    doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 4.5);
+    yPos += 10;
+    
+    // Start both sections at the same position with minimal padding
+    let leftY = yPos;
+    let rightY = yPos;
     
     const getSizeCounts = (prefix: string, boxType: string) => {
       const sizes = boxType === '4kg' 
@@ -783,8 +788,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const tableWidth = hasFuerte && hasHass ? (contentWidth / 2 - 2.5) : contentWidth;
     const rightMargin = hasFuerte && hasHass ? leftMargin + tableWidth + 5 : leftMargin;
     
-    let leftY = yPos;
-    
     if (hasFuerte) {
       if (!hasHass) {
         doc.setFontSize(9);
@@ -799,17 +802,31 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
         doc.text('Fuerte 4kg Boxes - Size Breakdown:', leftMargin, leftY);
-        leftY += 4;
+        leftY += 1;
+        
+        // Build table body with size entries
+        const tableBody = fuerte4kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const f4kgClass1 = totals.fuerte_4kg_class1 || 0;
+        const f4kgClass2 = totals.fuerte_4kg_class2 || 0;
+        const f4kgTotal = totals.fuerte_4kg_total || 0;
+        
+        // Add Subtotal row at the END of the table
+        tableBody.push([
+          'Subtotal',
+          f4kgClass1.toString(),
+          f4kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: leftY,
           margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: fuerte4kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [22, 101, 52],
@@ -823,36 +840,90 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: tableWidth
+          tableWidth: tableWidth,
+          rowStyles: {
+            // Apply special styling to the last row (Subtotal)
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230], // Light blue shade for Subtotal
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0 // Remove borders
+            }
+          },
+          // Custom draw to remove borders around subtotal row
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              // This is the subtotal row - draw a filled rectangle with rounded corners
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              // Draw a clean filled rectangle without borders
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              // Draw the text manually
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              // Position text based on column
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        leftY = (doc as any).lastAutoTable.finalY + 8;
+        leftY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Fuerte 4kg: ${record.fuerte_4kg_total || 0} boxes`, leftMargin, leftY);
-        leftY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(leftMargin, leftY, tableWidth, 5, 'F');
+        doc.text(`Total Fuerte 4kg: ${f4kgTotal} boxes`, leftMargin + 2, leftY + 3.5);
+        leftY += 12;
       }
-      
+
       if (fuerte10kgSizes.length > 0) {
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
         doc.text('Fuerte 10kg Crates - Size Breakdown:', leftMargin, leftY);
-        leftY += 3;
+        leftY += 1;
+        
+        const tableBody = fuerte10kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const f10kgClass1 = totals.fuerte_10kg_class1 || 0;
+        const f10kgClass2 = totals.fuerte_10kg_class2 || 0;
+        const f10kgTotal = totals.fuerte_10kg_total || 0;
+        
+        // Add Subtotal row at the END
+        tableBody.push([
+          'Subtotal',
+          f10kgClass1.toString(),
+          f10kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: leftY,
           margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: fuerte10kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [22, 101, 52],
@@ -866,26 +937,60 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: tableWidth
+          tableWidth: tableWidth,
+          rowStyles: {
+            // Apply special styling to the last row (Subtotal)
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230],
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0
+            }
+          },
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        leftY = (doc as any).lastAutoTable.finalY + 4;
+        leftY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Fuerte 10kg: ${record.fuerte_10kg_total || 0} crates`, leftMargin, leftY);
-        leftY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(leftMargin, leftY, tableWidth, 5, 'F');
+        doc.text(`Total Fuerte 10kg: ${f10kgTotal} crates`, leftMargin + 2, leftY + 3.5);
+        leftY += 14;
       }
       
       if (!hasHass) {
         yPos = leftY;
       }
     }
-    
-    let rightY = yPos;
     
     if (hasHass) {
       if (!hasFuerte) {
@@ -903,17 +1008,30 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           doc.setTextColor(124, 58, 237);
           doc.text('Hass 4kg Boxes - Size Breakdown:', rightMargin, rightY);
         }
-        rightY += 3;
+        rightY += 1;
+        
+        const tableBody = hass4kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const h4kgClass1 = totals.hass_4kg_class1 || 0;
+        const h4kgClass2 = totals.hass_4kg_class2 || 0;
+        const h4kgTotal = totals.hass_4kg_total || 0;
+        
+        // Add Subtotal row at the END
+        tableBody.push([
+          'Subtotal',
+          h4kgClass1.toString(),
+          h4kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: rightY,
           margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: hass4kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [124, 58, 237],
@@ -927,18 +1045,53 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth
+          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
+          rowStyles: {
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230],
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0
+            }
+          },
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        rightY = (doc as any).lastAutoTable.finalY + 4;
+        rightY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Hass 4kg: ${record.hass_4kg_total || 0} boxes`, hasFuerte && hasHass ? rightMargin : leftMargin, rightY);
-        rightY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(hasFuerte && hasHass ? rightMargin : leftMargin, rightY, hasFuerte && hasHass ? tableWidth : contentWidth, 5, 'F');
+        doc.text(`Total Hass 4kg: ${h4kgTotal} boxes`, (hasFuerte && hasHass ? rightMargin : leftMargin) + 2, rightY + 3.5);
+        rightY += 12;
       }
       
       if (hass10kgSizes.length > 0) {
@@ -948,17 +1101,30 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           doc.setTextColor(124, 58, 237);
           doc.text('Hass 10kg Crates - Size Breakdown:', rightMargin, rightY);
         }
-        rightY += 3;
+        rightY += 1;
+        
+        const tableBody = hass10kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const h10kgClass1 = totals.hass_10kg_class1 || 0;
+        const h10kgClass2 = totals.hass_10kg_class2 || 0;
+        const h10kgTotal = totals.hass_10kg_total || 0;
+        
+        // Add Subtotal row at the END
+        tableBody.push([
+          'Subtotal',
+          h10kgClass1.toString(),
+          h10kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: rightY,
           margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: hass10kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [124, 58, 237],
@@ -972,18 +1138,53 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth
+          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
+          rowStyles: {
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230],
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0
+            }
+          },
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        rightY = (doc as any).lastAutoTable.finalY + 4;
+        rightY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Hass 10kg: ${record.hass_10kg_total || 0} crates`, hasFuerte && hasHass ? rightMargin : leftMargin, rightY);
-        rightY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(hasFuerte && hasHass ? rightMargin : leftMargin, rightY, hasFuerte && hasHass ? tableWidth : contentWidth, 5, 'F');
+        doc.text(`Total Hass 10kg: ${h10kgTotal} crates`, (hasFuerte && hasHass ? rightMargin : leftMargin) + 2, rightY + 3.5);
+        rightY += 14;
       }
     }
     
@@ -1025,32 +1226,36 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
-    
+
     const signatureX = pageWidth / 2 - 40;
     doc.line(signatureX, yPos, signatureX + 70, yPos);
-    
+
     doc.setFontSize(6);
     doc.setFont('helvetica', 'normal');
     doc.text('Counting Clerk Name & Signature', signatureX + 35, yPos + 3, { align: 'center' });
     doc.text(`Date: ${format(today, 'dd/MM/yyyy')}`, signatureX + 35, yPos + 6, { align: 'center' });
-    
+
     yPos += 10;
-    
+
     doc.setFontSize(5);
     doc.setTextColor(128, 128, 128);
-    doc.text('Harir International - Warehouse Counting System', pageWidth / 2, yPos, { align: 'center' });
-    doc.text(`Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()} • Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, pageWidth / 2, yPos + 2, { align: 'center' });
-    doc.text('This is a computer-generated document', pageWidth / 2, yPos + 4, { align: 'center' });
-    
+
+    // Two lines with tighter spacing
+    const docInfo1 = `Harir International - Warehouse Counting System • Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()}`;
+    const docInfo2 = `Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')} • This is a computer-generated document`;
+    doc.text(docInfo1, pageWidth / 2, yPos, { align: 'center' });
+    doc.text(docInfo2, pageWidth / 2, yPos + 2.5, { align: 'center' });
+
     const fileName = `Warehouse_GRN_${record.supplier_name.replace(/\s+/g, '_')}.pdf`;
     doc.save(fileName);
-    
+
     return true;
   } catch (error: any) {
     console.error('Error generating warehouse GRN:', error);
     throw error;
   }
 };
+
 
 export default function WarehousePage() {
   const { toast } = useToast();

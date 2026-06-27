@@ -1132,42 +1132,12 @@ export default function WeightCapturePage() {
       .sort((a, b) => a.variety.localeCompare(b.variety));
   }, []);
 
-  // Generate CSV data from filtered weights
+  // Generate CSV data - ONLY from weights, NO rejects
   const generateCSVData = useCallback((weightsToExport: WeightEntry[]) => {
     const supplierMap = new Map<string, any>();
 
-    // Merge weights and rejects for supplier intake/history
-    const allEntries = [
-      ...weightsToExport.map(w => ({
-        ...w,
-        supplier_phone: (w as any).supplier_phone || '',
-        driver_phone: (w as any).driver_phone || '',
-        vehicle_plate: (w as any).vehicle_plate || '',
-        gate_entry_id: (w as any).gate_entry_id || '',
-        driver_name: (w as any).driver_name || '',
-        status: undefined,
-      })),
-      ...rejects.map(reject => ({
-        ...reject,
-        fuerte_weight: reject.fuerte_weight || 0,
-        fuerte_crates: reject.fuerte_crates || 0,
-        hass_weight: reject.hass_weight || 0,
-        hass_crates: reject.hass_crates || 0,
-        created_at: reject.rejected_at,
-        supplier: reject.supplier_name,
-        supplier_id: reject.supplier_id,
-        region: reject.region,
-        pallet_id: reject.pallet_id || '',
-        status: 'rejected',
-        supplier_phone: '',
-        driver_phone: '',
-        vehicle_plate: '',
-        gate_entry_id: '',
-        driver_name: '',
-      }))
-    ];
-
-    allEntries.forEach(entry => {
+    // Only use weights, no rejects
+    weightsToExport.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
       const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
@@ -1191,10 +1161,8 @@ export default function WeightCapturePage() {
           total_weight: 0,
           fuerte_crates_in: 0,
           hass_crates_in: 0,
-          rejected_crates: 0,
           total_crates: 0,
           region: regionKey,
-          status: entry.status === 'rejected' ? 'rejected' : undefined,
         });
       }
 
@@ -1204,15 +1172,14 @@ export default function WeightCapturePage() {
       row.fuerte_crates_in += entry.fuerte_crates || 0;
       row.hass_weight += entry.hass_weight || 0;
       row.hass_crates_in += entry.hass_crates || 0;
-      row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
       row.total_weight = row.fuerte_weight + row.hass_weight;
       row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
     });
 
     return Array.from(supplierMap.values());
-  }, [rejects]);
+  }, []);
 
-  // Download CSV with totals row - UPDATED to use filtered data
+  // Download CSV with totals row - UPDATED to only use weights
   const downloadCSV = useCallback(async () => {
     const currentUser = await getCurrentUser();
     const filteredData = getFilteredHistoryWeights();
@@ -1243,7 +1210,6 @@ export default function WeightCapturePage() {
         totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
         totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
         totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
-        totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
         totalCrates: acc.totalCrates + (row.total_crates || 0),
         totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
       };
@@ -1252,7 +1218,6 @@ export default function WeightCapturePage() {
       totalHassWeight: 0,
       totalFuerteCrates: 0,
       totalHassCrates: 0,
-      totalRejectedCrates: 0,
       totalCrates: 0,
       totalWeight: 0
     });
@@ -1268,7 +1233,6 @@ export default function WeightCapturePage() {
       'Hass Weight (kg)',
       'Fuerte Crates In',
       'Hass Crates In',
-      'Rejected Crates',
       'Total Crates',
       'Region'
     ];
@@ -1288,14 +1252,13 @@ export default function WeightCapturePage() {
         row.hass_weight.toFixed(2),
         row.fuerte_crates_in,
         row.hass_crates_in,
-        row.rejected_crates,
         row.total_crates,
         `"${row.region}"`
       ];
     });
     
     // Add empty row for spacing
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '']);
     
     // Add totals row
     rows.push([
@@ -1309,7 +1272,6 @@ export default function WeightCapturePage() {
       totals.totalHassWeight.toFixed(2),
       totals.totalFuerteCrates,
       totals.totalHassCrates,
-      totals.totalRejectedCrates,
       totals.totalCrates,
       ''
     ]);
@@ -1324,7 +1286,6 @@ export default function WeightCapturePage() {
       '',
       'Total Fruits Weight:',
       totals.totalWeight.toFixed(2) + ' kg',
-      '',
       '',
       '',
       '',
@@ -2184,12 +2145,6 @@ export default function WeightCapturePage() {
     .filter(w => isSameDay(new Date(w.created_at), today))
     .reduce((sum, w) => sum + (w.fuerte_weight || 0) + (w.hass_weight || 0), 0);
 
-  const uniqueSuppliersToday = new Set(
-    weights
-      .filter(w => isSameDay(new Date(w.created_at), today) && w.supplier_id)
-      .map(w => w.supplier_id)
-  ).size;
-
   const pendingSuppliersCount = pendingSuppliers.length;
   const weighedSuppliersCount = weighedSuppliers.length;
 
@@ -2652,7 +2607,7 @@ export default function WeightCapturePage() {
               </Card>
             </TabsContent>
 
-            {/* History Tab - with single CSV download button */}
+            {/* History Tab */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2809,7 +2764,8 @@ export default function WeightCapturePage() {
                               </div>
                               <div>
                                 <Label htmlFor="toTime" className="text-xs">To</Label>
-                                <Input                                  id="toTime"
+                                <Input
+                                  id="toTime"
                                   type="time"
                                   value={dateRangeFilter.toTime}
                                   onChange={(e) => {
@@ -3410,7 +3366,7 @@ export default function WeightCapturePage() {
                           <CardTitle className="text-sm">Export Summary</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-4">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
                             <div className="text-center">
                               <div className="text-2xl font-bold text-blue-600">
                                 {new Set(filteredHistoryWeights.map(w => w.supplier_id)).size}
@@ -3446,12 +3402,6 @@ export default function WeightCapturePage() {
                                 {filteredHistoryWeights.reduce((sum, w) => sum + (w.hass_crates || 0), 0)}
                               </div>
                               <div className="text-sm text-gray-600">Hass Crates</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-2xl font-bold text-indigo-600">
-                                {filteredHistoryWeights.filter(w => w.gate_entry_id).length}
-                              </div>
-                              <div className="text-sm text-gray-600">With Gate IDs</div>
                             </div>
                           </div>
                           

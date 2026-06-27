@@ -3215,57 +3215,61 @@ export default function WarehousePage() {
     });
   };
 
-  const downloadCSV = (records: CountingRecord[]) => {
-    if (records.length === 0) {
-      toast({
-        title: 'No Data',
-        description: 'No records available to download',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const csvData = generateCSVData(records);
-
-    const headers = [
-      'Date',
-      'Supplier Name',
-      'Telephone Number',
-      'Class',
-      'Size 14',
-      'Size 16',
-      'Size 18',
-      'Size 20',
-      'Size 22',
-      'Size 24',
-      'Total Boxes',
-      'Unit Price',
-      'Total Price',
-      'Grand Total'
-    ];
-
-    const rows = csvData.map((row, index) => {
-      const rowNumber = index + 2;
-      const totalPriceFormula = `=L${rowNumber}*K${rowNumber}`;
-      const grandTotalFormula = `=M${rowNumber}`;
-
-      return [
-        row.date,
-        `"${row.supplier_name}"`,
-        `"${row.telephone_number}"`,
-        `"${row.rowClass}"`,
-        row.size_14,
-        row.size_16,
-        row.size_18,
-        row.size_20,
-        row.size_22,
-        row.size_24,
-        row.total_boxes,
-        '',
-        totalPriceFormula,
-        grandTotalFormula
-      ];
+const downloadCSV = (records: CountingRecord[]) => {
+  if (records.length === 0) {
+    toast({
+      title: 'No Data',
+      description: 'No records available to download',
+      variant: 'destructive',
     });
+    return;
+  }
+
+  const csvData = generateCSVData(records);
+
+  const headers = [
+    'Date',
+    'Supplier Name',
+    'Telephone Number',
+    'Class',
+    'Size 14',
+    'Size 16',
+    'Size 18',
+    'Size 20',
+    'Size 22',
+    'Size 24',
+    'Total Boxes',
+    'Unit Price',
+    'Total Price',
+    'Grand Total'
+  ];
+
+  const rows = csvData.map((row, index) => {
+    const rowNumber = index + 2;
+    const totalPriceFormula = `=L${rowNumber}*K${rowNumber}`;
+    const grandTotalFormula = `=M${rowNumber}`;
+
+    // Format telephone number to prevent scientific notation
+    // Add a tab character at the start to force text format
+    const telephoneNumber = row.telephone_number ? `"${row.telephone_number}\t"` : '""';
+
+    return [
+      row.date,
+      `"${row.supplier_name}"`,
+      telephoneNumber,
+      `"${row.rowClass}"`,
+      row.size_14,
+      row.size_16,
+      row.size_18,
+      row.size_20,
+      row.size_22,
+      row.size_24,
+      row.total_boxes,
+      '',
+      totalPriceFormula,
+      grandTotalFormula
+    ];
+  });
 
     const csvContent = [
       headers.join(','),

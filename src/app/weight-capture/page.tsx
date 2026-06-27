@@ -1173,141 +1173,146 @@ export default function WeightCapturePage() {
       .sort((a, b) => a.variety.localeCompare(b.variety));
   }, []);
 
-  // Generate CSV data
-  const generateCSVData = useCallback((weights: WeightEntry[]) => {
-    const supplierMap = new Map<string, any>();
+// Generate CSV data
+const generateCSVData = useCallback((weights: WeightEntry[]) => {
+  const supplierMap = new Map<string, any>();
 
-    // Merge weights and rejects for supplier intake/history
-    const allEntries = [
-      ...weights.map(w => ({
-        ...w,
-        supplier_phone: (w as any).supplier_phone || '',
-        driver_phone: (w as any).driver_phone || '',
-        vehicle_plate: (w as any).vehicle_plate || '',
-        gate_entry_id: (w as any).gate_entry_id || '',
-        driver_name: (w as any).driver_name || '',
-        status: undefined,
-      })),
-      ...rejects.map(reject => ({
-        ...reject,
-        fuerte_weight: reject.fuerte_weight || 0,
-        fuerte_crates: reject.fuerte_crates || 0,
-        hass_weight: reject.hass_weight || 0,
-        hass_crates: reject.hass_crates || 0,
-        created_at: reject.rejected_at,
-        supplier: reject.supplier_name,
-        supplier_id: reject.supplier_id,
-        region: reject.region,
-        pallet_id: reject.pallet_id || '',
-        status: 'rejected',
-        supplier_phone: '',
-        driver_phone: '',
-        vehicle_plate: '',
-        gate_entry_id: '',
-        driver_name: '',
-      }))
-    ];
+  // Merge weights and rejects for supplier intake/history
+  const allEntries = [
+    ...weights.map(w => ({
+      ...w,
+      supplier_phone: (w as any).supplier_phone || '',
+      driver_phone: (w as any).driver_phone || '',
+      vehicle_plate: (w as any).vehicle_plate || '',
+      gate_entry_id: (w as any).gate_entry_id || '',
+      driver_name: (w as any).driver_name || '',
+      status: undefined,
+    })),
+    ...rejects.map(reject => ({
+      ...reject,
+      fuerte_weight: reject.fuerte_weight || 0,
+      fuerte_crates: reject.fuerte_crates || 0,
+      hass_weight: reject.hass_weight || 0,
+      hass_crates: reject.hass_crates || 0,
+      created_at: reject.rejected_at,
+      supplier: reject.supplier_name,
+      supplier_id: reject.supplier_id,
+      region: reject.region,
+      pallet_id: reject.pallet_id || '',
+      status: 'rejected',
+      supplier_phone: '',
+      driver_phone: '',
+      vehicle_plate: '',
+      gate_entry_id: '',
+      driver_name: '',
+    }))
+  ];
 
-    allEntries.forEach(entry => {
-      const date = new Date(entry.created_at).toISOString().split('T')[0];
-      const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
-      const phoneKey = entry.supplier_phone || entry.driver_phone || '';
-      const vehicleKey = entry.vehicle_plate || '';
-      const regionKey = entry.region || '';
-      const gateKey = entry.gate_entry_id || '';
+  allEntries.forEach(entry => {
+    const date = new Date(entry.created_at).toISOString().split('T')[0];
+    const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
+    const phoneKey = entry.supplier_phone || entry.driver_phone || '';
+    const vehicleKey = entry.vehicle_plate || '';
+    const regionKey = entry.region || '';
+    const gateKey = entry.gate_entry_id || '';
 
-      const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
+    const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
 
-      if (!supplierMap.has(key)) {
-        supplierMap.set(key, {
-          date,
-          time,
-          supplier_name: supplierKey,
-          phone_number: phoneKey,
-          vehicle_plate_number: vehicleKey,
-          gate_entry_id: gateKey,
-          fuerte_weight: 0,
-          hass_weight: 0,
-          total_weight: 0,
-          fuerte_crates_in: 0,
-          hass_crates_in: 0,
-          rejected_crates: 0,
-          total_crates: 0,
-          region: regionKey,
-          status: entry.status === 'rejected' ? 'rejected' : undefined,
-        });
-      }
-
-      const row = supplierMap.get(key)!;
-
-      row.fuerte_weight += entry.fuerte_weight || 0;
-      row.fuerte_crates_in += entry.fuerte_crates || 0;
-      row.hass_weight += entry.hass_weight || 0;
-      row.hass_crates_in += entry.hass_crates || 0;
-      row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
-      row.total_weight = row.fuerte_weight + row.hass_weight;
-      row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
-    });
-
-    return Array.from(supplierMap.values());
-  }, [rejects]);
-
-  // Download CSV with totals row
-  const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
-    const currentUser = await getCurrentUser();
-    const csvData = generateCSVData(weights);
-    
-    if (csvData.length === 0) {
-      toast({
-        title: 'No Data',
-        description: 'No data available to download for the selected date range.',
-        variant: 'destructive',
+    if (!supplierMap.has(key)) {
+      supplierMap.set(key, {
+        date,
+        time,
+        supplier_name: supplierKey,
+        phone_number: phoneKey,
+        vehicle_plate_number: vehicleKey,
+        gate_entry_id: gateKey,
+        fuerte_weight: 0,
+        hass_weight: 0,
+        total_weight: 0,
+        fuerte_crates_in: 0,
+        hass_crates_in: 0,
+        rejected_crates: 0,
+        total_crates: 0,
+        region: regionKey,
+        status: entry.status === 'rejected' ? 'rejected' : undefined,
       });
-      return;
     }
-    
-    const totals = csvData.reduce((acc, row) => {
-      return {
-        totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
-        totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
-        totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
-        totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
-        totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
-        totalCrates: acc.totalCrates + (row.total_crates || 0),
-        totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
-      };
-    }, {
-      totalFuerteWeight: 0,
-      totalHassWeight: 0,
-      totalFuerteCrates: 0,
-      totalHassCrates: 0,
-      totalRejectedCrates: 0,
-      totalCrates: 0,
-      totalWeight: 0
+
+    const row = supplierMap.get(key)!;
+
+    row.fuerte_weight += entry.fuerte_weight || 0;
+    row.fuerte_crates_in += entry.fuerte_crates || 0;
+    row.hass_weight += entry.hass_weight || 0;
+    row.hass_crates_in += entry.hass_crates || 0;
+    row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
+    row.total_weight = row.fuerte_weight + row.hass_weight;
+    row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
+  });
+
+  return Array.from(supplierMap.values());
+}, [rejects]);
+
+// Download CSV with totals row
+const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
+  const currentUser = await getCurrentUser();
+  const csvData = generateCSVData(weights);
+  
+  if (csvData.length === 0) {
+    toast({
+      title: 'No Data',
+      description: 'No data available to download for the selected date range.',
+      variant: 'destructive',
     });
+    return;
+  }
+  
+  const totals = csvData.reduce((acc, row) => {
+    return {
+      totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
+      totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
+      totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
+      totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
+      totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
+      totalCrates: acc.totalCrates + (row.total_crates || 0),
+      totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
+    };
+  }, {
+    totalFuerteWeight: 0,
+    totalHassWeight: 0,
+    totalFuerteCrates: 0,
+    totalHassCrates: 0,
+    totalRejectedCrates: 0,
+    totalCrates: 0,
+    totalWeight: 0
+  });
+  
+  const headers = [
+    'Date',
+    'Time',
+    'Supplier Name',
+    'Phone Number',
+    'Vehicle Plate Number',
+    'Gate Entry ID',
+    'Fuerte Weight (kg)',
+    'Hass Weight (kg)',
+    'Fuerte Crates In',
+    'Hass Crates In',
+    'Rejected Crates',
+    'Total Crates',
+    'Region'
+  ];
+  
+  const rows = csvData.map(row => {
+    // Format phone number to prevent scientific notation
+    // Add a tab character at the start to force text format in Excel
+    const phoneNumber = row.phone_number ? `"\t${row.phone_number}"` : '""';
     
-    const headers = [
-      'Date',
-      'Time',
-      'Supplier Name',
-      'Phone Number',
-      'Vehicle Plate Number',
-      'Gate Entry ID',
-      'Fuerte Weight (kg)',
-      'Hass Weight (kg)',
-      'Fuerte Crates In',
-      'Hass Crates In',
-      'Rejected Crates',
-      'Total Crates',
-      'Region'
-    ];
-    
-    const rows = csvData.map(row => [
+    return [
       row.date,
       row.time,
       `"${row.supplier_name}"`,
-      `"${row.phone_number}"`,
+      phoneNumber, // Formatted phone number
       `"${row.vehicle_plate_number}"`,
       `"${row.gate_entry_id}"`,
       row.fuerte_weight.toFixed(2),
@@ -1317,84 +1322,91 @@ export default function WeightCapturePage() {
       row.rejected_crates,
       row.total_crates,
       `"${row.region}"`
-    ]);
-    
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
-    
-    rows.push([
-      'TOTALS',
-      '',
-      '',
-      '',
-      '',
-      '',
-      totals.totalFuerteWeight.toFixed(2),
-      totals.totalHassWeight.toFixed(2),
-      totals.totalFuerteCrates,
-      totals.totalHassCrates,
-      totals.totalRejectedCrates,
-      totals.totalCrates,
-      ''
-    ]);
-    
-    rows.push([
-      'GRAND TOTAL',
-      '',
-      '',
-      '',
-      '',
-      '',
-      'Total Fruits Weight:',
-      totals.totalWeight.toFixed(2) + ' kg',
-      '',
-      '',
-      '',
-      '',
-      ''
-    ]);
-    
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    
-    const { from, to } = dateRangeFilter;
-    let filename = 'weight_data';
-    if (from && to) {
-      filename += `_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`;
-    } else if (from) {
-      filename += `_${format(from, 'yyyy-MM-dd')}`;
-    }
-    link.setAttribute('download', `${filename}.csv`);
-    
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // ✅ LOG CSV EXPORT
-    await logActivity({
-      user: currentUser?.name || 'System',
-      action: 'WEIGHT_CSV_EXPORTED',
-      status: 'success',
-      metadata: {
-        userId: currentUser?.id,
-        recordCount: csvData.length,
-        filename: filename,
-        timestamp: new Date().toISOString(),
-      },
-    });
-    
-    toast({
-      title: 'CSV Downloaded',
-      description: `Weight data for selected period has been downloaded with totals.`,
-    });
-  }, [generateCSVData, dateRangeFilter, toast]);
+    ];
+  });
+  
+  // Add empty row for spacing
+  rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
+  
+  // Add totals row
+  rows.push([
+    'TOTALS',
+    '',
+    '',
+    '',
+    '',
+    '',
+    totals.totalFuerteWeight.toFixed(2),
+    totals.totalHassWeight.toFixed(2),
+    totals.totalFuerteCrates,
+    totals.totalHassCrates,
+    totals.totalRejectedCrates,
+    totals.totalCrates,
+    ''
+  ]);
+  
+  // Add grand total row
+  rows.push([
+    'GRAND TOTAL',
+    '',
+    '',
+    '',
+    '',
+    '',
+    'Total Fruits Weight:',
+    totals.totalWeight.toFixed(2) + ' kg',
+    '',
+    '',
+    '',
+    '',
+    ''
+  ]);
+  
+  // Create CSV content with BOM for Excel compatibility
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.join(','))
+  ].join('\n');
+  
+  // Add UTF-8 BOM for Excel to recognize UTF-8 encoding
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  
+  const { from, to } = dateRangeFilter;
+  let filename = 'weight_data';
+  if (from && to) {
+    filename += `_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`;
+  } else if (from) {
+    filename += `_${format(from, 'yyyy-MM-dd')}`;
+  }
+  link.setAttribute('download', `${filename}.csv`);
+  
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // ✅ LOG CSV EXPORT
+  await logActivity({
+    user: currentUser?.name || 'System',
+    action: 'WEIGHT_CSV_EXPORTED',
+    status: 'success',
+    metadata: {
+      userId: currentUser?.id,
+      recordCount: csvData.length,
+      filename: filename,
+      timestamp: new Date().toISOString(),
+    },
+  });
+  
+  toast({
+    title: 'CSV Downloaded',
+    description: `Weight data for selected period has been downloaded with totals.`,
+  });
+}, [generateCSVData, dateRangeFilter, toast]);
+
 
   // Download Supplier GRN - UPDATED to include gate entry ID
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {

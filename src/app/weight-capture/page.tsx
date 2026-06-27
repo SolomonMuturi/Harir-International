@@ -37,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Define types (keeping all existing types from your original code)
 interface WeightEntry {
@@ -249,6 +250,17 @@ const getStatusBadge = (status: RejectionEntry['status']) => {
   }
 };
 
+// Helper function to get current user
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export default function WeightCapturePage() {
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [kpiData, setKpiData] = useState<KPIData | null>(null);
@@ -347,23 +359,6 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
-  // Helper function to log activity to /api/activity-logs
-  const logActivity = async (action: string, status: 'success' | 'failure' | 'pending', user?: string) => {
-    try {
-      await fetch('/api/activity-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          status,
-          user: user || 'Weight Capture',
-          timestamp: new Date().toISOString(),
-        }),
-      });
-    } catch (err) {
-      // Silent fail
-    }
-  };
   // Helper function to apply time to date
   const applyTimeToDate = (date: Date | undefined, timeStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
     if (!date) return undefined;
@@ -460,6 +455,19 @@ export default function WeightCapturePage() {
         title: 'Supplier Deleted',
         description: 'Supplier has been removed from checked-in list.',
       });
+      
+      // ✅ LOG SUPPLIER DELETION
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: supplierId,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (error: any) {
       toast({
         title: 'Delete Failed',
@@ -469,7 +477,7 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Fetch all weight entries - FIXED
+  // Fetch all weight entries
   const fetchWeights = useCallback(async () => {
     try {
       setError(null);
@@ -872,6 +880,19 @@ export default function WeightCapturePage() {
   // Function to refresh all data
   const refreshAllData = useCallback(async () => {
     setIsRefreshing(true);
+    const currentUser = await getCurrentUser();
+    
+    // ✅ LOG DATA REFRESH
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'WEIGHT_DATA_REFRESH',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    
     await Promise.all([
       fetchWeights(),
       fetchCheckedInSuppliers(),
@@ -946,11 +967,12 @@ export default function WeightCapturePage() {
   // Handle Add Weight - UPDATED with gate_entry_id
   const handleAddWeight = useCallback(async (weightData: any) => {
     try {
+      const currentUser = await getCurrentUser();
       const fuerteWeight = weightData.fuerte_weight ? parseFloat(String(weightData.fuerte_weight)) : 0;
       const fuerteCrates = weightData.fuerte_crates ? parseInt(String(weightData.fuerte_crates)) : 0;
       const hassWeight = weightData.hass_weight ? parseFloat(String(weightData.hass_weight)) : 0;
       const hassCrates = weightData.hass_crates ? parseInt(String(weightData.hass_crates)) : 0;
-      // Allow saving and generating card/QR code even if weight is 0
+      
       setError(null);
       const submittedSupplierId = weightData.supplier_id;
       const checkInSession = weightData.check_in_session || 
@@ -998,7 +1020,6 @@ export default function WeightCapturePage() {
         } catch (parseError) {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-        await logActivity('Weight entry save failed', 'failure', payload.supplier);
         throw new Error(errorMessage);
       }
       const savedEntry = await response.json();
@@ -1020,17 +1041,52 @@ export default function WeightCapturePage() {
         });
       }
       setIsReceiptOpen(true);
+      
+      // ✅ LOG WEIGHT SAVED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_CREATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: savedEntry.pallet_id,
+          supplierId: savedEntry.supplier_id,
+          supplierName: savedEntry.supplier,
+          driverName: savedEntry.driver_name,
+          vehiclePlate: savedEntry.vehicle_plate,
+          gateEntryId: gateEntryId || null,
+          fuerteWeight: fuerteWeight,
+          hassWeight: hassWeight,
+          totalCrates: fuerteCrates + hassCrates,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Weight Saved Successfully',
         description: gateEntryId 
           ? `Pallet ${savedEntry.pallet_id} recorded for Gate ID: ${gateEntryId}`
           : `Pallet ${savedEntry.pallet_id} has been recorded.`,
       });
-      await logActivity(`Weight entry saved: ${savedEntry.pallet_id}`, 'success', savedEntry.supplier);
+      
       setSelectedSupplier(null);
     } catch (error: any) {
       console.error('Error adding weight:', error);
       setError(error.message || 'Failed to save weight entry');
+      
+      // ✅ LOG WEIGHT SAVE FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_CREATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Save Failed',
         description: error.message || 'Failed to save weight entry to server',
@@ -1198,7 +1254,8 @@ export default function WeightCapturePage() {
   }, [rejects]);
 
   // Download CSV with totals row
-  const downloadCSV = useCallback((weights: WeightEntry[]) => {
+  const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
+    const currentUser = await getCurrentUser();
     const csvData = generateCSVData(weights);
     
     if (csvData.length === 0) {
@@ -1320,6 +1377,19 @@ export default function WeightCapturePage() {
     link.click();
     document.body.removeChild(link);
     
+    // ✅ LOG CSV EXPORT
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'WEIGHT_CSV_EXPORTED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        recordCount: csvData.length,
+        filename: filename,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    
     toast({
       title: 'CSV Downloaded',
       description: `Weight data for selected period has been downloaded with totals.`,
@@ -1329,6 +1399,7 @@ export default function WeightCapturePage() {
   // Download Supplier GRN - UPDATED to include gate entry ID
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {
     try {
+      const currentUser = await getCurrentUser();
       const supplierWeights = weights.filter(w => w.supplier_id === supplierId);
       
       if (supplierWeights.length === 0) {
@@ -1525,6 +1596,20 @@ export default function WeightCapturePage() {
       const fileName = `GRN_${supplierName.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.pdf`;
       doc.save(fileName);
       
+      // ✅ LOG GRN DOWNLOAD
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_GRN_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: supplierId,
+          supplierName: supplierName,
+          gateEntryId: gateEntryId || null,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'GRN Downloaded',
         description: `Goods Receipt Note has been downloaded for ${supplierName}.`,
@@ -1661,6 +1746,8 @@ export default function WeightCapturePage() {
     }
     try {
       setIsAddingRejection(true);
+      const currentUser = await getCurrentUser();
+      
       let intakeWeight = 0;
       if (selectedWeightForReject) {
         intakeWeight = (selectedWeightForReject.fuerte_weight || 0) + (selectedWeightForReject.hass_weight || 0);
@@ -1670,7 +1757,7 @@ export default function WeightCapturePage() {
       const rejectionData = {
         ...newRejection,
         rejected_at: new Date().toISOString(),
-        created_by: 'Weight Capture Station',
+        created_by: currentUser?.name || 'Weight Capture Station',
         variance: intakeWeight - (newRejection.counted_weight + newRejection.total_rejected_weight)
       };
       const response = await fetch('/api/rejects', {
@@ -1681,7 +1768,6 @@ export default function WeightCapturePage() {
         body: JSON.stringify(rejectionData),
       });
       if (!response.ok) {
-        await logActivity('Weight rejection save failed', 'failure', rejectionData.supplier_name);
         throw new Error('Failed to save rejection entry');
       }
       const savedRejection = await response.json();
@@ -1711,13 +1797,45 @@ export default function WeightCapturePage() {
       });
       setSelectedWeightForReject(null);
       setSelectedCountingRecordForReject(null);
+      
+      // ✅ LOG REJECTION SAVED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_SAVED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: savedRejection.supplier_id,
+          supplierName: savedRejection.supplier_name,
+          palletId: savedRejection.pallet_id,
+          rejectedWeight: savedRejection.total_rejected_weight,
+          rejectedCrates: savedRejection.total_rejected_crates,
+          variance: savedRejection.variance,
+          reason: savedRejection.reason,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Rejection Saved',
         description: `Rejection entry saved for ${savedRejection.supplier_name}. Variance: ${savedRejection.variance.toFixed(1)} kg`,
       });
-      await logActivity(`Weight rejection saved: ${savedRejection.pallet_id}`, 'success', savedRejection.supplier_name);
     } catch (error: any) {
       console.error('Error saving rejection:', error);
+      
+      // ✅ LOG REJECTION SAVE FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_SAVED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Save Failed',
         description: error.message || 'Failed to save rejection entry',
@@ -1726,7 +1844,7 @@ export default function WeightCapturePage() {
     } finally {
       setIsAddingRejection(false);
     }
-  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast, logActivity]);
+  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast]);
 
   // Delete rejection
   const handleDeleteRejection = useCallback(async (rejectionId: string) => {
@@ -1735,6 +1853,7 @@ export default function WeightCapturePage() {
     }
     
     try {
+      const currentUser = await getCurrentUser();
       const response = await fetch(`/api/rejects/${rejectionId}`, {
         method: 'DELETE',
       });
@@ -1744,6 +1863,18 @@ export default function WeightCapturePage() {
       }
       
       setRejects(prev => prev.filter(r => r.id !== rejectionId));
+      
+      // ✅ LOG REJECTION DELETED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          rejectionId: rejectionId,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Rejection Deleted',
@@ -1763,6 +1894,7 @@ export default function WeightCapturePage() {
   // Update rejection status
   const handleUpdateRejectionStatus = useCallback(async (rejectionId: string, status: RejectionEntry['status']) => {
     try {
+      const currentUser = await getCurrentUser();
       const response = await fetch(`/api/rejects/${rejectionId}`, {
         method: 'PATCH',
         headers: {
@@ -1770,7 +1902,7 @@ export default function WeightCapturePage() {
         },
         body: JSON.stringify({
           status,
-          reviewed_by: 'Weight Capture Station',
+          reviewed_by: currentUser?.name || 'Weight Capture Station',
           reviewed_at: new Date().toISOString()
         }),
       });
@@ -1784,6 +1916,19 @@ export default function WeightCapturePage() {
       setRejects(prev => prev.map(r => 
         r.id === rejectionId ? { ...r, ...updatedRejection } : r
       ));
+      
+      // ✅ LOG REJECTION STATUS UPDATED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_STATUS_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          rejectionId: rejectionId,
+          newStatus: status,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Status Updated',
@@ -1881,6 +2026,7 @@ export default function WeightCapturePage() {
     
     try {
       setIsSavingEdit(true);
+      const currentUser = await getCurrentUser();
       
       const payload = {
         pallet_id: editFormData.pallet_id,
@@ -1933,6 +2079,21 @@ export default function WeightCapturePage() {
         w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
       ));
       
+      // ✅ LOG WEIGHT UPDATED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: updatedEntry.pallet_id,
+          supplierId: updatedEntry.supplier_id,
+          supplierName: updatedEntry.supplier,
+          gateEntryId: updatedEntry.gate_entry_id || null,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       handleCancelEdit();
       
       toast({
@@ -1942,6 +2103,21 @@ export default function WeightCapturePage() {
       
     } catch (error: any) {
       console.error('Error updating weight:', error);
+      
+      // ✅ LOG WEIGHT UPDATE FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_UPDATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: editingWeight.pallet_id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Update Failed',
         description: error.message || 'Failed to update weight entry',
@@ -1964,6 +2140,7 @@ export default function WeightCapturePage() {
     
     try {
       setIsDeleting(true);
+      const currentUser = await getCurrentUser();
       
       const response = await fetch(`/api/weights?id=${weightToDelete.id}`, {
         method: 'DELETE',
@@ -1998,6 +2175,21 @@ export default function WeightCapturePage() {
           return newSet;
         });
       }
+      
+      // ✅ LOG WEIGHT DELETED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: weightToDelete.pallet_id,
+          supplierId: weightToDelete.supplier_id,
+          supplierName: weightToDelete.supplier,
+          gateEntryId: weightToDelete.gate_entry_id || null,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Weight Deleted',
@@ -2248,7 +2440,7 @@ export default function WeightCapturePage() {
             </Card>
           </div>
 
-          {/* Main Content Tabs */}
+          {/* Main Content Tabs - Same as before but with updated functions */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
               <TabsTrigger value="overview" className="flex items-center gap-2">
@@ -2273,7 +2465,7 @@ export default function WeightCapturePage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* Overview Tab */}
+            {/* Overview Tab - Same as before */}
             <TabsContent value="overview" className="space-y-6 mt-6">
               {/* KPI Cards */}
               {kpiData && (
@@ -2492,7 +2684,7 @@ export default function WeightCapturePage() {
               </Card>
             </TabsContent>
 
-            {/* Weight Capture Tab */}
+            {/* Weight Capture Tab - Same as before */}
             <TabsContent value="capture" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2533,7 +2725,7 @@ export default function WeightCapturePage() {
               </Card>
             </TabsContent>
 
-            {/* History Tab - UPDATED with enhanced date range filtering */}
+            {/* History Tab - Same as before with updated functions */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2560,7 +2752,7 @@ export default function WeightCapturePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* Enhanced Date Range Selection */}
+                    {/* Enhanced Date Range Selection - Same as before */}
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -2759,7 +2951,7 @@ export default function WeightCapturePage() {
                       </div>
                     </div>
 
-                    {/* CSV Preview Header */}
+                    {/* CSV Preview Header - Same as before */}
                     <div className="bg-gray-950 p-4 rounded-lg">
                       <div className="flex items-center gap-2 mb-2">
                         <FileSpreadsheet className="w-5 h-5 text-green-600" />
@@ -2782,7 +2974,7 @@ export default function WeightCapturePage() {
                       </div>
                     </div>
 
-                    {/* Edit Form (when editing) */}
+                    {/* Edit Form - Same as before */}
                     {editingWeight && (
                       <Card className="border-blue-200 border-2">
                         <CardHeader>
@@ -2799,6 +2991,7 @@ export default function WeightCapturePage() {
                         </CardHeader>
                         <CardContent>
                           <div className="space-y-4">
+                            {/* Edit form fields - same as before */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <Label htmlFor="edit-pallet-id">Pallet ID *</Label>
@@ -3281,7 +3474,7 @@ export default function WeightCapturePage() {
                       )}
                     </div>
 
-                    {/* Export Summary */}
+                    {/* Export Summary - Same as before */}
                     {filteredHistoryWeights.length > 0 && (
                       <Card>
                         <CardHeader>
@@ -3363,10 +3556,10 @@ export default function WeightCapturePage() {
               </Card>
             </TabsContent>
 
-            {/* Rejects Tab */}
+            {/* Rejects Tab - Same as before with updated functions */}
             <TabsContent value="rejects" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Rejects History */}
+                {/* Rejects History - Same as before */}
                 <div className="lg:col-span-2">
                   <Card>
                     <CardHeader>
@@ -3395,7 +3588,7 @@ export default function WeightCapturePage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {/* Filter Controls */}
+                      {/* Filter Controls - Same as before */}
                       <div className="space-y-4 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="space-y-2">
@@ -3483,7 +3676,7 @@ export default function WeightCapturePage() {
                           </div>
                         </div>
 
-                        {/* Status Summary */}
+                        {/* Status Summary - Same as before */}
                         <div className="grid grid-cols-3 gap-4">
                           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
                             <div className="text-2xl font-bold text-yellow-700">{pendingRejectsCount}</div>
@@ -3500,7 +3693,7 @@ export default function WeightCapturePage() {
                         </div>
                       </div>
 
-                      {/* Rejects List */}
+                      {/* Rejects List - Same as before */}
                       {isRejectsLoading ? (
                         <div className="flex flex-col items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
@@ -3692,7 +3885,7 @@ export default function WeightCapturePage() {
                   </Card>
                 </div>
 
-                {/* Add New Rejection Form */}
+                {/* Add New Rejection Form - Same as before */}
                 <div>
                   <Card>
                     <CardHeader>
@@ -3706,7 +3899,7 @@ export default function WeightCapturePage() {
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {/* Source Selection */}
+                        {/* Source Selection - Same as before */}
                         <div className="space-y-2">
                           <Label>Select Source</Label>
                           <div className="grid grid-cols-2 gap-2">
@@ -3735,7 +3928,7 @@ export default function WeightCapturePage() {
                           </div>
                         </div>
 
-                        {/* Selected Record Info */}
+                        {/* Selected Record Info - Same as before */}
                         {(selectedWeightForReject || selectedCountingRecordForReject) && (
                           <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
                             <div className="flex items-center justify-between mb-2">
@@ -3778,7 +3971,7 @@ export default function WeightCapturePage() {
                           </div>
                         )}
 
-                        {/* Rejection Form */}
+                        {/* Rejection Form - Same as before with updated handlers */}
                         <div className="space-y-4">
                           {/* Counted Weight (Locked/Read-only) */}
                           <div className="space-y-2">
@@ -3884,7 +4077,7 @@ export default function WeightCapturePage() {
                             />
                           </div>
 
-                          {/* Summary */}
+                          {/* Summary - Same as before */}
                           <div className="bg-black-50 p-4 rounded-lg border">
                             <div className="grid grid-cols-2 gap-4 mb-4">
                               <div>
@@ -3964,7 +4157,7 @@ export default function WeightCapturePage() {
               </div>
             </TabsContent>
 
-            {/* Statistics Tab */}
+            {/* Statistics Tab - Same as before */}
             <TabsContent value="statistics" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -4000,7 +4193,7 @@ export default function WeightCapturePage() {
                       </Button>
                     </div>
 
-                    {/* Counting History Table */}
+                    {/* Counting History Table - Same as before */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
@@ -4112,7 +4305,7 @@ export default function WeightCapturePage() {
                       )}
                     </div>
 
-                    {/* Daily Summaries */}
+                    {/* Daily Summaries - Same as before */}
                     {dailySummaries.length > 0 && (
                       <div className="border rounded-lg overflow-hidden">
                         <div className="bg-black-50 px-4 py-3 border-b">
@@ -4171,7 +4364,7 @@ export default function WeightCapturePage() {
                       </div>
                     )}
 
-                    {/* Variety Breakdown */}
+                    {/* Variety Breakdown - Same as before */}
                     {dailySummaries.length > 0 && (
                       <Card>
                         <CardHeader>
@@ -4242,7 +4435,7 @@ export default function WeightCapturePage() {
           </Tabs>
         </main>
         
-        {/* Receipt Dialog */}
+        {/* Receipt Dialog - Same as before */}
         {lastWeightEntry && (
           <FinalTagDialog
             isOpen={isReceiptOpen}
@@ -4279,7 +4472,7 @@ export default function WeightCapturePage() {
           />
         )}
 
-        {/* Delete Confirmation Dialog */}
+        {/* Delete Confirmation Dialog - Same as before */}
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <DialogContent>
             <DialogHeader>

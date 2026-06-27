@@ -8,7 +8,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enums (defined only once at the top)
+// Enums
 enum carriers_status {
   Active
   Inactive
@@ -103,6 +103,26 @@ enum weight_entries_unit {
 }
 
 // Models
+
+model audit_logs {
+  id         String   @id @default(cuid()) @db.VarChar(20)
+  user_id    String?  @db.VarChar(100)
+  action     String?  @db.Text
+  table_name String?  @db.VarChar(100)
+  record_id  String?  @db.VarChar(100)
+  old_values String?  @db.LongText  
+  new_values String?  @db.LongText  
+  ip_address String?  @db.VarChar(45)
+  user_agent String?  @db.VarChar(255)
+  created_at DateTime @default(now()) @db.DateTime(0)
+
+  @@index([user_id])
+  @@index([created_at])
+  // @@index([action]) // REMOVED - TEXT field can't be indexed without length
+  @@map("audit_logs")
+}
+
+
 model carriers {
   id                   String                @id @default(cuid()) @db.VarChar(20)
   name                 String                @unique @db.VarChar(100)
@@ -120,6 +140,7 @@ model carriers {
 
   @@map("carriers")
 }
+
 
 model Employee {
   id          String       @id @default(cuid())
@@ -174,26 +195,21 @@ model accounts_receivable {
   @@map("accounts_receivable")
 }
 
+
 model activity_logs {
   id         String               @id @default(cuid()) @db.VarChar(20)
-  userId     String?              @map("user_id") @db.VarChar(20)
-  username   String?              @db.VarChar(100)
+  user       String?              @db.VarChar(100)
   avatar     String?              @db.VarChar(255)
   action     String?              @db.Text
-  module     String?              @db.VarChar(50)
-  details    Json?                @db.Json
   ip         String?              @db.VarChar(45)
-  userAgent  String?              @map("user_agent") @db.VarChar(255)
   timestamp  DateTime?            @db.DateTime(0)
   status     activity_logs_status
-  severity   String               @default("info") @db.VarChar(20)
   created_at DateTime             @default(now()) @db.DateTime(0)
+  metadata   String?              @db.LongText
 
-  @@index([userId])
   @@index([timestamp])
-  @@index([action(length: 255)])
   @@index([status])
-  @@index([module])
+  @@index([user])
   @@map("activity_logs")
 }
 
@@ -208,6 +224,7 @@ model anomalies {
 
   @@map("anomalies")
 }
+
 
 model cold_room_inventory {
   id                String                       @id @default(cuid()) @db.VarChar(20)
@@ -224,6 +241,7 @@ model cold_room_inventory {
   @@map("cold_room_inventory")
 }
 
+
 model cold_rooms {
   id          String                @id @default(cuid()) @db.VarChar(20)
   name        String                @db.VarChar(100)
@@ -235,6 +253,7 @@ model cold_rooms {
 
   @@map("cold_rooms")
 }
+
 
 model customer_contacts {
   id          Int        @id @default(autoincrement())
@@ -249,6 +268,7 @@ model customer_contacts {
   @@index([customer_id], map: "customer_id_idx")
   @@map("customer_contacts")
 }
+
 
 model customers {
   id                  String                @id @default(cuid()) @db.VarChar(20)
@@ -271,6 +291,7 @@ model customers {
   @@map("customers")
 }
 
+
 model dwell_times {
   id              String             @id @default(cuid()) @db.VarChar(20)
   location        String?            @db.VarChar(100)
@@ -286,6 +307,7 @@ model dwell_times {
   @@map("dwell_times")
 }
 
+
 model products {
   id           String            @id @default(cuid()) @db.VarChar(20)
   name         String            @db.VarChar(100)
@@ -296,6 +318,7 @@ model products {
 
   @@map("products")
 }
+
 
 model quotes {
   id          String        @id @default(cuid()) @db.VarChar(20)
@@ -311,6 +334,7 @@ model quotes {
   @@index([customer_id], map: "customer_id_idx")
   @@map("quotes")
 }
+
 
 model shipments {
   id               String           @id @default(cuid()) @db.VarChar(20)
@@ -335,6 +359,7 @@ model shipments {
   @@map("shipments")
 }
 
+
 model vehicle_visits {
   id                String  @id @default(cuid()) @db.VarChar(20)
   supplier_id       String  @map("supplier_id") @db.VarChar(20)
@@ -345,41 +370,32 @@ model vehicle_visits {
   cargo_description String? @map("cargo_description") @db.LongText
   fruit_varieties   String? @map("fruit_varieties") @db.LongText
   region            String? @db.VarChar(100)
+  status            String  @default("Pre-registered") @db.VarChar(50)
+  gate_entry_id     String? @unique @map("gate_entry_id") @db.VarChar(50)
+  gate_entry_number Int?    @map("gate_entry_number")
+  gate_entry_date   String? @map("gate_entry_date") @db.VarChar(8)
+  is_recheck_in     Boolean? @default(false) @map("is_recheck_in")
+  previous_gate_entry_id String? @map("previous_gate_entry_id") @db.VarChar(50)
+  registered_at     DateTime @default(now()) @map("registered_at") @db.DateTime(0)
+  check_in_time     DateTime? @map("check_in_time") @db.DateTime(0)
+  check_out_time    DateTime? @map("check_out_time") @db.DateTime(0)
+  created_at        DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at        DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+  supplier          suppliers @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
+  weight_entry_id   String? @map("weight_entry_id") @db.VarChar(20)
+  weight_entry      weight_entries? @relation(fields: [weight_entry_id], references: [id])
 
-  // Status tracking
-  status String @default("Pre-registered") @db.VarChar(50)
-
-  // Gate Entry Tracking
-  gate_entry_id          String?  @unique @map("gate_entry_id") @db.VarChar(50)
-  gate_entry_number      Int?     @map("gate_entry_number")
-  gate_entry_date        String?  @map("gate_entry_date") @db.VarChar(8)
-  is_recheck_in          Boolean? @default(false) @map("is_recheck_in")
-  previous_gate_entry_id String?  @map("previous_gate_entry_id") @db.VarChar(50)
-
-  // Timestamps
-  registered_at  DateTime  @default(now()) @map("registered_at") @db.DateTime(0)
-  check_in_time  DateTime? @map("check_in_time") @db.DateTime(0)
-  check_out_time DateTime? @map("check_out_time") @db.DateTime(0)
-  created_at     DateTime  @default(now()) @map("created_at") @db.DateTime(0)
-  updated_at     DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
-
-  // Relations
-  supplier suppliers @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
-
-  weight_entry_id String?         @map("weight_entry_id") @db.VarChar(20)
-  weight_entry    weight_entries? @relation(fields: [weight_entry_id], references: [id])
-
-  // Unique constraint for supplier visit numbers
   @@unique([supplier_id, visit_number], name: "supplier_visit_unique")
   @@index([supplier_id])
   @@index([vehicle_plate])
   @@index([status])
   @@index([check_in_time])
   @@index([registered_at])
-  @@index([gate_entry_id]) // New index
-  @@index([gate_entry_date]) // New index
+  @@index([gate_entry_id])
+  @@index([gate_entry_date])
   @@map("vehicle_visits")
 }
+
 
 model suppliers {
   id                     String           @id @default(cuid()) @db.VarChar(20)
@@ -408,13 +424,12 @@ model suppliers {
   vehicle_check_in_time  DateTime?        @db.DateTime(0)
   vehicle_check_out_time DateTime?        @db.DateTime(0)
   cargo_description      String?          @db.LongText
-
-  // Visits relation
-  visits vehicle_visits[]
+  visits                 vehicle_visits[]
 
   @@unique([name, contact_phone], name: "supplier_name_phone_unique")
   @@map("suppliers")
 }
+
 
 model visitors {
   id                     String    @id @default(cuid())
@@ -440,6 +455,7 @@ model visitors {
   @@map("visitors")
 }
 
+
 model weight_entry_varieties {
   id              String         @id @default(cuid())
   weight_entry_id String         @db.VarChar(20)
@@ -454,67 +470,56 @@ model weight_entry_varieties {
   @@map("weight_entry_varieties")
 }
 
+
 model weight_entries {
-  id        String  @id @default(cuid()) @db.VarChar(20)
-  pallet_id String? @db.VarChar(100)
-  product   String? @db.VarChar(100)
-
-  // Total fields
-  weight          Decimal?            @db.Decimal(10, 2)
-  unit            weight_entries_unit
-  timestamp       DateTime?           @db.DateTime(0)
-  supplier        String?             @db.VarChar(100)
-  truck_id        String?             @db.VarChar(100)
-  driver_id       String?             @db.VarChar(100)
-  gross_weight    Decimal?            @db.Decimal(10, 2)
-  tare_weight     Decimal?            @db.Decimal(10, 2)
-  net_weight      Decimal?            @db.Decimal(10, 2)
-  declared_weight Decimal?            @db.Decimal(10, 2)
-  rejected_weight Decimal?            @db.Decimal(10, 2)
-  created_at      DateTime            @default(now()) @db.DateTime(0)
-  updated_at      DateTime?           @updatedAt @db.DateTime(0)
-  supplier_id     String?             @db.VarChar(255)
-  supplier_phone  String?             @db.VarChar(50)
-
-  // Specific variety weights
-  fuerte_weight Decimal? @db.Decimal(10, 2)
-  fuerte_crates Int?     @default(0)
-  hass_weight   Decimal? @db.Decimal(10, 2)
-  hass_crates   Int?     @default(0)
-
-  fruit_variety    String? @db.Text // JSON array of variety names
-  number_of_crates Int?    @default(0) // Total crates
-  region           String? @db.VarChar(100)
-  image_url        String? @db.Text
-  driver_name      String? @db.VarChar(255)
-  driver_phone     String? @db.VarChar(50)
-  driver_id_number String? @db.VarChar(100)
-  vehicle_plate    String? @db.VarChar(50)
-  notes            String? @db.Text
-
-  // New field for payment details
-  bank_name    String? @db.VarChar(100)
-  bank_account String? @db.VarChar(50)
-  kra_pin      String? @db.VarChar(20)
-
-  // NEW: Gate Entry ID field to link with vehicle_visits
-  gate_entry_id String? @map("gate_entry_id") @db.VarChar(50) // Links to vehicle_visits.gate_entry_id
-
-  // Per variety details (JSON array)
-  perVarietyWeights String? @default("[]") @db.Text // JSON array of {variety, weight, crates}
-
-  // Relations
-  counting_records CountingRecord[]
-  quality_checks   quality_checks[]
-  varieties        weight_entry_varieties[] // Relation to varieties table
-  vehicle_visits   vehicle_visits[] // Relation to vehicle visits
+  id                String  @id @default(cuid()) @db.VarChar(20)
+  pallet_id         String? @db.VarChar(100)
+  product           String? @db.VarChar(100)
+  weight            Decimal? @db.Decimal(10, 2)
+  unit              weight_entries_unit
+  timestamp         DateTime? @db.DateTime(0)
+  supplier          String? @db.VarChar(100)
+  truck_id          String? @db.VarChar(100)
+  driver_id         String? @db.VarChar(100)
+  gross_weight      Decimal? @db.Decimal(10, 2)
+  tare_weight       Decimal? @db.Decimal(10, 2)
+  net_weight        Decimal? @db.Decimal(10, 2)
+  declared_weight   Decimal? @db.Decimal(10, 2)
+  rejected_weight   Decimal? @db.Decimal(10, 2)
+  created_at        DateTime @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @updatedAt @db.DateTime(0)
+  supplier_id       String? @db.VarChar(255)
+  supplier_phone    String? @db.VarChar(50)
+  fuerte_weight     Decimal? @db.Decimal(10, 2)
+  fuerte_crates     Int? @default(0)
+  hass_weight       Decimal? @db.Decimal(10, 2)
+  hass_crates       Int? @default(0)
+  fruit_variety     String? @db.Text
+  number_of_crates  Int? @default(0)
+  region            String? @db.VarChar(100)
+  image_url         String? @db.Text
+  driver_name       String? @db.VarChar(255)
+  driver_phone      String? @db.VarChar(50)
+  driver_id_number  String? @db.VarChar(100)
+  vehicle_plate     String? @db.VarChar(50)
+  notes             String? @db.Text
+  bank_name         String? @db.VarChar(100)
+  bank_account      String? @db.VarChar(50)
+  kra_pin           String? @db.VarChar(20)
+  gate_entry_id     String? @map("gate_entry_id") @db.VarChar(50)
+  perVarietyWeights String? @default("[]") @db.Text
+  counting_records  CountingRecord[]
+  quality_checks    quality_checks[]
+  varieties         weight_entry_varieties[]
+  vehicle_visits    vehicle_visits[]
 
   @@index([pallet_id])
   @@index([supplier])
   @@index([timestamp])
-  @@index([gate_entry_id]) // New index for faster lookups
+  @@index([gate_entry_id])
   @@map("weight_entries")
 }
+
 
 model Driver {
   id                String    @id @default(cuid())
@@ -537,6 +542,7 @@ model Driver {
   @@index([phone_number])
   @@index([vehicle_plate])
 }
+
 
 model rejects {
   id                    String   @id @default(cuid())
@@ -566,6 +572,7 @@ model rejects {
   @@index([rejected_at])
   @@map("rejects")
 }
+
 
 model quality_checks {
   id                  String          @id @default(cuid()) @db.VarChar(20)
@@ -603,6 +610,7 @@ model quality_checks {
   @@map("quality_checks")
 }
 
+
 model CountingRecord {
   id                   String  @id @default(cuid())
   supplier_id          String?
@@ -612,53 +620,37 @@ model CountingRecord {
   pallet_id            String
   total_weight         Float
   total_counted_weight Float?
-
-  // Individual box count fields
-  fuerte_4kg_class1  Int @default(0)
-  fuerte_4kg_class2  Int @default(0)
-  fuerte_4kg_total   Int @default(0)
-  fuerte_10kg_class1 Int @default(0)
-  fuerte_10kg_class2 Int @default(0)
-  fuerte_10kg_total  Int @default(0)
-  hass_4kg_class1    Int @default(0)
-  hass_4kg_class2    Int @default(0)
-  hass_4kg_total     Int @default(0)
-  hass_10kg_class1   Int @default(0)
-  hass_10kg_class2   Int @default(0)
-  hass_10kg_total    Int @default(0)
-
-  // JSON data fields
-  counting_data String  @db.LongText
-  totals        String? @db.LongText
-
-  // Status and tracking
-  status       String?  @default("pending_coldroom")
-  for_coldroom Boolean? @default(true)
-
-  // Loading progress tracking
+  fuerte_4kg_class1    Int @default(0)
+  fuerte_4kg_class2    Int @default(0)
+  fuerte_4kg_total     Int @default(0)
+  fuerte_10kg_class1   Int @default(0)
+  fuerte_10kg_class2   Int @default(0)
+  fuerte_10kg_total    Int @default(0)
+  hass_4kg_class1      Int @default(0)
+  hass_4kg_class2      Int @default(0)
+  hass_4kg_total       Int @default(0)
+  hass_10kg_class1     Int @default(0)
+  hass_10kg_class2     Int @default(0)
+  hass_10kg_total      Int @default(0)
+  counting_data        String  @db.LongText
+  totals               String? @db.LongText
+  status               String? @default("pending_coldroom")
+  for_coldroom         Boolean? @default(true)
   boxes_loaded_to_coldroom    String? @db.LongText
-  total_boxes_loaded          Int?    @default(0)
-  loading_progress_percentage Int?    @default(0)
-
-  // Payment Details
-  bank_name    String? @db.VarChar(100)
-  bank_account String? @db.VarChar(50)
-  kra_pin      String? @db.VarChar(20)
-
-  // Metadata
-  submitted_at  DateTime @default(now())
-  processed_by  String
-  notes         String?
-  driver_name   String?  @db.VarChar(255)
-  vehicle_plate String?  @db.VarChar(50)
-
-  // Cold room tracking
+  total_boxes_loaded          Int? @default(0)
+  loading_progress_percentage Int? @default(0)
+  bank_name            String? @db.VarChar(100)
+  bank_account         String? @db.VarChar(50)
+  kra_pin              String? @db.VarChar(20)
+  submitted_at         DateTime @default(now())
+  processed_by         String
+  notes                String?
+  driver_name          String? @db.VarChar(255)
+  vehicle_plate        String? @db.VarChar(50)
   loaded_to_coldroom_at DateTime?
-  cold_room_loaded_to   String?   @db.VarChar(50)
-
-  // Relations
-  weight_entry    weight_entries?   @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
-  cold_room_boxes cold_room_boxes[]
+  cold_room_loaded_to   String? @db.VarChar(50)
+  weight_entry         weight_entries? @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
+  cold_room_boxes      cold_room_boxes[]
 
   @@index([supplier_id])
   @@index([pallet_id])
@@ -670,46 +662,35 @@ model CountingRecord {
   @@map("counting_records")
 }
 
+
 model utility_readings {
   id   Int      @id @default(autoincrement())
   date DateTime @default(now())
-
-  // Power readings
   powerOpening  String
   powerClosing  String
   powerConsumed String
-
-  // Water readings
   waterOpening  String
   waterClosing  String
   waterConsumed String
-
-  // Generator data
   generatorStart String
   generatorStop  String
   timeConsumed   String
   dieselConsumed String
   dieselRefill   String?
-
-  // Record details
   recordedBy String
   shift      String?
   notes      String?
-
-  // Metadata for detailed tracking (JSON format)
   metadata Json?
-
-  // Timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Indexes
   @@index([date])
   @@index([shift])
   @@index([recordedBy])
   @@index([createdAt])
   @@map("utility_readings")
 }
+
 
 model cold_room_boxes {
   id               String  @id @default(cuid())
@@ -720,24 +701,14 @@ model cold_room_boxes {
   loading_sheet_id String?
   quantity         Int
   cold_room_id     String  @db.VarChar(50)
-
-  // Supplier information
-  supplier_name String? @db.VarChar(255)
-  pallet_id     String? @db.VarChar(100) // Link to pallet
-  region        String? @db.VarChar(100)
-
-  // Pallet tracking
-  is_in_pallet           Boolean?  @default(false)
+  supplier_name    String? @db.VarChar(255)
+  pallet_id        String? @db.VarChar(100)
+  region           String? @db.VarChar(100)
+  is_in_pallet     Boolean? @default(false)
   converted_to_pallet_at DateTime?
-
-  // Link to counting record
   counting_record_id String?
   counting_record    CountingRecord? @relation(fields: [counting_record_id], references: [id], onDelete: Cascade)
-
-  // Link to pallet
-  pallet cold_room_pallets? @relation(fields: [pallet_id], references: [id], onDelete: SetNull)
-
-  // Metadata
+  pallet             cold_room_pallets? @relation(fields: [pallet_id], references: [id], onDelete: SetNull)
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt
 
@@ -754,26 +725,21 @@ model cold_room_boxes {
   @@map("cold_room_boxes")
 }
 
+
 model cold_room_pallets {
   id               String  @id @default(cuid())
   pallet_name      String? @db.VarChar(100)
-  pallet_count     Int     @default(1) // Number of physical pallets
+  pallet_count     Int     @default(1)
   cold_room_id     String  @db.VarChar(50)
-  is_manual        Boolean @default(false) // Whether created manually or automatically
+  is_manual        Boolean @default(false)
   total_boxes      Int     @default(0)
   total_weight_kg  Float   @default(0)
-  boxes_per_pallet Int     @default(288) // Standard boxes per pallet (4kg: 288, 10kg: 120)
-
-  locked           Boolean @default(false) // Prevents editing/dissolving when true
-
-  loading_sheet_id String? @db.VarChar(255) // Link to loading sheet
-
+  boxes_per_pallet Int     @default(288)
+  locked           Boolean @default(false)
+  loading_sheet_id String? @db.VarChar(255)
   created_at   DateTime @default(now())
   last_updated DateTime @default(now()) @updatedAt
-
-  // Relationship to boxes
-  boxes cold_room_boxes[]
-
+  boxes        cold_room_boxes[]
   loading_sheet loading_sheets? @relation(fields: [loading_sheet_id], references: [id], onDelete: SetNull)
 
   @@index([cold_room_id])
@@ -786,6 +752,7 @@ model cold_room_pallets {
   @@map("cold_room_pallets")
 }
 
+
 model temperature_logs {
   id           String   @id @default(cuid())
   cold_room_id String
@@ -797,6 +764,7 @@ model temperature_logs {
   @@index([timestamp])
   @@map("temperature_logs")
 }
+
 
 model repacking_records {
   id             String   @id @default(cuid())
@@ -812,6 +780,7 @@ model repacking_records {
   @@index([timestamp])
   @@map("repacking_records")
 }
+
 
 model loading_history {
   id                 String   @id @default(cuid())
@@ -840,6 +809,7 @@ model loading_history {
   @@map("loading_history")
 }
 
+
 model loading_sheets {
   id                  String                @id @default(cuid()) @db.VarChar(255)
   exporter            String                @db.VarChar(255)
@@ -865,48 +835,41 @@ model loading_sheets {
   updated_at          DateTime              @updatedAt
   carrier_assignments carrier_assignments[]
   loading_pallets     loading_pallets[]
-
-  cold_room_pallets cold_room_pallets[] // Reverse relation
+  cold_room_pallets cold_room_pallets[]
 
   @@map("loading_sheets")
 }
+
 
 model loading_pallets {
   id               String @id @default(cuid()) @db.VarChar(255)
   loading_sheet_id String @db.VarChar(255)
   pallet_no        Int
-
-  // Cold room info
-  cold_room_id       String? @db.VarChar(50)
-  original_pallet_id String? @db.VarChar(255) // Original pallet ID from cold_room_pallets
-  variety            String? @db.VarChar(50)
-  box_type           String? @db.VarChar(10)
-  size               String? @db.VarChar(20)
-  grade              String? @db.VarChar(20)
-  quantity           Int     @default(0)
-  supplier_name      String? @db.VarChar(255)
-  region             String? @db.VarChar(100)
+  cold_room_id     String? @db.VarChar(50)
+  original_pallet_id String? @db.VarChar(255)
+  variety          String? @db.VarChar(50)
+  box_type         String? @db.VarChar(10)
+  size             String? @db.VarChar(20)
+  grade            String? @db.VarChar(20)
+  quantity         Int     @default(0)
+  supplier_name    String? @db.VarChar(255)
+  region           String? @db.VarChar(100)
   counting_record_id String? @db.VarChar(255)
-
-  // Legacy fields (keep for backward compatibility)
-  temp       String? @db.VarChar(50)
-  trace_code String? @db.VarChar(100)
-  size12     Int     @default(0)
-  size14     Int     @default(0)
-  size16     Int     @default(0)
-  size18     Int     @default(0)
-  size20     Int     @default(0)
-  size22     Int     @default(0)
-  size24     Int     @default(0)
-  size26     Int     @default(0)
-  size28     Int     @default(0)
-  size30     Int     @default(0)
-  total      Int     @default(0)
-
-  // Timestamps
+  temp             String? @db.VarChar(50)
+  trace_code       String? @db.VarChar(100)
+  size12           Int     @default(0)
+  size14           Int     @default(0)
+  size16           Int     @default(0)
+  size18           Int     @default(0)
+  size20           Int     @default(0)
+  size22           Int     @default(0)
+  size24           Int     @default(0)
+  size26           Int     @default(0)
+  size28           Int     @default(0)
+  size30           Int     @default(0)
+  total            Int     @default(0)
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt
-
   loading_sheets loading_sheets @relation(fields: [loading_sheet_id], references: [id], onDelete: Cascade)
 
   @@index([loading_sheet_id], map: "loading_pallets_loading_sheet_id_fkey")
@@ -918,6 +881,7 @@ model loading_pallets {
   @@index([box_type])
   @@map("loading_pallets")
 }
+
 
 model carrier_assignments {
   id                   String            @id @default(cuid()) @db.VarChar(255)
@@ -940,6 +904,7 @@ model carrier_assignments {
   @@map("carrier_assignments")
 }
 
+
 model transit_history {
   id            String              @id @default(cuid()) @db.VarChar(255)
   assignment_id String              @db.VarChar(255)
@@ -956,6 +921,7 @@ model transit_history {
   @@map("transit_history")
 }
 
+
 model packaging_materials {
   id              String   @id @default(cuid())
   name            String
@@ -971,6 +937,7 @@ model packaging_materials {
 
   @@map("packaging_materials")
 }
+
 
 model User {
   id               String    @id @default(cuid())
@@ -992,6 +959,7 @@ model User {
   @@map("users")
 }
 
+
 model UserRole {
   id          String   @id @default(cuid())
   name        String   @unique @db.VarChar(100)
@@ -1007,6 +975,7 @@ model UserRole {
   @@map("user_roles")
 }
 
+
 model utility_rates {
   id             Int       @id @default(autoincrement())
   utility_type   String    @db.VarChar(50)
@@ -1021,6 +990,7 @@ model utility_rates {
   @@index([effective_from])
   @@map("utility_rates")
 }
+
 
 model internet_costs {
   id               Int       @id @default(autoincrement())
@@ -1038,6 +1008,7 @@ model internet_costs {
   @@map("internet_costs")
 }
 
+
 model utility_notifications {
   id                Int       @id @default(autoincrement())
   user_id           String?   @db.VarChar(255)
@@ -1051,6 +1022,7 @@ model utility_notifications {
   @@index([enabled])
   @@map("utility_notifications")
 }
+
 
 model utility_area_consumption {
   id              Int      @id @default(autoincrement())
@@ -1080,6 +1052,7 @@ model water_meters {
   @@index([status])
   @@map("water_meters")
 }
+
 
 model generator_details {
   id             Int       @id @default(autoincrement())
@@ -1117,11 +1090,11 @@ model supplier_checkins {
   phone_number    String
   id_number       String
   vehicle_plate   String
-  fruit_varieties String    @db.Text // JSON array of fruit varieties
+  fruit_varieties String    @db.Text
   region          String?
   check_in_time   DateTime  @default(now())
   check_out_time  DateTime?
-  status          String    @default("checked_in") // checked_in, weighed, completed
+  status          String    @default("checked_in")
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 

@@ -1,3 +1,4 @@
+// src/app/vehicle-management/page.tsx
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -89,6 +90,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Updated Vehicle Visit type with gate entry tracking
 interface VehicleVisit {
@@ -117,11 +119,11 @@ interface VehicleVisit {
   totalVisits?: number;
   
   // New gate entry fields
-  gateEntryId?: string;           // Unique ID for this gate entry (GATE-YYYYMMDD-XXXX)
-  gateEntryNumber?: number;        // Sequential number for the day
-  gateEntryDate?: string;          // Date part (YYYYMMDD)
-  isRecheckIn?: boolean;           // Whether this is a recheck-in
-  previousGateEntryId?: string;    // Previous gate entry ID if rechecked in
+  gateEntryId?: string;
+  gateEntryNumber?: number;
+  gateEntryDate?: string;
+  isRecheckIn?: boolean;
+  previousGateEntryId?: string;
 }
 
 type DateRange = {
@@ -136,10 +138,21 @@ interface VisitStats {
   uniqueSuppliers: number;
   activeVisits: number;
   todayVisits: number;
-  todayGateEntries: number;        // New: Today's gate entries
+  todayGateEntries: number;
   returningRate: number;
   averageVisitsPerSupplier: number;
 }
+
+// Helper function to get current user
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
 
 export default function VehicleManagementPage() {
   // State for visits
@@ -147,7 +160,7 @@ export default function VehicleManagementPage() {
   const [filteredVehicles, setFilteredVehicles] = useState<VehicleVisit[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [gateEntryFilter, setGateEntryFilter] = useState<string>(''); // New: Filter by gate entry ID
+  const [gateEntryFilter, setGateEntryFilter] = useState<string>('');
   
   // UI State
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
@@ -335,6 +348,19 @@ export default function VehicleManagementPage() {
         averageVisitsPerSupplier: avgVisits
       });
       
+      // ✅ LOG DATA REFRESH
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DATA_REFRESH',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          totalVisits: convertedVisits.length,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
     } catch (error: any) {
       console.error('❌ Error fetching visits:', error);
       setApiError(error.message || 'Could not connect to database');
@@ -436,6 +462,19 @@ export default function VehicleManagementPage() {
     setApiError(null);
     try {
       await fetchSupplierVehicles();
+      
+      // ✅ LOG REFRESH ACTION
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DATA_REFRESH_MANUAL',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Data Refreshed',
         description: 'Latest vehicle visit data has been loaded.',
@@ -464,6 +503,7 @@ export default function VehicleManagementPage() {
   // Handle new vehicle registration (creates a visit)
   const handleAddVehicle = async (values: SupplierFormValues) => {
     try {
+      const currentUser = await getCurrentUser();
       console.log('🔄 Registering new vehicle visit with data:', values);
       
       const response = await fetch('/api/vehicle-visits', {
@@ -528,6 +568,25 @@ export default function VehicleManagementPage() {
       setVehicles(prev => [newVehicle, ...prev]);
       setNewlyRegisteredVehicle(newVehicle);
       
+      // ✅ LOG VEHICLE REGISTRATION
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_REGISTERED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: data.visit.id,
+          visitNumber: data.visit.visit_number,
+          supplierId: data.supplier.id,
+          driverName: values.driverName,
+          company: values.company || values.driverName,
+          vehiclePlate: values.vehicleRegNo,
+          vehicleType: values.vehicleType,
+          isReturning: data.visit.visit_number > 1,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: data.isNewSupplier ? 'New Supplier Registered' : 'Returning Supplier',
         description: data.message,
@@ -535,6 +594,22 @@ export default function VehicleManagementPage() {
       
     } catch (error: any) {
       console.error('❌ Error registering vehicle visit:', error);
+      
+      // ✅ LOG VEHICLE REGISTRATION FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_REGISTERED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          driverName: values.driverName,
+          company: values.company || values.driverName,
+          vehiclePlate: values.vehicleRegNo,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Registration Failed',
@@ -563,6 +638,7 @@ export default function VehicleManagementPage() {
     }
 
     try {
+      const currentUser = await getCurrentUser();
       const vehicle = vehicles.find(v => v.id === vehicleId);
       if (!vehicle) return;
 
@@ -609,6 +685,25 @@ export default function VehicleManagementPage() {
       setVehicles(prev => prev.map(v => v.id === vehicleId ? updatedVehicle : v));
       setSelectedVehicle(updatedVehicle);
 
+      // ✅ LOG VEHICLE CHECK-IN
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CHECKED_IN',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          visitNumber: vehicle.visitNumber,
+          gateEntryId: data.visit.gate_entry_id,
+          gateEntryNumber: data.visit.gate_entry_number,
+          driverName: vehicle.driverName,
+          company: vehicle.company,
+          vehiclePlate: vehicle.vehiclePlate,
+          isRecheckIn: false,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: "Vehicle Checked In",
         description: `Checked in with Gate ID: ${data.visit.gate_entry_id}`,
@@ -618,6 +713,20 @@ export default function VehicleManagementPage() {
       
     } catch (error: any) {
       console.error('Error checking in:', error);
+      
+      // ✅ LOG VEHICLE CHECK-IN FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CHECKED_IN',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Check-in Failed',
@@ -630,6 +739,7 @@ export default function VehicleManagementPage() {
   // Handle check-out
   const handleCheckOut = async (vehicleId: string, final: boolean = false) => {
     try {
+      const currentUser = await getCurrentUser();
       const vehicle = vehicles.find(v => v.id === vehicleId);
       if (!vehicle) return;
 
@@ -661,6 +771,24 @@ export default function VehicleManagementPage() {
 
       setVehicles(prev => prev.map(v => v.id === vehicleId ? updatedVehicle : v));
       
+      // ✅ LOG VEHICLE CHECK-OUT
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: final ? 'VEHICLE_EXIT_VERIFIED' : 'VEHICLE_CHECKED_OUT',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          visitNumber: vehicle.visitNumber,
+          driverName: vehicle.driverName,
+          company: vehicle.company,
+          vehiclePlate: vehicle.vehiclePlate,
+          gateEntryId: vehicle.gateEntryId,
+          checkOutTime: final ? data.visit.check_out_time : undefined,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       if (final) {
         setSelectedVehicle(null);
         toast({
@@ -678,6 +806,21 @@ export default function VehicleManagementPage() {
       
     } catch (error: any) {
       console.error('Error during checkout:', error);
+      
+      // ✅ LOG VEHICLE CHECK-OUT FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: final ? 'VEHICLE_EXIT_VERIFIED' : 'VEHICLE_CHECKED_OUT',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Error',
         description: error.message || 'Failed to process checkout',
@@ -693,9 +836,10 @@ export default function VehicleManagementPage() {
   };
 
   const handlePrintReport = async () => {
-    const element = printRef.current;
-    if (element) {
-      try {
+    try {
+      const currentUser = await getCurrentUser();
+      const element = printRef.current;
+      if (element) {
         const canvas = await html2canvas(element, { 
           scale: 2,
           useCORS: true,
@@ -710,18 +854,30 @@ export default function VehicleManagementPage() {
         pdf.addImage(data, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`vehicle-visits-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
         
+        // ✅ LOG PDF REPORT GENERATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'VEHICLE_PDF_REPORTED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            vehicleCount: vehicles.length,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         toast({
           title: 'Report Generated',
           description: 'Vehicle visits report has been downloaded as PDF.',
         });
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-        toast({
-          title: 'PDF Generation Failed',
-          description: 'Could not generate PDF report.',
-          variant: 'destructive',
-        });
       }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: 'PDF Generation Failed',
+        description: 'Could not generate PDF report.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -799,6 +955,8 @@ export default function VehicleManagementPage() {
 
     setIsExportingCSV(true);
     try {
+      const currentUser = await getCurrentUser();
+      
       const headers = [
         'Visit #',
         'Gate Entry ID',
@@ -852,6 +1010,19 @@ export default function VehicleManagementPage() {
       link.click();
       document.body.removeChild(link);
 
+      // ✅ LOG CSV EXPORT
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          recordCount: vehicles.length,
+          filename: filename,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'CSV Export Complete',
         description: `All visits (${vehicles.length} records) have been downloaded.`,
@@ -859,6 +1030,20 @@ export default function VehicleManagementPage() {
       
     } catch (error) {
       console.error('Error exporting CSV:', error);
+      
+      // ✅ LOG CSV EXPORT FAILURE
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         variant: 'destructive',
         title: 'Export Failed',

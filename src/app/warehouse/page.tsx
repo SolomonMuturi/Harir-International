@@ -746,7 +746,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
     doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 4.5);
-    yPos += 10;
+    yPos += 12;
     
     // Start both sections at the same position with minimal padding
     let leftY = yPos;

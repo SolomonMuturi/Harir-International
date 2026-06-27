@@ -1,8 +1,14 @@
 // src/app/api/activity-logs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { randomBytes } from 'crypto';
 
 const prisma = new PrismaClient();
+
+// Generate a 20-character ID
+function generateId(): string {
+  return randomBytes(10).toString('hex').substring(0, 20);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +20,6 @@ export async function GET(request: NextRequest) {
     const fromDate = searchParams.get('from');
     const toDate = searchParams.get('to');
 
-    // Build where clause
     const where: any = {};
 
     if (status && status !== 'all') {
@@ -41,7 +46,6 @@ export async function GET(request: NextRequest) {
       where.timestamp = { ...where.timestamp, lte: to };
     }
 
-    // Fetch logs
     const logs = await prisma.activity_logs.findMany({
       where,
       orderBy: {
@@ -51,10 +55,8 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
-    // Get total count
     const total = await prisma.activity_logs.count({ where });
 
-    // Get status counts
     const statusCounts = await prisma.$transaction([
       prisma.activity_logs.count({ where: { ...where, status: 'success' } }),
       prisma.activity_logs.count({ where: { ...where, status: 'failure' } }),
@@ -101,7 +103,9 @@ export async function POST(request: NextRequest) {
                request.headers.get('x-real-ip') ||
                'unknown';
 
-    // Validate required fields
+    // Log what we're receiving
+    console.log('📝 Received activity log request:', body);
+
     if (!body.action) {
       return NextResponse.json(
         {
@@ -112,18 +116,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create activity log
+    // Generate a unique ID
+    const id = generateId();
+
+    // Prepare the data
+    const data = {
+      id: id,
+      user: body.user || null,
+      avatar: body.avatar || null,
+      action: body.action,
+      ip: body.ip || ip,
+      timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
+      status: body.status || 'success',
+      created_at: new Date(),
+      metadata: body.metadata ? JSON.stringify(body.metadata) : null,
+    };
+
+    console.log('📤 Creating activity log with data:', data);
+
+    // Create the log
     const log = await prisma.activity_logs.create({
-      data: {
-        user: body.user || null,
-        avatar: body.avatar || null,
-        action: body.action,
-        ip: body.ip || ip,
-        timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
-        status: body.status || 'success',
-        created_at: new Date(),
-      },
+      data: data,
     });
+
+    console.log('✅ Activity log created:', log);
 
     return NextResponse.json({
       success: true,
@@ -132,12 +148,56 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Error creating activity log:', error);
+    console.error('❌ Error creating activity log:', error);
+    
+    // Check for specific errors
+    if (error.code === 'P2002') {
+      // Unique constraint failed - retry with new ID
+      try {
+        const body = await request.json();
+        const ip = request.headers.get('x-forwarded-for') ||
+                   request.headers.get('x-real-ip') ||
+                   'unknown';
+        
+        const newId = generateId();
+        const log = await prisma.activity_logs.create({
+          data: {
+            id: newId,
+            user: body.user || null,
+            avatar: body.avatar || null,
+            action: body.action,
+            ip: body.ip || ip,
+            timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
+            status: body.status || 'success',
+            created_at: new Date(),
+            metadata: body.metadata ? JSON.stringify(body.metadata) : null,
+          },
+        });
+        
+        return NextResponse.json({
+          success: true,
+          log,
+          message: 'Activity logged successfully (retry)',
+        });
+      } catch (retryError) {
+        console.error('❌ Error on retry:', retryError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to create activity log after retry',
+            message: retryError instanceof Error ? retryError.message : 'Unknown error',
+          },
+          { status: 500 }
+        );
+      }
+    }
+
     return NextResponse.json(
       {
         success: false,
         error: 'Failed to create activity log',
         message: error.message,
+        code: error.code,
       },
       { status: 500 }
     );

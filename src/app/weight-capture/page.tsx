@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { format, isSameDay, parseISO, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isWithinInterval, parse, isValid } from 'date-fns';
+import { format, isSameDay, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,9 +37,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import { logActivity } from '@/lib/activity-logger';
 
-// Define types (keeping all existing types from your original code)
+// Define types
 interface WeightEntry {
   id: string;
   pallet_id: string;
@@ -214,16 +214,14 @@ interface EditWeightFormData {
 type RejectSortField = 'date' | 'supplier' | 'weight' | 'status';
 type RejectSortDirection = 'asc' | 'desc';
 
-// NEW: Date range filter type
 interface DateRangeFilter {
   from: Date | undefined;
   to: Date | undefined;
   includeTime: boolean;
-  fromTime?: string; // Format: "HH:mm"
-  toTime?: string;   // Format: "HH:mm"
+  fromTime?: string;
+  toTime?: string;
 }
 
-// Preset date ranges
 type DateRangePreset = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'custom';
 
 const getChangeIcon = (changeType: 'increase' | 'decrease' | 'neutral') => {
@@ -250,7 +248,6 @@ const getStatusBadge = (status: RejectionEntry['status']) => {
   }
 };
 
-// Helper function to get current user
 const getCurrentUser = async () => {
   try {
     const response = await fetch('/api/auth/session');
@@ -272,14 +269,10 @@ export default function WeightCapturePage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
-  
-  // NEW: Track processed gate entry IDs
   const [processedGateIds, setProcessedGateIds] = useState<Set<string>>(new Set());
-  
   const [processedCheckIns, setProcessedCheckIns] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<CheckedInSupplier | null>(null);
   
-  // NEW: Enhanced date range filtering
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>({
     from: startOfDay(new Date()),
     to: endOfDay(new Date()),
@@ -359,7 +352,6 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
-  // Helper function to apply time to date
   const applyTimeToDate = (date: Date | undefined, timeStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
     if (!date) return undefined;
     
@@ -377,7 +369,6 @@ export default function WeightCapturePage() {
     return newDate;
   };
 
-  // Apply preset date range
   const applyDateRangePreset = useCallback((preset: DateRangePreset) => {
     const now = new Date();
     let from: Date, to: Date;
@@ -421,7 +412,6 @@ export default function WeightCapturePage() {
     setDateRangePreset(preset);
   }, [dateRangeFilter.includeTime]);
 
-  // Check if an entry falls within the date range
   const isWithinDateRange = useCallback((entryDate: Date): boolean => {
     const { from, to, includeTime, fromTime, toTime } = dateRangeFilter;
     
@@ -435,12 +425,10 @@ export default function WeightCapturePage() {
     if (rangeEnd) {
       return entryDate >= rangeStart && entryDate <= rangeEnd;
     } else {
-      // Single day filter
       return isSameDay(entryDate, rangeStart);
     }
   }, [dateRangeFilter]);
 
-  // Delete checked-in supplier
   const handleDeleteSupplier = useCallback(async (supplierId: string) => {
     if (!window.confirm('Are you sure you want to delete this supplier from checked-in list?')) return;
     try {
@@ -456,7 +444,6 @@ export default function WeightCapturePage() {
         description: 'Supplier has been removed from checked-in list.',
       });
       
-      // ✅ LOG SUPPLIER DELETION
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
@@ -477,7 +464,6 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Fetch all weight entries
   const fetchWeights = useCallback(async () => {
     try {
       setError(null);
@@ -488,7 +474,6 @@ export default function WeightCapturePage() {
       }
       
       const data = await response.json();
-      console.log('📊 Fetched weights data:', data);
       
       let weightsArray: WeightEntry[] = [];
       let gateIds = new Set<string>();
@@ -524,7 +509,6 @@ export default function WeightCapturePage() {
       }
       
       setProcessedGateIds(gateIds);
-      console.log('🔑 Processed gate IDs:', Array.from(gateIds));
       
       const processedSet = new Set<string>();
       weightsArray.forEach((entry: WeightEntry) => {
@@ -567,7 +551,6 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Fetch checked-in suppliers
   const fetchCheckedInSuppliers = useCallback(async () => {
     try {
       const response = await fetch('/api/suppliers/checked-in');
@@ -577,7 +560,6 @@ export default function WeightCapturePage() {
       }
       
       const data: CheckedInSupplier[] = await response.json();
-      console.log('🚚 Fetched checked-in suppliers:', data);
       
       const suppliersWithSession = data.map(supplier => ({
         ...supplier,
@@ -592,7 +574,6 @@ export default function WeightCapturePage() {
     }
   }, []);
 
-  // Fetch counting history
   const fetchCountingHistory = useCallback(async () => {
     try {
       const response = await fetch('/api/counting?action=history');
@@ -609,7 +590,6 @@ export default function WeightCapturePage() {
     }
   }, []);
 
-  // Fetch rejects
   const fetchRejects = useCallback(async () => {
     try {
       setIsRejectsLoading(true);
@@ -636,13 +616,11 @@ export default function WeightCapturePage() {
     }
   }, []);
 
-  // Calculate statistics
   const calculateStatistics = useCallback(() => {
     const today = new Date();
     const weekAgo = subDays(today, 7);
     const monthAgo = subDays(today, 30);
 
-    // Merge weights and rejects for statistics
     let allEntries: Array<any> = [...weights];
     rejects.forEach(reject => {
       allEntries.push({
@@ -727,7 +705,6 @@ export default function WeightCapturePage() {
     setDailySummaries(summaries);
   }, [weights, rejects, statsPeriod]);
 
-  // Fetch KPI data
   const fetchKpiData = useCallback(() => {
     try {
       const today = new Date();
@@ -784,7 +761,6 @@ export default function WeightCapturePage() {
     }
   }, [weights, checkedInSuppliers, processedCheckIns, processedGateIds]);
 
-  // Load initial data - only once on mount
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -800,7 +776,6 @@ export default function WeightCapturePage() {
     loadData();
   }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects]);
 
-  // Update KPI and statistics when weights change
   useEffect(() => {
     if (!isLoading) {
       fetchKpiData();
@@ -808,14 +783,12 @@ export default function WeightCapturePage() {
     }
   }, [weights, fetchKpiData, calculateStatistics, isLoading]);
 
-  // NEW: Fetch history when date range changes
   useEffect(() => {
     if (activeTab === 'history') {
       fetchHistoryWeights();
     }
   }, [dateRangeFilter, activeTab]);
 
-  // Filter and sort rejects
   useEffect(() => {
     let filtered = [...rejects];
 
@@ -877,12 +850,10 @@ export default function WeightCapturePage() {
     setFilteredRejects(filtered);
   }, [rejects, rejectSearchTerm, rejectDateFilter, rejectStatusFilter, rejectSortField, rejectSortDirection]);
 
-  // Function to refresh all data
   const refreshAllData = useCallback(async () => {
     setIsRefreshing(true);
     const currentUser = await getCurrentUser();
     
-    // ✅ LOG DATA REFRESH
     await logActivity({
       user: currentUser?.name || 'System',
       action: 'WEIGHT_DATA_REFRESH',
@@ -907,7 +878,6 @@ export default function WeightCapturePage() {
     });
   }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, toast]);
 
-  // NEW: Fetch history weights by date range
   const fetchHistoryWeights = useCallback(() => {
     setIsHistoryLoading(true);
     try {
@@ -917,43 +887,33 @@ export default function WeightCapturePage() {
       });
       
       setHistoryWeights(filteredWeights);
-      
-      if (filteredWeights.length === 0) {
-        const { from, to } = dateRangeFilter;
-        let dateDescription = '';
-        
-        if (from && to) {
-          dateDescription = `${format(from, 'MMM d, yyyy')} to ${format(to, 'MMM d, yyyy')}`;
-          if (dateRangeFilter.includeTime) {
-            dateDescription += ` (${dateRangeFilter.fromTime} - ${dateRangeFilter.toTime})`;
-          }
-        } else if (from) {
-          dateDescription = format(from, 'MMMM d, yyyy');
-          if (dateRangeFilter.includeTime) {
-            dateDescription += ` from ${dateRangeFilter.fromTime}`;
-          }
-        }
-        
-        toast({
-          title: 'No Data Found',
-          description: `No weight entries found for ${dateDescription}`,
-          variant: 'default',
-        });
-      }
     } catch (error: any) {
       console.error('Error filtering history:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to filter history data',
-        variant: 'destructive',
-      });
       setHistoryWeights([]);
     } finally {
       setIsHistoryLoading(false);
     }
-  }, [weights, dateRangeFilter, isWithinDateRange, toast]);
+  }, [weights, dateRangeFilter, isWithinDateRange]);
 
-  // Generate pallet ID
+  // Get filtered history weights with search and region filters applied
+  const getFilteredHistoryWeights = useCallback(() => {
+    return historyWeights.filter(entry => {
+      if (!searchQuery && filterRegion === 'all') return true;
+      
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || 
+        (entry.supplier?.toLowerCase().includes(query)) ||
+        (entry.driver_name?.toLowerCase().includes(query)) ||
+        (entry.vehicle_plate?.toLowerCase().includes(query)) ||
+        (entry.pallet_id?.toLowerCase().includes(query)) ||
+        (entry.gate_entry_id?.toLowerCase().includes(query));
+      
+      const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
+      
+      return matchesSearch && matchesRegion;
+    });
+  }, [historyWeights, searchQuery, filterRegion]);
+
   const generatePalletId = useCallback(() => {
     const today = new Date();
     const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
@@ -964,7 +924,6 @@ export default function WeightCapturePage() {
     return `PAL-${palletNum}/${dateStr}`;
   }, [palletCounter]);
 
-  // Handle Add Weight - UPDATED with gate_entry_id
   const handleAddWeight = useCallback(async (weightData: any) => {
     try {
       const currentUser = await getCurrentUser();
@@ -979,7 +938,7 @@ export default function WeightCapturePage() {
         (submittedSupplierId ? `${submittedSupplierId}_${new Date().getTime()}` : undefined);
       const generatedPalletId = weightData.pallet_id || generatePalletId();
       const gateEntryId = weightData.gate_entry_id || selectedSupplier?.gate_entry_id;
-      console.log('🔑 Using gate entry ID for weight:', gateEntryId);
+      
       const payload = {
         pallet_id: generatedPalletId,
         unit: weightData.unit || 'kg',
@@ -1004,7 +963,7 @@ export default function WeightCapturePage() {
         check_in_session: checkInSession,
         gate_entry_id: gateEntryId,
       };
-      console.log('📦 Sending weight payload:', payload);
+      
       const response = await fetch('/api/weights', {
         method: 'POST',
         headers: {
@@ -1012,6 +971,7 @@ export default function WeightCapturePage() {
         },
         body: JSON.stringify(payload),
       });
+      
       if (!response.ok) {
         let errorMessage = 'Failed to save weight';
         try {
@@ -1022,17 +982,19 @@ export default function WeightCapturePage() {
         }
         throw new Error(errorMessage);
       }
+      
       const savedEntry = await response.json();
       setWeights(prev => [savedEntry, ...prev]);
       setLastWeightEntry(savedEntry);
+      
       if (gateEntryId) {
         setProcessedGateIds(prev => {
           const newSet = new Set(prev);
           newSet.add(gateEntryId);
           return newSet;
         });
-        console.log('✅ Added gate entry ID to processed set:', gateEntryId);
       }
+      
       if (checkInSession) {
         setProcessedCheckIns(prev => {
           const newSet = new Set(prev);
@@ -1040,9 +1002,9 @@ export default function WeightCapturePage() {
           return newSet;
         });
       }
+      
       setIsReceiptOpen(true);
       
-      // ✅ LOG WEIGHT SAVED
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_ENTRY_CREATED',
@@ -1074,7 +1036,6 @@ export default function WeightCapturePage() {
       console.error('Error adding weight:', error);
       setError(error.message || 'Failed to save weight entry');
       
-      // ✅ LOG WEIGHT SAVE FAILURE
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
@@ -1095,7 +1056,6 @@ export default function WeightCapturePage() {
     }
   }, [generatePalletId, selectedSupplier, toast]);
 
-  // Handle supplier selection
   const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier) => {
     if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
       toast({
@@ -1126,7 +1086,6 @@ export default function WeightCapturePage() {
     });
   }, [processedCheckIns, processedGateIds, toast]);
 
-  // Extract variety data
   const extractVarietyData = useCallback((weights: WeightEntry[]) => {
     const varietyMap = new Map<string, { weight: number; crates: number }>();
     
@@ -1173,242 +1132,249 @@ export default function WeightCapturePage() {
       .sort((a, b) => a.variety.localeCompare(b.variety));
   }, []);
 
-// Generate CSV data
-const generateCSVData = useCallback((weights: WeightEntry[]) => {
-  const supplierMap = new Map<string, any>();
+  // Generate CSV data from filtered weights
+  const generateCSVData = useCallback((weightsToExport: WeightEntry[]) => {
+    const supplierMap = new Map<string, any>();
 
-  // Merge weights and rejects for supplier intake/history
-  const allEntries = [
-    ...weights.map(w => ({
-      ...w,
-      supplier_phone: (w as any).supplier_phone || '',
-      driver_phone: (w as any).driver_phone || '',
-      vehicle_plate: (w as any).vehicle_plate || '',
-      gate_entry_id: (w as any).gate_entry_id || '',
-      driver_name: (w as any).driver_name || '',
-      status: undefined,
-    })),
-    ...rejects.map(reject => ({
-      ...reject,
-      fuerte_weight: reject.fuerte_weight || 0,
-      fuerte_crates: reject.fuerte_crates || 0,
-      hass_weight: reject.hass_weight || 0,
-      hass_crates: reject.hass_crates || 0,
-      created_at: reject.rejected_at,
-      supplier: reject.supplier_name,
-      supplier_id: reject.supplier_id,
-      region: reject.region,
-      pallet_id: reject.pallet_id || '',
-      status: 'rejected',
-      supplier_phone: '',
-      driver_phone: '',
-      vehicle_plate: '',
-      gate_entry_id: '',
-      driver_name: '',
-    }))
-  ];
-
-  allEntries.forEach(entry => {
-    const date = new Date(entry.created_at).toISOString().split('T')[0];
-    const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
-    const phoneKey = entry.supplier_phone || entry.driver_phone || '';
-    const vehicleKey = entry.vehicle_plate || '';
-    const regionKey = entry.region || '';
-    const gateKey = entry.gate_entry_id || '';
-
-    const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
-
-    if (!supplierMap.has(key)) {
-      supplierMap.set(key, {
-        date,
-        time,
-        supplier_name: supplierKey,
-        phone_number: phoneKey,
-        vehicle_plate_number: vehicleKey,
-        gate_entry_id: gateKey,
-        fuerte_weight: 0,
-        hass_weight: 0,
-        total_weight: 0,
-        fuerte_crates_in: 0,
-        hass_crates_in: 0,
-        rejected_crates: 0,
-        total_crates: 0,
-        region: regionKey,
-        status: entry.status === 'rejected' ? 'rejected' : undefined,
-      });
-    }
-
-    const row = supplierMap.get(key)!;
-
-    row.fuerte_weight += entry.fuerte_weight || 0;
-    row.fuerte_crates_in += entry.fuerte_crates || 0;
-    row.hass_weight += entry.hass_weight || 0;
-    row.hass_crates_in += entry.hass_crates || 0;
-    row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
-    row.total_weight = row.fuerte_weight + row.hass_weight;
-    row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
-  });
-
-  return Array.from(supplierMap.values());
-}, [rejects]);
-
-// Download CSV with totals row
-const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
-  const currentUser = await getCurrentUser();
-  const csvData = generateCSVData(weights);
-  
-  if (csvData.length === 0) {
-    toast({
-      title: 'No Data',
-      description: 'No data available to download for the selected date range.',
-      variant: 'destructive',
-    });
-    return;
-  }
-  
-  const totals = csvData.reduce((acc, row) => {
-    return {
-      totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
-      totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
-      totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
-      totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
-      totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
-      totalCrates: acc.totalCrates + (row.total_crates || 0),
-      totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
-    };
-  }, {
-    totalFuerteWeight: 0,
-    totalHassWeight: 0,
-    totalFuerteCrates: 0,
-    totalHassCrates: 0,
-    totalRejectedCrates: 0,
-    totalCrates: 0,
-    totalWeight: 0
-  });
-  
-  const headers = [
-    'Date',
-    'Time',
-    'Supplier Name',
-    'Phone Number',
-    'Vehicle Plate Number',
-    'Gate Entry ID',
-    'Fuerte Weight (kg)',
-    'Hass Weight (kg)',
-    'Fuerte Crates In',
-    'Hass Crates In',
-    'Rejected Crates',
-    'Total Crates',
-    'Region'
-  ];
-  
-  const rows = csvData.map(row => {
-    // Format phone number to prevent scientific notation
-    // Add a tab character at the start to force text format in Excel
-    const phoneNumber = row.phone_number ? `"\t${row.phone_number}"` : '""';
-    
-    return [
-      row.date,
-      row.time,
-      `"${row.supplier_name}"`,
-      phoneNumber, // Formatted phone number
-      `"${row.vehicle_plate_number}"`,
-      `"${row.gate_entry_id}"`,
-      row.fuerte_weight.toFixed(2),
-      row.hass_weight.toFixed(2),
-      row.fuerte_crates_in,
-      row.hass_crates_in,
-      row.rejected_crates,
-      row.total_crates,
-      `"${row.region}"`
+    // Merge weights and rejects for supplier intake/history
+    const allEntries = [
+      ...weightsToExport.map(w => ({
+        ...w,
+        supplier_phone: (w as any).supplier_phone || '',
+        driver_phone: (w as any).driver_phone || '',
+        vehicle_plate: (w as any).vehicle_plate || '',
+        gate_entry_id: (w as any).gate_entry_id || '',
+        driver_name: (w as any).driver_name || '',
+        status: undefined,
+      })),
+      ...rejects.map(reject => ({
+        ...reject,
+        fuerte_weight: reject.fuerte_weight || 0,
+        fuerte_crates: reject.fuerte_crates || 0,
+        hass_weight: reject.hass_weight || 0,
+        hass_crates: reject.hass_crates || 0,
+        created_at: reject.rejected_at,
+        supplier: reject.supplier_name,
+        supplier_id: reject.supplier_id,
+        region: reject.region,
+        pallet_id: reject.pallet_id || '',
+        status: 'rejected',
+        supplier_phone: '',
+        driver_phone: '',
+        vehicle_plate: '',
+        gate_entry_id: '',
+        driver_name: '',
+      }))
     ];
-  });
-  
-  // Add empty row for spacing
-  rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
-  
-  // Add totals row
-  rows.push([
-    'TOTALS',
-    '',
-    '',
-    '',
-    '',
-    '',
-    totals.totalFuerteWeight.toFixed(2),
-    totals.totalHassWeight.toFixed(2),
-    totals.totalFuerteCrates,
-    totals.totalHassCrates,
-    totals.totalRejectedCrates,
-    totals.totalCrates,
-    ''
-  ]);
-  
-  // Add grand total row
-  rows.push([
-    'GRAND TOTAL',
-    '',
-    '',
-    '',
-    '',
-    '',
-    'Total Fruits Weight:',
-    totals.totalWeight.toFixed(2) + ' kg',
-    '',
-    '',
-    '',
-    '',
-    ''
-  ]);
-  
-  // Create CSV content with BOM for Excel compatibility
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.join(','))
-  ].join('\n');
-  
-  // Add UTF-8 BOM for Excel to recognize UTF-8 encoding
-  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.setAttribute('href', url);
-  
-  const { from, to } = dateRangeFilter;
-  let filename = 'weight_data';
-  if (from && to) {
-    filename += `_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`;
-  } else if (from) {
-    filename += `_${format(from, 'yyyy-MM-dd')}`;
-  }
-  link.setAttribute('download', `${filename}.csv`);
-  
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  // ✅ LOG CSV EXPORT
-  await logActivity({
-    user: currentUser?.name || 'System',
-    action: 'WEIGHT_CSV_EXPORTED',
-    status: 'success',
-    metadata: {
-      userId: currentUser?.id,
-      recordCount: csvData.length,
-      filename: filename,
-      timestamp: new Date().toISOString(),
-    },
-  });
-  
-  toast({
-    title: 'CSV Downloaded',
-    description: `Weight data for selected period has been downloaded with totals.`,
-  });
-}, [generateCSVData, dateRangeFilter, toast]);
 
+    allEntries.forEach(entry => {
+      const date = new Date(entry.created_at).toISOString().split('T')[0];
+      const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
+      const phoneKey = entry.supplier_phone || entry.driver_phone || '';
+      const vehicleKey = entry.vehicle_plate || '';
+      const regionKey = entry.region || '';
+      const gateKey = entry.gate_entry_id || '';
 
-  // Download Supplier GRN - UPDATED to include gate entry ID
+      const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
+
+      if (!supplierMap.has(key)) {
+        supplierMap.set(key, {
+          date,
+          time,
+          supplier_name: supplierKey,
+          phone_number: phoneKey,
+          vehicle_plate_number: vehicleKey,
+          gate_entry_id: gateKey,
+          fuerte_weight: 0,
+          hass_weight: 0,
+          total_weight: 0,
+          fuerte_crates_in: 0,
+          hass_crates_in: 0,
+          rejected_crates: 0,
+          total_crates: 0,
+          region: regionKey,
+          status: entry.status === 'rejected' ? 'rejected' : undefined,
+        });
+      }
+
+      const row = supplierMap.get(key)!;
+
+      row.fuerte_weight += entry.fuerte_weight || 0;
+      row.fuerte_crates_in += entry.fuerte_crates || 0;
+      row.hass_weight += entry.hass_weight || 0;
+      row.hass_crates_in += entry.hass_crates || 0;
+      row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
+      row.total_weight = row.fuerte_weight + row.hass_weight;
+      row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
+    });
+
+    return Array.from(supplierMap.values());
+  }, [rejects]);
+
+  // Download CSV with totals row - UPDATED to use filtered data
+  const downloadCSV = useCallback(async () => {
+    const currentUser = await getCurrentUser();
+    const filteredData = getFilteredHistoryWeights();
+    
+    if (filteredData.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No data available to download for the selected filters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const csvData = generateCSVData(filteredData);
+    
+    if (csvData.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No data available to download for the selected filters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const totals = csvData.reduce((acc, row) => {
+      return {
+        totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
+        totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
+        totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
+        totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
+        totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
+        totalCrates: acc.totalCrates + (row.total_crates || 0),
+        totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
+      };
+    }, {
+      totalFuerteWeight: 0,
+      totalHassWeight: 0,
+      totalFuerteCrates: 0,
+      totalHassCrates: 0,
+      totalRejectedCrates: 0,
+      totalCrates: 0,
+      totalWeight: 0
+    });
+    
+    const headers = [
+      'Date',
+      'Time',
+      'Supplier Name',
+      'Phone Number',
+      'Vehicle Plate Number',
+      'Gate Entry ID',
+      'Fuerte Weight (kg)',
+      'Hass Weight (kg)',
+      'Fuerte Crates In',
+      'Hass Crates In',
+      'Rejected Crates',
+      'Total Crates',
+      'Region'
+    ];
+    
+    const rows = csvData.map(row => {
+      // Format phone number to prevent scientific notation
+      const phoneNumber = row.phone_number ? `"\t${row.phone_number}"` : '""';
+      
+      return [
+        row.date,
+        row.time,
+        `"${row.supplier_name}"`,
+        phoneNumber,
+        `"${row.vehicle_plate_number}"`,
+        `"${row.gate_entry_id}"`,
+        row.fuerte_weight.toFixed(2),
+        row.hass_weight.toFixed(2),
+        row.fuerte_crates_in,
+        row.hass_crates_in,
+        row.rejected_crates,
+        row.total_crates,
+        `"${row.region}"`
+      ];
+    });
+    
+    // Add empty row for spacing
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
+    
+    // Add totals row
+    rows.push([
+      'TOTALS',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totals.totalFuerteWeight.toFixed(2),
+      totals.totalHassWeight.toFixed(2),
+      totals.totalFuerteCrates,
+      totals.totalHassCrates,
+      totals.totalRejectedCrates,
+      totals.totalCrates,
+      ''
+    ]);
+    
+    // Add grand total row
+    rows.push([
+      'GRAND TOTAL',
+      '',
+      '',
+      '',
+      '',
+      '',
+      'Total Fruits Weight:',
+      totals.totalWeight.toFixed(2) + ' kg',
+      '',
+      '',
+      '',
+      '',
+      ''
+    ]);
+    
+    // Create CSV content with BOM for Excel compatibility
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    // Add UTF-8 BOM for Excel to recognize UTF-8 encoding
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    
+    const { from, to } = dateRangeFilter;
+    let filename = 'weight_data';
+    if (from && to) {
+      filename += `_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`;
+    } else if (from) {
+      filename += `_${format(from, 'yyyy-MM-dd')}`;
+    }
+    link.setAttribute('download', `${filename}.csv`);
+    
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'WEIGHT_CSV_EXPORTED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        recordCount: csvData.length,
+        filename: filename,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    
+    toast({
+      title: 'CSV Downloaded',
+      description: `Weight data for selected period has been downloaded with totals.`,
+    });
+  }, [getFilteredHistoryWeights, generateCSVData, dateRangeFilter, toast]);
+
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {
     try {
       const currentUser = await getCurrentUser();
@@ -1608,7 +1574,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
       const fileName = `GRN_${supplierName.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.pdf`;
       doc.save(fileName);
       
-      // ✅ LOG GRN DOWNLOAD
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_GRN_DOWNLOADED',
@@ -1637,7 +1602,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [weights, checkedInSuppliers, extractVarietyData, toast]);
 
-  // Handle weight selection for rejection
   const handleSelectWeightForRejection = useCallback((weight: WeightEntry) => {
     setSelectedWeightForReject(weight);
     const countingRecord = countingHistory.find(
@@ -1670,7 +1634,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     });
   }, [countingHistory, toast]);
 
-  // Handle counting record selection for rejection
   const handleSelectCountingRecordForRejection = useCallback((record: CountingHistoryRecord) => {
     setSelectedCountingRecordForReject(record);
     
@@ -1704,7 +1667,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     });
   }, [weights, toast]);
 
-  // Handle rejection input change
   const handleRejectionInputChange = useCallback((field: keyof RejectionEntry, value: string | number) => {
     setNewRejection(prev => {
       const updated = {
@@ -1738,7 +1700,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     });
   }, [selectedWeightForReject, selectedCountingRecordForReject]);
 
-  // Submit rejection
   const handleSubmitRejection = useCallback(async () => {
     if (!selectedWeightForReject && !selectedCountingRecordForReject) {
       toast({
@@ -1810,7 +1771,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
       setSelectedWeightForReject(null);
       setSelectedCountingRecordForReject(null);
       
-      // ✅ LOG REJECTION SAVED
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_REJECTION_SAVED',
@@ -1835,7 +1795,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     } catch (error: any) {
       console.error('Error saving rejection:', error);
       
-      // ✅ LOG REJECTION SAVE FAILURE
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
@@ -1858,7 +1817,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast]);
 
-  // Delete rejection
   const handleDeleteRejection = useCallback(async (rejectionId: string) => {
     if (!confirm('Are you sure you want to delete this rejection entry?')) {
       return;
@@ -1876,7 +1834,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
       
       setRejects(prev => prev.filter(r => r.id !== rejectionId));
       
-      // ✅ LOG REJECTION DELETED
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_REJECTION_DELETED',
@@ -1903,7 +1860,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [toast]);
 
-  // Update rejection status
   const handleUpdateRejectionStatus = useCallback(async (rejectionId: string, status: RejectionEntry['status']) => {
     try {
       const currentUser = await getCurrentUser();
@@ -1929,7 +1885,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
         r.id === rejectionId ? { ...r, ...updatedRejection } : r
       ));
       
-      // ✅ LOG REJECTION STATUS UPDATED
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_REJECTION_STATUS_UPDATED',
@@ -1957,12 +1912,10 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [toast]);
 
-  // Toggle reject details
   const toggleRejectDetails = useCallback((rejectId: string) => {
     setExpandedRejectId(prev => prev === rejectId ? null : rejectId);
   }, []);
 
-  // Handle sort change
   const handleSortChange = useCallback((field: RejectSortField) => {
     if (rejectSortField === field) {
       setRejectSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -1972,7 +1925,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [rejectSortField]);
 
-  // Start editing a weight entry - UPDATED to include gate_entry_id
   const handleStartEdit = useCallback((weight: WeightEntry) => {
     setEditingWeight(weight);
     setEditFormData({
@@ -1993,7 +1945,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     });
   }, []);
 
-  // Cancel editing
   const handleCancelEdit = useCallback(() => {
     setEditingWeight(null);
     setEditFormData({
@@ -2014,7 +1965,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     });
   }, []);
 
-  // Save edited weight - UPDATED to handle gate_entry_id
   const handleSaveEdit = useCallback(async () => {
     if (!editingWeight) return;
     
@@ -2091,7 +2041,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
         w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
       ));
       
-      // ✅ LOG WEIGHT UPDATED
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_ENTRY_UPDATED',
@@ -2116,7 +2065,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     } catch (error: any) {
       console.error('Error updating weight:', error);
       
-      // ✅ LOG WEIGHT UPDATE FAILURE
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
@@ -2140,13 +2088,11 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [editingWeight, editFormData, handleCancelEdit, toast]);
 
-  // Confirm delete weight
   const handleConfirmDelete = useCallback((weight: WeightEntry) => {
     setWeightToDelete(weight);
     setShowDeleteDialog(true);
   }, []);
 
-  // Delete weight
   const handleDeleteWeight = useCallback(async () => {
     if (!weightToDelete) return;
     
@@ -2176,7 +2122,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
             newSet.delete(weightToDelete.gate_entry_id!);
             return newSet;
           });
-          console.log('🗑️ Removed gate entry ID from processed set:', weightToDelete.gate_entry_id);
         }
       }
       
@@ -2188,7 +2133,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
         });
       }
       
-      // ✅ LOG WEIGHT DELETED
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WEIGHT_ENTRY_DELETED',
@@ -2222,10 +2166,8 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
     }
   }, [weightToDelete, weights, toast]);
 
-  // Get regions for filter
   const regions = Array.from(new Set(weights.map(w => w.region).filter(Boolean)));
 
-  // Calculate derived values for rendering - UPDATED to use gate_entry_id
   const suppliersWithStatus = checkedInSuppliers.map(supplier => ({
     ...supplier,
     status: (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) ||
@@ -2269,21 +2211,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
   const completedRejectsCount = rejects.filter(r => r.status === 'completed').length;
   const cancelledRejectsCount = rejects.filter(r => r.status === 'cancelled').length;
 
-  const filteredHistoryWeights = historyWeights.filter(entry => {
-    if (!searchQuery && filterRegion === 'all') return true;
-    
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = !searchQuery || 
-      (entry.supplier?.toLowerCase().includes(query)) ||
-      (entry.driver_name?.toLowerCase().includes(query)) ||
-      (entry.vehicle_plate?.toLowerCase().includes(query)) ||
-      (entry.pallet_id?.toLowerCase().includes(query)) ||
-      (entry.gate_entry_id?.toLowerCase().includes(query));
-    
-    const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
-    
-    return matchesSearch && matchesRegion;
-  });
+  const filteredHistoryWeights = getFilteredHistoryWeights();
 
   if (isLoading) {
     return (
@@ -2452,7 +2380,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
             </Card>
           </div>
 
-          {/* Main Content Tabs - Same as before but with updated functions */}
+          {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
               <TabsTrigger value="overview" className="flex items-center gap-2">
@@ -2477,9 +2405,8 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
               </TabsTrigger>
             </TabsList>
 
-            {/* Overview Tab - Same as before */}
+            {/* Overview Tab */}
             <TabsContent value="overview" className="space-y-6 mt-6">
-              {/* KPI Cards */}
               {kpiData && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {(Object.entries(kpiData) as [keyof KPIData, any][]).map(([key, data]) => (
@@ -2503,7 +2430,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                 </div>
               )}
 
-              {/* Checked-in Suppliers - UPDATED to filter out weighed suppliers using gate_entry_id */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -2696,7 +2622,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
               </Card>
             </TabsContent>
 
-            {/* Weight Capture Tab - Same as before */}
+            {/* Weight Capture Tab */}
             <TabsContent value="capture" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2713,31 +2639,20 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {isLoading ? (
-                    <div className="h-96 rounded-lg bg-gray-50 flex flex-col items-center justify-center">
-                      <div className="relative">
-                        <Loader2 className="w-12 h-12 animate-spin text-primary/60" />
-                        <Scale className="w-6 h-6 text-primary absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
-                      </div>
-                      <p className="mt-4 text-lg font-medium">Loading weight data...</p>
-                      <p className="text-sm text-muted-foreground mt-2">Please wait while we fetch the latest entries</p>
-                    </div>
-                  ) : (
-                    <WeightCapture 
-                      onAddWeight={handleAddWeight}
-                      isLoading={isLoading}
-                      onRefreshSuppliers={fetchCheckedInSuppliers}
-                      processedSupplierIds={processedCheckIns}
-                      selectedSupplier={selectedSupplier}
-                      onClearSelectedSupplier={() => setSelectedSupplier(null)}
-                      palletCounter={palletCounter}
-                    />
-                  )}
+                  <WeightCapture 
+                    onAddWeight={handleAddWeight}
+                    isLoading={isLoading}
+                    onRefreshSuppliers={fetchCheckedInSuppliers}
+                    processedSupplierIds={processedCheckIns}
+                    selectedSupplier={selectedSupplier}
+                    onClearSelectedSupplier={() => setSelectedSupplier(null)}
+                    palletCounter={palletCounter}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* History Tab - Same as before with updated functions */}
+            {/* History Tab - with single CSV download button */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -2746,25 +2661,23 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       <FileSpreadsheet className="w-5 h-5" />
                       Weight History & Export
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => downloadCSV(filteredHistoryWeights)}
-                        disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
-                        className="gap-2"
-                        variant="outline"
-                      >
-                        <Download className="w-4 h-4" />
-                        CSV
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={downloadCSV}
+                      disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
+                      className="gap-2"
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download CSV
+                    </Button>
                   </CardTitle>
                   <CardDescription>
-                    View weight history by date range, edit records, and export data in multiple formats
+                    View weight history by date range, edit records, and export data
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* Enhanced Date Range Selection - Same as before */}
+                    {/* Date Range Selection */}
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -2896,8 +2809,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                               </div>
                               <div>
                                 <Label htmlFor="toTime" className="text-xs">To</Label>
-                                <Input
-                                  id="toTime"
+                                <Input                                  id="toTime"
                                   type="time"
                                   value={dateRangeFilter.toTime}
                                   onChange={(e) => {
@@ -2963,30 +2875,36 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       </div>
                     </div>
 
-                    {/* CSV Preview Header - Same as before */}
+                    {/* Export Info */}
                     <div className="bg-gray-950 p-4 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                        <span className="font-medium">Export Options</span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        <p>Export data in CSV format or download individual supplier GRNs as PDF</p>
-                        <div className="flex gap-2 mt-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1"
-                            onClick={() => downloadCSV(filteredHistoryWeights)}
-                            disabled={filteredHistoryWeights.length === 0}
-                          >
-                            <Download className="w-3 h-3" />
-                            Download All as CSV
-                          </Button>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-5 h-5 text-green-600" />
+                          <span className="font-medium">Export Options</span>
+                          <Badge variant="outline" className="ml-2">
+                            {filteredHistoryWeights.length} entries
+                          </Badge>
                         </div>
+                        <Button
+                          size="sm"
+                          className="gap-1"
+                          onClick={downloadCSV}
+                          disabled={filteredHistoryWeights.length === 0}
+                        >
+                          <Download className="w-3 h-3" />
+                          Download CSV
+                        </Button>
+                      </div>
+                      <div className="text-sm text-gray-600 mt-2">
+                        {filteredHistoryWeights.length > 0 ? (
+                          <span>Ready to export {filteredHistoryWeights.length} entries with totals</span>
+                        ) : (
+                          <span>No entries match the current filters</span>
+                        )}
                       </div>
                     </div>
 
-                    {/* Edit Form - Same as before */}
+                    {/* Edit Form */}
                     {editingWeight && (
                       <Card className="border-blue-200 border-2">
                         <CardHeader>
@@ -3003,7 +2921,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                         </CardHeader>
                         <CardContent>
                           <div className="space-y-4">
-                            {/* Edit form fields - same as before */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <Label htmlFor="edit-pallet-id">Pallet ID *</Label>
@@ -3231,7 +3148,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       </Card>
                     )}
 
-                    {/* History Table - UPDATED to include Gate Entry ID column */}
+                    {/* History Table */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
@@ -3486,7 +3403,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       )}
                     </div>
 
-                    {/* Export Summary - Same as before */}
+                    {/* Export Summary */}
                     {filteredHistoryWeights.length > 0 && (
                       <Card>
                         <CardHeader>
@@ -3551,9 +3468,9 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                             </div>
                           </div>
                           
-                          <div className="mt-4 flex justify-center gap-4">
+                          <div className="mt-4 flex justify-center">
                             <Button
-                              onClick={() => downloadCSV(filteredHistoryWeights)}
+                              onClick={downloadCSV}
                               className="gap-2"
                             >
                               <Download className="w-4 h-4" />
@@ -3568,10 +3485,9 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
               </Card>
             </TabsContent>
 
-            {/* Rejects Tab - Same as before with updated functions */}
+            {/* Rejects Tab */}
             <TabsContent value="rejects" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Rejects History - Same as before */}
                 <div className="lg:col-span-2">
                   <Card>
                     <CardHeader>
@@ -3600,7 +3516,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {/* Filter Controls - Same as before */}
                       <div className="space-y-4 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="space-y-2">
@@ -3688,7 +3603,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                           </div>
                         </div>
 
-                        {/* Status Summary - Same as before */}
                         <div className="grid grid-cols-3 gap-4">
                           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
                             <div className="text-2xl font-bold text-yellow-700">{pendingRejectsCount}</div>
@@ -3705,7 +3619,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                         </div>
                       </div>
 
-                      {/* Rejects List - Same as before */}
                       {isRejectsLoading ? (
                         <div className="flex flex-col items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
@@ -3897,7 +3810,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                   </Card>
                 </div>
 
-                {/* Add New Rejection Form - Same as before */}
                 <div>
                   <Card>
                     <CardHeader>
@@ -3911,7 +3823,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {/* Source Selection - Same as before */}
                         <div className="space-y-2">
                           <Label>Select Source</Label>
                           <div className="grid grid-cols-2 gap-2">
@@ -3940,7 +3851,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                           </div>
                         </div>
 
-                        {/* Selected Record Info - Same as before */}
                         {(selectedWeightForReject || selectedCountingRecordForReject) && (
                           <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
                             <div className="flex items-center justify-between mb-2">
@@ -3983,9 +3893,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                           </div>
                         )}
 
-                        {/* Rejection Form - Same as before with updated handlers */}
                         <div className="space-y-4">
-                          {/* Counted Weight (Locked/Read-only) */}
                           <div className="space-y-2">
                             <Label htmlFor="counted_weight">
                               Counted Weight (kg) 
@@ -4089,7 +3997,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                             />
                           </div>
 
-                          {/* Summary - Same as before */}
                           <div className="bg-black-50 p-4 rounded-lg border">
                             <div className="grid grid-cols-2 gap-4 mb-4">
                               <div>
@@ -4169,7 +4076,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
               </div>
             </TabsContent>
 
-            {/* Statistics Tab - Same as before */}
+            {/* Statistics Tab */}
             <TabsContent value="statistics" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -4183,7 +4090,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    {/* Period Selection */}
                     <div className="flex gap-2">
                       <Button
                         variant={statsPeriod === 'today' ? 'default' : 'outline'}
@@ -4205,7 +4111,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       </Button>
                     </div>
 
-                    {/* Counting History Table - Same as before */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
@@ -4317,7 +4222,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       )}
                     </div>
 
-                    {/* Daily Summaries - Same as before */}
                     {dailySummaries.length > 0 && (
                       <div className="border rounded-lg overflow-hidden">
                         <div className="bg-black-50 px-4 py-3 border-b">
@@ -4376,7 +4280,6 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
                       </div>
                     )}
 
-                    {/* Variety Breakdown - Same as before */}
                     {dailySummaries.length > 0 && (
                       <Card>
                         <CardHeader>
@@ -4447,7 +4350,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
           </Tabs>
         </main>
         
-        {/* Receipt Dialog - Same as before */}
+        {/* Receipt Dialog */}
         {lastWeightEntry && (
           <FinalTagDialog
             isOpen={isReceiptOpen}
@@ -4484,7 +4387,7 @@ const downloadCSV = useCallback(async (weights: WeightEntry[]) => {
           />
         )}
 
-        {/* Delete Confirmation Dialog - Same as before */}
+        {/* Delete Confirmation Dialog */}
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <DialogContent>
             <DialogHeader>

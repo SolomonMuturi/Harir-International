@@ -50,7 +50,8 @@ import {
   Hash,
   Fingerprint,
   Key,
-  Menu
+  Menu,
+  ChevronDown
 } from 'lucide-react';
 import { GatePassDialog } from '@/components/dashboard/gate-pass-dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -158,6 +159,11 @@ export default function VehicleManagementPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [gateEntryFilter, setGateEntryFilter] = useState<string>('');
   
+  // LAZY LOADING STATE
+  const [displayCount, setDisplayCount] = useState(20); // Show 20 initially
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const BATCH_SIZE = 20; // Load 20 more each time
+  
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [isGatePassOpen, setIsGatePassOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleVisit | null>(null);
@@ -228,139 +234,40 @@ export default function VehicleManagementPage() {
     }
   };
 
-const fetchSupplierVehicles = useCallback(async () => {
-  try {
-    setIsLoading(true);
-    setApiError(null);
-    console.log('🔄 Fetching vehicle visits...');
+  // Apply filters and lazy loading
+  const applyFilters = useCallback((data: VehicleVisit[]) => {
+    let filtered = [...data];
     
-    const response = await fetch('/api/vehicle-visits?limit=500');
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch visits: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log(`✅ Found ${data.visits.length} visits`);
-    
-    const convertedVisits: VehicleVisit[] = data.visits.map((visit: any) => {
-      const visitNumber = visit.visit_number || 1;
-      
-      return {
-        id: visit.id,
-        visitNumber: visitNumber,
-        vehicleCode: `VISIT-${visit.id.slice(-6)}`,
-        driverName: visit.driver_name || 'Unknown Driver',
-        idNumber: visit.driver_id_number || '',
-        company: visit.company_name || 'Unknown Company',
-        email: '',
-        phone: visit.contact_phone || '',
-        vehiclePlate: visit.vehicle_plate || '',
-        vehicleType: visit.vehicle_type || 'Truck',
-        cargoDescription: visit.cargo_description || 'Avocado Delivery',
-        vehicleTypeCategory: 'supplier',
-        status: visit.status || 'Pre-registered',
-        checkInTime: visit.check_in_time || undefined,
-        checkOutTime: visit.check_out_time || undefined,
-        registeredAt: visit.registered_at || visit.created_at,
-        expectedCheckInTime: visit.registered_at || new Date().toISOString(),
-        hostId: visit.id,
-        hostName: visit.company_name || 'Supplier',
-        department: visit.location || '',
-        isReturningSupplier: visitNumber > 1,
-        totalVisits: visitNumber,
-        gateEntryId: visit.gate_entry_id || undefined,
-        gateEntryNumber: visit.gate_entry_number || undefined,
-        gateEntryDate: visit.gate_entry_date || undefined,
-        isRecheckIn: visit.is_recheck_in || false,
-        previousGateEntryId: visit.previous_gate_entry_id || undefined
-      };
-    });
-    
-    setVehicles(convertedVisits);
-    
-    const uniqueCompanies = new Set(convertedVisits.map(v => v.company));
-    const activeCount = convertedVisits.filter(v => 
-      ['Pre-registered', 'Checked-in'].includes(v.status)
-    ).length;
-    
-    const today = new Date().toDateString();
-    const todayVisits = convertedVisits.filter(v => {
-      const visitDate = parseISO(v.registeredAt);
-      return visitDate.toDateString() === today;
-    }).length;
-    
-    const todayGateEntries = convertedVisits.filter(v => {
-      if (!v.checkInTime) return false;
-      const checkInDate = parseISO(v.checkInTime);
-      return checkInDate.toDateString() === today;
-    }).length;
-    
-    const returningCount = convertedVisits.filter(v => v.visitNumber > 1).length;
-    const returningRate = convertedVisits.length > 0 
-      ? Math.round((returningCount / convertedVisits.length) * 100) 
-      : 0;
-    
-    const avgVisits = uniqueCompanies.size > 0
-      ? Math.round((convertedVisits.length / uniqueCompanies.size) * 10) / 10
-      : 0;
-    
-    setStats({
-      totalVisits: convertedVisits.length,
-      uniqueSuppliers: uniqueCompanies.size,
-      activeVisits: activeCount,
-      todayVisits: todayVisits,
-      todayGateEntries: todayGateEntries,
-      returningRate: returningRate,
-      averageVisitsPerSupplier: avgVisits
-    });
-    
-    const currentUser = await getCurrentUser();
-    await logActivity({
-      user: currentUser?.name || 'System',
-      action: 'VEHICLE_DATA_REFRESH',
-      status: 'success',
-      metadata: {
-        userId: currentUser?.id,
-        totalVisits: convertedVisits.length,
-        timestamp: new Date().toISOString(),
-      },
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Error fetching visits:', error);
-    setApiError(error.message || 'Could not connect to database');
-    
-    toast({
-      title: 'Database Warning',
-      description: 'Could not load vehicle visits from database.',
-      variant: 'destructive',
-    });
-    
-    setVehicles([]);
-  } finally {
-    setIsLoading(false);
-  }
-}, [toast]);
-
-
-  useEffect(() => {
-    fetchSupplierVehicles();
-  }, [fetchSupplierVehicles]);
-
-  useEffect(() => {
-    let filtered = [...vehicles];
-    
+    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(v => v.status === statusFilter);
     }
     
+    // Gate entry filter
     if (gateEntryFilter) {
       filtered = filtered.filter(v => 
         v.gateEntryId?.toLowerCase().includes(gateEntryFilter.toLowerCase())
       );
     }
     
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(v => 
+        v.driverName.toLowerCase().includes(query) ||
+        v.company.toLowerCase().includes(query) ||
+        v.vehiclePlate.toLowerCase().includes(query) ||
+        v.vehicleCode.toLowerCase().includes(query) ||
+        v.phone.toLowerCase().includes(query) ||
+        v.status.toLowerCase().includes(query) ||
+        v.vehicleType.toLowerCase().includes(query) ||
+        `#${v.visitNumber}`.includes(query) ||
+        (v.gateEntryId && v.gateEntryId.toLowerCase().includes(query)) ||
+        (v.previousGateEntryId && v.previousGateEntryId.toLowerCase().includes(query))
+      );
+    }
+    
+    // Tab filters
     if (activeTab === 'active') {
       filtered = filtered.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status));
     } else if (activeTab === 'pending') {
@@ -393,30 +300,167 @@ const fetchSupplierVehicles = useCallback(async () => {
       });
     }
     
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(v => 
-        v.driverName.toLowerCase().includes(query) ||
-        v.company.toLowerCase().includes(query) ||
-        v.vehiclePlate.toLowerCase().includes(query) ||
-        v.vehicleCode.toLowerCase().includes(query) ||
-        v.phone.toLowerCase().includes(query) ||
-        v.status.toLowerCase().includes(query) ||
-        v.vehicleType.toLowerCase().includes(query) ||
-        `#${v.visitNumber}`.includes(query) ||
-        (v.gateEntryId && v.gateEntryId.toLowerCase().includes(query)) ||
-        (v.previousGateEntryId && v.previousGateEntryId.toLowerCase().includes(query))
-      );
-    }
+    return filtered;
+  }, [statusFilter, gateEntryFilter, searchQuery, activeTab, historyDateRange, historyTimeRange]);
+
+  // Update filtered vehicles when data or filters change
+  useEffect(() => {
+    const filtered = applyFilters(vehicles);
+    // Only show displayCount items
+    setFilteredVehicles(filtered.slice(0, displayCount));
+  }, [vehicles, applyFilters, displayCount]);
+
+  // Load more handler
+  const handleLoadMore = () => {
+    setIsLoadingMore(true);
     
-    setFilteredVehicles(filtered);
-  }, [vehicles, searchQuery, statusFilter, gateEntryFilter, activeTab, historyDateRange, historyTimeRange]);
+    // Simulate loading delay for smooth UX
+    setTimeout(() => {
+      const newCount = Math.min(displayCount + BATCH_SIZE, vehicles.length);
+      setDisplayCount(newCount);
+      
+      const filtered = applyFilters(vehicles);
+      setFilteredVehicles(filtered.slice(0, newCount));
+      
+      setIsLoadingMore(false);
+      
+      toast({
+        title: 'Loaded More',
+        description: `Showing ${Math.min(newCount, vehicles.length)} of ${vehicles.length} vehicles`,
+      });
+    }, 300);
+  };
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(BATCH_SIZE);
+  }, [searchQuery, statusFilter, gateEntryFilter, activeTab]);
+
+  const fetchSupplierVehicles = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setApiError(null);
+      console.log('🔄 Fetching vehicle visits...');
+      
+      const response = await fetch('/api/vehicle-visits?limit=500');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch visits: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`✅ Found ${data.visits.length} visits`);
+      
+      const convertedVisits: VehicleVisit[] = data.visits.map((visit: any) => {
+        const visitNumber = visit.visit_number || 1;
+        
+        return {
+          id: visit.id,
+          visitNumber: visitNumber,
+          vehicleCode: `VISIT-${visit.id.slice(-6)}`,
+          driverName: visit.driver_name || 'Unknown Driver',
+          idNumber: visit.driver_id_number || '',
+          company: visit.company_name || 'Unknown Company',
+          email: '',
+          phone: visit.contact_phone || '',
+          vehiclePlate: visit.vehicle_plate || '',
+          vehicleType: visit.vehicle_type || 'Truck',
+          cargoDescription: visit.cargo_description || 'Avocado Delivery',
+          vehicleTypeCategory: 'supplier',
+          status: visit.status || 'Pre-registered',
+          checkInTime: visit.check_in_time || undefined,
+          checkOutTime: visit.check_out_time || undefined,
+          registeredAt: visit.registered_at || visit.created_at,
+          expectedCheckInTime: visit.registered_at || new Date().toISOString(),
+          hostId: visit.id,
+          hostName: visit.company_name || 'Supplier',
+          department: visit.location || '',
+          isReturningSupplier: visitNumber > 1,
+          totalVisits: visitNumber,
+          gateEntryId: visit.gate_entry_id || undefined,
+          gateEntryNumber: visit.gate_entry_number || undefined,
+          gateEntryDate: visit.gate_entry_date || undefined,
+          isRecheckIn: visit.is_recheck_in || false,
+          previousGateEntryId: visit.previous_gate_entry_id || undefined
+        };
+      });
+      
+      setVehicles(convertedVisits);
+      
+      const uniqueCompanies = new Set(convertedVisits.map(v => v.company));
+      const activeCount = convertedVisits.filter(v => 
+        ['Pre-registered', 'Checked-in'].includes(v.status)
+      ).length;
+      
+      const today = new Date().toDateString();
+      const todayVisits = convertedVisits.filter(v => {
+        const visitDate = parseISO(v.registeredAt);
+        return visitDate.toDateString() === today;
+      }).length;
+      
+      const todayGateEntries = convertedVisits.filter(v => {
+        if (!v.checkInTime) return false;
+        const checkInDate = parseISO(v.checkInTime);
+        return checkInDate.toDateString() === today;
+      }).length;
+      
+      const returningCount = convertedVisits.filter(v => v.visitNumber > 1).length;
+      const returningRate = convertedVisits.length > 0 
+        ? Math.round((returningCount / convertedVisits.length) * 100) 
+        : 0;
+      
+      const avgVisits = uniqueCompanies.size > 0
+        ? Math.round((convertedVisits.length / uniqueCompanies.size) * 10) / 10
+        : 0;
+      
+      setStats({
+        totalVisits: convertedVisits.length,
+        uniqueSuppliers: uniqueCompanies.size,
+        activeVisits: activeCount,
+        todayVisits: todayVisits,
+        todayGateEntries: todayGateEntries,
+        returningRate: returningRate,
+        averageVisitsPerSupplier: avgVisits
+      });
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DATA_REFRESH',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          totalVisits: convertedVisits.length,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Error fetching visits:', error);
+      setApiError(error.message || 'Could not connect to database');
+      
+      toast({
+        title: 'Database Warning',
+        description: 'Could not load vehicle visits from database.',
+        variant: 'destructive',
+      });
+      
+      setVehicles([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchSupplierVehicles();
+  }, [fetchSupplierVehicles]);
 
   const refreshAllData = async () => {
     setIsRefreshing(true);
     setApiError(null);
     try {
       await fetchSupplierVehicles();
+      setDisplayCount(BATCH_SIZE); // Reset to initial count
       
       const currentUser = await getCurrentUser();
       await logActivity({
@@ -517,6 +561,7 @@ const fetchSupplierVehicles = useCallback(async () => {
       
       setVehicles(prev => [newVehicle, ...prev]);
       setNewlyRegisteredVehicle(newVehicle);
+      setDisplayCount(BATCH_SIZE); // Reset to show new vehicle
       
       await logActivity({
         user: currentUser?.name || 'System',
@@ -1953,6 +1998,36 @@ const fetchSupplierVehicles = useCallback(async () => {
                             onRowClick={handleRowClick}
                             selectedVehicleId={selectedVehicle?.id}
                           />
+
+                          {/* LAZY LOADING - Load More Button */}
+                          {filteredVehicles.length < vehicles.length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More ({vehicles.length - filteredVehicles.length} remaining)
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+
+                          {filteredVehicles.length > 0 && (
+                            <div className="text-center text-sm text-gray-500 py-2">
+                              Showing {filteredVehicles.length} of {vehicles.length} vehicles
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -1980,13 +2055,39 @@ const fetchSupplierVehicles = useCallback(async () => {
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status))}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <>
+                          <VehicleDataTable 
+                            vehicles={vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status))}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                          
+                          {/* LAZY LOADING - Load More Button for active tab */}
+                          {filteredVehicles.length < vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </TabsContent>
@@ -2013,13 +2114,35 @@ const fetchSupplierVehicles = useCallback(async () => {
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={pendingExitVehicles}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <>
+                          <VehicleDataTable 
+                            vehicles={pendingExitVehicles}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                          
+                          {filteredVehicles.length < pendingExitVehicles.length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </TabsContent>
@@ -2089,13 +2212,35 @@ const fetchSupplierVehicles = useCallback(async () => {
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={filteredCompletedVehicles}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <>
+                          <VehicleDataTable 
+                            vehicles={filteredCompletedVehicles}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                          
+                          {filteredVehicles.length < filteredCompletedVehicles.length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </TabsContent>
@@ -2130,117 +2275,139 @@ const fetchSupplierVehicles = useCallback(async () => {
                           </CardContent>
                         </Card>
                       ) : (
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-2 gap-2 md:hidden">
-                            <Card className="bg-indigo-50 border-indigo-100">
-                              <CardContent className="p-3">
-                                <p className="text-xs text-indigo-700">Today's Entries</p>
-                                <p className="text-lg font-bold text-indigo-900">{stats.todayGateEntries}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-purple-50 border-purple-100">
-                              <CardContent className="p-3">
-                                <p className="text-xs text-purple-700">Recheck-ins</p>
-                                <p className="text-lg font-bold text-purple-900">
-                                  {gateEntryVehicles.filter(v => v.isRecheckIn).length}
-                                </p>
-                              </CardContent>
-                            </Card>
-                          </div>
-
-                          <div className="hidden md:grid grid-cols-4 gap-4">
-                            <Card className="bg-indigo-50 border-indigo-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-indigo-700 font-medium">Today's Gate Entries</p>
-                                <p className="text-2xl font-bold text-indigo-900">{stats.todayGateEntries}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-green-50 border-green-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-green-700 font-medium">Currently Active</p>
-                                <p className="text-2xl font-bold text-green-900">
-                                  {gateEntryVehicles.filter(v => v.status === 'Checked-in').length}
-                                </p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-purple-50 border-purple-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-purple-700 font-medium">Recheck-ins</p>
-                                <p className="text-2xl font-bold text-purple-900">
-                                  {gateEntryVehicles.filter(v => v.isRecheckIn).length}
-                                </p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-amber-50 border-amber-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-amber-700 font-medium">Latest Gate ID</p>
-                                <p className="text-lg font-bold text-amber-900 truncate">
-                                  {gateEntryVehicles[0]?.gateEntryId || 'N/A'}
-                                </p>
-                              </CardContent>
-                            </Card>
-                          </div>
-
-                          <div className="border rounded-lg overflow-hidden">
-                            <div className="overflow-x-auto">
-                              <table className="w-full min-w-[600px] md:min-w-full">
-                                <thead className="bg-black-50">
-                                  <tr>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Gate ID</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Check-in</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                  {gateEntryVehicles.map((vehicle) => (
-                                    <tr 
-                                      key={vehicle.id}
-                                      onClick={() => handleRowClick(vehicle)}
-                                      className={`hover:bg-black-50 cursor-pointer text-sm ${
-                                        selectedVehicle?.id === vehicle.id ? 'bg-blue-50' : ''
-                                      }`}
-                                    >
-                                      <td className="px-2 md:px-4 py-2 md:py-3">
-                                        <Badge variant="outline" className={`text-xs font-mono ${
-                                          vehicle.isRecheckIn 
-                                            ? 'bg-purple-100 text-purple-700'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}>
-                                          {vehicle.gateEntryId}
-                                        </Badge>
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 font-medium text-xs md:text-sm">
-                                        {vehicle.driverName}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate max-w-[100px] md:max-w-none">
-                                        {vehicle.company}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs">
-                                        {vehicle.vehiclePlate}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 text-xs">
-                                        {vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'HH:mm') : 'N/A'}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3">
-                                        <Badge variant="outline" className={`text-xs ${
-                                          vehicle.status === 'Checked-in' ? 'bg-green-100 text-green-700' :
-                                          vehicle.status === 'Pending Exit' ? 'bg-amber-100 text-amber-700' :
-                                          'bg-purple-100 text-purple-700'
-                                        }`}>
-                                          {vehicle.status === 'Checked-in' ? 'In' : 
-                                           vehicle.status === 'Pending Exit' ? 'Exit' : 'Out'}
-                                        </Badge>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                        <>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-2 md:hidden">
+                              <Card className="bg-indigo-50 border-indigo-100">
+                                <CardContent className="p-3">
+                                  <p className="text-xs text-indigo-700">Today's Entries</p>
+                                  <p className="text-lg font-bold text-indigo-900">{stats.todayGateEntries}</p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-purple-50 border-purple-100">
+                                <CardContent className="p-3">
+                                  <p className="text-xs text-purple-700">Recheck-ins</p>
+                                  <p className="text-lg font-bold text-purple-900">
+                                    {gateEntryVehicles.filter(v => v.isRecheckIn).length}
+                                  </p>
+                                </CardContent>
+                              </Card>
                             </div>
+
+                            <div className="hidden md:grid grid-cols-4 gap-4">
+                              <Card className="bg-indigo-50 border-indigo-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-indigo-700 font-medium">Today's Gate Entries</p>
+                                  <p className="text-2xl font-bold text-indigo-900">{stats.todayGateEntries}</p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-green-50 border-green-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-green-700 font-medium">Currently Active</p>
+                                  <p className="text-2xl font-bold text-green-900">
+                                    {gateEntryVehicles.filter(v => v.status === 'Checked-in').length}
+                                  </p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-purple-50 border-purple-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-purple-700 font-medium">Recheck-ins</p>
+                                  <p className="text-2xl font-bold text-purple-900">
+                                    {gateEntryVehicles.filter(v => v.isRecheckIn).length}
+                                  </p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-amber-50 border-amber-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-amber-700 font-medium">Latest Gate ID</p>
+                                  <p className="text-lg font-bold text-amber-900 truncate">
+                                    {gateEntryVehicles[0]?.gateEntryId || 'N/A'}
+                                  </p>
+                                </CardContent>
+                              </Card>
+                            </div>
+
+                            <div className="border rounded-lg overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full min-w-[600px] md:min-w-full">
+                                  <thead className="bg-black-50">
+                                    <tr>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Gate ID</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Check-in</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {gateEntryVehicles.slice(0, displayCount).map((vehicle) => (
+                                      <tr 
+                                        key={vehicle.id}
+                                        onClick={() => handleRowClick(vehicle)}
+                                        className={`hover:bg-black-50 cursor-pointer text-sm ${
+                                          selectedVehicle?.id === vehicle.id ? 'bg-blue-50' : ''
+                                        }`}
+                                      >
+                                        <td className="px-2 md:px-4 py-2 md:py-3">
+                                          <Badge variant="outline" className={`text-xs font-mono ${
+                                            vehicle.isRecheckIn 
+                                              ? 'bg-purple-100 text-purple-700'
+                                              : 'bg-green-100 text-green-700'
+                                          }`}>
+                                            {vehicle.gateEntryId}
+                                          </Badge>
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 font-medium text-xs md:text-sm">
+                                          {vehicle.driverName}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate max-w-[100px] md:max-w-none">
+                                          {vehicle.company}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs">
+                                          {vehicle.vehiclePlate}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs">
+                                          {vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'HH:mm') : 'N/A'}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3">
+                                          <Badge variant="outline" className={`text-xs ${
+                                            vehicle.status === 'Checked-in' ? 'bg-green-100 text-green-700' :
+                                            vehicle.status === 'Pending Exit' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-purple-100 text-purple-700'
+                                          }`}>
+                                            {vehicle.status === 'Checked-in' ? 'In' : 
+                                             vehicle.status === 'Pending Exit' ? 'Exit' : 'Out'}
+                                          </Badge>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {gateEntryVehicles.length > displayCount && (
+                              <div className="flex justify-center py-6">
+                                <Button
+                                  variant="outline"
+                                  onClick={handleLoadMore}
+                                  disabled={isLoadingMore}
+                                  className="gap-2 min-w-[200px]"
+                                >
+                                  {isLoadingMore ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="h-4 w-4" />
+                                      Load More Gate Entries ({gateEntryVehicles.length - displayCount} remaining)
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            )}
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   </TabsContent>

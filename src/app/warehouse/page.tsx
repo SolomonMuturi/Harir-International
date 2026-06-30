@@ -2244,9 +2244,25 @@ export default function WarehousePage() {
     setLastRefreshed(new Date());
   };
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
+useEffect(() => {
+  // Show page immediately
+  setIsLoading(prev => ({ 
+    ...prev, 
+    intake: false, 
+    quality: false, 
+    counting: false,
+    stats: false,
+    supplierDetails: false,
+    rejects: false 
+  }));
+  
+  // Load all data in the background
+  fetchIntakeRecords();
+  fetchQualityChecks();
+  fetchCountingRecords();
+  fetchSizeStatistics();
+  fetchRejects();
+}, []);
 
   const toggleIntakeExpansion = (supplierName: string) => {
     const newExpanded = new Set(expandedIntake);

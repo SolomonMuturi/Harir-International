@@ -762,18 +762,14 @@ const fetchCheckedInSuppliers = useCallback(async () => {
   }, [weights, checkedInSuppliers, processedCheckIns, processedGateIds]);
 
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      await Promise.all([
-        fetchWeights(),
-        fetchCheckedInSuppliers(),
-        fetchCountingHistory(),
-        fetchRejects()
-      ]);
-      setIsLoading(false);
-    };
+    // Show page immediately, data loads in background
+    setIsLoading(false);
     
-    loadData();
+    // Load all data but don't wait
+    fetchWeights();
+    fetchCheckedInSuppliers();
+    fetchCountingHistory();
+    fetchRejects();
   }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects]);
 
   useEffect(() => {

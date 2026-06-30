@@ -551,28 +551,28 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  const fetchCheckedInSuppliers = useCallback(async () => {
-    try {
-      const response = await fetch('/api/suppliers/checked-in');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch checked-in suppliers');
-      }
-      
-      const data: CheckedInSupplier[] = await response.json();
-      
-      const suppliersWithSession = data.map(supplier => ({
-        ...supplier,
-        check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
-        gate_entry_id: (supplier as any).gate_entry_id || (supplier as any).latest_visit?.gate_entry_id
-      }));
-      
-      setCheckedInSuppliers(suppliersWithSession);
-    } catch (error: any) {
-      console.error('Error fetching checked-in suppliers:', error);
-      setCheckedInSuppliers([]);
+const fetchCheckedInSuppliers = useCallback(async () => {
+  try {
+    const response = await fetch('/api/suppliers/checked-in');
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch checked-in vehicles');
     }
-  }, []);
+    
+    const data: CheckedInSupplier[] = await response.json();
+    
+    // Data already has the correct structure from the API
+    const suppliersWithSession = data.map(supplier => ({
+      ...supplier,
+      check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
+    }));
+    
+    setCheckedInSuppliers(suppliersWithSession);
+  } catch (error: any) {
+    console.error('Error fetching checked-in vehicles:', error);
+    setCheckedInSuppliers([]);
+  }
+}, []);
 
   const fetchCountingHistory = useCallback(async () => {
     try {

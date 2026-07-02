@@ -162,17 +162,32 @@ interface CSVRow {
   supplier_name: string;
   telephone_number: string;
   rowClass: string;
-  size_14: number;
-  size_16: number;
-  size_18: number;
-  size_20: number;
-  size_22: number;
-  size_24: number;
-  total_boxes: number;
+  // 4kg sizes (14-26)
+  size_14_4kg: number;
+  size_16_4kg: number;
+  size_18_4kg: number;
+  size_20_4kg: number;
+  size_22_4kg: number;
+  size_24_4kg: number;
+  size_26_4kg: number;
+  // 10kg sizes (14-30)
+  size_14_10kg: number;
+  size_16_10kg: number;
+  size_18_10kg: number;
+  size_20_10kg: number;
+  size_22_10kg: number;
+  size_24_10kg: number;
+  size_26_10kg: number;
+  size_28_10kg: number;
+  size_30_10kg: number;
+  // Totals at the end
+  total_4kg: number;
+  total_10kg: number;
+  grand_total: number;
   unit_price: string;
   total_price: string;
-  grand_total: string;
 }
+
 
 interface SupplierDetails {
   weight_entry: any;
@@ -3182,54 +3197,82 @@ useEffect(() => {
     | 'hass_10kg_class2_size30'
     | 'hass_10kg_class2_size32';
 
-  const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
-    const sizes = ['14', '16', '18', '20', '22', '24'];
-    const varieties: Array<'fuerte' | 'hass'> = ['fuerte', 'hass'];
-    const classTypes: Array<'class1' | 'class2'> = ['class1', 'class2'];
+const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
+  const sizes4kg = ['14', '16', '18', '20', '22', '24', '26'];
+  const sizes10kg = ['14', '16', '18', '20', '22', '24', '26', '28', '30'];
+  const varieties: Array<'fuerte' | 'hass'> = ['fuerte', 'hass'];
+  const classTypes: Array<'class1' | 'class2'> = ['class1', 'class2'];
 
-    return records.flatMap(record => {
-      const countingData = record.counting_data || {};
+  return records.flatMap(record => {
+    const countingData = record.counting_data || {};
 
-      return varieties.flatMap(variety =>
-        classTypes.map(classType => {
-          const row: CSVRow = {
-            date: format(new Date(record.submitted_at), 'yyyy-MM-dd'),
-            supplier_name: record.supplier_name,
-            telephone_number: record.supplier_phone || '',
-            rowClass: `${variety.charAt(0).toUpperCase() + variety.slice(1)} ${classType === 'class1' ? 'Class 1' : 'Class 2'}`,
-            size_14: 0,
-            size_16: 0,
-            size_18: 0,
-            size_20: 0,
-            size_22: 0,
-            size_24: 0,
-            total_boxes: 0,
-            unit_price: '',
-            total_price: '',
-            grand_total: ''
-          };
+    return varieties.flatMap(variety =>
+      classTypes.map(classType => {
+        const row: CSVRow = {
+          date: format(new Date(record.submitted_at), 'yyyy-MM-dd'),
+          supplier_name: record.supplier_name,
+          telephone_number: record.supplier_phone || '',
+          rowClass: `${variety.charAt(0).toUpperCase() + variety.slice(1)} ${classType === 'class1' ? 'Class 1' : 'Class 2'}`,
+          // 4kg sizes (14-26)
+          size_14_4kg: 0,
+          size_16_4kg: 0,
+          size_18_4kg: 0,
+          size_20_4kg: 0,
+          size_22_4kg: 0,
+          size_24_4kg: 0,
+          size_26_4kg: 0,
+          // 10kg sizes (14-30)
+          size_14_10kg: 0,
+          size_16_10kg: 0,
+          size_18_10kg: 0,
+          size_20_10kg: 0,
+          size_22_10kg: 0,
+          size_24_10kg: 0,
+          size_26_10kg: 0,
+          size_28_10kg: 0,
+          size_30_10kg: 0,
+          // Totals at the end
+          total_4kg: 0,
+          total_10kg: 0,
+          grand_total: 0,
+          unit_price: '',
+          total_price: ''
+        };
 
-          sizes.forEach(size => {
-            const count4kg = Number(countingData[`${variety}_4kg_${classType}_size${size}`]) || 0;
-            const count10kg = Number(countingData[`${variety}_10kg_${classType}_size${size}`]) || 0;
-            const sizeField = `size_${size}` as 'size_14' | 'size_16' | 'size_18' | 'size_20' | 'size_22' | 'size_24';
-            row[sizeField] = count4kg + count10kg;
-          });
+        // 4kg sizes (14-26)
+        sizes4kg.forEach(size => {
+          const field = `size_${size}_4kg` as keyof CSVRow;
+          row[field] = Number(countingData[`${variety}_4kg_${classType}_size${size}`]) || 0;
+        });
 
-          row.total_boxes = sizes.reduce((sum, size) => {
-            const value = row[`size_${size}` as keyof CSVRow];
-            return sum + (typeof value === 'number' ? value : 0);
-          }, 0);
+        // 10kg sizes (14-30)
+        sizes10kg.forEach(size => {
+          const field = `size_${size}_10kg` as keyof CSVRow;
+          row[field] = Number(countingData[`${variety}_10kg_${classType}_size${size}`]) || 0;
+        });
 
-          if (row.total_boxes === 0) {
-            return null;
-          }
+        // Calculate totals at the end
+        row.total_4kg = sizes4kg.reduce((sum, size) => {
+          const field = `size_${size}_4kg` as keyof CSVRow;
+          return sum + (row[field] as number);
+        }, 0);
 
-          return row;
-        }).filter((row): row is CSVRow => row !== null)
-      );
-    });
-  };
+        row.total_10kg = sizes10kg.reduce((sum, size) => {
+          const field = `size_${size}_10kg` as keyof CSVRow;
+          return sum + (row[field] as number);
+        }, 0);
+
+        row.grand_total = row.total_4kg + row.total_10kg;
+
+        if (row.grand_total === 0) {
+          return null;
+        }
+
+        return row;
+      }).filter((row): row is CSVRow => row !== null)
+    );
+  });
+};
 
 const downloadCSV = (records: CountingRecord[]) => {
   if (records.length === 0) {
@@ -3248,25 +3291,60 @@ const downloadCSV = (records: CountingRecord[]) => {
     'Supplier Name',
     'Telephone Number',
     'Class',
-    'Size 14',
-    'Size 16',
-    'Size 18',
-    'Size 20',
-    'Size 22',
-    'Size 24',
-    'Total Boxes',
+    // 4kg sizes (14-26)
+    'Size 14 (4kg)',
+    'Size 16 (4kg)',
+    'Size 18 (4kg)',
+    'Size 20 (4kg)',
+    'Size 22 (4kg)',
+    'Size 24 (4kg)',
+    'Size 26 (4kg)',
+    // 10kg sizes (14-30)
+    'Size 14 (10kg)',
+    'Size 16 (10kg)',
+    'Size 18 (10kg)',
+    'Size 20 (10kg)',
+    'Size 22 (10kg)',
+    'Size 24 (10kg)',
+    'Size 26 (10kg)',
+    'Size 28 (10kg)',
+    'Size 30 (10kg)',
+    // Totals at the end
+    'Total 4kg Boxes',
+    'Total 10kg Crates',
+    'Grand Total',
     'Unit Price',
-    'Total Price',
-    'Grand Total'
+    'Total Price'
   ];
+
+  // Calculate summary totals
+  const summaryTotals = {
+    'Fuerte Class 1': { total_4kg: 0, total_10kg: 0, grand_total: 0 },
+    'Fuerte Class 2': { total_4kg: 0, total_10kg: 0, grand_total: 0 },
+    'Hass Class 1': { total_4kg: 0, total_10kg: 0, grand_total: 0 },
+    'Hass Class 2': { total_4kg: 0, total_10kg: 0, grand_total: 0 }
+  };
+
+  // Calculate totals for each class
+  csvData.forEach(row => {
+    const className = row.rowClass; // e.g., "Fuerte Class 1"
+    if (summaryTotals[className]) {
+      summaryTotals[className].total_4kg += row.total_4kg;
+      summaryTotals[className].total_10kg += row.total_10kg;
+      summaryTotals[className].grand_total += row.grand_total;
+    }
+  });
+
+  const grandTotalAll = 
+    summaryTotals['Fuerte Class 1'].grand_total + 
+    summaryTotals['Fuerte Class 2'].grand_total + 
+    summaryTotals['Hass Class 1'].grand_total + 
+    summaryTotals['Hass Class 2'].grand_total;
 
   const rows = csvData.map((row, index) => {
     const rowNumber = index + 2;
     const totalPriceFormula = `=L${rowNumber}*K${rowNumber}`;
-    const grandTotalFormula = `=M${rowNumber}`;
 
-    // Format telephone number to prevent scientific notation
-    // Add a tab character at the start to force text format
     const telephoneNumber = row.telephone_number ? `"${row.telephone_number}\t"` : '""';
 
     return [
@@ -3274,39 +3352,125 @@ const downloadCSV = (records: CountingRecord[]) => {
       `"${row.supplier_name}"`,
       telephoneNumber,
       `"${row.rowClass}"`,
-      row.size_14,
-      row.size_16,
-      row.size_18,
-      row.size_20,
-      row.size_22,
-      row.size_24,
-      row.total_boxes,
+      // 4kg sizes (14-26)
+      row.size_14_4kg,
+      row.size_16_4kg,
+      row.size_18_4kg,
+      row.size_20_4kg,
+      row.size_22_4kg,
+      row.size_24_4kg,
+      row.size_26_4kg,
+      // 10kg sizes (14-30)
+      row.size_14_10kg,
+      row.size_16_10kg,
+      row.size_18_10kg,
+      row.size_20_10kg,
+      row.size_22_10kg,
+      row.size_24_10kg,
+      row.size_26_10kg,
+      row.size_28_10kg,
+      row.size_30_10kg,
+      // Totals at the end
+      row.total_4kg,
+      row.total_10kg,
+      row.grand_total,
       '',
-      totalPriceFormula,
-      grandTotalFormula
+      totalPriceFormula
     ];
   });
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
+  // Add summary rows
+  const summaryRows = [
+    [
+      'TOTAL',
+      'Fuerte Class 1',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Fuerte Class 1'].total_4kg,
+      summaryTotals['Fuerte Class 1'].total_10kg,
+      summaryTotals['Fuerte Class 1'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'TOTAL',
+      'Fuerte Class 2',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Fuerte Class 2'].total_4kg,
+      summaryTotals['Fuerte Class 2'].total_10kg,
+      summaryTotals['Fuerte Class 2'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'TOTAL',
+      'Hass Class 1',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Hass Class 1'].total_4kg,
+      summaryTotals['Hass Class 1'].total_10kg,
+      summaryTotals['Hass Class 1'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'TOTAL',
+      'Hass Class 2',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Hass Class 2'].total_4kg,
+      summaryTotals['Hass Class 2'].total_10kg,
+      summaryTotals['Hass Class 2'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'GRAND TOTAL',
+      'ALL CLASSES',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Fuerte Class 1'].total_4kg + summaryTotals['Fuerte Class 2'].total_4kg + summaryTotals['Hass Class 1'].total_4kg + summaryTotals['Hass Class 2'].total_4kg,
+      summaryTotals['Fuerte Class 1'].total_10kg + summaryTotals['Fuerte Class 2'].total_10kg + summaryTotals['Hass Class 1'].total_10kg + summaryTotals['Hass Class 2'].total_10kg,
+      grandTotalAll,
+      '',
+      ''
+    ]
+  ];
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `warehouse_export_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Combine data rows with summary rows
+  const allRows = [...rows, ...summaryRows];
 
-    toast({
-      title: 'CSV Downloaded',
-      description: `${csvData.length} records exported successfully`,
-    });
-  };
+  const csvContent = [
+    headers.join(','),
+    ...allRows.map(row => row.join(','))
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `warehouse_export_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  toast({
+    title: 'CSV Downloaded',
+    description: `${csvData.length} records exported successfully`,
+  });
+};
 
   const downloadAllHistory = () => {
     downloadCSV(countingRecords);
@@ -3322,7 +3486,7 @@ const downloadCSV = (records: CountingRecord[]) => {
       
       const currentUser = await getCurrentUser();
       
-      // ✅ LOG GRN DOWNLOAD
+    
       await logActivity({
         user: currentUser?.name || 'System',
         action: 'WAREHOUSE_GRN_DOWNLOADED',

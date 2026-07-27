@@ -29,6 +29,7 @@ import {
   MapPin,
   List,
   CalendarCheck,
+  Apple,
 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -82,6 +83,7 @@ const allNavItems: NavItem[] = [
   { name: 'Quality Control', href: '/quality-control', icon: FlaskConical, permissions: ['qc.view', 'qc.perform'] },
   // UPDATED: Counting now requires counting.perform instead of inventory.view
   { name: 'Counting', href: '/warehouse', icon: Warehouse, permission: 'counting.perform' },
+  { name: 'Citrus', href: '/oranges', icon: Apple, permission: 'counting.perform' },
   { name: 'Cold Room', href: '/cold-room', icon: Thermometer, permissions: ['cold_room.view', 'cold_room.temperature'] },
   { name: 'Shipments', href: '/shipments', icon: Truck, permissions: ['shipments.view', 'shipments.track'] },
   { name: 'Carriers', href: '/carriers', icon: Briefcase, permissions: ['carriers.view', 'carriers.manage'] },
@@ -114,7 +116,7 @@ const getNavItemsByCategory = () => {
   
   const operationsItems = allNavItems.filter(item => 
     [
-      '/weight-capture', '/quality-control', '/warehouse', '/cold-room',
+      '/weight-capture', '/quality-control', '/warehouse', '/oranges', '/cold-room',
       '/shipments', '/carriers', '/outbound', '/inventory', '/utility'
     ].includes(item.href)
   );

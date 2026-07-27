@@ -1,7 +1,7 @@
 // app/weights/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -37,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import * as XLSX from 'xlsx';
 
 // Define types (keeping all existing types from your original code)
 interface WeightEntry {
@@ -94,7 +95,7 @@ interface CheckedInSupplier {
   check_in_time: string;
   check_in_session?: string;
   gate_entry_id?: string;
-  status?: 'pending' | 'weighed';
+  status?: 'pending' | 'weighed' | string;
 }
 
 interface KPIData {
@@ -210,6 +211,44 @@ interface EditWeightFormData {
   gate_entry_id?: string;
 }
 
+// Updated Citrus Intake Entry Interface
+interface CitrusIntakeEntry {
+  id: string;
+  supplier: string;
+  vehiclePlate: string;
+  date: string;
+  truckNumber: string;
+  containerNumber: string;
+  sealNumber: string;
+  oranges: {
+    class1: number;
+    class2: number;
+    class3: number;
+    totalBoxes: number;
+    totalWeight: number;
+  };
+  lemons: {
+    class1: number;
+    class2: number;
+    class3: number;
+    totalBoxes: number;
+    totalWeight: number;
+  };
+  tangerines: {
+    class1: number;
+    class2: number;
+    class3: number;
+    totalBoxes: number;
+    totalWeight: number;
+  };
+  grandTotal: {
+    boxes: number;
+    weight: number;
+  };
+  notes: string;
+  createdAt: string;
+}
+
 type RejectSortField = 'date' | 'supplier' | 'weight' | 'status';
 type RejectSortDirection = 'asc' | 'desc';
 
@@ -322,6 +361,49 @@ export default function WeightCapturePage() {
   const [dailySummaries, setDailySummaries] = useState<DailySummary[]>([]);
   
   const [palletCounter, setPalletCounter] = useState<number>(1);
+  
+  // Updated Citrus Intake Form State with new fields
+  const [citrusIntakeForm, setCitrusIntakeForm] = useState({
+    supplier: '',
+    vehiclePlate: '',
+    date: '',
+    truckNumber: '',
+    containerNumber: '',
+    sealNumber: '',
+    orangesClass1Boxes: '',
+    orangesClass2Boxes: '',
+    orangesClass3Boxes: '',
+    lemonsClass1Boxes: '',
+    lemonsClass2Boxes: '',
+    lemonsClass3Boxes: '',
+    tangerinesClass1Boxes: '',
+    tangerinesClass2Boxes: '',
+    tangerinesClass3Boxes: '',
+    notes: '',
+  });
+  
+  const [citrusIntakeEntries, setCitrusIntakeEntries] = useState<CitrusIntakeEntry[]>([]);
+  const [citrusHistoryDate, setCitrusHistoryDate] = useState('');
+  const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
+  const [editingCitrusEntryId, setEditingCitrusEntryId] = useState<string | null>(null);
+  const [citrusEditForm, setCitrusEditForm] = useState({
+    supplier: '',
+    vehiclePlate: '',
+    date: '',
+    truckNumber: '',
+    containerNumber: '',
+    sealNumber: '',
+    orangesClass1Boxes: '',
+    orangesClass2Boxes: '',
+    orangesClass3Boxes: '',
+    lemonsClass1Boxes: '',
+    lemonsClass2Boxes: '',
+    lemonsClass3Boxes: '',
+    tangerinesClass1Boxes: '',
+    tangerinesClass2Boxes: '',
+    tangerinesClass3Boxes: '',
+    notes: '',
+  });
 
   const [editingWeight, setEditingWeight] = useState<WeightEntry | null>(null);
   const [editFormData, setEditFormData] = useState<EditWeightFormData>({
@@ -347,6 +429,143 @@ export default function WeightCapturePage() {
   
   const { toast } = useToast();
 
+  // Helper function to calculate fruit totals
+  const calculateFruitTotals = useCallback((form: typeof citrusIntakeForm) => {
+    const orangesBoxes = (Number(form.orangesClass1Boxes) || 0) + (Number(form.orangesClass2Boxes) || 0) + (Number(form.orangesClass3Boxes) || 0);
+    const lemonsBoxes = (Number(form.lemonsClass1Boxes) || 0) + (Number(form.lemonsClass2Boxes) || 0) + (Number(form.lemonsClass3Boxes) || 0);
+    const tangerinesBoxes = (Number(form.tangerinesClass1Boxes) || 0) + (Number(form.tangerinesClass2Boxes) || 0) + (Number(form.tangerinesClass3Boxes) || 0);
+    
+    return {
+      oranges: {
+        boxes: orangesBoxes,
+        weight: orangesBoxes * 15 // 15kg per box
+      },
+      lemons: {
+        boxes: lemonsBoxes,
+        weight: lemonsBoxes * 15 // 15kg per box
+      },
+      tangerines: {
+        boxes: tangerinesBoxes,
+        weight: tangerinesBoxes * 20 // 20kg per box
+      },
+      grandTotal: {
+        boxes: orangesBoxes + lemonsBoxes + tangerinesBoxes,
+        weight: (orangesBoxes * 15) + (lemonsBoxes * 15) + (tangerinesBoxes * 20)
+      }
+    };
+  }, []);
+
+  // Updated handleAddCitrusIntake with new fields
+  const handleAddCitrusIntake = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!citrusIntakeForm.supplier.trim()) {
+      toast({
+        title: 'Missing supplier',
+        description: 'Please enter the supplier name before saving the citrus intake.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate truck/shipment number
+    if (!citrusIntakeForm.truckNumber.trim()) {
+      toast({
+        title: 'Missing truck/shipment number',
+        description: 'Please enter the truck/shipment number.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const totals = calculateFruitTotals(citrusIntakeForm);
+    
+    const newEntry: CitrusIntakeEntry = {
+      id: `${Date.now()}`,
+      supplier: citrusIntakeForm.supplier.trim(),
+      vehiclePlate: citrusIntakeForm.vehiclePlate.trim(),
+      date: citrusIntakeForm.date || new Date().toISOString().split('T')[0],
+      truckNumber: citrusIntakeForm.truckNumber.trim(),
+      containerNumber: citrusIntakeForm.containerNumber.trim(),
+      sealNumber: citrusIntakeForm.sealNumber.trim(),
+      oranges: {
+        class1: Number(citrusIntakeForm.orangesClass1Boxes) || 0,
+        class2: Number(citrusIntakeForm.orangesClass2Boxes) || 0,
+        class3: Number(citrusIntakeForm.orangesClass3Boxes) || 0,
+        totalBoxes: totals.oranges.boxes,
+        totalWeight: totals.oranges.weight,
+      },
+      lemons: {
+        class1: Number(citrusIntakeForm.lemonsClass1Boxes) || 0,
+        class2: Number(citrusIntakeForm.lemonsClass2Boxes) || 0,
+        class3: Number(citrusIntakeForm.lemonsClass3Boxes) || 0,
+        totalBoxes: totals.lemons.boxes,
+        totalWeight: totals.lemons.weight,
+      },
+      tangerines: {
+        class1: Number(citrusIntakeForm.tangerinesClass1Boxes) || 0,
+        class2: Number(citrusIntakeForm.tangerinesClass2Boxes) || 0,
+        class3: Number(citrusIntakeForm.tangerinesClass3Boxes) || 0,
+        totalBoxes: totals.tangerines.boxes,
+        totalWeight: totals.tangerines.weight,
+      },
+      grandTotal: totals.grandTotal,
+      notes: citrusIntakeForm.notes.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setCitrusIntakeEntries((prev) => [newEntry, ...prev]);
+    setCitrusIntakeForm({
+      supplier: '',
+      vehiclePlate: '',
+      date: '',
+      truckNumber: '',
+      containerNumber: '',
+      sealNumber: '',
+      orangesClass1Boxes: '',
+      orangesClass2Boxes: '',
+      orangesClass3Boxes: '',
+      lemonsClass1Boxes: '',
+      lemonsClass2Boxes: '',
+      lemonsClass3Boxes: '',
+      tangerinesClass1Boxes: '',
+      tangerinesClass2Boxes: '',
+      tangerinesClass3Boxes: '',
+      notes: '',
+    });
+
+    toast({
+      title: 'Citrus intake recorded',
+      description: `${newEntry.supplier} has been added to the intake log. Truck #${newEntry.truckNumber}`,
+    });
+  };
+
+  // Updated filtered entries
+  const filteredCitrusEntries = citrusIntakeEntries.filter((entry) => {
+    if (!citrusHistoryDate) {
+      return true;
+    }
+    return format(new Date(entry.createdAt), 'yyyy-MM-dd') === citrusHistoryDate;
+  });
+
+  const citrusTotals = filteredCitrusEntries.reduce(
+    (totals, entry) => {
+      totals.totalWeight += entry.grandTotal.weight;
+      totals.totalBoxes += entry.grandTotal.boxes;
+      return totals;
+    },
+    { totalWeight: 0, totalBoxes: 0 }
+  );
+
+  const citrusEntryGroups = filteredCitrusEntries.reduce<Record<string, typeof filteredCitrusEntries>>((groups, entry) => {
+    const supplier = entry.supplier.trim() || 'Unknown supplier';
+    if (!groups[supplier]) {
+      groups[supplier] = [];
+    }
+    groups[supplier].push(entry);
+    return groups;
+  }, {});
+
   // Helper function to log activity to /api/activity-logs
   const logActivity = async (action: string, status: 'success' | 'failure' | 'pending', user?: string) => {
     try {
@@ -364,6 +583,7 @@ export default function WeightCapturePage() {
       // Silent fail
     }
   };
+
   // Helper function to apply time to date
   const applyTimeToDate = (date: Date | undefined, timeStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
     if (!date) return undefined;
@@ -469,7 +689,7 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Fetch all weight entries - FIXED
+  // Fetch all weight entries
   const fetchWeights = useCallback(async () => {
     try {
       setError(null);
@@ -571,8 +791,9 @@ export default function WeightCapturePage() {
       const data: CheckedInSupplier[] = await response.json();
       console.log('🚚 Fetched checked-in suppliers:', data);
       
-      const suppliersWithSession = data.map(supplier => ({
+      const suppliersWithSession = data.map((supplier: CheckedInSupplier) => ({
         ...supplier,
+        status: supplier.status === 'weighed' ? 'weighed' : 'pending',
         check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
         gate_entry_id: (supplier as any).gate_entry_id || (supplier as any).latest_visit?.gate_entry_id
       }));
@@ -1040,7 +1261,7 @@ export default function WeightCapturePage() {
   }, [generatePalletId, selectedSupplier, toast]);
 
   // Handle supplier selection
-  const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier) => {
+  const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier | any) => {
     if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
       toast({
         title: 'Already Weighed',
@@ -2250,26 +2471,36 @@ export default function WeightCapturePage() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
-              <TabsTrigger value="overview" className="flex items-center gap-2">
-                <Boxes className="h-4 w-4" />
-                Dashboard
+            <TabsList className="grid grid-cols-3 md:grid-cols-6 w-full">
+              <TabsTrigger value="overview" className="flex items-center justify-center gap-2 text-xs md:text-sm">
+                <Boxes className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Dashboard</span>
+                <span className="sm:hidden">Home</span>
               </TabsTrigger>
-              <TabsTrigger value="capture" className="flex items-center gap-2">
-                <Scale className="h-4 w-4" />
-                Capture
+              <TabsTrigger value="capture" className="flex items-center justify-center gap-2 text-xs md:text-sm">
+                <Scale className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Capture</span>
+                <span className="sm:hidden">Weigh</span>
               </TabsTrigger>
-              <TabsTrigger value="history" className="flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4" />
-                History
+              <TabsTrigger value="history" className="flex items-center justify-center gap-2 text-xs md:text-sm">
+                <FileSpreadsheet className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">History</span>
+                <span className="sm:hidden">Data</span>
               </TabsTrigger>
-              <TabsTrigger value="rejects" className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                Rejects
+              <TabsTrigger value="rejects" className="flex items-center justify-center gap-2 text-xs md:text-sm">
+                <AlertTriangle className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Rejects</span>
+                <span className="sm:hidden">Issues</span>
               </TabsTrigger>
-              <TabsTrigger value="statistics" className="flex items-center gap-2">
-                <PieChart className="h-4 w-4" />
-                Statistics
+              <TabsTrigger value="statistics" className="flex items-center justify-center gap-2 text-xs md:text-sm">
+                <PieChart className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Statistics</span>
+                <span className="sm:hidden">Stats</span>
+              </TabsTrigger>
+              <TabsTrigger value="citrus-intake" className="flex items-center justify-center gap-2 text-xs md:text-sm">
+                <Apple className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Citrus Intake</span>
+                <span className="sm:hidden">Citrus</span>
               </TabsTrigger>
             </TabsList>
 
@@ -2299,7 +2530,7 @@ export default function WeightCapturePage() {
                 </div>
               )}
 
-              {/* Checked-in Suppliers - UPDATED to filter out weighed suppliers using gate_entry_id */}
+              {/* Checked-in Suppliers */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -2533,7 +2764,7 @@ export default function WeightCapturePage() {
               </Card>
             </TabsContent>
 
-            {/* History Tab - UPDATED with enhanced date range filtering */}
+            {/* History Tab */}
             <TabsContent value="history" className="space-y-6 mt-6">
               <Card>
                 <CardHeader>
@@ -3026,7 +3257,7 @@ export default function WeightCapturePage() {
                       </Card>
                     )}
 
-                    {/* History Table - UPDATED to include Gate Entry ID column */}
+                    {/* History Table */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
@@ -4086,7 +4317,7 @@ export default function WeightCapturePage() {
                                     <Button
                                       size="sm"
                                       variant="ghost"
-                                      onClick={() => handleSelectCountingRecordForRejection(record)}
+                                      onClick={() => handleSelectCountingRecordForRejection(record as CountingHistoryRecord)}
                                       title="Add Rejection for this record"
                                     >
                                       <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -4239,6 +4470,623 @@ export default function WeightCapturePage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+          {/* Updated Citrus Intake Tab with Weight Information Tab */}
+          <TabsContent value="citrus-intake" className="space-y-6 mt-6">
+            <Card className="border border-gray-200 shadow-sm">
+              <CardHeader className="rounded-t-lg border-b bg-black-100 from-green-50 to-emerald-50">
+                <CardTitle className="flex items-center gap-2 text-green-900">
+                  <Apple className="w-5 h-5" />
+                  Citrus Intake
+                </CardTitle>
+                <CardDescription>
+                  Record citrus intake deliveries with Class 1, 2, 3 grading. Oranges & Lemons: 15kg boxes, Tangerines: 20kg boxes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <form onSubmit={handleAddCitrusIntake} className="space-y-6">
+                  {/* Supplier & Shipment Details Section */}
+                  <div className="rounded-xl border border-green-200 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 sm:p-5 text-white shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <div className="rounded-full bg-white/10 p-2 text-green-300">
+                        <Users className="h-4 w-4" />
+                      </div>
+                      <h3 className="text-base font-semibold">Supplier & Shipment Details</h3>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="citrus-supplier">Supplier name *</Label>
+                        <Input
+                          id="citrus-supplier"
+                          value={citrusIntakeForm.supplier}
+                          onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, supplier: event.target.value }))}
+                          placeholder="Supplier name"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="citrus-vehicle">Vehicle plate number</Label>
+                        <Input
+                          id="citrus-vehicle"
+                          value={citrusIntakeForm.vehiclePlate}
+                          onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, vehiclePlate: event.target.value }))}
+                          placeholder="KAA 000A"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="citrus-date">Date</Label>
+                        <Input
+                          id="citrus-date"
+                          type="date"
+                          value={citrusIntakeForm.date}
+                          onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, date: event.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="citrus-truck">Truck/Shipment Number *</Label>
+                        <Input
+                          id="citrus-truck"
+                          value={citrusIntakeForm.truckNumber}
+                          onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, truckNumber: event.target.value }))}
+                          placeholder="TRK-2024-001"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="citrus-container">Container Number</Label>
+                        <Input
+                          id="citrus-container"
+                          value={citrusIntakeForm.containerNumber}
+                          onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, containerNumber: event.target.value }))}
+                          placeholder="CNTR-XXXXX"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="citrus-seal">Seal Number</Label>
+                        <Input
+                          id="citrus-seal"
+                          value={citrusIntakeForm.sealNumber}
+                          onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, sealNumber: event.target.value }))}
+                          placeholder="SEAL-XXXXX"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Weight Information Tabs */}
+                  <div className="rounded-xl border border-gray-200 bg-black-50 p-4 sm:p-5 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2">
+                      <div className="rounded-full bg-blue-500/20 p-2 text-blue-400">
+                        <Scale className="h-4 w-4" />
+                      </div>
+                      <h3 className="text-base font-semibold">Weight Information</h3>
+                    </div>
+                    
+                    <Tabs defaultValue="oranges" className="w-full">
+                      <TabsList className="grid w-full grid-cols-3">
+                        <TabsTrigger value="oranges" className="flex items-center gap-2">
+                          <Package className="h-4 w-4 text-orange-500" />
+                          <span className="hidden sm:inline">Oranges</span>
+                          <span className="sm:hidden">Oranges</span>
+                          <Badge variant="outline" className="ml-1 text-xs">
+                            {(() => {
+                              const total = (Number(citrusIntakeForm.orangesClass1Boxes) || 0) + 
+                                          (Number(citrusIntakeForm.orangesClass2Boxes) || 0) + 
+                                          (Number(citrusIntakeForm.orangesClass3Boxes) || 0);
+                              return total > 0 ? total : '0';
+                            })()}
+                          </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="lemons" className="flex items-center gap-2">
+                          <Package className="h-4 w-4 text-yellow-500" />
+                          <span className="hidden sm:inline">Lemons</span>
+                          <span className="sm:hidden">Lemons</span>
+                          <Badge variant="outline" className="ml-1 text-xs">
+                            {(() => {
+                              const total = (Number(citrusIntakeForm.lemonsClass1Boxes) || 0) + 
+                                          (Number(citrusIntakeForm.lemonsClass2Boxes) || 0) + 
+                                          (Number(citrusIntakeForm.lemonsClass3Boxes) || 0);
+                              return total > 0 ? total : '0';
+                            })()}
+                          </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="tangerines" className="flex items-center gap-2">
+                          <Package className="h-4 w-4 text-amber-500" />
+                          <span className="hidden sm:inline">Tangerines</span>
+                          <span className="sm:hidden">Tangerines</span>
+                          <Badge variant="outline" className="ml-1 text-xs">
+                            {(() => {
+                              const total = (Number(citrusIntakeForm.tangerinesClass1Boxes) || 0) + 
+                                          (Number(citrusIntakeForm.tangerinesClass2Boxes) || 0) + 
+                                          (Number(citrusIntakeForm.tangerinesClass3Boxes) || 0);
+                              return total > 0 ? total : '0';
+                            })()}
+                          </Badge>
+                        </TabsTrigger>
+                      </TabsList>
+
+                      {/* Oranges Tab Content */}
+                      <TabsContent value="oranges" className="mt-4 space-y-4">
+                        <div className="rounded-lg border border-orange-200 bg-black-100 from-orange-900/20 via-orange-800/10 to-orange-900/20 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="rounded-full bg-orange-500/20 p-2 text-orange-400">
+                              <Package className="h-4 w-4" />
+                            </div>
+                            <h4 className="font-semibold text-orange-300">Oranges (15kg boxes)</h4>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="oranges-class1" className="text-orange-200">Class 1 (boxes)</Label>
+                              <Input
+                                id="oranges-class1"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.orangesClass1Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, orangesClass1Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-orange-400/30 text-white placeholder:text-white/50 focus:border-orange-400"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="oranges-class2" className="text-orange-200">Class 2 (boxes)</Label>
+                              <Input
+                                id="oranges-class2"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.orangesClass2Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, orangesClass2Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-orange-400/30 text-white placeholder:text-white/50 focus:border-orange-400"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="oranges-class3" className="text-orange-200">Class 3 (boxes)</Label>
+                              <Input
+                                id="oranges-class3"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.orangesClass3Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, orangesClass3Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-orange-400/30 text-white placeholder:text-white/50 focus:border-orange-400"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-3 text-right text-sm text-orange-300">
+                            Subtotal: {(Number(citrusIntakeForm.orangesClass1Boxes) || 0) + (Number(citrusIntakeForm.orangesClass2Boxes) || 0) + (Number(citrusIntakeForm.orangesClass3Boxes) || 0)} boxes = {((Number(citrusIntakeForm.orangesClass1Boxes) || 0) + (Number(citrusIntakeForm.orangesClass2Boxes) || 0) + (Number(citrusIntakeForm.orangesClass3Boxes) || 0)) * 15} kg
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      {/* Lemons Tab Content */}
+                      <TabsContent value="lemons" className="mt-4 space-y-4">
+                        <div className="rounded-lg border border-yellow-200 bg-black-100 from-yellow-900/20 via-yellow-800/10 to-yellow-900/20 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="rounded-full bg-yellow-500/20 p-2 text-yellow-400">
+                              <Package className="h-4 w-4" />
+                            </div>
+                            <h4 className="font-semibold text-yellow-300">Lemons (15kg boxes)</h4>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="lemons-class1" className="text-yellow-200">Class 1 (boxes)</Label>
+                              <Input
+                                id="lemons-class1"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.lemonsClass1Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, lemonsClass1Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-yellow-400/30 text-white placeholder:text-white/50 focus:border-yellow-400"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="lemons-class2" className="text-yellow-200">Class 2 (boxes)</Label>
+                              <Input
+                                id="lemons-class2"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.lemonsClass2Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, lemonsClass2Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-yellow-400/30 text-white placeholder:text-white/50 focus:border-yellow-400"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="lemons-class3" className="text-yellow-200">Class 3 (boxes)</Label>
+                              <Input
+                                id="lemons-class3"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.lemonsClass3Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, lemonsClass3Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-yellow-400/30 text-white placeholder:text-white/50 focus:border-yellow-400"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-3 text-right text-sm text-yellow-300">
+                            Subtotal: {(Number(citrusIntakeForm.lemonsClass1Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass2Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass3Boxes) || 0)} boxes = {((Number(citrusIntakeForm.lemonsClass1Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass2Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass3Boxes) || 0)) * 15} kg
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      {/* Tangerines Tab Content */}
+                      <TabsContent value="tangerines" className="mt-4 space-y-4">
+                        <div className="rounded-lg border border-amber-200 bg-black-100 from-amber-900/20 via-amber-800/10 to-amber-900/20 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="rounded-full bg-amber-500/20 p-2 text-amber-400">
+                              <Package className="h-4 w-4" />
+                            </div>
+                            <h4 className="font-semibold text-amber-300">Tangerines (20kg boxes)</h4>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="tangerines-class1" className="text-amber-200">Class 1 (boxes)</Label>
+                              <Input
+                                id="tangerines-class1"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.tangerinesClass1Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, tangerinesClass1Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-amber-400/30 text-white placeholder:text-white/50 focus:border-amber-400"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="tangerines-class2" className="text-amber-200">Class 2 (boxes)</Label>
+                              <Input
+                                id="tangerines-class2"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.tangerinesClass2Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, tangerinesClass2Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-amber-400/30 text-white placeholder:text-white/50 focus:border-amber-400"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="tangerines-class3" className="text-amber-200">Class 3 (boxes)</Label>
+                              <Input
+                                id="tangerines-class3"
+                                type="number"
+                                min="0"
+                                value={citrusIntakeForm.tangerinesClass3Boxes}
+                                onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, tangerinesClass3Boxes: event.target.value }))}
+                                placeholder="0"
+                                className="bg-white/5 border-amber-400/30 text-white placeholder:text-white/50 focus:border-amber-400"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-3 text-right text-sm text-amber-300">
+                            Subtotal: {(Number(citrusIntakeForm.tangerinesClass1Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass2Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass3Boxes) || 0)} boxes = {((Number(citrusIntakeForm.tangerinesClass1Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass2Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass3Boxes) || 0)) * 20} kg
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+
+                  {/* Grand Total Display */}
+                  <div className="rounded-xl border border-purple-200 bg-black-100 from-purple-900/40 via-purple-800/30 to-purple-900/40 p-4 sm:p-5 text-white shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="rounded-full bg-white/10 p-2 text-purple-300">
+                        <Calculator className="h-4 w-4" />
+                      </div>
+                      <h3 className="text-base font-semibold">Grand Total</h3>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="text-center">
+                        <div className="text-sm text-purple-200">Oranges</div>
+                        <div className="font-bold">{(Number(citrusIntakeForm.orangesClass1Boxes) || 0) + (Number(citrusIntakeForm.orangesClass2Boxes) || 0) + (Number(citrusIntakeForm.orangesClass3Boxes) || 0)} boxes</div>
+                        <div className="text-sm text-purple-200">{((Number(citrusIntakeForm.orangesClass1Boxes) || 0) + (Number(citrusIntakeForm.orangesClass2Boxes) || 0) + (Number(citrusIntakeForm.orangesClass3Boxes) || 0)) * 15} kg</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm text-purple-200">Lemons</div>
+                        <div className="font-bold">{(Number(citrusIntakeForm.lemonsClass1Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass2Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass3Boxes) || 0)} boxes</div>
+                        <div className="text-sm text-purple-200">{((Number(citrusIntakeForm.lemonsClass1Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass2Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass3Boxes) || 0)) * 15} kg</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm text-purple-200">Tangerines</div>
+                        <div className="font-bold">{(Number(citrusIntakeForm.tangerinesClass1Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass2Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass3Boxes) || 0)} boxes</div>
+                        <div className="text-sm text-purple-200">{((Number(citrusIntakeForm.tangerinesClass1Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass2Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass3Boxes) || 0)) * 20} kg</div>
+                      </div>
+                      <div className="text-center border-l border-purple-700 pl-4">
+                        <div className="text-sm text-purple-200">GRAND TOTAL</div>
+                        <div className="font-bold text-xl text-purple-300">
+                          {(() => {
+                            const orangesBoxes = (Number(citrusIntakeForm.orangesClass1Boxes) || 0) + (Number(citrusIntakeForm.orangesClass2Boxes) || 0) + (Number(citrusIntakeForm.orangesClass3Boxes) || 0);
+                            const lemonsBoxes = (Number(citrusIntakeForm.lemonsClass1Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass2Boxes) || 0) + (Number(citrusIntakeForm.lemonsClass3Boxes) || 0);
+                            const tangerinesBoxes = (Number(citrusIntakeForm.tangerinesClass1Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass2Boxes) || 0) + (Number(citrusIntakeForm.tangerinesClass3Boxes) || 0);
+                            const totalBoxes = orangesBoxes + lemonsBoxes + tangerinesBoxes;
+                            const totalWeight = (orangesBoxes * 15) + (lemonsBoxes * 15) + (tangerinesBoxes * 20);
+                            return `${totalBoxes} boxes = ${totalWeight} kg`;
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="citrus-notes">Notes</Label>
+                    <Textarea
+                      id="citrus-notes"
+                      value={citrusIntakeForm.notes}
+                      onChange={(event) => setCitrusIntakeForm((prev) => ({ ...prev, notes: event.target.value }))}
+                      placeholder="Any relevant notes"
+                      className="bg-white/5 border-gray-600 text-white placeholder:text-white/50"
+                    />
+                  </div>
+                  <div>
+                    <Button type="submit" className="w-full sm:w-auto bg-green-700 hover:bg-green-800">
+                      <Save className="mr-2 h-4 w-4" />
+                      Save citrus intake
+                    </Button>
+                  </div>
+                </form>
+
+              {/* Existing Entries Display */}
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 rounded-xl border border-gray-700 bg-black-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4 text-green-400" />
+                      Citrus Intake History
+                    </h3>
+                    <p className="text-sm text-gray-400">
+                      Total weight: {citrusTotals.totalWeight.toFixed(1)} kg • Total boxes: {citrusTotals.totalBoxes}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="date"
+                      value={citrusHistoryDate}
+                      onChange={(event) => setCitrusHistoryDate(event.target.value)}
+                      className="w-auto bg-gray-900 border-gray-700 text-white"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={() => setCitrusHistoryDate('')} className="border-gray-700 text-gray-300 hover:bg-gray-800">
+                      Clear
+                    </Button>
+                    <Badge variant="secondary" className="bg-gray-800 text-gray-300">{filteredCitrusEntries.length}</Badge>
+                  </div>
+                </div>
+
+                {filteredCitrusEntries.length > 0 ? (
+                  <div className="space-y-4">
+                    {Object.entries(citrusEntryGroups).map(([supplier, entries]) => {
+                      const supplierTotalWeight = entries.reduce(
+                        (sum, entry) => sum + entry.grandTotal.weight,
+                        0
+                      );
+                      const supplierTotalBoxes = entries.reduce(
+                        (sum, entry) => sum + entry.grandTotal.boxes,
+                        0
+                      );
+                      const isExpanded = expandedSupplier === supplier;
+
+                      return (
+                        <div key={supplier} className="rounded-xl border border-gray-700 bg-black p-4 text-white shadow-sm hover:border-gray-600 transition-colors">
+                          {/* Supplier Header - Always Visible */}
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSupplier(isExpanded ? null : supplier)}
+                            className="flex w-full items-center justify-between gap-4"
+                          >
+                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                              <div className="flex-shrink-0">
+                                <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
+                                  <Users className="h-5 w-5 text-gray-400" />
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-white text-lg truncate">{supplier}</p>
+                                <p className="text-sm text-gray-400">
+                                  {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} • 
+                                  {entries[0]?.truckNumber && ` Truck: ${entries[0].truckNumber}`}
+                                  {entries[0]?.vehiclePlate && ` • Vehicle: ${entries[0].vehiclePlate}`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 flex-shrink-0">
+                              <div className="text-right hidden sm:block">
+                                <p className="text-xs text-gray-500">Total Weight</p>
+                                <p className="font-semibold text-white">{supplierTotalWeight.toFixed(1)} kg</p>
+                              </div>
+                              <div className="text-right hidden sm:block">
+                                <p className="text-xs text-gray-500">Total Boxes</p>
+                                <p className="font-semibold text-white">{supplierTotalBoxes}</p>
+                              </div>
+                              <div className="flex-shrink-0">
+                                {isExpanded ? (
+                                  <ChevronUp className="h-5 w-5 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded Content */}
+                          {isExpanded && (
+                            <div className="mt-4 space-y-4">
+                              {entries.map((entry) => (
+                                <div key={entry.id} className="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                                  {/* Entry Header */}
+                                  <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <Badge variant="outline" className="border-gray-600 text-gray-300">
+                                          {format(new Date(entry.createdAt), 'dd MMM yyyy')}
+                                        </Badge>
+                                        <Badge variant="outline" className="border-gray-600 text-gray-300 text-xs">
+                                          {format(new Date(entry.createdAt), 'HH:mm')}
+                                        </Badge>
+                                        {entry.vehiclePlate && (
+                                          <Badge variant="outline" className="border-blue-600 text-blue-300 text-xs">
+                                            <Truck className="h-3 w-3 mr-1" />
+                                            {entry.vehiclePlate}
+                                          </Badge>
+                                        )}
+                                        {entry.truckNumber && (
+                                          <Badge variant="outline" className="border-purple-600 text-purple-300 text-xs">
+                                            Shipment: {entry.truckNumber}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      {entry.date && entry.date !== format(new Date(entry.createdAt), 'yyyy-MM-dd') && (
+                                        <p className="text-xs text-gray-500">Recorded Date: {format(new Date(entry.date), 'dd MMM yyyy')}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {entry.containerNumber && (
+                                        <Badge variant="outline" className="border-amber-600 text-amber-300 text-xs">
+                                          Container: {entry.containerNumber}
+                                        </Badge>
+                                      )}
+                                      {entry.sealNumber && (
+                                        <Badge variant="outline" className="border-green-600 text-green-300 text-xs">
+                                          Seal: {entry.sealNumber}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Entry Details Grid */}
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    {/* Oranges */}
+                                    <div className="rounded-lg border border-orange-900/50 bg-orange-950/20 p-3">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Package className="h-4 w-4 text-orange-400" />
+                                        <p className="text-sm font-semibold text-orange-400">Oranges (15kg)</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 1</span>
+                                          <span className="text-white">{entry.oranges.class1}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 2</span>
+                                          <span className="text-white">{entry.oranges.class2}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 3</span>
+                                          <span className="text-white">{entry.oranges.class3}</span>
+                                        </div>
+                                        <div className="border-t border-orange-900/50 pt-1 mt-1">
+                                          <div className="flex justify-between text-sm font-semibold">
+                                            <span className="text-orange-300">Total</span>
+                                            <span className="text-orange-300">{entry.oranges.totalBoxes} boxes = {entry.oranges.totalWeight} kg</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Lemons */}
+                                    <div className="rounded-lg border border-yellow-900/50 bg-yellow-950/20 p-3">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Package className="h-4 w-4 text-yellow-400" />
+                                        <p className="text-sm font-semibold text-yellow-400">Lemons (15kg)</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 1</span>
+                                          <span className="text-white">{entry.lemons.class1}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 2</span>
+                                          <span className="text-white">{entry.lemons.class2}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 3</span>
+                                          <span className="text-white">{entry.lemons.class3}</span>
+                                        </div>
+                                        <div className="border-t border-yellow-900/50 pt-1 mt-1">
+                                          <div className="flex justify-between text-sm font-semibold">
+                                            <span className="text-yellow-300">Total</span>
+                                            <span className="text-yellow-300">{entry.lemons.totalBoxes} boxes = {entry.lemons.totalWeight} kg</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Tangerines */}
+                                    <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Package className="h-4 w-4 text-amber-400" />
+                                        <p className="text-sm font-semibold text-amber-400">Tangerines (20kg)</p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 1</span>
+                                          <span className="text-white">{entry.tangerines.class1}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 2</span>
+                                          <span className="text-white">{entry.tangerines.class2}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                          <span className="text-gray-400">Class 3</span>
+                                          <span className="text-white">{entry.tangerines.class3}</span>
+                                        </div>
+                                        <div className="border-t border-amber-900/50 pt-1 mt-1">
+                                          <div className="flex justify-between text-sm font-semibold">
+                                            <span className="text-amber-300">Total</span>
+                                            <span className="text-amber-300">{entry.tangerines.totalBoxes} boxes = {entry.tangerines.totalWeight} kg</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Grand Total */}
+                                  <div className="mt-3 pt-3 border-t border-purple-900/50">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Calculator className="h-4 w-4 text-purple-400" />
+                                        <span className="text-sm font-semibold text-purple-400">GRAND TOTAL</span>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="text-lg font-bold text-purple-300">
+                                          {entry.grandTotal.boxes} boxes = {entry.grandTotal.weight} kg
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Notes */}
+                                  {entry.notes && (
+                                    <div className="mt-2 pt-2 border-t border-gray-700">
+                                      <p className="text-sm text-gray-400">
+                                        <span className="text-gray-500">Notes:</span> {entry.notes}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-gray-700 p-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center">
+                        <Apple className="h-8 w-8 text-gray-600" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-400">No entries found</h3>
+                      <p className="text-sm text-gray-500 max-w-md">
+                        {citrusHistoryDate 
+                          ? `No citrus intake entries found for ${format(new Date(citrusHistoryDate), 'dd MMM yyyy')}. Try selecting a different date.`
+                          : 'Start recording citrus intake entries using the form above.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
           </Tabs>
         </main>
         
@@ -4250,8 +5098,8 @@ export default function WeightCapturePage() {
             weightEntry={{
               id: lastWeightEntry.id,
               palletId: lastWeightEntry.pallet_id || '',
-              shipmentId: '',
-              weight: `${((lastWeightEntry.fuerte_weight || 0) + (lastWeightEntry.hass_weight || 0))} kg`,
+              product: lastWeightEntry.product || lastWeightEntry.fruit_variety?.join(', ') || 'Mixed Fruit',
+              weight: Number(lastWeightEntry.fuerte_weight || 0) + Number(lastWeightEntry.hass_weight || 0),
               timestamp: lastWeightEntry.timestamp || lastWeightEntry.created_at,
               status: 'approved',
               operator: 'operator',
@@ -4265,13 +5113,13 @@ export default function WeightCapturePage() {
               numberOfCrates: lastWeightEntry.number_of_crates || 0,
               region: lastWeightEntry.region || '',
               imageUrl: lastWeightEntry.image_url || '',
-              netWeight: (lastWeightEntry.fuerte_weight || 0) + (lastWeightEntry.hass_weight || 0),
+              netWeight: Number(lastWeightEntry.fuerte_weight || 0) + Number(lastWeightEntry.hass_weight || 0),
               unit: lastWeightEntry.unit || 'kg',
               client: lastWeightEntry.supplier || '',
               products: lastWeightEntry.fruit_variety?.map(variety => ({
                 product: variety,
                 quantity: 1,
-                weight: variety.toLowerCase().includes('fuerte') ? lastWeightEntry.fuerte_weight : lastWeightEntry.hass_weight
+                weight: variety.toLowerCase().includes('fuerte') ? Number(lastWeightEntry.fuerte_weight || 0) : Number(lastWeightEntry.hass_weight || 0)
               })) || [],
               supplierPhone: lastWeightEntry.supplier_phone || '',
               gateEntryId: lastWeightEntry.gate_entry_id || '',

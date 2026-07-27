@@ -14,10 +14,12 @@ import { Printer, QrCode } from 'lucide-react';
 import type { WeightEntry } from '@/lib/data';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 
+type FinalTagDialogWeightEntry = WeightEntry & Record<string, unknown>;
+
 interface FinalTagDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  weightEntry: WeightEntry;
+  weightEntry: FinalTagDialogWeightEntry;
 }
 
 export function FinalTagDialog({

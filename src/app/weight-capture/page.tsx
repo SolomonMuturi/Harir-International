@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { format, isSameDay, parseISO, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isWithinInterval, parse, isValid } from 'date-fns';
+import { format, isSameDay, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,9 +37,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import * as XLSX from 'xlsx';
+import { logActivity } from '@/lib/activity-logger';
 
-// Define types (keeping all existing types from your original code)
+// Define types
 interface WeightEntry {
   id: string;
   pallet_id: string;
@@ -252,16 +252,14 @@ interface CitrusIntakeEntry {
 type RejectSortField = 'date' | 'supplier' | 'weight' | 'status';
 type RejectSortDirection = 'asc' | 'desc';
 
-// NEW: Date range filter type
 interface DateRangeFilter {
   from: Date | undefined;
   to: Date | undefined;
   includeTime: boolean;
-  fromTime?: string; // Format: "HH:mm"
-  toTime?: string;   // Format: "HH:mm"
+  fromTime?: string;
+  toTime?: string;
 }
 
-// Preset date ranges
 type DateRangePreset = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'custom';
 
 const getChangeIcon = (changeType: 'increase' | 'decrease' | 'neutral') => {
@@ -288,6 +286,16 @@ const getStatusBadge = (status: RejectionEntry['status']) => {
   }
 };
 
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export default function WeightCapturePage() {
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [kpiData, setKpiData] = useState<KPIData | null>(null);
@@ -299,14 +307,10 @@ export default function WeightCapturePage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
-  
-  // NEW: Track processed gate entry IDs
   const [processedGateIds, setProcessedGateIds] = useState<Set<string>>(new Set());
-  
   const [processedCheckIns, setProcessedCheckIns] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<CheckedInSupplier | null>(null);
   
-  // NEW: Enhanced date range filtering
   const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>({
     from: startOfDay(new Date()),
     to: endOfDay(new Date()),
@@ -566,25 +570,6 @@ export default function WeightCapturePage() {
     return groups;
   }, {});
 
-  // Helper function to log activity to /api/activity-logs
-  const logActivity = async (action: string, status: 'success' | 'failure' | 'pending', user?: string) => {
-    try {
-      await fetch('/api/activity-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          status,
-          user: user || 'Weight Capture',
-          timestamp: new Date().toISOString(),
-        }),
-      });
-    } catch (err) {
-      // Silent fail
-    }
-  };
-
-  // Helper function to apply time to date
   const applyTimeToDate = (date: Date | undefined, timeStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
     if (!date) return undefined;
     
@@ -602,7 +587,6 @@ export default function WeightCapturePage() {
     return newDate;
   };
 
-  // Apply preset date range
   const applyDateRangePreset = useCallback((preset: DateRangePreset) => {
     const now = new Date();
     let from: Date, to: Date;
@@ -646,7 +630,6 @@ export default function WeightCapturePage() {
     setDateRangePreset(preset);
   }, [dateRangeFilter.includeTime]);
 
-  // Check if an entry falls within the date range
   const isWithinDateRange = useCallback((entryDate: Date): boolean => {
     const { from, to, includeTime, fromTime, toTime } = dateRangeFilter;
     
@@ -660,12 +643,10 @@ export default function WeightCapturePage() {
     if (rangeEnd) {
       return entryDate >= rangeStart && entryDate <= rangeEnd;
     } else {
-      // Single day filter
       return isSameDay(entryDate, rangeStart);
     }
   }, [dateRangeFilter]);
 
-  // Delete checked-in supplier
   const handleDeleteSupplier = useCallback(async (supplierId: string) => {
     if (!window.confirm('Are you sure you want to delete this supplier from checked-in list?')) return;
     try {
@@ -680,6 +661,18 @@ export default function WeightCapturePage() {
         title: 'Supplier Deleted',
         description: 'Supplier has been removed from checked-in list.',
       });
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: supplierId,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (error: any) {
       toast({
         title: 'Delete Failed',
@@ -689,7 +682,6 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Fetch all weight entries
   const fetchWeights = useCallback(async () => {
     try {
       setError(null);
@@ -700,7 +692,6 @@ export default function WeightCapturePage() {
       }
       
       const data = await response.json();
-      console.log('📊 Fetched weights data:', data);
       
       let weightsArray: WeightEntry[] = [];
       let gateIds = new Set<string>();
@@ -736,7 +727,6 @@ export default function WeightCapturePage() {
       }
       
       setProcessedGateIds(gateIds);
-      console.log('🔑 Processed gate IDs:', Array.from(gateIds));
       
       const processedSet = new Set<string>();
       weightsArray.forEach((entry: WeightEntry) => {
@@ -779,33 +769,29 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Fetch checked-in suppliers
-  const fetchCheckedInSuppliers = useCallback(async () => {
-    try {
-      const response = await fetch('/api/suppliers/checked-in');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch checked-in suppliers');
-      }
-      
-      const data: CheckedInSupplier[] = await response.json();
-      console.log('🚚 Fetched checked-in suppliers:', data);
-      
-      const suppliersWithSession = data.map((supplier: CheckedInSupplier) => ({
-        ...supplier,
-        status: supplier.status === 'weighed' ? 'weighed' : 'pending',
-        check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
-        gate_entry_id: (supplier as any).gate_entry_id || (supplier as any).latest_visit?.gate_entry_id
-      }));
-      
-      setCheckedInSuppliers(suppliersWithSession);
-    } catch (error: any) {
-      console.error('Error fetching checked-in suppliers:', error);
-      setCheckedInSuppliers([]);
+const fetchCheckedInSuppliers = useCallback(async () => {
+  try {
+    const response = await fetch('/api/suppliers/checked-in');
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch checked-in vehicles');
     }
-  }, []);
+    
+    const data: CheckedInSupplier[] = await response.json();
+    
+    // Data already has the correct structure from the API
+    const suppliersWithSession = data.map(supplier => ({
+      ...supplier,
+      check_in_session: `${supplier.id}_${new Date(supplier.check_in_time).getTime()}`,
+    }));
+    
+    setCheckedInSuppliers(suppliersWithSession);
+  } catch (error: any) {
+    console.error('Error fetching checked-in vehicles:', error);
+    setCheckedInSuppliers([]);
+  }
+}, []);
 
-  // Fetch counting history
   const fetchCountingHistory = useCallback(async () => {
     try {
       const response = await fetch('/api/counting?action=history');
@@ -822,7 +808,6 @@ export default function WeightCapturePage() {
     }
   }, []);
 
-  // Fetch rejects
   const fetchRejects = useCallback(async () => {
     try {
       setIsRejectsLoading(true);
@@ -849,13 +834,11 @@ export default function WeightCapturePage() {
     }
   }, []);
 
-  // Calculate statistics
   const calculateStatistics = useCallback(() => {
     const today = new Date();
     const weekAgo = subDays(today, 7);
     const monthAgo = subDays(today, 30);
 
-    // Merge weights and rejects for statistics
     let allEntries: Array<any> = [...weights];
     rejects.forEach(reject => {
       allEntries.push({
@@ -940,7 +923,6 @@ export default function WeightCapturePage() {
     setDailySummaries(summaries);
   }, [weights, rejects, statsPeriod]);
 
-  // Fetch KPI data
   const fetchKpiData = useCallback(() => {
     try {
       const today = new Date();
@@ -997,23 +979,17 @@ export default function WeightCapturePage() {
     }
   }, [weights, checkedInSuppliers, processedCheckIns, processedGateIds]);
 
-  // Load initial data - only once on mount
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      await Promise.all([
-        fetchWeights(),
-        fetchCheckedInSuppliers(),
-        fetchCountingHistory(),
-        fetchRejects()
-      ]);
-      setIsLoading(false);
-    };
+    // Show page immediately, data loads in background
+    setIsLoading(false);
     
-    loadData();
+    // Load all data but don't wait
+    fetchWeights();
+    fetchCheckedInSuppliers();
+    fetchCountingHistory();
+    fetchRejects();
   }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects]);
 
-  // Update KPI and statistics when weights change
   useEffect(() => {
     if (!isLoading) {
       fetchKpiData();
@@ -1021,14 +997,12 @@ export default function WeightCapturePage() {
     }
   }, [weights, fetchKpiData, calculateStatistics, isLoading]);
 
-  // NEW: Fetch history when date range changes
   useEffect(() => {
     if (activeTab === 'history') {
       fetchHistoryWeights();
     }
   }, [dateRangeFilter, activeTab]);
 
-  // Filter and sort rejects
   useEffect(() => {
     let filtered = [...rejects];
 
@@ -1090,9 +1064,20 @@ export default function WeightCapturePage() {
     setFilteredRejects(filtered);
   }, [rejects, rejectSearchTerm, rejectDateFilter, rejectStatusFilter, rejectSortField, rejectSortDirection]);
 
-  // Function to refresh all data
   const refreshAllData = useCallback(async () => {
     setIsRefreshing(true);
+    const currentUser = await getCurrentUser();
+    
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'WEIGHT_DATA_REFRESH',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    
     await Promise.all([
       fetchWeights(),
       fetchCheckedInSuppliers(),
@@ -1107,7 +1092,6 @@ export default function WeightCapturePage() {
     });
   }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, toast]);
 
-  // NEW: Fetch history weights by date range
   const fetchHistoryWeights = useCallback(() => {
     setIsHistoryLoading(true);
     try {
@@ -1117,43 +1101,33 @@ export default function WeightCapturePage() {
       });
       
       setHistoryWeights(filteredWeights);
-      
-      if (filteredWeights.length === 0) {
-        const { from, to } = dateRangeFilter;
-        let dateDescription = '';
-        
-        if (from && to) {
-          dateDescription = `${format(from, 'MMM d, yyyy')} to ${format(to, 'MMM d, yyyy')}`;
-          if (dateRangeFilter.includeTime) {
-            dateDescription += ` (${dateRangeFilter.fromTime} - ${dateRangeFilter.toTime})`;
-          }
-        } else if (from) {
-          dateDescription = format(from, 'MMMM d, yyyy');
-          if (dateRangeFilter.includeTime) {
-            dateDescription += ` from ${dateRangeFilter.fromTime}`;
-          }
-        }
-        
-        toast({
-          title: 'No Data Found',
-          description: `No weight entries found for ${dateDescription}`,
-          variant: 'default',
-        });
-      }
     } catch (error: any) {
       console.error('Error filtering history:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to filter history data',
-        variant: 'destructive',
-      });
       setHistoryWeights([]);
     } finally {
       setIsHistoryLoading(false);
     }
-  }, [weights, dateRangeFilter, isWithinDateRange, toast]);
+  }, [weights, dateRangeFilter, isWithinDateRange]);
 
-  // Generate pallet ID
+  // Get filtered history weights with search and region filters applied
+  const getFilteredHistoryWeights = useCallback(() => {
+    return historyWeights.filter(entry => {
+      if (!searchQuery && filterRegion === 'all') return true;
+      
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || 
+        (entry.supplier?.toLowerCase().includes(query)) ||
+        (entry.driver_name?.toLowerCase().includes(query)) ||
+        (entry.vehicle_plate?.toLowerCase().includes(query)) ||
+        (entry.pallet_id?.toLowerCase().includes(query)) ||
+        (entry.gate_entry_id?.toLowerCase().includes(query));
+      
+      const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
+      
+      return matchesSearch && matchesRegion;
+    });
+  }, [historyWeights, searchQuery, filterRegion]);
+
   const generatePalletId = useCallback(() => {
     const today = new Date();
     const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
@@ -1164,21 +1138,21 @@ export default function WeightCapturePage() {
     return `PAL-${palletNum}/${dateStr}`;
   }, [palletCounter]);
 
-  // Handle Add Weight - UPDATED with gate_entry_id
   const handleAddWeight = useCallback(async (weightData: any) => {
     try {
+      const currentUser = await getCurrentUser();
       const fuerteWeight = weightData.fuerte_weight ? parseFloat(String(weightData.fuerte_weight)) : 0;
       const fuerteCrates = weightData.fuerte_crates ? parseInt(String(weightData.fuerte_crates)) : 0;
       const hassWeight = weightData.hass_weight ? parseFloat(String(weightData.hass_weight)) : 0;
       const hassCrates = weightData.hass_crates ? parseInt(String(weightData.hass_crates)) : 0;
-      // Allow saving and generating card/QR code even if weight is 0
+      
       setError(null);
       const submittedSupplierId = weightData.supplier_id;
       const checkInSession = weightData.check_in_session || 
         (submittedSupplierId ? `${submittedSupplierId}_${new Date().getTime()}` : undefined);
       const generatedPalletId = weightData.pallet_id || generatePalletId();
       const gateEntryId = weightData.gate_entry_id || selectedSupplier?.gate_entry_id;
-      console.log('🔑 Using gate entry ID for weight:', gateEntryId);
+      
       const payload = {
         pallet_id: generatedPalletId,
         unit: weightData.unit || 'kg',
@@ -1203,7 +1177,7 @@ export default function WeightCapturePage() {
         check_in_session: checkInSession,
         gate_entry_id: gateEntryId,
       };
-      console.log('📦 Sending weight payload:', payload);
+      
       const response = await fetch('/api/weights', {
         method: 'POST',
         headers: {
@@ -1211,6 +1185,7 @@ export default function WeightCapturePage() {
         },
         body: JSON.stringify(payload),
       });
+      
       if (!response.ok) {
         let errorMessage = 'Failed to save weight';
         try {
@@ -1219,20 +1194,21 @@ export default function WeightCapturePage() {
         } catch (parseError) {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-        await logActivity('Weight entry save failed', 'failure', payload.supplier);
         throw new Error(errorMessage);
       }
+      
       const savedEntry = await response.json();
       setWeights(prev => [savedEntry, ...prev]);
       setLastWeightEntry(savedEntry);
+      
       if (gateEntryId) {
         setProcessedGateIds(prev => {
           const newSet = new Set(prev);
           newSet.add(gateEntryId);
           return newSet;
         });
-        console.log('✅ Added gate entry ID to processed set:', gateEntryId);
       }
+      
       if (checkInSession) {
         setProcessedCheckIns(prev => {
           const newSet = new Set(prev);
@@ -1240,18 +1216,52 @@ export default function WeightCapturePage() {
           return newSet;
         });
       }
+      
       setIsReceiptOpen(true);
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_CREATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: savedEntry.pallet_id,
+          supplierId: savedEntry.supplier_id,
+          supplierName: savedEntry.supplier,
+          driverName: savedEntry.driver_name,
+          vehiclePlate: savedEntry.vehicle_plate,
+          gateEntryId: gateEntryId || null,
+          fuerteWeight: fuerteWeight,
+          hassWeight: hassWeight,
+          totalCrates: fuerteCrates + hassCrates,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Weight Saved Successfully',
         description: gateEntryId 
           ? `Pallet ${savedEntry.pallet_id} recorded for Gate ID: ${gateEntryId}`
           : `Pallet ${savedEntry.pallet_id} has been recorded.`,
       });
-      await logActivity(`Weight entry saved: ${savedEntry.pallet_id}`, 'success', savedEntry.supplier);
+      
       setSelectedSupplier(null);
     } catch (error: any) {
       console.error('Error adding weight:', error);
       setError(error.message || 'Failed to save weight entry');
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_CREATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Save Failed',
         description: error.message || 'Failed to save weight entry to server',
@@ -1260,8 +1270,7 @@ export default function WeightCapturePage() {
     }
   }, [generatePalletId, selectedSupplier, toast]);
 
-  // Handle supplier selection
-  const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier | any) => {
+  const handleSelectSupplierForWeighing = useCallback((supplier: CheckedInSupplier) => {
     if (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) {
       toast({
         title: 'Already Weighed',
@@ -1291,7 +1300,6 @@ export default function WeightCapturePage() {
     });
   }, [processedCheckIns, processedGateIds, toast]);
 
-  // Extract variety data
   const extractVarietyData = useCallback((weights: WeightEntry[]) => {
     const varietyMap = new Map<string, { weight: number; crates: number }>();
     
@@ -1338,42 +1346,12 @@ export default function WeightCapturePage() {
       .sort((a, b) => a.variety.localeCompare(b.variety));
   }, []);
 
-  // Generate CSV data
-  const generateCSVData = useCallback((weights: WeightEntry[]) => {
+  // Generate CSV data - ONLY from weights, NO rejects
+  const generateCSVData = useCallback((weightsToExport: WeightEntry[]) => {
     const supplierMap = new Map<string, any>();
 
-    // Merge weights and rejects for supplier intake/history
-    const allEntries = [
-      ...weights.map(w => ({
-        ...w,
-        supplier_phone: (w as any).supplier_phone || '',
-        driver_phone: (w as any).driver_phone || '',
-        vehicle_plate: (w as any).vehicle_plate || '',
-        gate_entry_id: (w as any).gate_entry_id || '',
-        driver_name: (w as any).driver_name || '',
-        status: undefined,
-      })),
-      ...rejects.map(reject => ({
-        ...reject,
-        fuerte_weight: reject.fuerte_weight || 0,
-        fuerte_crates: reject.fuerte_crates || 0,
-        hass_weight: reject.hass_weight || 0,
-        hass_crates: reject.hass_crates || 0,
-        created_at: reject.rejected_at,
-        supplier: reject.supplier_name,
-        supplier_id: reject.supplier_id,
-        region: reject.region,
-        pallet_id: reject.pallet_id || '',
-        status: 'rejected',
-        supplier_phone: '',
-        driver_phone: '',
-        vehicle_plate: '',
-        gate_entry_id: '',
-        driver_name: '',
-      }))
-    ];
-
-    allEntries.forEach(entry => {
+    // Only use weights, no rejects
+    weightsToExport.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
       const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
@@ -1397,10 +1375,8 @@ export default function WeightCapturePage() {
           total_weight: 0,
           fuerte_crates_in: 0,
           hass_crates_in: 0,
-          rejected_crates: 0,
           total_crates: 0,
           region: regionKey,
-          status: entry.status === 'rejected' ? 'rejected' : undefined,
         });
       }
 
@@ -1410,22 +1386,33 @@ export default function WeightCapturePage() {
       row.fuerte_crates_in += entry.fuerte_crates || 0;
       row.hass_weight += entry.hass_weight || 0;
       row.hass_crates_in += entry.hass_crates || 0;
-      row.rejected_crates += ('total_rejected_crates' in entry ? entry.total_rejected_crates || 0 : 0);
       row.total_weight = row.fuerte_weight + row.hass_weight;
       row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
     });
 
     return Array.from(supplierMap.values());
-  }, [rejects]);
+  }, []);
 
-  // Download CSV with totals row
-  const downloadCSV = useCallback((weights: WeightEntry[]) => {
-    const csvData = generateCSVData(weights);
+  // Download CSV with totals row - UPDATED to only use weights
+  const downloadCSV = useCallback(async () => {
+    const currentUser = await getCurrentUser();
+    const filteredData = getFilteredHistoryWeights();
+    
+    if (filteredData.length === 0) {
+      toast({
+        title: 'No Data',
+        description: 'No data available to download for the selected filters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const csvData = generateCSVData(filteredData);
     
     if (csvData.length === 0) {
       toast({
         title: 'No Data',
-        description: 'No data available to download for the selected date range.',
+        description: 'No data available to download for the selected filters.',
         variant: 'destructive',
       });
       return;
@@ -1437,7 +1424,6 @@ export default function WeightCapturePage() {
         totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
         totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
         totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
-        totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
         totalCrates: acc.totalCrates + (row.total_crates || 0),
         totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
       };
@@ -1446,7 +1432,6 @@ export default function WeightCapturePage() {
       totalHassWeight: 0,
       totalFuerteCrates: 0,
       totalHassCrates: 0,
-      totalRejectedCrates: 0,
       totalCrates: 0,
       totalWeight: 0
     });
@@ -1462,29 +1447,34 @@ export default function WeightCapturePage() {
       'Hass Weight (kg)',
       'Fuerte Crates In',
       'Hass Crates In',
-      'Rejected Crates',
       'Total Crates',
       'Region'
     ];
     
-    const rows = csvData.map(row => [
-      row.date,
-      row.time,
-      `"${row.supplier_name}"`,
-      `"${row.phone_number}"`,
-      `"${row.vehicle_plate_number}"`,
-      `"${row.gate_entry_id}"`,
-      row.fuerte_weight.toFixed(2),
-      row.hass_weight.toFixed(2),
-      row.fuerte_crates_in,
-      row.hass_crates_in,
-      row.rejected_crates,
-      row.total_crates,
-      `"${row.region}"`
-    ]);
+    const rows = csvData.map(row => {
+      // Format phone number to prevent scientific notation
+      const phoneNumber = row.phone_number ? `"\t${row.phone_number}"` : '""';
+      
+      return [
+        row.date,
+        row.time,
+        `"${row.supplier_name}"`,
+        phoneNumber,
+        `"${row.vehicle_plate_number}"`,
+        `"${row.gate_entry_id}"`,
+        row.fuerte_weight.toFixed(2),
+        row.hass_weight.toFixed(2),
+        row.fuerte_crates_in,
+        row.hass_crates_in,
+        row.total_crates,
+        `"${row.region}"`
+      ];
+    });
     
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
+    // Add empty row for spacing
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '']);
     
+    // Add totals row
     rows.push([
       'TOTALS',
       '',
@@ -1496,11 +1486,11 @@ export default function WeightCapturePage() {
       totals.totalHassWeight.toFixed(2),
       totals.totalFuerteCrates,
       totals.totalHassCrates,
-      totals.totalRejectedCrates,
       totals.totalCrates,
       ''
     ]);
     
+    // Add grand total row
     rows.push([
       'GRAND TOTAL',
       '',
@@ -1513,16 +1503,17 @@ export default function WeightCapturePage() {
       '',
       '',
       '',
-      '',
       ''
     ]);
     
+    // Create CSV content with BOM for Excel compatibility
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.join(','))
     ].join('\n');
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // Add UTF-8 BOM for Excel to recognize UTF-8 encoding
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
@@ -1541,15 +1532,27 @@ export default function WeightCapturePage() {
     link.click();
     document.body.removeChild(link);
     
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'WEIGHT_CSV_EXPORTED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        recordCount: csvData.length,
+        filename: filename,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    
     toast({
       title: 'CSV Downloaded',
       description: `Weight data for selected period has been downloaded with totals.`,
     });
-  }, [generateCSVData, dateRangeFilter, toast]);
+  }, [getFilteredHistoryWeights, generateCSVData, dateRangeFilter, toast]);
 
-  // Download Supplier GRN - UPDATED to include gate entry ID
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {
     try {
+      const currentUser = await getCurrentUser();
       const supplierWeights = weights.filter(w => w.supplier_id === supplierId);
       
       if (supplierWeights.length === 0) {
@@ -1746,6 +1749,19 @@ export default function WeightCapturePage() {
       const fileName = `GRN_${supplierName.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.pdf`;
       doc.save(fileName);
       
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_GRN_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: supplierId,
+          supplierName: supplierName,
+          gateEntryId: gateEntryId || null,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'GRN Downloaded',
         description: `Goods Receipt Note has been downloaded for ${supplierName}.`,
@@ -1761,7 +1777,6 @@ export default function WeightCapturePage() {
     }
   }, [weights, checkedInSuppliers, extractVarietyData, toast]);
 
-  // Handle weight selection for rejection
   const handleSelectWeightForRejection = useCallback((weight: WeightEntry) => {
     setSelectedWeightForReject(weight);
     const countingRecord = countingHistory.find(
@@ -1794,7 +1809,6 @@ export default function WeightCapturePage() {
     });
   }, [countingHistory, toast]);
 
-  // Handle counting record selection for rejection
   const handleSelectCountingRecordForRejection = useCallback((record: CountingHistoryRecord) => {
     setSelectedCountingRecordForReject(record);
     
@@ -1828,7 +1842,6 @@ export default function WeightCapturePage() {
     });
   }, [weights, toast]);
 
-  // Handle rejection input change
   const handleRejectionInputChange = useCallback((field: keyof RejectionEntry, value: string | number) => {
     setNewRejection(prev => {
       const updated = {
@@ -1862,7 +1875,6 @@ export default function WeightCapturePage() {
     });
   }, [selectedWeightForReject, selectedCountingRecordForReject]);
 
-  // Submit rejection
   const handleSubmitRejection = useCallback(async () => {
     if (!selectedWeightForReject && !selectedCountingRecordForReject) {
       toast({
@@ -1882,6 +1894,8 @@ export default function WeightCapturePage() {
     }
     try {
       setIsAddingRejection(true);
+      const currentUser = await getCurrentUser();
+      
       let intakeWeight = 0;
       if (selectedWeightForReject) {
         intakeWeight = (selectedWeightForReject.fuerte_weight || 0) + (selectedWeightForReject.hass_weight || 0);
@@ -1891,7 +1905,7 @@ export default function WeightCapturePage() {
       const rejectionData = {
         ...newRejection,
         rejected_at: new Date().toISOString(),
-        created_by: 'Weight Capture Station',
+        created_by: currentUser?.name || 'Weight Capture Station',
         variance: intakeWeight - (newRejection.counted_weight + newRejection.total_rejected_weight)
       };
       const response = await fetch('/api/rejects', {
@@ -1902,7 +1916,6 @@ export default function WeightCapturePage() {
         body: JSON.stringify(rejectionData),
       });
       if (!response.ok) {
-        await logActivity('Weight rejection save failed', 'failure', rejectionData.supplier_name);
         throw new Error('Failed to save rejection entry');
       }
       const savedRejection = await response.json();
@@ -1932,13 +1945,43 @@ export default function WeightCapturePage() {
       });
       setSelectedWeightForReject(null);
       setSelectedCountingRecordForReject(null);
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_SAVED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: savedRejection.supplier_id,
+          supplierName: savedRejection.supplier_name,
+          palletId: savedRejection.pallet_id,
+          rejectedWeight: savedRejection.total_rejected_weight,
+          rejectedCrates: savedRejection.total_rejected_crates,
+          variance: savedRejection.variance,
+          reason: savedRejection.reason,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Rejection Saved',
         description: `Rejection entry saved for ${savedRejection.supplier_name}. Variance: ${savedRejection.variance.toFixed(1)} kg`,
       });
-      await logActivity(`Weight rejection saved: ${savedRejection.pallet_id}`, 'success', savedRejection.supplier_name);
     } catch (error: any) {
       console.error('Error saving rejection:', error);
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_SAVED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Save Failed',
         description: error.message || 'Failed to save rejection entry',
@@ -1947,15 +1990,15 @@ export default function WeightCapturePage() {
     } finally {
       setIsAddingRejection(false);
     }
-  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast, logActivity]);
+  }, [selectedWeightForReject, selectedCountingRecordForReject, newRejection, toast]);
 
-  // Delete rejection
   const handleDeleteRejection = useCallback(async (rejectionId: string) => {
     if (!confirm('Are you sure you want to delete this rejection entry?')) {
       return;
     }
     
     try {
+      const currentUser = await getCurrentUser();
       const response = await fetch(`/api/rejects/${rejectionId}`, {
         method: 'DELETE',
       });
@@ -1965,6 +2008,17 @@ export default function WeightCapturePage() {
       }
       
       setRejects(prev => prev.filter(r => r.id !== rejectionId));
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          rejectionId: rejectionId,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Rejection Deleted',
@@ -1981,9 +2035,9 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Update rejection status
   const handleUpdateRejectionStatus = useCallback(async (rejectionId: string, status: RejectionEntry['status']) => {
     try {
+      const currentUser = await getCurrentUser();
       const response = await fetch(`/api/rejects/${rejectionId}`, {
         method: 'PATCH',
         headers: {
@@ -1991,7 +2045,7 @@ export default function WeightCapturePage() {
         },
         body: JSON.stringify({
           status,
-          reviewed_by: 'Weight Capture Station',
+          reviewed_by: currentUser?.name || 'Weight Capture Station',
           reviewed_at: new Date().toISOString()
         }),
       });
@@ -2005,6 +2059,18 @@ export default function WeightCapturePage() {
       setRejects(prev => prev.map(r => 
         r.id === rejectionId ? { ...r, ...updatedRejection } : r
       ));
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_REJECTION_STATUS_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          rejectionId: rejectionId,
+          newStatus: status,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Status Updated',
@@ -2021,12 +2087,10 @@ export default function WeightCapturePage() {
     }
   }, [toast]);
 
-  // Toggle reject details
   const toggleRejectDetails = useCallback((rejectId: string) => {
     setExpandedRejectId(prev => prev === rejectId ? null : rejectId);
   }, []);
 
-  // Handle sort change
   const handleSortChange = useCallback((field: RejectSortField) => {
     if (rejectSortField === field) {
       setRejectSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -2036,7 +2100,6 @@ export default function WeightCapturePage() {
     }
   }, [rejectSortField]);
 
-  // Start editing a weight entry - UPDATED to include gate_entry_id
   const handleStartEdit = useCallback((weight: WeightEntry) => {
     setEditingWeight(weight);
     setEditFormData({
@@ -2057,7 +2120,6 @@ export default function WeightCapturePage() {
     });
   }, []);
 
-  // Cancel editing
   const handleCancelEdit = useCallback(() => {
     setEditingWeight(null);
     setEditFormData({
@@ -2078,7 +2140,6 @@ export default function WeightCapturePage() {
     });
   }, []);
 
-  // Save edited weight - UPDATED to handle gate_entry_id
   const handleSaveEdit = useCallback(async () => {
     if (!editingWeight) return;
     
@@ -2102,6 +2163,7 @@ export default function WeightCapturePage() {
     
     try {
       setIsSavingEdit(true);
+      const currentUser = await getCurrentUser();
       
       const payload = {
         pallet_id: editFormData.pallet_id,
@@ -2154,6 +2216,20 @@ export default function WeightCapturePage() {
         w.id === editingWeight.id ? { ...w, ...updatedEntry } : w
       ));
       
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: updatedEntry.pallet_id,
+          supplierId: updatedEntry.supplier_id,
+          supplierName: updatedEntry.supplier,
+          gateEntryId: updatedEntry.gate_entry_id || null,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       handleCancelEdit();
       
       toast({
@@ -2163,6 +2239,20 @@ export default function WeightCapturePage() {
       
     } catch (error: any) {
       console.error('Error updating weight:', error);
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_UPDATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: editingWeight.pallet_id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Update Failed',
         description: error.message || 'Failed to update weight entry',
@@ -2173,18 +2263,17 @@ export default function WeightCapturePage() {
     }
   }, [editingWeight, editFormData, handleCancelEdit, toast]);
 
-  // Confirm delete weight
   const handleConfirmDelete = useCallback((weight: WeightEntry) => {
     setWeightToDelete(weight);
     setShowDeleteDialog(true);
   }, []);
 
-  // Delete weight
   const handleDeleteWeight = useCallback(async () => {
     if (!weightToDelete) return;
     
     try {
       setIsDeleting(true);
+      const currentUser = await getCurrentUser();
       
       const response = await fetch(`/api/weights?id=${weightToDelete.id}`, {
         method: 'DELETE',
@@ -2208,7 +2297,6 @@ export default function WeightCapturePage() {
             newSet.delete(weightToDelete.gate_entry_id!);
             return newSet;
           });
-          console.log('🗑️ Removed gate entry ID from processed set:', weightToDelete.gate_entry_id);
         }
       }
       
@@ -2219,6 +2307,20 @@ export default function WeightCapturePage() {
           return newSet;
         });
       }
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_ENTRY_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          palletId: weightToDelete.pallet_id,
+          supplierId: weightToDelete.supplier_id,
+          supplierName: weightToDelete.supplier,
+          gateEntryId: weightToDelete.gate_entry_id || null,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Weight Deleted',
@@ -2239,10 +2341,8 @@ export default function WeightCapturePage() {
     }
   }, [weightToDelete, weights, toast]);
 
-  // Get regions for filter
   const regions = Array.from(new Set(weights.map(w => w.region).filter(Boolean)));
 
-  // Calculate derived values for rendering - UPDATED to use gate_entry_id
   const suppliersWithStatus = checkedInSuppliers.map(supplier => ({
     ...supplier,
     status: (supplier.gate_entry_id && processedGateIds.has(supplier.gate_entry_id)) ||
@@ -2258,12 +2358,6 @@ export default function WeightCapturePage() {
   const totalWeightToday = weights
     .filter(w => isSameDay(new Date(w.created_at), today))
     .reduce((sum, w) => sum + (w.fuerte_weight || 0) + (w.hass_weight || 0), 0);
-
-  const uniqueSuppliersToday = new Set(
-    weights
-      .filter(w => isSameDay(new Date(w.created_at), today) && w.supplier_id)
-      .map(w => w.supplier_id)
-  ).size;
 
   const pendingSuppliersCount = pendingSuppliers.length;
   const weighedSuppliersCount = weighedSuppliers.length;
@@ -2286,21 +2380,7 @@ export default function WeightCapturePage() {
   const completedRejectsCount = rejects.filter(r => r.status === 'completed').length;
   const cancelledRejectsCount = rejects.filter(r => r.status === 'cancelled').length;
 
-  const filteredHistoryWeights = historyWeights.filter(entry => {
-    if (!searchQuery && filterRegion === 'all') return true;
-    
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = !searchQuery || 
-      (entry.supplier?.toLowerCase().includes(query)) ||
-      (entry.driver_name?.toLowerCase().includes(query)) ||
-      (entry.vehicle_plate?.toLowerCase().includes(query)) ||
-      (entry.pallet_id?.toLowerCase().includes(query)) ||
-      (entry.gate_entry_id?.toLowerCase().includes(query));
-    
-    const matchesRegion = filterRegion === 'all' || entry.region === filterRegion;
-    
-    return matchesSearch && matchesRegion;
-  });
+  const filteredHistoryWeights = getFilteredHistoryWeights();
 
   if (isLoading) {
     return (
@@ -2506,7 +2586,6 @@ export default function WeightCapturePage() {
 
             {/* Overview Tab */}
             <TabsContent value="overview" className="space-y-6 mt-6">
-              {/* KPI Cards */}
               {kpiData && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {(Object.entries(kpiData) as [keyof KPIData, any][]).map(([key, data]) => (
@@ -2530,7 +2609,6 @@ export default function WeightCapturePage() {
                 </div>
               )}
 
-              {/* Checked-in Suppliers */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -2740,26 +2818,15 @@ export default function WeightCapturePage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {isLoading ? (
-                    <div className="h-96 rounded-lg bg-gray-50 flex flex-col items-center justify-center">
-                      <div className="relative">
-                        <Loader2 className="w-12 h-12 animate-spin text-primary/60" />
-                        <Scale className="w-6 h-6 text-primary absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
-                      </div>
-                      <p className="mt-4 text-lg font-medium">Loading weight data...</p>
-                      <p className="text-sm text-muted-foreground mt-2">Please wait while we fetch the latest entries</p>
-                    </div>
-                  ) : (
-                    <WeightCapture 
-                      onAddWeight={handleAddWeight}
-                      isLoading={isLoading}
-                      onRefreshSuppliers={fetchCheckedInSuppliers}
-                      processedSupplierIds={processedCheckIns}
-                      selectedSupplier={selectedSupplier}
-                      onClearSelectedSupplier={() => setSelectedSupplier(null)}
-                      palletCounter={palletCounter}
-                    />
-                  )}
+                  <WeightCapture 
+                    onAddWeight={handleAddWeight}
+                    isLoading={isLoading}
+                    onRefreshSuppliers={fetchCheckedInSuppliers}
+                    processedSupplierIds={processedCheckIns}
+                    selectedSupplier={selectedSupplier}
+                    onClearSelectedSupplier={() => setSelectedSupplier(null)}
+                    palletCounter={palletCounter}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -2773,25 +2840,23 @@ export default function WeightCapturePage() {
                       <FileSpreadsheet className="w-5 h-5" />
                       Weight History & Export
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => downloadCSV(filteredHistoryWeights)}
-                        disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
-                        className="gap-2"
-                        variant="outline"
-                      >
-                        <Download className="w-4 h-4" />
-                        CSV
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={downloadCSV}
+                      disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
+                      className="gap-2"
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download CSV
+                    </Button>
                   </CardTitle>
                   <CardDescription>
-                    View weight history by date range, edit records, and export data in multiple formats
+                    View weight history by date range, edit records, and export data
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* Enhanced Date Range Selection */}
+                    {/* Date Range Selection */}
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -2990,30 +3055,36 @@ export default function WeightCapturePage() {
                       </div>
                     </div>
 
-                    {/* CSV Preview Header */}
+                    {/* Export Info */}
                     <div className="bg-gray-950 p-4 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                        <span className="font-medium">Export Options</span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        <p>Export data in CSV format or download individual supplier GRNs as PDF</p>
-                        <div className="flex gap-2 mt-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1"
-                            onClick={() => downloadCSV(filteredHistoryWeights)}
-                            disabled={filteredHistoryWeights.length === 0}
-                          >
-                            <Download className="w-3 h-3" />
-                            Download All as CSV
-                          </Button>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-5 h-5 text-green-600" />
+                          <span className="font-medium">Export Options</span>
+                          <Badge variant="outline" className="ml-2">
+                            {filteredHistoryWeights.length} entries
+                          </Badge>
                         </div>
+                        <Button
+                          size="sm"
+                          className="gap-1"
+                          onClick={downloadCSV}
+                          disabled={filteredHistoryWeights.length === 0}
+                        >
+                          <Download className="w-3 h-3" />
+                          Download CSV
+                        </Button>
+                      </div>
+                      <div className="text-sm text-gray-600 mt-2">
+                        {filteredHistoryWeights.length > 0 ? (
+                          <span>Ready to export {filteredHistoryWeights.length} entries with totals</span>
+                        ) : (
+                          <span>No entries match the current filters</span>
+                        )}
                       </div>
                     </div>
 
-                    {/* Edit Form (when editing) */}
+                    {/* Edit Form */}
                     {editingWeight && (
                       <Card className="border-blue-200 border-2">
                         <CardHeader>
@@ -3519,7 +3590,7 @@ export default function WeightCapturePage() {
                           <CardTitle className="text-sm">Export Summary</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-4">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
                             <div className="text-center">
                               <div className="text-2xl font-bold text-blue-600">
                                 {new Set(filteredHistoryWeights.map(w => w.supplier_id)).size}
@@ -3556,12 +3627,6 @@ export default function WeightCapturePage() {
                               </div>
                               <div className="text-sm text-gray-600">Hass Crates</div>
                             </div>
-                            <div className="text-center">
-                              <div className="text-2xl font-bold text-indigo-600">
-                                {filteredHistoryWeights.filter(w => w.gate_entry_id).length}
-                              </div>
-                              <div className="text-sm text-gray-600">With Gate IDs</div>
-                            </div>
                           </div>
                           
                           <div className="bg-black-50 p-4 rounded-lg mb-4">
@@ -3577,9 +3642,9 @@ export default function WeightCapturePage() {
                             </div>
                           </div>
                           
-                          <div className="mt-4 flex justify-center gap-4">
+                          <div className="mt-4 flex justify-center">
                             <Button
-                              onClick={() => downloadCSV(filteredHistoryWeights)}
+                              onClick={downloadCSV}
                               className="gap-2"
                             >
                               <Download className="w-4 h-4" />
@@ -3597,7 +3662,6 @@ export default function WeightCapturePage() {
             {/* Rejects Tab */}
             <TabsContent value="rejects" className="space-y-6 mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Rejects History */}
                 <div className="lg:col-span-2">
                   <Card>
                     <CardHeader>
@@ -3626,7 +3690,6 @@ export default function WeightCapturePage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {/* Filter Controls */}
                       <div className="space-y-4 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="space-y-2">
@@ -3714,7 +3777,6 @@ export default function WeightCapturePage() {
                           </div>
                         </div>
 
-                        {/* Status Summary */}
                         <div className="grid grid-cols-3 gap-4">
                           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
                             <div className="text-2xl font-bold text-yellow-700">{pendingRejectsCount}</div>
@@ -3731,7 +3793,6 @@ export default function WeightCapturePage() {
                         </div>
                       </div>
 
-                      {/* Rejects List */}
                       {isRejectsLoading ? (
                         <div className="flex flex-col items-center justify-center py-12">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
@@ -3923,7 +3984,6 @@ export default function WeightCapturePage() {
                   </Card>
                 </div>
 
-                {/* Add New Rejection Form */}
                 <div>
                   <Card>
                     <CardHeader>
@@ -3937,7 +3997,6 @@ export default function WeightCapturePage() {
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {/* Source Selection */}
                         <div className="space-y-2">
                           <Label>Select Source</Label>
                           <div className="grid grid-cols-2 gap-2">
@@ -3966,7 +4025,6 @@ export default function WeightCapturePage() {
                           </div>
                         </div>
 
-                        {/* Selected Record Info */}
                         {(selectedWeightForReject || selectedCountingRecordForReject) && (
                           <div className="bg-black-50 p-4 rounded-lg border border-blue-200">
                             <div className="flex items-center justify-between mb-2">
@@ -4009,9 +4067,7 @@ export default function WeightCapturePage() {
                           </div>
                         )}
 
-                        {/* Rejection Form */}
                         <div className="space-y-4">
-                          {/* Counted Weight (Locked/Read-only) */}
                           <div className="space-y-2">
                             <Label htmlFor="counted_weight">
                               Counted Weight (kg) 
@@ -4115,7 +4171,6 @@ export default function WeightCapturePage() {
                             />
                           </div>
 
-                          {/* Summary */}
                           <div className="bg-black-50 p-4 rounded-lg border">
                             <div className="grid grid-cols-2 gap-4 mb-4">
                               <div>
@@ -4209,7 +4264,6 @@ export default function WeightCapturePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    {/* Period Selection */}
                     <div className="flex gap-2">
                       <Button
                         variant={statsPeriod === 'today' ? 'default' : 'outline'}
@@ -4231,7 +4285,6 @@ export default function WeightCapturePage() {
                       </Button>
                     </div>
 
-                    {/* Counting History Table */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-black-50 px-4 py-3 border-b">
                         <div className="flex items-center justify-between">
@@ -4343,7 +4396,6 @@ export default function WeightCapturePage() {
                       )}
                     </div>
 
-                    {/* Daily Summaries */}
                     {dailySummaries.length > 0 && (
                       <div className="border rounded-lg overflow-hidden">
                         <div className="bg-black-50 px-4 py-3 border-b">
@@ -4402,7 +4454,6 @@ export default function WeightCapturePage() {
                       </div>
                     )}
 
-                    {/* Variety Breakdown */}
                     {dailySummaries.length > 0 && (
                       <Card>
                         <CardHeader>

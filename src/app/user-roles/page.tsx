@@ -1,6 +1,5 @@
-"use client";
-// ...existing code...
-// ...existing code...
+// src/app/dashboard/user-roles/page.tsx
+'use client';
 
 import { useState, useEffect } from 'react';
 import {
@@ -20,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -57,10 +56,34 @@ import {
   BarChart,
   UserCog,
   CalendarCheck,
-  Clock
+  Clock,
+  LayoutDashboard,
+  Grape,
+  Briefcase,
+  Truck,
+  Thermometer,
+  FlaskConical,
+  Boxes,
+  Warehouse,
+  Weight,
+  Zap,
+  Cog,
+  FileText,
+  Package,
+  DollarSign,
+  TrendingUp,
+  Settings,
+  Activity,
+  Navigation,
+  TruckIcon,
+  ClipboardList,
+  Database,
+  Calendar,
+  User
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Define permission types
 type Permission = {
@@ -68,6 +91,7 @@ type Permission = {
   name: string;
   description: string;
   category: string;
+  icon?: React.ElementType;
 };
 
 type UserRole = {
@@ -94,7 +118,7 @@ type UserWithRole = {
   createdAt: Date;
   loginAttempts: number;
   twoFactorEnabled: boolean;
-  password?: string; // Add this if needed
+  password?: string;
 };
 
 type UserAssignmentState = {
@@ -104,122 +128,103 @@ type UserAssignmentState = {
   newRoleId: string | null;
 };
 
-// Default permissions based on your schema - UPDATED WITH EMPLOYEE PERMISSIONS
+// Default permissions - REORGANIZED to match sidebar order
 const DEFAULT_PERMISSIONS: Permission[] = [
-    // Vehicle Management
-    { id: 'vehicle_log.view', name: 'View Vehicle Logs', description: 'View vehicle log entries and history', category: 'Vehicle Management' },
-    { id: 'vehicle_log.manage', name: 'Manage Vehicle Logs', description: 'Add, edit, or delete vehicle log entries', category: 'Vehicle Management' },
-  // Dashboard Permissions
-  { id: 'dashboard.view', name: 'View Dashboard', description: 'Access to main dashboard', category: 'Dashboard' },
-  { id: 'dashboard.analytics', name: 'View Analytics', description: 'Access to analytics charts and reports', category: 'Dashboard' },
+  // === DASHBOARD ===
+  { id: 'dashboard.view', name: 'View Dashboard', description: 'Access to main dashboard', category: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard.analytics', name: 'View Analytics', description: 'Access to analytics charts and reports', category: 'Dashboard', icon: BarChart },
   
-  // Cold Room Permissions
-  { id: 'cold_room.view', name: 'View Cold Rooms', description: 'View cold room inventory and status', category: 'Cold Room' },
-  { id: 'cold_room.manage', name: 'Manage Cold Rooms', description: 'Add/edit/delete cold room data', category: 'Cold Room' },
-  { id: 'cold_room.temperature', name: 'Monitor Temperature', description: 'View temperature logs and alerts', category: 'Cold Room' },
-  { id: 'cold_room.inventory', name: 'Manage Inventory', description: 'Manage cold room inventory entries', category: 'Cold Room' },
+  // === SUPPLIERS ===
+  { id: 'suppliers.view', name: 'View Suppliers', description: 'View supplier information', category: 'Suppliers', icon: Grape },
+  { id: 'suppliers.manage', name: 'Manage Suppliers', description: 'Add/edit/delete supplier records', category: 'Suppliers', icon: Edit },
+  { id: 'suppliers.weigh', name: 'Weight Capture', description: 'Record supplier weight entries', category: 'Suppliers', icon: Weight },
+  { id: 'suppliers.payments', name: 'Process Payments', description: 'Process supplier payments', category: 'Suppliers', icon: DollarSign },
+  { id: 'suppliers.visitors', name: 'Manage Visitors', description: 'Manage supplier visitor records', category: 'Suppliers', icon: Users },
   
-  // Quality Control Permissions
-  { id: 'qc.view', name: 'View QC Records', description: 'View quality check results', category: 'Quality Control' },
-  { id: 'qc.perform', name: 'Perform QC Checks', description: 'Create new quality check records', category: 'Quality Control' },
-  { id: 'qc.approve', name: 'Approve QC Results', description: 'Approve or reject QC results', category: 'Quality Control' },
-  { id: 'qc.export', name: 'Export QC Data', description: 'Export quality check reports', category: 'Quality Control' },
+  // === HR (Employee Management) ===
+  { id: 'employees.overview.view', name: 'View Employee Overview', description: 'View employee dashboard and statistics', category: 'HR', icon: BarChart },
+  { id: 'employees.overview.export', name: 'Export Overview Reports', description: 'Export employee overview reports', category: 'HR', icon: Download },
+  { id: 'employees.overview.bulk_actions', name: 'Perform Bulk Actions', description: 'Perform bulk check-in/check-out operations', category: 'HR', icon: Users },
+  { id: 'employees.checkin.view', name: 'View Check-in Tab', description: 'Access to gate in/check-in functionality', category: 'HR', icon: DoorOpen },
+  { id: 'employees.checkin.perform', name: 'Perform Check-in', description: 'Check in individual employees', category: 'HR', icon: DoorOpen },
+  { id: 'employees.checkin.bulk', name: 'Bulk Check-in', description: 'Perform bulk check-in operations', category: 'HR', icon: Users },
+  { id: 'employees.attendance.mark', name: 'Mark Attendance Status', description: 'Mark employees as absent or on leave', category: 'HR', icon: CalendarCheck },
+  { id: 'employees.attendance.late', name: 'Mark Late Arrival', description: 'Mark employees as late arrivals', category: 'HR', icon: Clock },
+  { id: 'employees.designation.view', name: 'View Designation Tab', description: 'Access to assign designation functionality', category: 'HR', icon: MapPin },
+  { id: 'employees.designation.assign', name: 'Assign Designation', description: 'Assign work areas to contract employees', category: 'HR', icon: MapPin },
+  { id: 'employees.designation.bulk', name: 'Bulk Assign Designation', description: 'Perform bulk designation assignments', category: 'HR', icon: Users },
+  { id: 'employees.designation.manage', name: 'Manage Designations', description: 'Create/edit/delete designation types', category: 'HR', icon: Settings },
+  { id: 'employees.checkout.view', name: 'View Check-out Tab', description: 'Access to gate out/check-out functionality', category: 'HR', icon: DoorClosed },
+  { id: 'employees.checkout.perform', name: 'Perform Check-out', description: 'Check out individual employees', category: 'HR', icon: DoorClosed },
+  { id: 'employees.checkout.bulk', name: 'Bulk Check-out', description: 'Perform bulk check-out operations', category: 'HR', icon: Users },
+  { id: 'employees.checkout.override', name: 'Override Check-out', description: 'Check out employees without designation (admin)', category: 'HR', icon: ShieldAlert },
+  { id: 'employees.list.view', name: 'View Employee List', description: 'View all employees in the system', category: 'HR', icon: UserCog },
+  { id: 'employees.create', name: 'Create Employees', description: 'Add new employees to the system', category: 'HR', icon: UserPlus },
+  { id: 'employees.edit', name: 'Edit Employees', description: 'Edit existing employee information', category: 'HR', icon: Edit },
+  { id: 'employees.delete', name: 'Delete Employees', description: 'Remove employees from the system', category: 'HR', icon: Trash2 },
+  { id: 'employees.export', name: 'Export Employee Data', description: 'Export employee lists to CSV/Excel', category: 'HR', icon: Download },
+  { id: 'employees.import', name: 'Import Employee Data', description: 'Import employees from CSV/Excel', category: 'HR', icon: Upload },
+  { id: 'employees.attendance.view', name: 'View Attendance Log', description: 'View attendance history and records', category: 'HR', icon: Calendar },
+  { id: 'employees.attendance.export', name: 'Export Attendance Data', description: 'Export attendance records to CSV/Excel', category: 'HR', icon: Download },
+  { id: 'employees.attendance.edit', name: 'Edit Attendance Records', description: 'Edit existing attendance records', category: 'HR', icon: Edit },
+  { id: 'employees.attendance.delete', name: 'Delete Attendance Records', description: 'Delete attendance records', category: 'HR', icon: Trash2 },
+  { id: 'employees.attendance.reports', name: 'Generate Attendance Reports', description: 'Generate detailed attendance reports', category: 'HR', icon: FileText },
   
-  // Shipments Permissions
-  { id: 'shipments.view', name: 'View Shipments', description: 'View shipment status and details', category: 'Shipments' },
-  { id: 'shipments.create', name: 'Create Shipments', description: 'Create new shipment records', category: 'Shipments' },
-  { id: 'shipments.update', name: 'Update Shipments', description: 'Update shipment status and details', category: 'Shipments' },
-  { id: 'shipments.track', name: 'Track Shipments', description: 'Track shipment transit and delivery', category: 'Shipments' },
-  { id: 'shipments.manifest', name: 'Generate Manifests', description: 'Create shipping manifests', category: 'Shipments' },
+  // === ACCESS CONTROL ===
+  { id: 'vehicle_log.view', name: 'View Vehicle Logs', description: 'View vehicle log entries and history', category: 'Access Control', icon: Truck },
+  { id: 'vehicle_log.manage', name: 'Manage Vehicle Logs', description: 'Add, edit, or delete vehicle log entries', category: 'Access Control', icon: Edit },
   
-  // Carrier Management
-  { id: 'carriers.view', name: 'View Carriers', description: 'View carrier information', category: 'Carriers' },
-  { id: 'carriers.manage', name: 'Manage Carriers', description: 'Add/edit/delete carrier records', category: 'Carriers' },
-  { id: 'carriers.assign', name: 'Assign Carriers', description: 'Assign carriers to shipments', category: 'Carriers' },
-  { id: 'carriers.track', name: 'Track Carrier Performance', description: 'View carrier ratings and performance', category: 'Carriers' },
+  // === COLD ROOM ===
+  { id: 'cold_room.view', name: 'View Cold Rooms', description: 'View cold room inventory and status', category: 'Cold Room', icon: Thermometer },
+  { id: 'cold_room.manage', name: 'Manage Cold Rooms', description: 'Add/edit/delete cold room data', category: 'Cold Room', icon: Edit },
+  { id: 'cold_room.temperature', name: 'Monitor Temperature', description: 'View temperature logs and alerts', category: 'Cold Room', icon: Activity },
+  { id: 'cold_room.inventory', name: 'Manage Inventory', description: 'Manage cold room inventory entries', category: 'Cold Room', icon: Boxes },
   
-  // Loading Operations
-  { id: 'loading.view', name: 'View Loading Sheets', description: 'View loading sheet records', category: 'Loading' },
-  { id: 'loading.create', name: 'Create Loading Sheets', description: 'Create new loading sheets', category: 'Loading' },
-  { id: 'loading.manage', name: 'Manage Loading Sheets', description: 'Edit/delete loading sheets', category: 'Loading' },
-  { id: 'loading.assign', name: 'Assign to Carriers', description: 'Assign loading sheets to carriers', category: 'Loading' },
-  { id: 'loading.transit', name: 'Manage Transit', description: 'Update transit status', category: 'Loading' },
+  // === QUALITY CONTROL ===
+  { id: 'qc.view', name: 'View QC Records', description: 'View quality check results', category: 'Quality Control', icon: FlaskConical },
+  { id: 'qc.perform', name: 'Perform QC Checks', description: 'Create new quality check records', category: 'Quality Control', icon: FlaskConical },
+  { id: 'qc.approve', name: 'Approve QC Results', description: 'Approve or reject QC results', category: 'Quality Control', icon: CheckCircle },
+  { id: 'qc.export', name: 'Export QC Data', description: 'Export quality check reports', category: 'Quality Control', icon: Download },
   
-  // Supplier Management
-  { id: 'suppliers.view', name: 'View Suppliers', description: 'View supplier information', category: 'Suppliers' },
-  { id: 'suppliers.manage', name: 'Manage Suppliers', description: 'Add/edit/delete supplier records', category: 'Suppliers' },
-  { id: 'suppliers.weigh', name: 'Weight Capture', description: 'Record supplier weight entries', category: 'Suppliers' },
-  { id: 'suppliers.payments', name: 'Process Payments', description: 'Process supplier payments', category: 'Suppliers' },
-  { id: 'suppliers.visitors', name: 'Manage Visitors', description: 'Manage supplier visitor records', category: 'Suppliers' },
+  // === SHIPMENTS ===
+  { id: 'shipments.view', name: 'View Shipments', description: 'View shipment status and details', category: 'Shipments', icon: TruckIcon },
+  { id: 'shipments.create', name: 'Create Shipments', description: 'Create new shipment records', category: 'Shipments', icon: Plus },
+  { id: 'shipments.update', name: 'Update Shipments', description: 'Update shipment status and details', category: 'Shipments', icon: Edit },
+  { id: 'shipments.track', name: 'Track Shipments', description: 'Track shipment transit and delivery', category: 'Shipments', icon: Navigation },
+  { id: 'shipments.manifest', name: 'Generate Manifests', description: 'Create shipping manifests', category: 'Shipments', icon: FileText },
   
-  // Customer Management
-  { id: 'customers.view', name: 'View Customers', description: 'View customer information', category: 'Customers' },
-  { id: 'customers.manage', name: 'Manage Customers', description: 'Add/edit/delete customer records', category: 'Customers' },
-  { id: 'customers.quotes', name: 'Manage Quotes', description: 'Create and manage quotes', category: 'Customers' },
-  { id: 'customers.invoices', name: 'Manage Invoices', description: 'Create and manage invoices', category: 'Customers' },
-  { id: 'customers.receivables', name: 'Accounts Receivable', description: 'Manage accounts receivable', category: 'Customers' },
+  // === CARRIERS ===
+  { id: 'carriers.view', name: 'View Carriers', description: 'View carrier information', category: 'Carriers', icon: Briefcase },
+  { id: 'carriers.manage', name: 'Manage Carriers', description: 'Add/edit/delete carrier records', category: 'Carriers', icon: Edit },
+  { id: 'carriers.assign', name: 'Assign Carriers', description: 'Assign carriers to shipments', category: 'Carriers', icon: Users },
+  { id: 'carriers.track', name: 'Track Carrier Performance', description: 'View carrier ratings and performance', category: 'Carriers', icon: TrendingUp },
   
-  // Inventory Management
-  { id: 'inventory.view', name: 'View Inventory', description: 'View inventory levels', category: 'Inventory' },
-  { id: 'inventory.manage', name: 'Manage Inventory', description: 'Update inventory records', category: 'Inventory' },
-  { id: 'inventory.packaging', name: 'Manage Packaging', description: 'Manage packaging materials', category: 'Inventory' },
-  { id: 'inventory.reports', name: 'Generate Reports', description: 'Generate inventory reports', category: 'Inventory' },
+  // === LOADING ===
+  { id: 'loading.view', name: 'View Loading Sheets', description: 'View loading sheet records', category: 'Loading', icon: ClipboardList },
+  { id: 'loading.create', name: 'Create Loading Sheets', description: 'Create new loading sheets', category: 'Loading', icon: Plus },
+  { id: 'loading.manage', name: 'Manage Loading Sheets', description: 'Edit/delete loading sheets', category: 'Loading', icon: Edit },
+  { id: 'loading.assign', name: 'Assign to Carriers', description: 'Assign loading sheets to carriers', category: 'Loading', icon: Users },
+  { id: 'loading.transit', name: 'Manage Transit', description: 'Update transit status', category: 'Loading', icon: Navigation },
   
-  // Counting Permission - NEW
-  { id: 'counting.perform', name: 'Perform Counting', description: 'Perform warehouse counting operations', category: 'Inventory' },
+  // === INVENTORY ===
+  { id: 'inventory.view', name: 'View Inventory', description: 'View inventory levels', category: 'Inventory', icon: Boxes },
+  { id: 'inventory.manage', name: 'Manage Inventory', description: 'Update inventory records', category: 'Inventory', icon: Edit },
+  { id: 'inventory.packaging', name: 'Manage Packaging', description: 'Manage packaging materials', category: 'Inventory', icon: Package },
+  { id: 'inventory.reports', name: 'Generate Reports', description: 'Generate inventory reports', category: 'Inventory', icon: FileText },
+  { id: 'counting.perform', name: 'Perform Counting', description: 'Perform warehouse counting operations', category: 'Inventory', icon: ListChecks },
   
-  // Utility Management
-  { id: 'utilities.view', name: 'View Utilities', description: 'View utility consumption data', category: 'Utilities' },
-  { id: 'utilities.record', name: 'Record Readings', description: 'Record utility meter readings', category: 'Utilities' },
-  { id: 'utilities.analyze', name: 'Analyze Consumption', description: 'Analyze utility consumption patterns', category: 'Utilities' },
-  { id: 'utilities.reports', name: 'Utility Reports', description: 'Generate utility reports', category: 'Utilities' },
+  // === UTILITIES ===
+  { id: 'utilities.view', name: 'View Utilities', description: 'View utility consumption data', category: 'Utilities', icon: Zap },
+  { id: 'utilities.record', name: 'Record Readings', description: 'Record utility meter readings', category: 'Utilities', icon: Edit },
+  { id: 'utilities.analyze', name: 'Analyze Consumption', description: 'Analyze utility consumption patterns', category: 'Utilities', icon: BarChart },
+  { id: 'utilities.reports', name: 'Utility Reports', description: 'Generate utility reports', category: 'Utilities', icon: FileText },
   
-  // Employee Management Permissions - NEWLY ADDED
-  // Overview Tab Permissions
-  { id: 'employees.overview.view', name: 'View Employee Overview', description: 'View employee dashboard and statistics', category: 'Employee Management' },
-  { id: 'employees.overview.export', name: 'Export Overview Reports', description: 'Export employee overview reports', category: 'Employee Management' },
-  { id: 'employees.overview.bulk_actions', name: 'Perform Bulk Actions', description: 'Perform bulk check-in/check-out operations', category: 'Employee Management' },
-  
-  // Gate In/Check-in Permissions
-  { id: 'employees.checkin.view', name: 'View Check-in Tab', description: 'Access to gate in/check-in functionality', category: 'Employee Management' },
-  { id: 'employees.checkin.perform', name: 'Perform Check-in', description: 'Check in individual employees', category: 'Employee Management' },
-  { id: 'employees.checkin.bulk', name: 'Bulk Check-in', description: 'Perform bulk check-in operations', category: 'Employee Management' },
-  { id: 'employees.attendance.mark', name: 'Mark Attendance Status', description: 'Mark employees as absent or on leave', category: 'Employee Management' },
-  { id: 'employees.attendance.late', name: 'Mark Late Arrival', description: 'Mark employees as late arrivals', category: 'Employee Management' },
-  
-  // Assign Designation Permissions
-  { id: 'employees.designation.view', name: 'View Designation Tab', description: 'Access to assign designation functionality', category: 'Employee Management' },
-  { id: 'employees.designation.assign', name: 'Assign Designation', description: 'Assign work areas to contract employees', category: 'Employee Management' },
-  { id: 'employees.designation.bulk', name: 'Bulk Assign Designation', description: 'Perform bulk designation assignments', category: 'Employee Management' },
-  { id: 'employees.designation.manage', name: 'Manage Designations', description: 'Create/edit/delete designation types', category: 'Employee Management' },
-  
-  // Gate Out/Check-out Permissions
-  { id: 'employees.checkout.view', name: 'View Check-out Tab', description: 'Access to gate out/check-out functionality', category: 'Employee Management' },
-  { id: 'employees.checkout.perform', name: 'Perform Check-out', description: 'Check out individual employees', category: 'Employee Management' },
-  { id: 'employees.checkout.bulk', name: 'Bulk Check-out', description: 'Perform bulk check-out operations', category: 'Employee Management' },
-  { id: 'employees.checkout.override', name: 'Override Check-out', description: 'Check out employees without designation (admin)', category: 'Employee Management' },
-  
-  // Employee List Management
-  { id: 'employees.list.view', name: 'View Employee List', description: 'View all employees in the system', category: 'Employee Management' },
-  { id: 'employees.create', name: 'Create Employees', description: 'Add new employees to the system', category: 'Employee Management' },
-  { id: 'employees.edit', name: 'Edit Employees', description: 'Edit existing employee information', category: 'Employee Management' },
-  { id: 'employees.delete', name: 'Delete Employees', description: 'Remove employees from the system', category: 'Employee Management' },
-  { id: 'employees.export', name: 'Export Employee Data', description: 'Export employee lists to CSV/Excel', category: 'Employee Management' },
-  { id: 'employees.import', name: 'Import Employee Data', description: 'Import employees from CSV/Excel', category: 'Employee Management' },
-  
-  // Attendance Log Permissions
-  { id: 'employees.attendance.view', name: 'View Attendance Log', description: 'View attendance history and records', category: 'Employee Management' },
-  { id: 'employees.attendance.export', name: 'Export Attendance Data', description: 'Export attendance records to CSV/Excel', category: 'Employee Management' },
-  { id: 'employees.attendance.edit', name: 'Edit Attendance Records', description: 'Edit existing attendance records', category: 'Employee Management' },
-  { id: 'employees.attendance.delete', name: 'Delete Attendance Records', description: 'Delete attendance records', category: 'Employee Management' },
-  { id: 'employees.attendance.reports', name: 'Generate Attendance Reports', description: 'Generate detailed attendance reports', category: 'Employee Management' },
-  
-  // System Administration
-  { id: 'admin.users', name: 'Manage Users', description: 'Create and manage user accounts', category: 'Administration' },
-  { id: 'admin.roles', name: 'Manage Roles', description: 'Create and manage user roles', category: 'Administration' },
-  { id: 'admin.settings', name: 'System Settings', description: 'Configure system settings', category: 'Administration' },
-  { id: 'admin.audit', name: 'View Audit Logs', description: 'View system audit logs', category: 'Administration' },
-  { id: 'admin.backup', name: 'System Backup', description: 'Perform system backups', category: 'Administration' },
+  // === ADMINISTRATION ===
+  { id: 'admin.users', name: 'Manage Users', description: 'Create and manage user accounts', category: 'Administration', icon: Users },
+  { id: 'admin.roles', name: 'Manage Roles', description: 'Create and manage user roles', category: 'Administration', icon: Shield },
+  { id: 'admin.settings', name: 'System Settings', description: 'Configure system settings', category: 'Administration', icon: Settings },
+  { id: 'admin.audit', name: 'View Audit Logs', description: 'View system audit logs', category: 'Administration', icon: FileText },
+  { id: 'admin.backup', name: 'System Backup', description: 'Perform system backups', category: 'Administration', icon: Database },
 ];
 
 // Predefined roles - UPDATED WITH NEW PERMISSION SETS
@@ -235,10 +240,6 @@ const PREDEFINED_ROLES = [
     description: 'Manage warehouse operations, inventory, and quality control',
     isDefault: false,
     permissions: [
-      'vehicle_log.view',
-      'vehicle_log.manage',
-      'vehicle_log.view',
-      'vehicle_log.manage',
       'dashboard.view',
       'dashboard.analytics',
       'cold_room.view',
@@ -260,11 +261,9 @@ const PREDEFINED_ROLES = [
       'inventory.manage',
       'inventory.packaging',
       'inventory.reports',
-      'counting.perform', // NEW: Added counting permission
+      'counting.perform',
       'utilities.view',
       'utilities.record',
-      
-      // Employee Management Permissions
       'employees.overview.view',
       'employees.checkin.view',
       'employees.checkin.perform',
@@ -280,6 +279,8 @@ const PREDEFINED_ROLES = [
       'employees.export',
       'employees.attendance.view',
       'employees.attendance.export',
+      'vehicle_log.view',
+      'vehicle_log.manage',
     ]
   },
   {
@@ -287,19 +288,17 @@ const PREDEFINED_ROLES = [
     description: 'Perform quality checks and inspections',
     isDefault: false,
     permissions: [
-      'vehicle_log.view',
-      'vehicle_log.view',
+      'dashboard.view',
       'qc.view',
       'qc.perform',
       'cold_room.view',
       'cold_room.temperature',
       'inventory.view',
-      'counting.perform', // NEW: Added counting permission
+      'counting.perform',
       'shipments.view',
-      
-      // Employee Management Permissions (Limited)
+      'vehicle_log.view',
       'employees.overview.view',
-      'employees.checkin.perform', // Can check themselves in/out
+      'employees.checkin.perform',
       'employees.checkout.perform',
     ]
   },
@@ -308,8 +307,7 @@ const PREDEFINED_ROLES = [
     description: 'Manage shipments and carrier assignments',
     isDefault: false,
     permissions: [
-      'vehicle_log.view',
-      'vehicle_log.view',
+      'dashboard.view',
       'shipments.view',
       'shipments.create',
       'shipments.update',
@@ -321,9 +319,7 @@ const PREDEFINED_ROLES = [
       'loading.create',
       'loading.assign',
       'loading.transit',
-      'customers.view',
-      
-      // Employee Management Permissions
+      'vehicle_log.view',
       'employees.overview.view',
       'employees.checkin.perform',
       'employees.checkout.perform',
@@ -335,14 +331,14 @@ const PREDEFINED_ROLES = [
     description: 'Manage supplier relationships and intake',
     isDefault: false,
     permissions: [
+      'dashboard.view',
       'suppliers.view',
       'suppliers.manage',
       'suppliers.weigh',
       'suppliers.visitors',
       'qc.view',
       'inventory.view',
-      
-      // Employee Management Permissions
+      'vehicle_log.view',
       'employees.overview.view',
       'employees.checkin.perform',
       'employees.checkout.perform',
@@ -354,15 +350,10 @@ const PREDEFINED_ROLES = [
     description: 'Manage customer accounts and orders',
     isDefault: false,
     permissions: [
-      'customers.view',
-      'customers.manage',
-      'customers.quotes',
-      'customers.invoices',
-      'customers.receivables',
+      'dashboard.view',
       'shipments.view',
       'shipments.track',
-      
-      // Employee Management Permissions
+      'vehicle_log.view',
       'employees.overview.view',
       'employees.checkin.perform',
       'employees.checkout.perform',
@@ -374,6 +365,8 @@ const PREDEFINED_ROLES = [
     description: 'Manage employee records and HR operations',
     isDefault: false,
     permissions: [
+      'dashboard.view',
+      'dashboard.analytics',
       'employees.overview.view',
       'employees.overview.export',
       'employees.checkin.view',
@@ -395,8 +388,6 @@ const PREDEFINED_ROLES = [
       'employees.attendance.export',
       'employees.attendance.edit',
       'employees.attendance.reports',
-      'dashboard.view',
-      'dashboard.analytics',
     ]
   },
   {
@@ -412,6 +403,7 @@ const PREDEFINED_ROLES = [
       'employees.checkout.perform',
       'employees.checkout.bulk',
       'employees.list.view',
+      'vehicle_log.view',
     ]
   },
   {
@@ -419,6 +411,11 @@ const PREDEFINED_ROLES = [
     description: 'Supervise department employees and assign work',
     isDefault: false,
     permissions: [
+      'dashboard.view',
+      'cold_room.view',
+      'qc.view',
+      'inventory.view',
+      'counting.perform',
       'employees.overview.view',
       'employees.checkin.view',
       'employees.designation.view',
@@ -427,12 +424,7 @@ const PREDEFINED_ROLES = [
       'employees.checkout.view',
       'employees.list.view',
       'employees.attendance.view',
-      
-      // Department specific permissions
-      'cold_room.view',
-      'qc.view',
-      'inventory.view',
-      'counting.perform', // NEW: Added counting permission
+      'vehicle_log.view',
     ]
   },
   {
@@ -447,15 +439,12 @@ const PREDEFINED_ROLES = [
       'carriers.view',
       'loading.view',
       'suppliers.view',
-      'customers.view',
-      'inventory.view', // Has inventory.view but NOT counting.perform
+      'inventory.view',
       'utilities.view',
-      'employees.view',
-      
-      // Employee Management Permissions (View only)
       'employees.overview.view',
       'employees.list.view',
       'employees.attendance.view',
+      'vehicle_log.view',
     ]
   }
 ];
@@ -466,6 +455,7 @@ export default function UserRolesPage() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [currentUser, setCurrentUser] = useState<{ name: string; id: string } | null>(null);
   
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -480,7 +470,7 @@ export default function UserRolesPage() {
   const [isDefaultRole, setIsDefaultRole] = useState(false);
   const [permissionSearch, setPermissionSearch] = useState('');
 
-  // NEW: User Assignment states
+  // User Assignment states
   const [activeTab, setActiveTab] = useState('roles');
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [userSearch, setUserSearch] = useState('');
@@ -497,6 +487,25 @@ export default function UserRolesPage() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRoleId, setNewUserRoleId] = useState<string>('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Get current user
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const response = await fetch('/api/auth/session');
+        const session = await response.json();
+        if (session?.user) {
+          setCurrentUser({
+            name: session.user.name || 'Admin',
+            id: session.user.id || 'system'
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+    getUser();
+  }, []);
 
   // Fetch roles from database
   const fetchRoles = async () => {
@@ -519,7 +528,7 @@ export default function UserRolesPage() {
     }
   };
 
-  // NEW: Fetch users with their roles
+  // Fetch users with their roles
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -552,10 +561,14 @@ export default function UserRolesPage() {
     }
   };
 
-  // NEW: Assign role to single user
+  // Assign role to single user with logging
   const assignRoleToUser = async (userId: string, roleId: string | null) => {
     try {
       setSaving(true);
+      
+      const user = users.find(u => u.id === userId);
+      const role = roleId ? roles.find(r => r.id === roleId) : null;
+      
       const response = await fetch('/api/user-roles/assign', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -568,8 +581,25 @@ export default function UserRolesPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Role assigned successfully');
-        fetchUsers(); // Refresh user list
-        fetchRoles(); // Refresh role counts
+        
+        // ✅ LOG ROLE ASSIGNMENT
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: ActivityTypes.USER_ROLE_ASSIGNED,
+          status: 'success',
+          metadata: {
+            assignedBy: currentUser?.id,
+            userId: userId,
+            userEmail: user?.email,
+            userName: user?.name,
+            roleId: roleId,
+            roleName: role?.name || 'No Role (Unassigned)',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
+        fetchUsers();
+        fetchRoles();
       } else {
         const error = await response.json();
         throw new Error(error.error || 'Failed to assign role');
@@ -577,12 +607,25 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error assigning role:', error);
       toast.error(error.message || 'Failed to assign role');
+      
+      // ✅ LOG ROLE ASSIGNMENT FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: ActivityTypes.USER_ROLE_ASSIGNED,
+        status: 'failure',
+        metadata: {
+          assignedBy: currentUser?.id,
+          userId: userId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // NEW: Bulk assign roles
+  // Bulk assign roles with logging
   const bulkAssignRoles = async () => {
     if (selectedUsers.length === 0) {
       toast.error('No users selected');
@@ -591,6 +634,9 @@ export default function UserRolesPage() {
     
     try {
       setSaving(true);
+      
+      const role = bulkAssignRoleId ? roles.find(r => r.id === bulkAssignRoleId) : null;
+      
       const response = await fetch('/api/user-roles/assign', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -603,6 +649,22 @@ export default function UserRolesPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Roles assigned successfully');
+        
+        // ✅ LOG BULK ROLE ASSIGNMENT
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'BULK_ROLE_ASSIGNMENT',
+          status: 'success',
+          metadata: {
+            assignedBy: currentUser?.id,
+            userCount: selectedUsers.length,
+            userIds: selectedUsers,
+            roleId: bulkAssignRoleId,
+            roleName: role?.name || 'No Role (Unassigned)',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setSelectedUsers([]);
         setBulkAssignRoleId('');
         setShowBulkAssignDialog(false);
@@ -615,65 +677,107 @@ export default function UserRolesPage() {
     } catch (error: any) {
       console.error('Error bulk assigning roles:', error);
       toast.error(error.message || 'Failed to assign roles');
+      
+      // ✅ LOG BULK ROLE ASSIGNMENT FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'BULK_ROLE_ASSIGNMENT',
+        status: 'failure',
+        metadata: {
+          assignedBy: currentUser?.id,
+          userCount: selectedUsers.length,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-// NEW: Create new user
-const createNewUser = async () => {
-  if (!newUserEmail || !newUserName || !newUserPassword) {
-    toast.error('Please fill all required fields');
-    return;
-  }
-  
-  try {
-    setSaving(true);
-    
-    // Convert 'no-role' to null
-    const roleIdToAssign = newUserRoleId === 'no-role' ? null : newUserRoleId;
-    
-    const response = await fetch('/api/user-roles/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: newUserEmail,
-        name: newUserName,
-        password: newUserPassword,
-        roleId: roleIdToAssign,
-      }),
-    });
-    
-    // First, get the response text to debug
-    const responseText = await response.text();
-    
-    // Try to parse it as JSON
-    let result;
-    try {
-      result = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('Failed to parse response as JSON:', responseText);
-      toast.error('Server returned invalid response');
+  // Create new user with logging
+  const createNewUser = async () => {
+    if (!newUserEmail || !newUserName || !newUserPassword) {
+      toast.error('Please fill all required fields');
       return;
     }
     
-    if (response.ok) {
-      toast.success(result.message || 'User created successfully');
-      setShowCreateUserDialog(false);
-      resetNewUserForm();
-      fetchUsers();
-    } else {
-      throw new Error(result.error || 'Failed to create user');
+    try {
+      setSaving(true);
+      
+      const roleIdToAssign = newUserRoleId === 'no-role' ? null : newUserRoleId;
+      const role = roleIdToAssign ? roles.find(r => r.id === roleIdToAssign) : null;
+      
+      const response = await fetch('/api/user-roles/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newUserEmail,
+          name: newUserName,
+          password: newUserPassword,
+          roleId: roleIdToAssign,
+        }),
+      });
+      
+      const responseText = await response.text();
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', responseText);
+        toast.error('Server returned invalid response');
+        return;
+      }
+      
+      if (response.ok) {
+        toast.success(result.message || 'User created successfully');
+        
+        // ✅ LOG USER CREATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: ActivityTypes.USER_CREATED,
+          status: 'success',
+          metadata: {
+            createdBy: currentUser?.id,
+            newUserId: result.user?.id,
+            userEmail: newUserEmail,
+            userName: newUserName,
+            roleId: roleIdToAssign,
+            roleName: role?.name || 'No Role',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
+        setShowCreateUserDialog(false);
+        resetNewUserForm();
+        fetchUsers();
+      } else {
+        throw new Error(result.error || 'Failed to create user');
+      }
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      toast.error(error.message || 'Failed to create user');
+      
+      // ✅ LOG USER CREATION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: ActivityTypes.USER_CREATED,
+        status: 'failure',
+        metadata: {
+          createdBy: currentUser?.id,
+          userEmail: newUserEmail,
+          userName: newUserName,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } finally {
+      setSaving(false);
     }
-  } catch (error: any) {
-    console.error('Error creating user:', error);
-    toast.error(error.message || 'Failed to create user');
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
-  // NEW: Save all pending assignments
+  // Save all pending assignments with logging
   const saveAllAssignments = async () => {
     const changes = userAssignments.filter(
       assignment => assignment.newRoleId !== assignment.currentRoleId
@@ -691,9 +795,40 @@ const createNewUser = async () => {
       );
       
       await Promise.all(promises);
+      
+      // ✅ LOG BULK ROLE UPDATES
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'BULK_ROLE_UPDATE',
+        status: 'success',
+        metadata: {
+          updatedBy: currentUser?.id,
+          updateCount: changes.length,
+          changes: changes.map(c => ({
+            userId: c.userId,
+            userEmail: c.email,
+            oldRoleId: c.currentRoleId,
+            newRoleId: c.newRoleId,
+          })),
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast.success(`Updated ${changes.length} user(s)`);
     } catch (error) {
       console.error('Error saving assignments:', error);
+      
+      // ✅ LOG BULK ROLE UPDATE FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'BULK_ROLE_UPDATE',
+        status: 'failure',
+        metadata: {
+          updatedBy: currentUser?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
@@ -714,6 +849,19 @@ const createNewUser = async () => {
       if (response.ok) {
         const result = await response.json();
         toast.success(result.message || 'Roles initialized successfully');
+        
+        // ✅ LOG ROLE INITIALIZATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLES_INITIALIZED',
+          status: 'success',
+          metadata: {
+            initializedBy: currentUser?.id,
+            roleCount: PREDEFINED_ROLES.length,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         fetchRoles();
       } else {
         throw new Error('Failed to initialize roles');
@@ -726,7 +874,7 @@ const createNewUser = async () => {
     }
   };
 
-  // Create new role
+  // Create new role with logging
   const createRole = async () => {
     if (!roleName.trim()) {
       toast.error('Role name is required');
@@ -751,6 +899,23 @@ const createNewUser = async () => {
       if (response.ok) {
         const newRole = await response.json();
         toast.success('Role created successfully');
+        
+        // ✅ LOG ROLE CREATION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLE_CREATED',
+          status: 'success',
+          metadata: {
+            createdBy: currentUser?.id,
+            roleId: newRole.id,
+            roleName: roleName,
+            description: roleDescription,
+            permissionsCount: selectedPermissions.length,
+            isDefault: isDefaultRole,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowCreateDialog(false);
         resetForm();
         fetchRoles();
@@ -761,12 +926,25 @@ const createNewUser = async () => {
     } catch (error: any) {
       console.error('Error creating role:', error);
       toast.error(error.message || 'Failed to create role');
+      
+      // ✅ LOG ROLE CREATION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'ROLE_CREATED',
+        status: 'failure',
+        metadata: {
+          createdBy: currentUser?.id,
+          roleName: roleName,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Update existing role
+  // Update existing role with logging
   const updateRole = async () => {
     if (!selectedRole || !roleName.trim()) {
       toast.error('Role name is required');
@@ -791,6 +969,25 @@ const createNewUser = async () => {
       if (response.ok) {
         const updatedRole = await response.json();
         toast.success('Role updated successfully');
+        
+        // ✅ LOG ROLE UPDATE
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLE_UPDATED',
+          status: 'success',
+          metadata: {
+            updatedBy: currentUser?.id,
+            roleId: selectedRole.id,
+            oldName: selectedRole.name,
+            newName: roleName,
+            oldPermissionsCount: selectedRole.permissions.length,
+            newPermissionsCount: selectedPermissions.length,
+            oldIsDefault: selectedRole.isDefault,
+            newIsDefault: isDefaultRole,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowEditDialog(false);
         resetForm();
         fetchRoles();
@@ -801,12 +998,25 @@ const createNewUser = async () => {
     } catch (error: any) {
       console.error('Error updating role:', error);
       toast.error(error.message || 'Failed to update role');
+      
+      // ✅ LOG ROLE UPDATE FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'ROLE_UPDATED',
+        status: 'failure',
+        metadata: {
+          updatedBy: currentUser?.id,
+          roleId: selectedRole.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete role
+  // Delete role with logging
   const deleteRole = async () => {
     if (!selectedRole) return;
 
@@ -818,6 +1028,22 @@ const createNewUser = async () => {
 
       if (response.ok) {
         toast.success('Role deleted successfully');
+        
+        // ✅ LOG ROLE DELETION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'ROLE_DELETED',
+          status: 'success',
+          metadata: {
+            deletedBy: currentUser?.id,
+            roleId: selectedRole.id,
+            roleName: selectedRole.name,
+            permissionsCount: selectedRole.permissions.length,
+            wasDefault: selectedRole.isDefault,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         setShowDeleteDialog(false);
         setSelectedRole(null);
         fetchRoles();
@@ -828,6 +1054,19 @@ const createNewUser = async () => {
     } catch (error: any) {
       console.error('Error deleting role:', error);
       toast.error(error.message || 'Failed to delete role');
+      
+      // ✅ LOG ROLE DELETION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'ROLE_DELETED',
+        status: 'failure',
+        metadata: {
+          deletedBy: currentUser?.id,
+          roleId: selectedRole.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } finally {
       setSaving(false);
     }
@@ -859,7 +1098,7 @@ const createNewUser = async () => {
     setSelectedRole(null);
   };
 
-  // NEW: Reset new user form
+  // Reset new user form
   const resetNewUserForm = () => {
     setNewUserEmail('');
     setNewUserName('');
@@ -868,7 +1107,7 @@ const createNewUser = async () => {
     setShowPassword(false);
   };
 
-  // NEW: Toggle user selection
+  // Toggle user selection
   const toggleUserSelection = (userId: string) => {
     setSelectedUsers(prev =>
       prev.includes(userId)
@@ -877,7 +1116,7 @@ const createNewUser = async () => {
     );
   };
 
-  // NEW: Select all users
+  // Select all users
   const selectAllUsers = () => {
     if (selectedUsers.length === filteredUsers.length) {
       setSelectedUsers([]);
@@ -886,7 +1125,7 @@ const createNewUser = async () => {
     }
   };
 
-  // NEW: Update user assignment
+  // Update user assignment
   const updateUserAssignment = (userId: string, roleId: string | null) => {
     setUserAssignments(prev =>
       prev.map(assignment =>
@@ -917,12 +1156,10 @@ const createNewUser = async () => {
     );
 
     if (hasAllCategoryPermissions) {
-      // Deselect all in category
       setSelectedPermissions(prev => 
         prev.filter(id => !categoryPermissions.includes(id))
       );
     } else {
-      // Select all in category
       setSelectedPermissions(prev => {
         const newPermissions = [...prev];
         categoryPermissions.forEach(permissionId => {
@@ -969,7 +1206,7 @@ const createNewUser = async () => {
     return matchesSearch;
   });
 
-  // NEW: Filter users based on search and role filter
+  // Filter users based on search and role filter
   const filteredUsers = users.filter(user => {
     const matchesSearch = 
       user.email.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -989,7 +1226,7 @@ const createNewUser = async () => {
     ];
   };
 
-  // Copy role permissions as JSON
+  // Copy role permissions as JSON with logging
   const copyPermissionsAsJson = (role: UserRole) => {
     const permissionData = DEFAULT_PERMISSIONS.filter(p => 
       role.permissions.includes(p.id)
@@ -1003,9 +1240,23 @@ const createNewUser = async () => {
     
     navigator.clipboard.writeText(jsonString);
     toast.success('Permissions copied to clipboard as JSON');
+    
+    // ✅ LOG PERMISSION COPY
+    logActivity({
+      user: currentUser?.name || 'System',
+      action: 'PERMISSIONS_COPIED',
+      status: 'success',
+      metadata: {
+        copiedBy: currentUser?.id,
+        roleId: role.id,
+        roleName: role.name,
+        permissionCount: role.permissions.length,
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(console.error);
   };
 
-  // Export roles as CSV
+  // Export roles as CSV with logging
   const exportRolesAsCSV = () => {
     const headers = ['Role Name', 'Description', 'Permissions Count', 'Default Role', 'Created At', 'Updated At'];
     const rows = roles.map(role => [
@@ -1032,6 +1283,18 @@ const createNewUser = async () => {
     window.URL.revokeObjectURL(url);
     
     toast.success('Roles exported as CSV');
+    
+    // ✅ LOG EXPORT
+    logActivity({
+      user: currentUser?.name || 'System',
+      action: 'ROLES_EXPORTED',
+      status: 'success',
+      metadata: {
+        exportedBy: currentUser?.id,
+        roleCount: roles.length,
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(console.error);
   };
 
   // Load data on component mount
@@ -1396,7 +1659,6 @@ const createNewUser = async () => {
                                   <SelectValue placeholder="Select role to assign" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {/* ✅ Fixed: Changed from value="" to value="no-role" */}
                                   <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                   {roles.map(role => (
                                     <SelectItem key={role.id} value={role.id}>
@@ -1529,7 +1791,6 @@ const createNewUser = async () => {
                                           <SelectValue placeholder="Select role..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          {/* ✅ Fixed: Changed from value="" to value="no-role" */}
                                           <SelectItem value="no-role">No Role (Unassign)</SelectItem>
                                           {roles.map(role => (
                                             <SelectItem key={role.id} value={role.id}>
@@ -1631,7 +1892,7 @@ const createNewUser = async () => {
                 </Card>
               </TabsContent>
               
-              {/* Permissions Reference Tab - Enhanced */}
+              {/* Permissions Reference Tab - Enhanced with Icons */}
               <TabsContent value="permissions" className="space-y-6">
                 <Card>
                   <CardHeader>
@@ -1693,80 +1954,81 @@ const createNewUser = async () => {
                     </div>
                     {/* Collapsible panels for each category */}
                     <div className="space-y-4">
-                      {permissionCategories.map(category => (
-                        <details key={category} className="border rounded-md bg-muted/30">
-                          <summary className="flex items-center justify-between px-4 py-2 cursor-pointer select-none font-semibold text-base">
-                            <span className="flex items-center gap-2">
-                              {category}
-                              {category === 'Employee Management' && <Users className="ml-2 h-4 w-4" />}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={e => {
-                                e.preventDefault();
-                                selectAllInCategory(category);
-                              }}
-                            >
-                              {DEFAULT_PERMISSIONS.filter(p => p.category === category).every(p => selectedPermissions.includes(p.id))
-                                ? 'Deselect All'
-                                : 'Select All'}
-                            </Button>
-                          </summary>
-                          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {DEFAULT_PERMISSIONS.filter(p => p.category === category &&
-                              (p.name.toLowerCase().includes(permissionSearch.toLowerCase()) ||
-                               p.description.toLowerCase().includes(permissionSearch.toLowerCase()) ||
-                               p.id.toLowerCase().includes(permissionSearch.toLowerCase())
-                              )
-                            ).map(permission => {
-                              const getPermissionIcon = () => {
-                                if (permission.id.includes('checkin')) return DoorOpen;
-                                if (permission.id.includes('checkout')) return DoorClosed;
-                                if (permission.id.includes('designation')) return MapPin;
-                                if (permission.id.includes('attendance')) return ListChecks;
-                                if (permission.id.includes('overview')) return BarChart;
-                                if (permission.id.includes('employees.list')) return Users;
-                                if (permission.id.includes('employees.create')) return UserPlus;
-                                if (permission.id.includes('employees.edit')) return Edit;
-                                if (permission.id.includes('employees.delete')) return Trash2;
-                                if (permission.id.includes('employees.export')) return Download;
-                                if (permission.id.includes('employees.attendance')) return Clock;
-                                if (permission.id.includes('employees')) return UserCog;
-                                if (permission.id.includes('counting')) return ListChecks;
-                                return Key;
-                              };
-                              const PermissionIcon = getPermissionIcon();
-                              return (
-                                <Card
-                                  key={permission.id}
-                                  className={`cursor-pointer transition-colors shadow-sm hover:shadow-md border-2 ${
-                                    selectedPermissions.includes(permission.id)
-                                      ? 'border-primary bg-primary/10'
-                                      : 'border-muted'
-                                  }`}
-                                  onClick={() => togglePermission(permission.id)}
-                                >
-                                  <CardContent className="p-4 flex flex-col gap-2">
-                                    <div className="flex items-center gap-2">
-                                      <PermissionIcon className="h-4 w-4 text-muted-foreground" />
-                                      <span className="font-medium">{permission.name}</span>
-                                      {selectedPermissions.includes(permission.id) && (
-                                        <Check className="h-4 w-4 text-primary" />
-                                      )}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">{permission.description}</div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <Badge variant="outline">{permission.category}</Badge>
-                                      <span className="text-xs text-muted-foreground">{permission.id}</span>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              );
-                            })}
-                          </div>
-                        </details>
-                      ))}
+                      {permissionCategories.map(category => {
+                        const categoryPermissions = DEFAULT_PERMISSIONS.filter(p => p.category === category);
+                        if (categoryPermissions.length === 0) return null;
+                        
+                        return (
+                          <details key={category} className="border rounded-md bg-muted/30">
+                            <summary className="flex items-center justify-between px-4 py-2 cursor-pointer select-none font-semibold text-base">
+                              <span className="flex items-center gap-2">
+                                {category === 'Dashboard' && <LayoutDashboard className="h-4 w-4" />}
+                                {category === 'Suppliers' && <Grape className="h-4 w-4" />}
+                                {category === 'HR' && <UserCog className="h-4 w-4" />}
+                                {category === 'Access Control' && <Truck className="h-4 w-4" />}
+                                {category === 'Cold Room' && <Thermometer className="h-4 w-4" />}
+                                {category === 'Quality Control' && <FlaskConical className="h-4 w-4" />}
+                                {category === 'Shipments' && <TruckIcon className="h-4 w-4" />}
+                                {category === 'Carriers' && <Briefcase className="h-4 w-4" />}
+                                {category === 'Loading' && <ClipboardList className="h-4 w-4" />}
+                                {category === 'Inventory' && <Boxes className="h-4 w-4" />}
+                                {category === 'Utilities' && <Zap className="h-4 w-4" />}
+                                {category === 'Administration' && <Shield className="h-4 w-4" />}
+                                {category}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={e => {
+                                  e.preventDefault();
+                                  selectAllInCategory(category);
+                                }}
+                              >
+                                {categoryPermissions.every(p => selectedPermissions.includes(p.id))
+                                  ? 'Deselect All'
+                                  : 'Select All'}
+                              </Button>
+                            </summary>
+                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {categoryPermissions
+                                .filter(p =>
+                                  p.name.toLowerCase().includes(permissionSearch.toLowerCase()) ||
+                                  p.description.toLowerCase().includes(permissionSearch.toLowerCase()) ||
+                                  p.id.toLowerCase().includes(permissionSearch.toLowerCase())
+                                )
+                                .map(permission => {
+                                  const IconComponent = permission.icon || Key;
+                                  return (
+                                    <Card
+                                      key={permission.id}
+                                      className={`cursor-pointer transition-colors shadow-sm hover:shadow-md border-2 ${
+                                        selectedPermissions.includes(permission.id)
+                                          ? 'border-primary bg-primary/10'
+                                          : 'border-muted'
+                                      }`}
+                                      onClick={() => togglePermission(permission.id)}
+                                    >
+                                      <CardContent className="p-4 flex flex-col gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <IconComponent className="h-4 w-4 text-muted-foreground" />
+                                          <span className="font-medium">{permission.name}</span>
+                                          {selectedPermissions.includes(permission.id) && (
+                                            <Check className="h-4 w-4 text-primary ml-auto" />
+                                          )}
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">{permission.description}</div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <Badge variant="outline">{permission.category}</Badge>
+                                          <span className="text-xs text-muted-foreground">{permission.id}</span>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  );
+                                })}
+                            </div>
+                          </details>
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>
@@ -1834,20 +2096,7 @@ const createNewUser = async () => {
               <ScrollArea className="h-[300px] border rounded-md p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {DEFAULT_PERMISSIONS.map((permission) => {
-                    // Get icon for permission
-                    const getPermissionIcon = () => {
-                      if (permission.id.includes('checkin')) return DoorOpen;
-                      if (permission.id.includes('checkout')) return DoorClosed;
-                      if (permission.id.includes('designation')) return MapPin;
-                      if (permission.id.includes('attendance')) return ListChecks;
-                      if (permission.id.includes('overview')) return BarChart;
-                      if (permission.id.includes('employees')) return Users;
-                      if (permission.id.includes('counting')) return ListChecks; // New icon for counting
-                      return Key;
-                    };
-                    
-                    const PermissionIcon = getPermissionIcon();
-                    
+                    const IconComponent = permission.icon || Key;
                     return (
                       <div
                         key={permission.id}
@@ -1869,7 +2118,7 @@ const createNewUser = async () => {
                         </div>
                         <div className="flex-1">
                           <div className="font-medium text-sm flex items-center gap-2">
-                            <PermissionIcon className="h-3 w-3 text-muted-foreground" />
+                            <IconComponent className="h-3 w-3 text-muted-foreground" />
                             {permission.name}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
@@ -1969,20 +2218,7 @@ const createNewUser = async () => {
               <ScrollArea className="h-[300px] border rounded-md p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {DEFAULT_PERMISSIONS.map((permission) => {
-                    // Get icon for permission
-                    const getPermissionIcon = () => {
-                      if (permission.id.includes('checkin')) return DoorOpen;
-                      if (permission.id.includes('checkout')) return DoorClosed;
-                      if (permission.id.includes('designation')) return MapPin;
-                      if (permission.id.includes('attendance')) return ListChecks;
-                      if (permission.id.includes('overview')) return BarChart;
-                      if (permission.id.includes('employees')) return Users;
-                      if (permission.id.includes('counting')) return ListChecks; // New icon for counting
-                      return Key;
-                    };
-                    
-                    const PermissionIcon = getPermissionIcon();
-                    
+                    const IconComponent = permission.icon || Key;
                     return (
                       <div
                         key={permission.id}
@@ -2004,7 +2240,7 @@ const createNewUser = async () => {
                         </div>
                         <div className="flex-1">
                           <div className="font-medium text-sm flex items-center gap-2">
-                            <PermissionIcon className="h-3 w-3 text-muted-foreground" />
+                            <IconComponent className="h-3 w-3 text-muted-foreground" />
                             {permission.name}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
@@ -2100,7 +2336,7 @@ const createNewUser = async () => {
         </DialogContent>
       </Dialog>
 
-      {/* NEW: Create User Dialog */}
+      {/* Create User Dialog */}
       <Dialog open={showCreateUserDialog} onOpenChange={setShowCreateUserDialog}>
         <DialogContent>
           <DialogHeader>
@@ -2174,7 +2410,6 @@ const createNewUser = async () => {
                   <SelectValue placeholder="Select a role (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* ✅ FIXED: Changed from value="" to value="no-role" */}
                   <SelectItem value="no-role">No Role</SelectItem>
                   {roles.map(role => (
                     <SelectItem key={role.id} value={role.id}>
@@ -2218,7 +2453,7 @@ const createNewUser = async () => {
         </DialogContent>
       </Dialog>
 
-      {/* NEW: Bulk Assign Dialog */}
+      {/* Bulk Assign Dialog */}
       <Dialog open={showBulkAssignDialog} onOpenChange={setShowBulkAssignDialog}>
         <DialogContent>
           <DialogHeader>

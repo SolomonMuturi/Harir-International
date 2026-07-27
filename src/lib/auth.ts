@@ -19,44 +19,37 @@ export const authOptions: NextAuthOptions = {
             throw new Error('Email and password are required');
           }
 
-          // 1. Check if user exists in your User table
           const user = await prisma.user.findUnique({
             where: { email: credentials.email },
             include: { role: true }
           });
 
           if (!user) {
-            // User not found in your system
             throw new Error('Invalid credentials');
           }
 
-          // 2. Check if user has a password
           if (!user.password) {
             throw new Error('Account not properly configured. Please contact administrator.');
           }
 
-          // 3. Check if account is locked
           if (user.lockedUntil && user.lockedUntil > new Date()) {
             throw new Error('Account is temporarily locked. Please try again later or contact administrator.');
           }
 
-          // 4. Verify password
           const passwordValid = await bcrypt.compare(credentials.password, user.password);
           
           if (!passwordValid) {
-            // Increment login attempts
             await prisma.user.update({
               where: { id: user.id },
               data: {
                 loginAttempts: user.loginAttempts + 1,
-                lockedUntil: user.loginAttempts + 1 >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null // Lock for 15 minutes after 5 attempts
+                lockedUntil: user.loginAttempts + 1 >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null
               }
             });
             
             throw new Error('Invalid credentials');
           }
 
-          // 5. Reset login attempts on successful login
           await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -66,7 +59,6 @@ export const authOptions: NextAuthOptions = {
             }
           });
 
-          // 6. Return user object that will be encoded in the JWT
           return {
             id: user.id,
             email: user.email,

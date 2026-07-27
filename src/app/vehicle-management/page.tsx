@@ -1,3 +1,4 @@
+// app/vehicle-management/page.tsx
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -49,7 +50,8 @@ import {
   Hash,
   Fingerprint,
   Key,
-  Menu
+  Menu,
+  ChevronDown
 } from 'lucide-react';
 import { GatePassDialog } from '@/components/dashboard/gate-pass-dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -89,12 +91,13 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
-// Updated Vehicle Visit type with gate entry tracking
 interface VehicleVisit {
   id: string;
   visitNumber: number;
-  supplierId: string;
+  companyName: string;
+  contactPhone: string;
   vehicleCode: string;
   driverName: string;
   idNumber: string;
@@ -115,13 +118,11 @@ interface VehicleVisit {
   department: string;
   isReturningSupplier: boolean;
   totalVisits?: number;
-  
-  // New gate entry fields
-  gateEntryId?: string;           // Unique ID for this gate entry (GATE-YYYYMMDD-XXXX)
-  gateEntryNumber?: number;        // Sequential number for the day
-  gateEntryDate?: string;          // Date part (YYYYMMDD)
-  isRecheckIn?: boolean;           // Whether this is a recheck-in
-  previousGateEntryId?: string;    // Previous gate entry ID if rechecked in
+  gateEntryId?: string;
+  gateEntryNumber?: number;
+  gateEntryDate?: string;
+  isRecheckIn?: boolean;
+  previousGateEntryId?: string;
 }
 
 type DateRange = {
@@ -136,20 +137,33 @@ interface VisitStats {
   uniqueSuppliers: number;
   activeVisits: number;
   todayVisits: number;
-  todayGateEntries: number;        // New: Today's gate entries
+  todayGateEntries: number;
   returningRate: number;
   averageVisitsPerSupplier: number;
 }
 
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export default function VehicleManagementPage() {
-  // State for visits
   const [vehicles, setVehicles] = useState<VehicleVisit[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<VehicleVisit[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [gateEntryFilter, setGateEntryFilter] = useState<string>(''); // New: Filter by gate entry ID
+  const [gateEntryFilter, setGateEntryFilter] = useState<string>('');
   
-  // UI State
+  // LAZY LOADING STATE
+  const [displayCount, setDisplayCount] = useState(20); // Show 20 initially
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const BATCH_SIZE = 20; // Load 20 more each time
+  
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [isGatePassOpen, setIsGatePassOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleVisit | null>(null);
@@ -168,12 +182,10 @@ export default function VehicleManagementPage() {
     averageVisitsPerSupplier: 0
   });
   
-  // Mobile UI state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isActionsSheetOpen, setIsActionsSheetOpen] = useState(false);
   
-  // Date range for history
   const [historyDateRange, setHistoryDateRange] = useState<DateRange>({
     from: subDays(new Date(), 30),
     to: new Date()
@@ -189,37 +201,23 @@ export default function VehicleManagementPage() {
   const { toast } = useToast();
   const printRef = useRef<HTMLDivElement>(null);
 
-  // Function to get date range based on preset
   const getDateRangeFromPreset = (preset: PresetDateRange): DateRange => {
     const now = new Date();
     switch (preset) {
       case 'today':
-        return {
-          from: startOfDay(now),
-          to: endOfDay(now)
-        };
+        return { from: startOfDay(now), to: endOfDay(now) };
       case 'yesterday':
         const yesterday = subDays(now, 1);
-        return {
-          from: startOfDay(yesterday),
-          to: endOfDay(yesterday)
-        };
+        return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
       case 'week':
-        return {
-          from: startOfWeek(now, { weekStartsOn: 1 }),
-          to: endOfWeek(now, { weekStartsOn: 1 })
-        };
+        return { from: startOfWeek(now, { weekStartsOn: 1 }), to: endOfWeek(now, { weekStartsOn: 1 }) };
       case 'month':
-        return {
-          from: startOfMonth(now),
-          to: endOfMonth(now)
-        };
+        return { from: startOfMonth(now), to: endOfMonth(now) };
       default:
         return historyDateRange;
     }
   };
 
-  // Handle preset date range change
   const handlePresetDateChange = (preset: PresetDateRange) => {
     setPresetDateRange(preset);
     if (preset !== 'custom') {
@@ -228,26 +226,123 @@ export default function VehicleManagementPage() {
     }
   };
 
-  // Handle custom date range change
   const handleCustomDateRangeChange = (range: { from: Date; to: Date } | undefined) => {
     if (range?.from && range?.to) {
-      setHistoryDateRange({
-        from: range.from,
-        to: range.to
-      });
+      setHistoryDateRange({ from: range.from, to: range.to });
       setPresetDateRange('custom');
       setIsDatePickerOpen(false);
     }
   };
 
-  // Fetch all visits
+  // Apply filters and lazy loading
+  const applyFilters = useCallback((data: VehicleVisit[]) => {
+    let filtered = [...data];
+    
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(v => v.status === statusFilter);
+    }
+    
+    // Gate entry filter
+    if (gateEntryFilter) {
+      filtered = filtered.filter(v => 
+        v.gateEntryId?.toLowerCase().includes(gateEntryFilter.toLowerCase())
+      );
+    }
+    
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(v => 
+        v.driverName.toLowerCase().includes(query) ||
+        v.company.toLowerCase().includes(query) ||
+        v.vehiclePlate.toLowerCase().includes(query) ||
+        v.vehicleCode.toLowerCase().includes(query) ||
+        v.phone.toLowerCase().includes(query) ||
+        v.status.toLowerCase().includes(query) ||
+        v.vehicleType.toLowerCase().includes(query) ||
+        `#${v.visitNumber}`.includes(query) ||
+        (v.gateEntryId && v.gateEntryId.toLowerCase().includes(query)) ||
+        (v.previousGateEntryId && v.previousGateEntryId.toLowerCase().includes(query))
+      );
+    }
+    
+    // Tab filters
+    if (activeTab === 'active') {
+      filtered = filtered.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status));
+    } else if (activeTab === 'pending') {
+      filtered = filtered.filter(v => v.status === 'Pending Exit');
+    } else if (activeTab === 'completed') {
+      filtered = filtered.filter(v => v.status === 'Checked-out');
+      filtered = filtered.filter(v => {
+        if (!v.checkOutTime) return false;
+        const checkOutDate = parseISO(v.checkOutTime);
+        const startDateTime = new Date(historyDateRange.from);
+        const endDateTime = new Date(historyDateRange.to);
+
+        const [startHour, startMinute] = historyTimeRange.from.split(':').map(Number);
+        startDateTime.setHours(startHour, startMinute, 0, 0);
+
+        const [endHour, endMinute] = historyTimeRange.to.split(':').map(Number);
+        endDateTime.setHours(endHour, endMinute, 59, 999);
+
+        return isWithinInterval(checkOutDate, {
+          start: startDateTime,
+          end: endDateTime
+        });
+      });
+    } else if (activeTab === 'gate-entries') {
+      filtered = filtered.filter(v => v.gateEntryId);
+      filtered.sort((a, b) => {
+        if (!a.checkInTime) return 1;
+        if (!b.checkInTime) return -1;
+        return new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime();
+      });
+    }
+    
+    return filtered;
+  }, [statusFilter, gateEntryFilter, searchQuery, activeTab, historyDateRange, historyTimeRange]);
+
+  // Update filtered vehicles when data or filters change
+  useEffect(() => {
+    const filtered = applyFilters(vehicles);
+    // Only show displayCount items
+    setFilteredVehicles(filtered.slice(0, displayCount));
+  }, [vehicles, applyFilters, displayCount]);
+
+  // Load more handler
+  const handleLoadMore = () => {
+    setIsLoadingMore(true);
+    
+    // Simulate loading delay for smooth UX
+    setTimeout(() => {
+      const newCount = Math.min(displayCount + BATCH_SIZE, vehicles.length);
+      setDisplayCount(newCount);
+      
+      const filtered = applyFilters(vehicles);
+      setFilteredVehicles(filtered.slice(0, newCount));
+      
+      setIsLoadingMore(false);
+      
+      toast({
+        title: 'Loaded More',
+        description: `Showing ${Math.min(newCount, vehicles.length)} of ${vehicles.length} vehicles`,
+      });
+    }, 300);
+  };
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(BATCH_SIZE);
+  }, [searchQuery, statusFilter, gateEntryFilter, activeTab]);
+
   const fetchSupplierVehicles = useCallback(async () => {
     try {
       setIsLoading(true);
       setApiError(null);
       console.log('🔄 Fetching vehicle visits...');
       
-      const response = await fetch('/api/vehicle-visits?includeSupplier=true&limit=500');
+      const response = await fetch('/api/vehicle-visits?limit=500');
       
       if (!response.ok) {
         throw new Error(`Failed to fetch visits: ${response.status}`);
@@ -256,23 +351,20 @@ export default function VehicleManagementPage() {
       const data = await response.json();
       console.log(`✅ Found ${data.visits.length} visits`);
       
-      // Convert to VehicleVisit type
       const convertedVisits: VehicleVisit[] = data.visits.map((visit: any) => {
-        const supplier = visit.supplier || {};
         const visitNumber = visit.visit_number || 1;
         
         return {
           id: visit.id,
           visitNumber: visitNumber,
-          supplierId: visit.supplier_id,
-          vehicleCode: supplier.supplier_code || `VISIT-${visit.id.slice(-6)}`,
-          driverName: visit.driver_name || supplier.driver_name || supplier.contact_name || 'Unknown Driver',
-          idNumber: visit.driver_id_number || supplier.driver_id_number || '',
-          company: supplier.name || 'Unknown Company',
-          email: supplier.contact_email || '',
-          phone: supplier.contact_phone || '',
-          vehiclePlate: visit.vehicle_plate || supplier.vehicle_number_plate || '',
-          vehicleType: supplier.vehicle_type || 'Truck',
+          vehicleCode: `VISIT-${visit.id.slice(-6)}`,
+          driverName: visit.driver_name || 'Unknown Driver',
+          idNumber: visit.driver_id_number || '',
+          company: visit.company_name || 'Unknown Company',
+          email: '',
+          phone: visit.contact_phone || '',
+          vehiclePlate: visit.vehicle_plate || '',
+          vehicleType: visit.vehicle_type || 'Truck',
           cargoDescription: visit.cargo_description || 'Avocado Delivery',
           vehicleTypeCategory: 'supplier',
           status: visit.status || 'Pre-registered',
@@ -280,13 +372,11 @@ export default function VehicleManagementPage() {
           checkOutTime: visit.check_out_time || undefined,
           registeredAt: visit.registered_at || visit.created_at,
           expectedCheckInTime: visit.registered_at || new Date().toISOString(),
-          hostId: supplier.id,
-          hostName: supplier.name || 'Supplier',
-          department: supplier.location || '',
+          hostId: visit.id,
+          hostName: visit.company_name || 'Supplier',
+          department: visit.location || '',
           isReturningSupplier: visitNumber > 1,
-          totalVisits: supplier._count?.visits || visitNumber,
-          
-          // New gate entry fields
+          totalVisits: visitNumber,
           gateEntryId: visit.gate_entry_id || undefined,
           gateEntryNumber: visit.gate_entry_number || undefined,
           gateEntryDate: visit.gate_entry_date || undefined,
@@ -297,8 +387,7 @@ export default function VehicleManagementPage() {
       
       setVehicles(convertedVisits);
       
-      // Calculate stats
-      const uniqueSupplierIds = new Set(convertedVisits.map(v => v.supplierId));
+      const uniqueCompanies = new Set(convertedVisits.map(v => v.company));
       const activeCount = convertedVisits.filter(v => 
         ['Pre-registered', 'Checked-in'].includes(v.status)
       ).length;
@@ -309,7 +398,6 @@ export default function VehicleManagementPage() {
         return visitDate.toDateString() === today;
       }).length;
       
-      // Today's gate entries (check-ins today)
       const todayGateEntries = convertedVisits.filter(v => {
         if (!v.checkInTime) return false;
         const checkInDate = parseISO(v.checkInTime);
@@ -321,18 +409,30 @@ export default function VehicleManagementPage() {
         ? Math.round((returningCount / convertedVisits.length) * 100) 
         : 0;
       
-      const avgVisits = uniqueSupplierIds.size > 0
-        ? Math.round((convertedVisits.length / uniqueSupplierIds.size) * 10) / 10
+      const avgVisits = uniqueCompanies.size > 0
+        ? Math.round((convertedVisits.length / uniqueCompanies.size) * 10) / 10
         : 0;
       
       setStats({
         totalVisits: convertedVisits.length,
-        uniqueSuppliers: uniqueSupplierIds.size,
+        uniqueSuppliers: uniqueCompanies.size,
         activeVisits: activeCount,
         todayVisits: todayVisits,
         todayGateEntries: todayGateEntries,
         returningRate: returningRate,
         averageVisitsPerSupplier: avgVisits
+      });
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DATA_REFRESH',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          totalVisits: convertedVisits.length,
+          timestamp: new Date().toISOString(),
+        },
       });
       
     } catch (error: any) {
@@ -351,91 +451,28 @@ export default function VehicleManagementPage() {
     }
   }, [toast]);
 
-  // Initial load
   useEffect(() => {
     fetchSupplierVehicles();
   }, [fetchSupplierVehicles]);
-
-  // Filter vehicles based on search, status, gate entry, and active tab
-  useEffect(() => {
-    let filtered = [...vehicles];
-    
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(v => v.status === statusFilter);
-    }
-    
-    // Apply gate entry ID filter
-    if (gateEntryFilter) {
-      filtered = filtered.filter(v => 
-        v.gateEntryId?.toLowerCase().includes(gateEntryFilter.toLowerCase())
-      );
-    }
-    
-    // Apply tab-specific filters
-    if (activeTab === 'active') {
-      filtered = filtered.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status));
-    } else if (activeTab === 'pending') {
-      filtered = filtered.filter(v => v.status === 'Pending Exit');
-    } else if (activeTab === 'completed') {
-      filtered = filtered.filter(v => v.status === 'Checked-out');
-      // Apply date and time range for completed
-      filtered = filtered.filter(v => {
-        if (!v.checkOutTime) return false;
-        const checkOutDate = parseISO(v.checkOutTime);
-        const startDateTime = new Date(historyDateRange.from);
-        const endDateTime = new Date(historyDateRange.to);
-
-        // Set time for start date
-        const [startHour, startMinute] = historyTimeRange.from.split(':').map(Number);
-        startDateTime.setHours(startHour, startMinute, 0, 0);
-
-        // Set time for end date
-        const [endHour, endMinute] = historyTimeRange.to.split(':').map(Number);
-        endDateTime.setHours(endHour, endMinute, 59, 999);
-
-        return isWithinInterval(checkOutDate, {
-          start: startDateTime,
-          end: endDateTime
-        });
-      });
-    } else if (activeTab === 'gate-entries') {
-      // New tab: Show only vehicles with gate entries (checked in)
-      filtered = filtered.filter(v => v.gateEntryId);
-      // Sort by most recent gate entry
-      filtered.sort((a, b) => {
-        if (!a.checkInTime) return 1;
-        if (!b.checkInTime) return -1;
-        return new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime();
-      });
-    }
-    
-    // Apply search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(v => 
-        v.driverName.toLowerCase().includes(query) ||
-        v.company.toLowerCase().includes(query) ||
-        v.vehiclePlate.toLowerCase().includes(query) ||
-        v.vehicleCode.toLowerCase().includes(query) ||
-        v.phone.toLowerCase().includes(query) ||
-        v.status.toLowerCase().includes(query) ||
-        v.vehicleType.toLowerCase().includes(query) ||
-        `#${v.visitNumber}`.includes(query) ||
-        // Search by gate entry ID
-        (v.gateEntryId && v.gateEntryId.toLowerCase().includes(query)) ||
-        (v.previousGateEntryId && v.previousGateEntryId.toLowerCase().includes(query))
-      );
-    }
-    
-    setFilteredVehicles(filtered);
-  }, [vehicles, searchQuery, statusFilter, gateEntryFilter, activeTab, historyDateRange, historyTimeRange]);
 
   const refreshAllData = async () => {
     setIsRefreshing(true);
     setApiError(null);
     try {
       await fetchSupplierVehicles();
+      setDisplayCount(BATCH_SIZE); // Reset to initial count
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DATA_REFRESH_MANUAL',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Data Refreshed',
         description: 'Latest vehicle visit data has been loaded.',
@@ -461,9 +498,9 @@ export default function VehicleManagementPage() {
     setGateEntryFilter('');
   };
 
-  // Handle new vehicle registration (creates a visit)
   const handleAddVehicle = async (values: SupplierFormValues) => {
     try {
+      const currentUser = await getCurrentUser();
       console.log('🔄 Registering new vehicle visit with data:', values);
       
       const response = await fetch('/api/vehicle-visits', {
@@ -472,10 +509,9 @@ export default function VehicleManagementPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: values.company || values.driverName,
-          contact_name: values.driverName,
+          company_name: values.company || values.driverName,
           contact_phone: values.phoneNumber,
-          vehicle_number_plate: values.vehicleRegNo,
+          vehicle_plate: values.vehicleRegNo,
           vehicle_type: values.vehicleType,
           driver_name: values.driverName,
           driver_id_number: values.idNumber,
@@ -493,48 +529,79 @@ export default function VehicleManagementPage() {
       const data = await response.json();
       console.log('✅ Vehicle visit created:', data);
       
-      // Create the new visit object (gateEntryId will be null until check-in)
       const newVehicle: VehicleVisit = {
         id: data.visit.id,
         visitNumber: data.visit.visit_number,
-        supplierId: data.supplier.id,
-        vehicleCode: data.supplier.supplier_code || `VISIT-${data.visit.id.slice(-6)}`,
+        companyName: data.visit.company_name || values.company || values.driverName,
+        contactPhone: data.visit.contact_phone || values.phoneNumber,
+        vehicleCode: `VISIT-${data.visit.id.slice(-6)}`,
         driverName: data.visit.driver_name || values.driverName,
         idNumber: data.visit.driver_id_number || values.idNumber,
-        company: data.supplier.name || values.company || values.driverName,
-        email: data.supplier.contact_email || '',
-        phone: data.supplier.contact_phone || values.phoneNumber,
+        company: data.visit.company_name || values.company || values.driverName,
+        email: '',
+        phone: data.visit.contact_phone || values.phoneNumber,
         vehiclePlate: data.visit.vehicle_plate || values.vehicleRegNo,
-        vehicleType: data.supplier.vehicle_type || values.vehicleType,
+        vehicleType: data.visit.vehicle_type || values.vehicleType,
         cargoDescription: data.visit.cargo_description || 'Avocado Delivery',
         vehicleTypeCategory: 'supplier',
         status: data.visit.status,
         registeredAt: data.visit.registered_at,
         expectedCheckInTime: data.visit.registered_at,
-        hostId: data.supplier.id,
-        hostName: data.supplier.name || 'Supplier',
-        department: data.supplier.location || '',
+        hostId: data.visit.id,
+        hostName: data.visit.company_name || 'Supplier',
+        department: data.visit.location || '',
         isReturningSupplier: data.visit.visit_number > 1,
         totalVisits: data.visit.visit_number,
-        
-        // Gate entry fields (null initially)
-        gateEntryId: undefined,
-        gateEntryNumber: undefined,
-        gateEntryDate: undefined,
-        isRecheckIn: false,
-        previousGateEntryId: undefined
+        gateEntryId: data.visit.gate_entry_id || undefined,
+        gateEntryNumber: data.visit.gate_entry_number || undefined,
+        gateEntryDate: data.visit.gate_entry_date || undefined,
+        isRecheckIn: data.visit.is_recheck_in || false,
+        previousGateEntryId: data.visit.previous_gate_entry_id || undefined
       };
       
       setVehicles(prev => [newVehicle, ...prev]);
       setNewlyRegisteredVehicle(newVehicle);
+      setDisplayCount(BATCH_SIZE); // Reset to show new vehicle
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_REGISTERED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: data.visit.id,
+          visitNumber: data.visit.visit_number,
+          driverName: values.driverName,
+          company: values.company || values.driverName,
+          vehiclePlate: values.vehicleRegNo,
+          vehicleType: values.vehicleType,
+          isReturning: data.visit.visit_number > 1,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
-        title: data.isNewSupplier ? 'New Supplier Registered' : 'Returning Supplier',
+        title: 'Vehicle Registered',
         description: data.message,
       });
       
     } catch (error: any) {
       console.error('❌ Error registering vehicle visit:', error);
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_REGISTERED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          driverName: values.driverName,
+          company: values.company || values.driverName,
+          vehiclePlate: values.vehicleRegNo,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: 'Registration Failed',
@@ -551,7 +618,6 @@ export default function VehicleManagementPage() {
     setIsRegisterDialogOpen(open);
   };
 
-  // Handle check-in (generates gate entry ID automatically)
   const handleCheckIn = async (vehicleId?: string) => {
     if (!vehicleId) {
       toast({
@@ -563,10 +629,10 @@ export default function VehicleManagementPage() {
     }
 
     try {
+      const currentUser = await getCurrentUser();
       const vehicle = vehicles.find(v => v.id === vehicleId);
       if (!vehicle) return;
 
-      // Allow re-checking in for vehicles that are checked out
       if (vehicle.status !== 'Pre-registered') {
         toast({
           title: 'Cannot Check In',
@@ -595,7 +661,6 @@ export default function VehicleManagementPage() {
 
       const data = await response.json();
       
-      // Update local state with gate entry ID from response
       const updatedVehicle: VehicleVisit = {
         ...vehicle,
         status: 'Checked-in',
@@ -609,6 +674,24 @@ export default function VehicleManagementPage() {
       setVehicles(prev => prev.map(v => v.id === vehicleId ? updatedVehicle : v));
       setSelectedVehicle(updatedVehicle);
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CHECKED_IN',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          visitNumber: vehicle.visitNumber,
+          gateEntryId: data.visit.gate_entry_id,
+          gateEntryNumber: data.visit.gate_entry_number,
+          driverName: vehicle.driverName,
+          company: vehicle.company,
+          vehiclePlate: vehicle.vehiclePlate,
+          isRecheckIn: false,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: "Vehicle Checked In",
         description: `Checked in with Gate ID: ${data.visit.gate_entry_id}`,
@@ -619,6 +702,19 @@ export default function VehicleManagementPage() {
     } catch (error: any) {
       console.error('Error checking in:', error);
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CHECKED_IN',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Check-in Failed',
         description: error.message || 'Failed to check in vehicle',
@@ -627,9 +723,9 @@ export default function VehicleManagementPage() {
     }
   };
 
-  // Handle check-out
   const handleCheckOut = async (vehicleId: string, final: boolean = false) => {
     try {
+      const currentUser = await getCurrentUser();
       const vehicle = vehicles.find(v => v.id === vehicleId);
       if (!vehicle) return;
 
@@ -652,7 +748,6 @@ export default function VehicleManagementPage() {
 
       const data = await response.json();
       
-      // Update local state
       const updatedVehicle: VehicleVisit = { 
         ...vehicle, 
         status: newStatus,
@@ -660,6 +755,23 @@ export default function VehicleManagementPage() {
       };
 
       setVehicles(prev => prev.map(v => v.id === vehicleId ? updatedVehicle : v));
+      
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: final ? 'VEHICLE_EXIT_VERIFIED' : 'VEHICLE_CHECKED_OUT',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          visitNumber: vehicle.visitNumber,
+          driverName: vehicle.driverName,
+          company: vehicle.company,
+          vehiclePlate: vehicle.vehiclePlate,
+          gateEntryId: vehicle.gateEntryId,
+          checkOutTime: final ? data.visit.check_out_time : undefined,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       if (final) {
         setSelectedVehicle(null);
@@ -678,6 +790,20 @@ export default function VehicleManagementPage() {
       
     } catch (error: any) {
       console.error('Error during checkout:', error);
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: final ? 'VEHICLE_EXIT_VERIFIED' : 'VEHICLE_CHECKED_OUT',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicleId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Error',
         description: error.message || 'Failed to process checkout',
@@ -688,14 +814,14 @@ export default function VehicleManagementPage() {
 
   const handleRowClick = (vehicle: VehicleVisit) => {
     setSelectedVehicle(vehicle);
-    // Close mobile action sheet when selecting a vehicle
     setIsActionsSheetOpen(false);
   };
 
   const handlePrintReport = async () => {
-    const element = printRef.current;
-    if (element) {
-      try {
+    try {
+      const currentUser = await getCurrentUser();
+      const element = printRef.current;
+      if (element) {
         const canvas = await html2canvas(element, { 
           scale: 2,
           useCORS: true,
@@ -710,22 +836,32 @@ export default function VehicleManagementPage() {
         pdf.addImage(data, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`vehicle-visits-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
         
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'VEHICLE_PDF_REPORTED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            vehicleCount: vehicles.length,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        
         toast({
           title: 'Report Generated',
           description: 'Vehicle visits report has been downloaded as PDF.',
         });
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-        toast({
-          title: 'PDF Generation Failed',
-          description: 'Could not generate PDF report.',
-          variant: 'destructive',
-        });
       }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: 'PDF Generation Failed',
+        description: 'Could not generate PDF report.',
+        variant: 'destructive',
+      });
     }
   };
 
-  // Calculate filtered completed vehicles based on date and time range
   const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
   
   const filteredCompletedVehicles = checkedOutVehicles.filter(vehicle => {
@@ -734,11 +870,9 @@ export default function VehicleManagementPage() {
     const startDateTime = new Date(historyDateRange.from);
     const endDateTime = new Date(historyDateRange.to);
 
-    // Set time for start date
     const [startHour, startMinute] = historyTimeRange.from.split(':').map(Number);
     startDateTime.setHours(startHour, startMinute, 0, 0);
 
-    // Set time for end date
     const [endHour, endMinute] = historyTimeRange.to.split(':').map(Number);
     endDateTime.setHours(endHour, endMinute, 59, 999);
 
@@ -748,20 +882,16 @@ export default function VehicleManagementPage() {
     });
   });
 
-  // Calculate statistics for UI
   const vehiclesOnSite = vehicles.filter(v => 
     v.status === 'Checked-in' || v.status === 'Pending Exit'
   ).length;
 
   const pendingExitVehicles = vehicles.filter(v => v.status === 'Pending Exit');
   const preRegisteredVehicles = vehicles.filter(v => v.status === 'Pre-registered');
-  const gateEntryVehicles = vehicles.filter(v => v.gateEntryId); // Vehicles with gate entries
+  const gateEntryVehicles = vehicles.filter(v => v.gateEntryId);
 
-  // Helper function to escape CSV fields
   const escapeCsvField = (field: any): string => {
-    if (field === null || field === undefined) {
-      return '';
-    }
+    if (field === null || field === undefined) return '';
     const stringField = String(field);
     if (/[",\n]/.test(stringField)) {
       return `"${stringField.replace(/"/g, '""')}"`;
@@ -769,7 +899,6 @@ export default function VehicleManagementPage() {
     return stringField;
   };
 
-  // Convert to CSV
   const convertToCsv = (data: any[], headers: string[]): string => {
     const headerRow = headers.map(escapeCsvField).join(',');
     const dataRows = data.map(row => 
@@ -786,7 +915,6 @@ export default function VehicleManagementPage() {
     return [headerRow, ...dataRows].join('\n');
   };
 
-  // Export all visits to CSV with gate entry info
   const exportAllVehiclesToCSV = async () => {
     if (vehicles.length === 0) {
       toast({
@@ -799,12 +927,14 @@ export default function VehicleManagementPage() {
 
     setIsExportingCSV(true);
     try {
+      const currentUser = await getCurrentUser();
+      
       const headers = [
         'Visit #',
         'Gate Entry ID',
+        'Company Name',
         'Driver Name',
         'ID Number',
-        'Company',
         'Phone',
         'Vehicle Plate',
         'Vehicle Type',
@@ -816,15 +946,15 @@ export default function VehicleManagementPage() {
         'Visit Type',
         'Recheck-in',
         'Previous Gate ID',
-        'Department'
+        'Location'
       ];
       
       const data = vehicles.map(vehicle => ({
         'Visit #': `#${vehicle.visitNumber}`,
         'Gate Entry ID': vehicle.gateEntryId || 'Not checked in',
+        'Company Name': vehicle.companyName,
         'Driver Name': vehicle.driverName,
         'ID Number': vehicle.idNumber,
-        'Company': vehicle.company,
         'Phone': vehicle.phone,
         'Vehicle Plate': vehicle.vehiclePlate || 'None',
         'Vehicle Type': vehicle.vehicleType,
@@ -836,7 +966,7 @@ export default function VehicleManagementPage() {
         'Visit Type': vehicle.isReturningSupplier ? 'Returning' : 'New',
         'Recheck-in': vehicle.isRecheckIn ? 'Yes' : 'No',
         'Previous Gate ID': vehicle.previousGateEntryId || 'N/A',
-        'Department': vehicle.department || ''
+        'Location': vehicle.department || ''
       }));
 
       const csvContent = convertToCsv(data, headers);
@@ -852,6 +982,18 @@ export default function VehicleManagementPage() {
       link.click();
       document.body.removeChild(link);
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          recordCount: vehicles.length,
+          filename: filename,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'CSV Export Complete',
         description: `All visits (${vehicles.length} records) have been downloaded.`,
@@ -859,6 +1001,19 @@ export default function VehicleManagementPage() {
       
     } catch (error) {
       console.error('Error exporting CSV:', error);
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         variant: 'destructive',
         title: 'Export Failed',
@@ -869,7 +1024,6 @@ export default function VehicleManagementPage() {
     }
   };
 
-  // Mobile action buttons component
   const MobileActionButtons = () => (
     <div className="flex flex-col gap-2 p-4">
       <Button
@@ -997,7 +1151,6 @@ export default function VehicleManagementPage() {
               </Alert>
             )}
 
-            {/* Header Section - Mobile Optimized */}
             <div className="flex flex-col gap-3 sm:gap-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
                 <div className="flex-1 min-w-0">
@@ -1009,7 +1162,6 @@ export default function VehicleManagementPage() {
                   </p>
                 </div>
                 
-                {/* Mobile Menu Button */}
                 <div className="flex md:hidden gap-2 mt-2 sm:mt-0">
                   <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
                     <SheetTrigger asChild>
@@ -1072,7 +1224,6 @@ export default function VehicleManagementPage() {
                   </Sheet>
                 </div>
 
-                {/* Desktop Buttons */}
                 <div className="hidden md:flex flex-wrap gap-2 items-center">
                   <Button 
                     variant="outline" 
@@ -1175,7 +1326,6 @@ export default function VehicleManagementPage() {
                 </div>
               </div>
 
-              {/* Mobile New Visit Button */}
               <div className="flex md:hidden">
                 <Button
                   onClick={() => setIsRegisterDialogOpen(true)}
@@ -1187,7 +1337,6 @@ export default function VehicleManagementPage() {
               </div>
             </div>
 
-            {/* Selection Info Banner - Mobile Optimized */}
             {selectedVehicle && (
               <div className={`border rounded-lg p-2 sm:p-3 md:p-4 ${
                 selectedVehicle.isRecheckIn 
@@ -1259,7 +1408,6 @@ export default function VehicleManagementPage() {
                   </Button>
                 </div>
                 
-                {/* Mobile Action Sheet for Selected Vehicle */}
                 <div className="mt-2 pt-2 border-t border-blue-200 flex md:hidden">
                   <Sheet open={isActionsSheetOpen} onOpenChange={setIsActionsSheetOpen}>
                     <SheetTrigger asChild>
@@ -1318,7 +1466,6 @@ export default function VehicleManagementPage() {
               </div>
             )}
 
-            {/* Stats Cards - Mobile Optimized Grid */}
             <div className="grid grid-cols-2 xs:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4">
               <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-3 md:p-4">
@@ -1381,7 +1528,6 @@ export default function VehicleManagementPage() {
               </Card>
             </div>
 
-            {/* Main Content Tabs - Mobile Optimized */}
             <Card className="border shadow-sm">
               <CardHeader className="pb-2 md:pb-3 px-2 sm:px-4">
                 <div className="flex flex-col xs:flex-row items-start xs:items-center justify-between gap-2">
@@ -1394,7 +1540,6 @@ export default function VehicleManagementPage() {
                 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center justify-between mb-4">
-                    {/* Mobile Horizontal Scroll Tabs */}
                     <ScrollArea className="w-full md:hidden pb-2">
                       <TabsList className="inline-flex w-max">
                         <TabsTrigger value="overview" className="px-3 py-1.5 text-xs">
@@ -1440,7 +1585,6 @@ export default function VehicleManagementPage() {
                       </TabsList>
                     </ScrollArea>
 
-                    {/* Desktop Tabs */}
                     <TabsList className="hidden md:grid grid-cols-5 w-full md:w-auto">
                       <TabsTrigger value="overview" className="flex items-center gap-2">
                         <Gauge className="h-4 w-4" />
@@ -1484,7 +1628,6 @@ export default function VehicleManagementPage() {
                       </TabsTrigger>
                     </TabsList>
 
-                    {/* Mobile Filter Button */}
                     <div className="flex md:hidden gap-2">
                       <Button
                         variant="outline"
@@ -1509,7 +1652,6 @@ export default function VehicleManagementPage() {
                       )}
                     </div>
 
-                    {/* Desktop Filter Section */}
                     <div className="hidden md:flex gap-2">
                       <Select value={statusFilter} onValueChange={setStatusFilter}>
                         <SelectTrigger className="w-[130px]">
@@ -1613,7 +1755,6 @@ export default function VehicleManagementPage() {
                     </div>
                   </div>
 
-                  {/* Search Bar - Mobile Optimized */}
                   <div className="flex flex-col md:flex-row gap-2 mb-4">
                     <div className="relative flex-1">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -1633,7 +1774,6 @@ export default function VehicleManagementPage() {
                       )}
                     </div>
                     
-                    {/* Desktop Gate Entry Filter */}
                     <div className="hidden md:block w-64">
                       <Input
                         placeholder="Filter by Gate ID..."
@@ -1643,7 +1783,6 @@ export default function VehicleManagementPage() {
                     </div>
                   </div>
 
-                  {/* Mobile Filter Sheet */}
                   <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
                     <SheetContent side="bottom" className="h-auto">
                       <SheetHeader>
@@ -1693,7 +1832,6 @@ export default function VehicleManagementPage() {
                     </SheetContent>
                   </Sheet>
 
-                  {/* Mobile Date Range Sheet */}
                   {activeTab === 'completed' && (
                     <Sheet open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                       <SheetContent side="bottom" className="h-auto">
@@ -1785,8 +1923,6 @@ export default function VehicleManagementPage() {
                     </Sheet>
                   )}
 
-                  {/* Rest of the TabsContent components remain the same */}
-                  {/* Overview Tab */}
                   <TabsContent value="overview" className="space-y-4 mt-6">
                     <div className="space-y-4">
                       {filteredVehicles.length === 0 && vehicles.length === 0 ? (
@@ -1826,7 +1962,6 @@ export default function VehicleManagementPage() {
                         </Card>
                       ) : (
                         <>
-                          {/* Mobile Overview Stats */}
                           <div className="grid grid-cols-2 gap-2 md:hidden">
                             <Card className="bg-blue-50 border-blue-100">
                               <CardContent className="p-3">
@@ -1863,12 +1998,41 @@ export default function VehicleManagementPage() {
                             onRowClick={handleRowClick}
                             selectedVehicleId={selectedVehicle?.id}
                           />
+
+                          {/* LAZY LOADING - Load More Button */}
+                          {filteredVehicles.length < vehicles.length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More ({vehicles.length - filteredVehicles.length} remaining)
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+
+                          {filteredVehicles.length > 0 && (
+                            <div className="text-center text-sm text-gray-500 py-2">
+                              Showing {filteredVehicles.length} of {vehicles.length} vehicles
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
                   </TabsContent>
 
-                  {/* Active Vehicles Tab */}
                   <TabsContent value="active" className="space-y-4 mt-6">
                     <div className="space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1891,18 +2055,43 @@ export default function VehicleManagementPage() {
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status))}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <>
+                          <VehicleDataTable 
+                            vehicles={vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status))}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                          
+                          {/* LAZY LOADING - Load More Button for active tab */}
+                          {filteredVehicles.length < vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </TabsContent>
 
-                  {/* Pending Exit Tab */}
                   <TabsContent value="pending" className="space-y-4 mt-6">
                     <div className="space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1925,18 +2114,39 @@ export default function VehicleManagementPage() {
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={pendingExitVehicles}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <>
+                          <VehicleDataTable 
+                            vehicles={pendingExitVehicles}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                          
+                          {filteredVehicles.length < pendingExitVehicles.length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </TabsContent>
 
-                  {/* Completed Tab */}
                   <TabsContent value="completed" className="space-y-4 mt-6">
                     <div className="space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2002,18 +2212,39 @@ export default function VehicleManagementPage() {
                           </CardContent>
                         </Card>
                       ) : (
-                        <VehicleDataTable 
-                          vehicles={filteredCompletedVehicles}
-                          onCheckIn={handleCheckIn}
-                          onCheckOut={handleCheckOut}
-                          onRowClick={handleRowClick}
-                          selectedVehicleId={selectedVehicle?.id}
-                        />
+                        <>
+                          <VehicleDataTable 
+                            vehicles={filteredCompletedVehicles}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onRowClick={handleRowClick}
+                            selectedVehicleId={selectedVehicle?.id}
+                          />
+                          
+                          {filteredVehicles.length < filteredCompletedVehicles.length && (
+                            <div className="flex justify-center py-6">
+                              <Button
+                                variant="outline"
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="gap-2 min-w-[200px]"
+                              >
+                                {isLoadingMore ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-4 w-4" />
+                                    Load More
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </TabsContent>
 
-                  {/* Gate Entries Tab */}
                   <TabsContent value="gate-entries" className="space-y-4 mt-6">
                     <div className="space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2044,120 +2275,139 @@ export default function VehicleManagementPage() {
                           </CardContent>
                         </Card>
                       ) : (
-                        <div className="space-y-4">
-                          {/* Mobile Gate Entry Stats */}
-                          <div className="grid grid-cols-2 gap-2 md:hidden">
-                            <Card className="bg-indigo-50 border-indigo-100">
-                              <CardContent className="p-3">
-                                <p className="text-xs text-indigo-700">Today's Entries</p>
-                                <p className="text-lg font-bold text-indigo-900">{stats.todayGateEntries}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-purple-50 border-purple-100">
-                              <CardContent className="p-3">
-                                <p className="text-xs text-purple-700">Recheck-ins</p>
-                                <p className="text-lg font-bold text-purple-900">
-                                  {gateEntryVehicles.filter(v => v.isRecheckIn).length}
-                                </p>
-                              </CardContent>
-                            </Card>
-                          </div>
-
-                          {/* Desktop Gate Entry Stats */}
-                          <div className="hidden md:grid grid-cols-4 gap-4">
-                            <Card className="bg-indigo-50 border-indigo-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-indigo-700 font-medium">Today's Gate Entries</p>
-                                <p className="text-2xl font-bold text-indigo-900">{stats.todayGateEntries}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-green-50 border-green-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-green-700 font-medium">Currently Active</p>
-                                <p className="text-2xl font-bold text-green-900">
-                                  {gateEntryVehicles.filter(v => v.status === 'Checked-in').length}
-                                </p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-purple-50 border-purple-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-purple-700 font-medium">Recheck-ins</p>
-                                <p className="text-2xl font-bold text-purple-900">
-                                  {gateEntryVehicles.filter(v => v.isRecheckIn).length}
-                                </p>
-                              </CardContent>
-                            </Card>
-                            <Card className="bg-amber-50 border-amber-100">
-                              <CardContent className="p-4">
-                                <p className="text-sm text-amber-700 font-medium">Latest Gate ID</p>
-                                <p className="text-lg font-bold text-amber-900 truncate">
-                                  {gateEntryVehicles[0]?.gateEntryId || 'N/A'}
-                                </p>
-                              </CardContent>
-                            </Card>
-                          </div>
-
-                          {/* Gate Entry Table - Mobile Optimized */}
-                          <div className="border rounded-lg overflow-hidden">
-                            <div className="overflow-x-auto">
-                              <table className="w-full min-w-[600px] md:min-w-full">
-                                <thead className="bg-black-50">
-                                  <tr>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Gate ID</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Check-in</th>
-                                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                  {gateEntryVehicles.map((vehicle) => (
-                                    <tr 
-                                      key={vehicle.id}
-                                      onClick={() => handleRowClick(vehicle)}
-                                      className={`hover:bg-black-50 cursor-pointer text-sm ${
-                                        selectedVehicle?.id === vehicle.id ? 'bg-blue-50' : ''
-                                      }`}
-                                    >
-                                      <td className="px-2 md:px-4 py-2 md:py-3">
-                                        <Badge variant="outline" className={`text-xs font-mono ${
-                                          vehicle.isRecheckIn 
-                                            ? 'bg-purple-100 text-purple-700'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}>
-                                          {vehicle.gateEntryId}
-                                        </Badge>
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 font-medium text-xs md:text-sm">
-                                        {vehicle.driverName}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate max-w-[100px] md:max-w-none">
-                                        {vehicle.company}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs">
-                                        {vehicle.vehiclePlate}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3 text-xs">
-                                        {vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'HH:mm') : 'N/A'}
-                                      </td>
-                                      <td className="px-2 md:px-4 py-2 md:py-3">
-                                        <Badge variant="outline" className={`text-xs ${
-                                          vehicle.status === 'Checked-in' ? 'bg-green-100 text-green-700' :
-                                          vehicle.status === 'Pending Exit' ? 'bg-amber-100 text-amber-700' :
-                                          'bg-purple-100 text-purple-700'
-                                        }`}>
-                                          {vehicle.status === 'Checked-in' ? 'In' : 
-                                           vehicle.status === 'Pending Exit' ? 'Exit' : 'Out'}
-                                        </Badge>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                        <>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-2 md:hidden">
+                              <Card className="bg-indigo-50 border-indigo-100">
+                                <CardContent className="p-3">
+                                  <p className="text-xs text-indigo-700">Today's Entries</p>
+                                  <p className="text-lg font-bold text-indigo-900">{stats.todayGateEntries}</p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-purple-50 border-purple-100">
+                                <CardContent className="p-3">
+                                  <p className="text-xs text-purple-700">Recheck-ins</p>
+                                  <p className="text-lg font-bold text-purple-900">
+                                    {gateEntryVehicles.filter(v => v.isRecheckIn).length}
+                                  </p>
+                                </CardContent>
+                              </Card>
                             </div>
+
+                            <div className="hidden md:grid grid-cols-4 gap-4">
+                              <Card className="bg-indigo-50 border-indigo-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-indigo-700 font-medium">Today's Gate Entries</p>
+                                  <p className="text-2xl font-bold text-indigo-900">{stats.todayGateEntries}</p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-green-50 border-green-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-green-700 font-medium">Currently Active</p>
+                                  <p className="text-2xl font-bold text-green-900">
+                                    {gateEntryVehicles.filter(v => v.status === 'Checked-in').length}
+                                  </p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-purple-50 border-purple-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-purple-700 font-medium">Recheck-ins</p>
+                                  <p className="text-2xl font-bold text-purple-900">
+                                    {gateEntryVehicles.filter(v => v.isRecheckIn).length}
+                                  </p>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-amber-50 border-amber-100">
+                                <CardContent className="p-4">
+                                  <p className="text-sm text-amber-700 font-medium">Latest Gate ID</p>
+                                  <p className="text-lg font-bold text-amber-900 truncate">
+                                    {gateEntryVehicles[0]?.gateEntryId || 'N/A'}
+                                  </p>
+                                </CardContent>
+                              </Card>
+                            </div>
+
+                            <div className="border rounded-lg overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full min-w-[600px] md:min-w-full">
+                                  <thead className="bg-black-50">
+                                    <tr>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Gate ID</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Check-in</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {gateEntryVehicles.slice(0, displayCount).map((vehicle) => (
+                                      <tr 
+                                        key={vehicle.id}
+                                        onClick={() => handleRowClick(vehicle)}
+                                        className={`hover:bg-black-50 cursor-pointer text-sm ${
+                                          selectedVehicle?.id === vehicle.id ? 'bg-blue-50' : ''
+                                        }`}
+                                      >
+                                        <td className="px-2 md:px-4 py-2 md:py-3">
+                                          <Badge variant="outline" className={`text-xs font-mono ${
+                                            vehicle.isRecheckIn 
+                                              ? 'bg-purple-100 text-purple-700'
+                                              : 'bg-green-100 text-green-700'
+                                          }`}>
+                                            {vehicle.gateEntryId}
+                                          </Badge>
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 font-medium text-xs md:text-sm">
+                                          {vehicle.driverName}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate max-w-[100px] md:max-w-none">
+                                          {vehicle.company}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs">
+                                          {vehicle.vehiclePlate}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs">
+                                          {vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'HH:mm') : 'N/A'}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3">
+                                          <Badge variant="outline" className={`text-xs ${
+                                            vehicle.status === 'Checked-in' ? 'bg-green-100 text-green-700' :
+                                            vehicle.status === 'Pending Exit' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-purple-100 text-purple-700'
+                                          }`}>
+                                            {vehicle.status === 'Checked-in' ? 'In' : 
+                                             vehicle.status === 'Pending Exit' ? 'Exit' : 'Out'}
+                                          </Badge>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {gateEntryVehicles.length > displayCount && (
+                              <div className="flex justify-center py-6">
+                                <Button
+                                  variant="outline"
+                                  onClick={handleLoadMore}
+                                  disabled={isLoadingMore}
+                                  className="gap-2 min-w-[200px]"
+                                >
+                                  {isLoadingMore ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="h-4 w-4" />
+                                      Load More Gate Entries ({gateEntryVehicles.length - displayCount} remaining)
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            )}
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   </TabsContent>
@@ -2165,7 +2415,6 @@ export default function VehicleManagementPage() {
               </CardHeader>
             </Card>
 
-            {/* Gate Pass Dialog - Mobile Optimized */}
             {selectedVehicle && (
               <GatePassDialog 
                 isOpen={isGatePassOpen} 
@@ -2189,7 +2438,6 @@ export default function VehicleManagementPage() {
         </SidebarInset>
       </SidebarProvider>
       
-      {/* Hidden printable report */}
       <div className="hidden">
         <div ref={printRef}>
           <PrintableVehicleReport 

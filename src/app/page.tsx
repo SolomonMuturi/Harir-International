@@ -3,7 +3,7 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { FreshTraceLogo } from '@/components/icons';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Wrapper component that handles search params
 function LoginFormWrapper() {
@@ -49,6 +50,73 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     }
   }, []);
 
+  // Function to determine redirect based on permissions - ADMIN FIRST
+  const getRedirectUrl = (permissions: string[]): string => {
+    // 👑 ADMIN FIRST - Highest priority
+    if (permissions.some(p => p.startsWith('admin.'))) {
+      return '/dashboard';
+    }
+    
+    // Check permissions in priority order
+    if (permissions.includes('vehicle_log.view') || permissions.includes('vehicle_log.manage')) {
+      return '/vehicle-management';
+    }
+    if (permissions.includes('suppliers.weigh')) {
+      return '/weight-capture';
+    }
+    if (permissions.includes('counting.perform')) {
+      return '/warehouse';
+    }
+    if (permissions.includes('cold_room.view') || permissions.includes('cold_room.manage') || 
+        permissions.includes('cold_room.temperature') || permissions.includes('cold_room.inventory')) {
+      return '/cold-room';
+    }
+    if (permissions.includes('shipments.view') || permissions.includes('shipments.create') || 
+        permissions.includes('shipments.update') || permissions.includes('shipments.track') || 
+        permissions.includes('shipments.manifest')) {
+      return '/shipments';
+    }
+    if (permissions.includes('qc.view') || permissions.includes('qc.perform') || 
+        permissions.includes('qc.approve') || permissions.includes('qc.export')) {
+      return '/quality-control';
+    }
+    if (permissions.includes('inventory.view') || permissions.includes('inventory.manage') || 
+        permissions.includes('inventory.packaging') || permissions.includes('inventory.reports')) {
+      return '/inventory';
+    }
+    if (permissions.includes('loading.view') || permissions.includes('loading.create') || 
+        permissions.includes('loading.manage') || permissions.includes('loading.assign') || 
+        permissions.includes('loading.transit')) {
+      return '/outbound';
+    }
+    if (permissions.includes('carriers.view') || permissions.includes('carriers.manage') || 
+        permissions.includes('carriers.assign') || permissions.includes('carriers.track')) {
+      return '/carriers';
+    }
+    if (permissions.includes('utilities.view') || permissions.includes('utilities.record') || 
+        permissions.includes('utilities.analyze') || permissions.includes('utilities.reports')) {
+      return '/utility';
+    }
+    if (permissions.includes('suppliers.view') || permissions.includes('suppliers.manage') || 
+        permissions.includes('suppliers.visitors')) {
+      return '/suppliers';
+    }
+    if (permissions.some(p => p.startsWith('employees.'))) {
+      return '/employees';
+    }
+    if (permissions.includes('customers.view') || permissions.includes('customers.manage') || 
+        permissions.includes('customers.quotes') || permissions.includes('customers.invoices') || 
+        permissions.includes('customers.receivables')) {
+      return '/customers';
+    }
+    // Fallback to dashboard if user has dashboard permission or no specific permissions
+    if (permissions.includes('dashboard.view') || permissions.includes('dashboard.analytics')) {
+      return '/dashboard';
+    }
+    // Final fallback
+    return '/dashboard';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -70,8 +138,7 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
       const result = await signIn('credentials', {
         email,
         password,
-        redirect: false,
-        callbackUrl,
+        redirect: false, // Don't auto-redirect
       });
 
       if (result?.error) {
@@ -80,16 +147,68 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
           : result.error;
         setError(errorMessage);
         toast.error(errorMessage);
-      } else {
-        toast.success('Login successful!');
-        router.push(callbackUrl);
+
+        // ✅ LOG FAILED LOGIN ATTEMPT
+        await logActivity({
+          user: email,
+          action: ActivityTypes.USER_LOGIN,
+          status: 'failure',
+          metadata: {
+            email,
+            error: errorMessage,
+            timestamp: new Date().toISOString(),
+            attemptType: 'credentials',
+          },
+        });
+
+      } else if (result?.ok) {
+        // Get session to check permissions
+        const session = await getSession();
+        const user = session?.user as any;
+        const permissions = user?.permissions || [];
+        const userName = user?.name || email;
+        
+        // ✅ LOG SUCCESSFUL LOGIN
+        await logActivity({
+          user: userName,
+          action: ActivityTypes.USER_LOGIN,
+          status: 'success',
+          avatar: user?.image || userName.substring(0, 2).toUpperCase(),
+          metadata: {
+            userId: user?.id,
+            email: user?.email || email,
+            permissions: permissions,
+            loginTime: new Date().toISOString(),
+            rememberMe: rememberMe,
+          },
+        });
+        
+        // Determine where to redirect based on permissions
+        const redirectUrl = getRedirectUrl(permissions);
+        
+        toast.success(`Welcome back, ${userName}!`);
+        router.push(redirectUrl);
         router.refresh();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
       const errorMessage = 'An error occurred. Please try again.';
       setError(errorMessage);
       toast.error(errorMessage);
+
+      // ✅ LOG ERROR DURING LOGIN
+      await logActivity({
+        user: email,
+        action: ActivityTypes.USER_LOGIN,
+        status: 'failure',
+        metadata: {
+          email,
+          error: error.message || 'Unknown error',
+          stack: error.stack,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
     } finally {
       setIsLoading(false);
     }

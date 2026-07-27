@@ -48,6 +48,7 @@ import {
 } from '@/components/ui/select';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 interface SupplierIntakeRecord {
   id: string;
@@ -151,7 +152,6 @@ interface CountingRecord {
   hass_4kg_class2?: number;
   hass_10kg_class1?: number;
   hass_10kg_class2?: number;
-  // Add intake crate counts
   intake_fuerte_crates?: number;
   intake_hass_crates?: number;
   intake_total_crates?: number;
@@ -162,17 +162,32 @@ interface CSVRow {
   supplier_name: string;
   telephone_number: string;
   rowClass: string;
-  size_14: number;
-  size_16: number;
-  size_18: number;
-  size_20: number;
-  size_22: number;
-  size_24: number;
-  total_boxes: number;
+  // 4kg sizes (14-26)
+  size_14_4kg: number;
+  size_16_4kg: number;
+  size_18_4kg: number;
+  size_20_4kg: number;
+  size_22_4kg: number;
+  size_24_4kg: number;
+  size_26_4kg: number;
+  // 10kg sizes (14-30)
+  size_14_10kg: number;
+  size_16_10kg: number;
+  size_18_10kg: number;
+  size_20_10kg: number;
+  size_22_10kg: number;
+  size_24_10kg: number;
+  size_26_10kg: number;
+  size_28_10kg: number;
+  size_30_10kg: number;
+  // Totals at the end
+  total_4kg: number;
+  total_10kg: number;
+  grand_total: number;
   unit_price: string;
   total_price: string;
-  grand_total: string;
 }
+
 
 interface SupplierDetails {
   weight_entry: any;
@@ -269,9 +284,7 @@ interface SupplierRejectionDraft {
 // Safe clipboard copy function with fallback
 const safeCopyToClipboard = async (text: string): Promise<boolean> => {
   try {
-    // Check if clipboard API is available
     if (!navigator.clipboard) {
-      // Fallback for older browsers
       const textArea = document.createElement('textarea');
       textArea.value = text;
       textArea.style.position = 'fixed';
@@ -290,7 +303,6 @@ const safeCopyToClipboard = async (text: string): Promise<boolean> => {
       }
     }
     
-    // Modern clipboard API
     await navigator.clipboard.writeText(text);
     return true;
   } catch (error) {
@@ -467,19 +479,28 @@ const isSupplierCounted = (supplierId: string, countingRecords: CountingRecord[]
   return countingRecords.some(record => record.supplier_id === supplierId);
 };
 
+// Helper function to get current user
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 const generateWarehouseGRN = async (record: CountingRecord) => {
   try {
     const countingData = record.counting_data || {};
     const totals = record.totals || {};
     const today = new Date();
     
-    // Fetch the original weight entry to get the actual crate counts
     let intakeFuerteCrates = record.intake_fuerte_crates || 0;
     let intakeHassCrates = record.intake_hass_crates || 0;
     let intakeTotalCrates = record.intake_total_crates || 0;
     let weightEntryData = null;
     
-    // Fetch rejection data to get actual rejected crates
     let rejectionData = null;
     let rejectedFuerteCrates = 0;
     let rejectedHassCrates = 0;
@@ -488,8 +509,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     let rejectionNotes = record.rejection_notes || '';
     
     try {
-      // Fetch the rejection record for this counting record
-      // Try multiple search criteria since rejection might be linked differently
       let rejectResponse = await fetch(`/api/rejects?pallet_id=${record.pallet_id}`);
       let rejectResult = [];
       
@@ -498,7 +517,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
       }
       
-      // If no results by pallet_id, try by supplier_name
       if (rejectResult.length === 0) {
         rejectResponse = await fetch(`/api/rejects?supplier_name=${encodeURIComponent(record.supplier_name)}`);
         if (rejectResponse.ok) {
@@ -507,7 +525,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         }
       }
       
-      // Find the most recent matching rejection
       rejectionData = rejectResult.find((r: any) => 
         r.pallet_id === record.pallet_id || 
         r.supplier_name === record.supplier_name
@@ -518,38 +535,24 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         rejectedHassCrates = rejectionData.hass_crates || 0;
         rejectedTotalCrates = rejectedFuerteCrates + rejectedHassCrates;
         
-        // If no variety breakdown, use total rejected crates
         if (rejectedTotalCrates === 0) {
           rejectedTotalCrates = rejectionData.total_rejected_crates || 0;
         }
         
         rejectionReason = rejectionData.reason || rejectionReason;
         rejectionNotes = rejectionData.notes || rejectionNotes;
-        
-        console.log('🚫 Found rejection record with crates:', {
-          supplier: record.supplier_name,
-          pallet: record.pallet_id,
-          rejected_fuerte_crates: rejectedFuerteCrates,
-          rejected_hass_crates: rejectedHassCrates,
-          rejected_total_crates: rejectedTotalCrates,
-          reason: rejectionData.reason
-        });
       }
     } catch (error) {
       console.warn('Could not fetch rejection record:', error);
     }
     
-    // If we don't have intake crate counts from the record, try to fetch them
     if (intakeTotalCrates === 0) {
       try {
-        // Try multiple approaches to find the weight entry
-        // First try by supplier_id
         const response = await fetch(`/api/weights?supplier_id=${record.supplier_id}&limit=1`);
         if (response.ok) {
           const weightData = await response.json();
           const weightEntries = Array.isArray(weightData) ? weightData : (weightData.weights || []);
           
-          // Find matching entry by supplier_id or pallet_id
           weightEntryData = weightEntries.find((w: any) => 
             w.supplier_id === record.supplier_id || 
             w.pallet_id === record.pallet_id ||
@@ -560,14 +563,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
             intakeFuerteCrates = weightEntryData.fuerte_crates || 0;
             intakeHassCrates = weightEntryData.hass_crates || 0;
             intakeTotalCrates = intakeFuerteCrates + intakeHassCrates;
-            
-            console.log('📦 Found weight entry with crates:', {
-              supplier: record.supplier_name,
-              pallet: record.pallet_id,
-              fuerte_crates: intakeFuerteCrates,
-              hass_crates: intakeHassCrates,
-              total_crates: intakeTotalCrates
-            });
           }
         }
       } catch (error) {
@@ -575,17 +570,10 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       }
     }
     
-    // Fallback: If no weight entry found, use the counting totals as an estimate
     if (intakeTotalCrates === 0) {
       intakeFuerteCrates = (record.fuerte_4kg_total || 0) + (record.fuerte_10kg_total || 0);
       intakeHassCrates = (record.hass_4kg_total || 0) + (record.hass_10kg_total || 0);
       intakeTotalCrates = intakeFuerteCrates + intakeHassCrates;
-      
-      console.log('📦 Using counting totals as fallback for crate counts:', {
-        fuerte_crates: intakeFuerteCrates,
-        hass_crates: intakeHassCrates,
-        total_crates: intakeTotalCrates
-      });
     }
     
     const doc = new jsPDF('p', 'mm', 'a5');
@@ -596,7 +584,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const leftMargin = 8;
     const contentWidth = pageWidth - 2 * leftMargin;
     
-    // Try to load logo
     try {
       const logoPaths = [
         '/images/HLogo.png',
@@ -662,7 +649,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.text('GOODS RECEIVED NOTE - BOX COUNTING', pageWidth / 2, startY + 7, { align: 'center' });
     let yPos = startY + 13;
     
-    // Document Details
     doc.setFillColor(248, 249, 250);
     doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
     doc.setFontSize(8);
@@ -676,7 +662,6 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.text(`By: Counting Clerk`, leftMargin + 95, yPos + 8);
     yPos += 13;
     
-    // Supplier Information
     doc.setFillColor(233, 236, 239);
     doc.rect(leftMargin, yPos, contentWidth, 14, 'F');
     doc.setFontSize(8);
@@ -691,56 +676,49 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.text(`Vehicle: ${record.vehicle_plate || 'N/A'}`, leftMargin + 50, yPos + 10);
     yPos += 16;
     
-    // Calculate total counted weight
     const fuerte4kgWeight = (record.fuerte_4kg_total || 0) * 4;
     const fuerte10kgWeight = (record.fuerte_10kg_total || 0) * 10;
     const hass4kgWeight = (record.hass_4kg_total || 0) * 4;
     const hass10kgWeight = (record.hass_10kg_total || 0) * 10;
     const totalCountedWeight = fuerte4kgWeight + fuerte10kgWeight + hass4kgWeight + hass10kgWeight;
     
-    // Get rejected weight from record
     const rejectedWeight = record.rejected_weight || 0;
     
-// Summary section with CRATES for intake and rejected, WEIGHT for counted
-doc.setFillColor(220, 252, 231);
-doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
-doc.setFontSize(8);
-doc.setFont('helvetica', 'bold');
-doc.text('Summary', leftMargin + 2, yPos + 5);
-doc.setFontSize(7);
-doc.setFont('helvetica', 'normal');
-
-// Format the intake line with crate information from the weight entry
-if (intakeFuerteCrates > 0 && intakeHassCrates > 0) {
-  doc.text(`Intake: ${intakeTotalCrates} crates (F:${intakeFuerteCrates}, H:${intakeHassCrates})`, leftMargin + 2, yPos + 9);
-} else if (intakeFuerteCrates > 0) {
-  doc.text(`Intake: ${intakeTotalCrates} crates (Fuerte only)`, leftMargin + 2, yPos + 9);
-} else if (intakeHassCrates > 0) {
-  doc.text(`Intake: ${intakeTotalCrates} crates (Hass only)`, leftMargin + 2, yPos + 9);
-} else {
-  doc.text(`Intake: ${intakeTotalCrates} crates`, leftMargin + 2, yPos + 9);
-}
-
-doc.text(`Counted: ${safeToFixed(totalCountedWeight, 2)} kg`, leftMargin + 50, yPos + 9);
-
-// Show rejected in crates from actual rejection record
-if (rejectedTotalCrates > 0) {
-  // Show with variety breakdown if available
-  if (rejectedFuerteCrates > 0 && rejectedHassCrates > 0) {
-    doc.text(`Rejected: ${rejectedTotalCrates} crates (F:${rejectedFuerteCrates}, H:${rejectedHassCrates})`, leftMargin + 95, yPos + 9);
-  } else if (rejectedFuerteCrates > 0) {
-    doc.text(`Rejected: ${rejectedTotalCrates} crates (Fuerte)`, leftMargin + 95, yPos + 9);
-  } else if (rejectedHassCrates > 0) {
-    doc.text(`Rejected: ${rejectedTotalCrates} crates (Hass)`, leftMargin + 95, yPos + 9);
-  } else {
-    doc.text(`Rejected: ${rejectedTotalCrates} crates`, leftMargin + 95, yPos + 9);
-  }
-} else {
-  doc.text(`Rejected: 0 crates`, leftMargin + 95, yPos + 9);
-}
-yPos += 13;
-
-
+    doc.setFillColor(220, 252, 231);
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Summary', leftMargin + 2, yPos + 5);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    
+    if (intakeFuerteCrates > 0 && intakeHassCrates > 0) {
+      doc.text(`Intake: ${intakeTotalCrates} crates (F:${intakeFuerteCrates}, H:${intakeHassCrates})`, leftMargin + 2, yPos + 9);
+    } else if (intakeFuerteCrates > 0) {
+      doc.text(`Intake: ${intakeTotalCrates} crates (Fuerte only)`, leftMargin + 2, yPos + 9);
+    } else if (intakeHassCrates > 0) {
+      doc.text(`Intake: ${intakeTotalCrates} crates (Hass only)`, leftMargin + 2, yPos + 9);
+    } else {
+      doc.text(`Intake: ${intakeTotalCrates} crates`, leftMargin + 2, yPos + 9);
+    }
+    
+    doc.text(`Counted: ${safeToFixed(totalCountedWeight, 2)} kg`, leftMargin + 50, yPos + 9);
+    
+    if (rejectedTotalCrates > 0) {
+      if (rejectedFuerteCrates > 0 && rejectedHassCrates > 0) {
+        doc.text(`Rejected: ${rejectedTotalCrates} crates (F:${rejectedFuerteCrates}, H:${rejectedHassCrates})`, leftMargin + 95, yPos + 9);
+      } else if (rejectedFuerteCrates > 0) {
+        doc.text(`Rejected: ${rejectedTotalCrates} crates (Fuerte)`, leftMargin + 95, yPos + 9);
+      } else if (rejectedHassCrates > 0) {
+        doc.text(`Rejected: ${rejectedTotalCrates} crates (Hass)`, leftMargin + 95, yPos + 9);
+      } else {
+        doc.text(`Rejected: ${rejectedTotalCrates} crates`, leftMargin + 95, yPos + 9);
+      }
+    } else {
+      doc.text(`Rejected: 0 crates`, leftMargin + 95, yPos + 9);
+    }
+    yPos += 13;
+    
     if (rejectedTotalCrates > 0) {
       doc.setFillColor(255, 243, 243);
       doc.rect(leftMargin, yPos, contentWidth, 12, 'F');
@@ -754,7 +732,6 @@ yPos += 13;
       
       const rejectionPercentage = intakeTotalCrates > 0 ? ((rejectedTotalCrates / intakeTotalCrates) * 100).toFixed(1) : '0';
       
-      // Show detailed rejection information
       if (rejectedFuerteCrates > 0 && rejectedHassCrates > 0) {
         doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Fuerte: ${rejectedFuerteCrates}, Hass: ${rejectedHassCrates})`, leftMargin + 2, yPos + 10);
       } else if (rejectedFuerteCrates > 0) {
@@ -777,15 +754,19 @@ yPos += 13;
       yPos += extraY;
     }
     
+    // DETAILED BOX SIZE COUNTS - Reduced spacing
     doc.setFillColor(52, 58, 64);
-    doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 6, 'F'); 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 5);
-    yPos += 13;
+    doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 4.5);
+    yPos += 12;
     
-    // Helper function to get size counts
+    // Start both sections at the same position with minimal padding
+    let leftY = yPos;
+    let rightY = yPos;
+    
     const getSizeCounts = (prefix: string, boxType: string) => {
       const sizes = boxType === '4kg' 
         ? ['12', '14', '16', '18', '20', '22', '24', '26']
@@ -810,7 +791,7 @@ yPos += 13;
       
       return sizeData;
     };
-
+    
     const fuerte4kgSizes = getSizeCounts('fuerte', '4kg');
     const fuerte10kgSizes = getSizeCounts('fuerte', '10kg');
     const hass4kgSizes = getSizeCounts('hass', '4kg');
@@ -821,9 +802,6 @@ yPos += 13;
     
     const tableWidth = hasFuerte && hasHass ? (contentWidth / 2 - 2.5) : contentWidth;
     const rightMargin = hasFuerte && hasHass ? leftMargin + tableWidth + 5 : leftMargin;
-    
-    // Fuerte Tables
-    let leftY = yPos;
     
     if (hasFuerte) {
       if (!hasHass) {
@@ -839,17 +817,31 @@ yPos += 13;
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
         doc.text('Fuerte 4kg Boxes - Size Breakdown:', leftMargin, leftY);
-        leftY += 4;
+        leftY += 1;
+        
+        // Build table body with size entries
+        const tableBody = fuerte4kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const f4kgClass1 = totals.fuerte_4kg_class1 || 0;
+        const f4kgClass2 = totals.fuerte_4kg_class2 || 0;
+        const f4kgTotal = totals.fuerte_4kg_total || 0;
+        
+        // Add Subtotal row at the END of the table
+        tableBody.push([
+          'Subtotal',
+          f4kgClass1.toString(),
+          f4kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: leftY,
           margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: fuerte4kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [22, 101, 52],
@@ -863,18 +855,59 @@ yPos += 13;
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: tableWidth
+          tableWidth: tableWidth,
+          rowStyles: {
+            // Apply special styling to the last row (Subtotal)
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230], // Light blue shade for Subtotal
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0 // Remove borders
+            }
+          },
+          // Custom draw to remove borders around subtotal row
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              // This is the subtotal row - draw a filled rectangle with rounded corners
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              // Draw a clean filled rectangle without borders
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              // Draw the text manually
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              // Position text based on column
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        leftY = (doc as any).lastAutoTable.finalY + 8;
+        leftY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Fuerte 4kg: ${record.fuerte_4kg_total || 0} boxes`, leftMargin, leftY);
-        leftY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(leftMargin, leftY, tableWidth, 5, 'F');
+        doc.text(`Total Fuerte 4kg: ${f4kgTotal} boxes`, leftMargin + 2, leftY + 3.5);
+        leftY += 12;
       }
 
       if (fuerte10kgSizes.length > 0) {
@@ -882,17 +915,30 @@ yPos += 13;
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
         doc.text('Fuerte 10kg Crates - Size Breakdown:', leftMargin, leftY);
-        leftY += 3;
+        leftY += 1;
+        
+        const tableBody = fuerte10kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const f10kgClass1 = totals.fuerte_10kg_class1 || 0;
+        const f10kgClass2 = totals.fuerte_10kg_class2 || 0;
+        const f10kgTotal = totals.fuerte_10kg_total || 0;
+        
+        // Add Subtotal row at the END
+        tableBody.push([
+          'Subtotal',
+          f10kgClass1.toString(),
+          f10kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: leftY,
           margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: fuerte10kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [22, 101, 52],
@@ -906,27 +952,60 @@ yPos += 13;
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: tableWidth
+          tableWidth: tableWidth,
+          rowStyles: {
+            // Apply special styling to the last row (Subtotal)
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230],
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0
+            }
+          },
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        leftY = (doc as any).lastAutoTable.finalY + 4;
+        leftY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Fuerte 10kg: ${record.fuerte_10kg_total || 0} crates`, leftMargin, leftY);
-        leftY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(leftMargin, leftY, tableWidth, 5, 'F');
+        doc.text(`Total Fuerte 10kg: ${f10kgTotal} crates`, leftMargin + 2, leftY + 3.5);
+        leftY += 14;
       }
       
       if (!hasHass) {
         yPos = leftY;
       }
     }
-
-    // Hass Tables
-    let rightY = yPos;
     
     if (hasHass) {
       if (!hasFuerte) {
@@ -944,17 +1023,30 @@ yPos += 13;
           doc.setTextColor(124, 58, 237);
           doc.text('Hass 4kg Boxes - Size Breakdown:', rightMargin, rightY);
         }
-        rightY += 3;
+        rightY += 1;
+        
+        const tableBody = hass4kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const h4kgClass1 = totals.hass_4kg_class1 || 0;
+        const h4kgClass2 = totals.hass_4kg_class2 || 0;
+        const h4kgTotal = totals.hass_4kg_total || 0;
+        
+        // Add Subtotal row at the END
+        tableBody.push([
+          'Subtotal',
+          h4kgClass1.toString(),
+          h4kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: rightY,
           margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: hass4kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [124, 58, 237],
@@ -968,20 +1060,55 @@ yPos += 13;
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth
+          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
+          rowStyles: {
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230],
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0
+            }
+          },
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        rightY = (doc as any).lastAutoTable.finalY + 4;
+        rightY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Hass 4kg: ${record.hass_4kg_total || 0} boxes`, hasFuerte && hasHass ? rightMargin : leftMargin, rightY);
-        rightY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(hasFuerte && hasHass ? rightMargin : leftMargin, rightY, hasFuerte && hasHass ? tableWidth : contentWidth, 5, 'F');
+        doc.text(`Total Hass 4kg: ${h4kgTotal} boxes`, (hasFuerte && hasHass ? rightMargin : leftMargin) + 2, rightY + 3.5);
+        rightY += 12;
       }
-
+      
       if (hass10kgSizes.length > 0) {
         if (hasFuerte && hasHass) {
           doc.setFontSize(7);
@@ -989,17 +1116,30 @@ yPos += 13;
           doc.setTextColor(124, 58, 237);
           doc.text('Hass 10kg Crates - Size Breakdown:', rightMargin, rightY);
         }
-        rightY += 3;
+        rightY += 1;
+        
+        const tableBody = hass10kgSizes.map(s => [
+          `Size ${s.size}`,
+          s.class1.toString(),
+          s.class2.toString()
+        ]);
+        
+        const h10kgClass1 = totals.hass_10kg_class1 || 0;
+        const h10kgClass2 = totals.hass_10kg_class2 || 0;
+        const h10kgTotal = totals.hass_10kg_total || 0;
+        
+        // Add Subtotal row at the END
+        tableBody.push([
+          'Subtotal',
+          h10kgClass1.toString(),
+          h10kgClass2.toString()
+        ]);
         
         autoTable(doc, {
           startY: rightY,
           margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
           head: [['Size', 'Class 1', 'Class 2']],
-          body: hass10kgSizes.map(s => [
-            `Size ${s.size}`,
-            s.class1.toString(),
-            s.class2.toString()
-          ]),
+          body: tableBody,
           theme: 'grid',
           headStyles: { 
             fillColor: [124, 58, 237],
@@ -1013,24 +1153,58 @@ yPos += 13;
             textColor: [0, 0, 0]
           },
           columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 18 : 30 },
-            1: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 12 : 20, halign: 'center' }
+            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
+            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
+            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
           },
-          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth
+          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
+          rowStyles: {
+            [tableBody.length - 1]: { 
+              fillColor: [173, 216, 230],
+              fontStyle: 'bold',
+              textColor: [0, 0, 0],
+              lineWidth: 0
+            }
+          },
+          didDrawCell: function(data) {
+            if (data.row.index === tableBody.length - 1) {
+              const cell = data.cell;
+              const x = cell.x;
+              const y = cell.y;
+              const w = cell.width;
+              const h = cell.height;
+              
+              doc.setFillColor(173, 216, 230);
+              doc.rect(x, y, w, h, 'F');
+              
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(0, 0, 0);
+              
+              if (data.column.index === 0) {
+                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
+              } else if (data.column.index === 1) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              } else if (data.column.index === 2) {
+                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
+              }
+            }
+          }
         });
         
-        rightY = (doc as any).lastAutoTable.finalY + 4;
+        rightY = (doc as any).lastAutoTable.finalY + 2;
+        
         doc.setFontSize(7);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Total Hass 10kg: ${record.hass_10kg_total || 0} crates`, hasFuerte && hasHass ? rightMargin : leftMargin, rightY);
-        rightY += 6;
+        doc.setFillColor(220, 252, 231);
+        doc.rect(hasFuerte && hasHass ? rightMargin : leftMargin, rightY, hasFuerte && hasHass ? tableWidth : contentWidth, 5, 'F');
+        doc.text(`Total Hass 10kg: ${h10kgTotal} crates`, (hasFuerte && hasHass ? rightMargin : leftMargin) + 2, rightY + 3.5);
+        rightY += 14;
       }
     }
     
     yPos = Math.max(leftY, rightY) + 4;
     
-    // Payment Information
     if (record.bank_name || record.bank_account || record.kra_pin) {
       doc.setFillColor(249, 250, 251);
       doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
@@ -1045,7 +1219,6 @@ yPos += 13;
       yPos += 13;
     }
     
-    // Notes
     if (record.notes && record.notes.trim() !== '') {
       doc.setFillColor(255, 248, 225);
       doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
@@ -1066,37 +1239,38 @@ yPos += 13;
       yPos = notesY + 3;
     }
     
-    // Signature line - ONLY Counting Clerk (removed Warehouse Receiver)
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
-    
-    // Single signature line for Counting Clerk
+
     const signatureX = pageWidth / 2 - 40;
     doc.line(signatureX, yPos, signatureX + 70, yPos);
-    
+
     doc.setFontSize(6);
     doc.setFont('helvetica', 'normal');
     doc.text('Counting Clerk Name & Signature', signatureX + 35, yPos + 3, { align: 'center' });
     doc.text(`Date: ${format(today, 'dd/MM/yyyy')}`, signatureX + 35, yPos + 6, { align: 'center' });
-    
+
     yPos += 10;
-    
-    // Footer
+
     doc.setFontSize(5);
     doc.setTextColor(128, 128, 128);
-    doc.text('Harir International - Warehouse Counting System', pageWidth / 2, yPos, { align: 'center' });
-    doc.text(`Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()} • Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, pageWidth / 2, yPos + 2, { align: 'center' });
-    doc.text('This is a computer-generated document', pageWidth / 2, yPos + 4, { align: 'center' });
-    
+
+    // Two lines with tighter spacing
+    const docInfo1 = `Harir International - Warehouse Counting System • Document: WH-GRN-${record.id.slice(0, 8).toUpperCase()}`;
+    const docInfo2 = `Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')} • This is a computer-generated document`;
+    doc.text(docInfo1, pageWidth / 2, yPos, { align: 'center' });
+    doc.text(docInfo2, pageWidth / 2, yPos + 2.5, { align: 'center' });
+
     const fileName = `Warehouse_GRN_${record.supplier_name.replace(/\s+/g, '_')}.pdf`;
     doc.save(fileName);
-    
+
     return true;
   } catch (error: any) {
     console.error('Error generating warehouse GRN:', error);
     throw error;
   }
 };
+
 
 export default function WarehousePage() {
   const { toast } = useToast();
@@ -1225,12 +1399,10 @@ export default function WarehousePage() {
     kra_pin: '',
   });
 
-  // NEW: State for editing existing counting record
   const [editingRecord, setEditingRecord] = useState<CountingRecord | null>(null);
   const [isEditingMode, setIsEditingMode] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
-  // UPDATED: Start and end date-time states
   const [startDate, setStartDate] = useState<string>('');
   const [startTime, setStartTime] = useState<string>('00:00');
   const [endDate, setEndDate] = useState<string>('');
@@ -1360,7 +1532,6 @@ export default function WarehousePage() {
       record.status === 'pending_coldroom' || record.status === 'completed'
     );
 
-    // Get rejected weights from rejections
     const rejectionMap = new Map<string, number>();
     rejections.forEach(reject => {
       if (reject.weight_entry_id) {
@@ -1378,20 +1549,16 @@ export default function WarehousePage() {
       return recordDate >= last7Days;
     });
 
-    // Calculate totals from all records
     const totalFuerte4kg = filteredRecords.reduce((sum, record) => sum + (record.fuerte_4kg_total || 0), 0);
     const totalFuerte10kg = filteredRecords.reduce((sum, record) => sum + (record.fuerte_10kg_total || 0), 0);
     const totalHass4kg = filteredRecords.reduce((sum, record) => sum + (record.hass_4kg_total || 0), 0);
     const totalHass10kg = filteredRecords.reduce((sum, record) => sum + (record.hass_10kg_total || 0), 0);
 
-    // Calculate weight summary including rejected weight
     const totalIntakeWeight = filteredRecords.reduce((sum, record) => sum + (record.total_weight || 0), 0);
     const totalCountedWeight = filteredRecords.reduce((sum, record) => sum + (record.total_counted_weight || 0), 0);
     
-    // Get rejected weight from both counting records and rejections API
     let totalRejectedWeight = filteredRecords.reduce((sum, record) => sum + (record.rejected_weight || 0), 0);
     
-    // Add rejected weight from rejects API for records that don't have it
     filteredRecords.forEach(record => {
       const rejection = rejectionMap.get(record.id);
       if (rejection && (!record.rejected_weight || record.rejected_weight === 0)) {
@@ -1402,16 +1569,11 @@ export default function WarehousePage() {
     const fuerteTotalWeight = totalFuerte4kg * 4 + totalFuerte10kg * 10;
     const hassTotalWeight = totalHass4kg * 4 + totalHass10kg * 10;
 
-    // Calculate total intake crates
     const totalIntakeCrates = filteredRecords.reduce((sum, record) => sum + (record.intake_total_crates || 0), 0);
-    
-    // Calculate total rejected crates from rejections
     const totalRejectedCrates = rejections.reduce((sum, reject) => sum + (reject.total_rejected_crates || 0), 0);
 
-    // Get unique suppliers
     const uniqueSuppliers = new Set(filteredRecords.map(record => record.supplier_name));
     
-    // Count pending coldroom
     const pendingColdroom = records.filter(record => 
       record.status === 'pending_coldroom' && record.for_coldroom
     ).length;
@@ -1528,6 +1690,8 @@ export default function WarehousePage() {
     const totalRejectedCrates = draft.total_rejected_crates !== '' ? Number(draft.total_rejected_crates) : 0;
 
     try {
+      const currentUser = await getCurrentUser();
+      
       const response = await fetch('/api/rejects', {
         method: 'POST',
         headers: {
@@ -1546,7 +1710,7 @@ export default function WarehousePage() {
           reason: draft.reason,
           notes: draft.notes,
           rejected_at: new Date().toISOString(),
-          created_by: 'Warehouse'
+          created_by: currentUser?.name || 'Warehouse'
         }),
       });
 
@@ -1554,6 +1718,23 @@ export default function WarehousePage() {
       if (!response.ok || !result.success) {
         throw new Error(result.error || 'Failed to save reject details');
       }
+
+      // ✅ LOG REJECTION SAVED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_REJECTION_SAVED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: target.supplier_id,
+          supplierName: target.supplier_name,
+          palletId: target.pallet_id,
+          rejectedWeight: totalRejectedWeight,
+          rejectedCrates: totalRejectedCrates,
+          reason: draft.reason,
+          timestamp: new Date().toISOString(),
+        },
+      });
 
       toast({
         title: 'Reject details saved',
@@ -1571,6 +1752,21 @@ export default function WarehousePage() {
       await fetchAllData();
     } catch (err: any) {
       console.error('Error saving reject details:', err);
+      
+      // ✅ LOG REJECTION SAVE FAILURE
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'SUPPLIER_REJECTION_SAVED',
+        status: 'failure',
+        metadata: {
+          supplierId: target.supplier_id,
+          supplierName: target.supplier_name,
+          palletId: target.pallet_id,
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: 'Error',
         description: err.message || 'Failed to save reject details',
@@ -1585,7 +1781,6 @@ export default function WarehousePage() {
       const response = await fetch('/api/weights?limit=100&order=desc');
       if (!response.ok) throw new Error('Failed to fetch intake records');
       let data = await response.json();
-      // Normalize response to always be an array
       const weightEntries = Array.isArray(data) ? data : (data.weights || []);
 
       const intakeRecords: SupplierIntakeRecord[] = weightEntries.map((entry: any) => {
@@ -1665,7 +1860,6 @@ export default function WarehousePage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          // Fetch weight entries to get crate counts
           const weightsResponse = await fetch('/api/weights');
           let weightEntries: any[] = [];
           if (weightsResponse.ok) {
@@ -1673,7 +1867,6 @@ export default function WarehousePage() {
             weightEntries = Array.isArray(weightsData) ? weightsData : (weightsData.weights || []);
           }
           
-          // Create a map of weight entries by ID for quick lookup
           const weightMap = new Map();
           weightEntries.forEach(weight => {
             weightMap.set(weight.id, weight);
@@ -1704,12 +1897,10 @@ export default function WarehousePage() {
               }
             }
             
-            // Find the original weight entry to get crate counts
             let intakeFuerteCrates = 0;
             let intakeHassCrates = 0;
             let intakeTotalCrates = 0;
             
-            // Try to find by supplier_id
             const weightEntry = weightMap.get(record.supplier_id) || 
                                weightMap.get(record.pallet_id) ||
                                weightMap.get(record.supplier_name?.toLowerCase());
@@ -1719,7 +1910,6 @@ export default function WarehousePage() {
               intakeHassCrates = weightEntry.hass_crates || 0;
               intakeTotalCrates = intakeFuerteCrates + intakeHassCrates;
             } else {
-              // Try to parse from counting_data if it contains crate info
               if (counting_data.fuerte_crates) intakeFuerteCrates = counting_data.fuerte_crates;
               if (counting_data.hass_crates) intakeHassCrates = counting_data.hass_crates;
               intakeTotalCrates = intakeFuerteCrates + intakeHassCrates;
@@ -1739,10 +1929,8 @@ export default function WarehousePage() {
             };
           });
           
-          // Fetch rejects to get accurate rejected weights and crates
           const rejections = await fetchRejects();
           
-          // Merge rejection data into counting records
           const recordsWithRejects = processedRecords.map((record: CountingRecord) => {
             const rejection = rejections.find(reject => 
               reject.weight_entry_id === record.id || 
@@ -1764,11 +1952,9 @@ export default function WarehousePage() {
           
           setCountingRecords(recordsWithRejects);
           
-          // Calculate statistics from records with updated rejection data
           const calculatedStats = calculateStatsFromRecords(recordsWithRejects, rejections);
           setStats(calculatedStats);
           
-          // Calculate size statistics
           calculateSizeStatistics(recordsWithRejects);
           
           return recordsWithRejects;
@@ -1905,23 +2091,18 @@ export default function WarehousePage() {
       }
     };
 
-    // FIXED: Better extraction of size data
     records.forEach(record => {
       const countingData = record.counting_data || {};
       const totals = record.totals || {};
       
-      // Helper to safely get a value from counting_data or fallback to totals
       const getValue = (key: string): number => {
-        // First try counting_data
         let value = countingData[key];
         if (value !== undefined && value !== null && value !== '') {
           const num = Number(value);
           if (!isNaN(num)) return num;
         }
         
-        // Fallback to check if it's a totals key
         if (key.includes('_class') && key.includes('_size')) {
-          // Extract size from key like "fuerte_4kg_class1_size12"
           const parts = key.split('_');
           if (parts.length >= 5) {
             const variety = parts[0];
@@ -1929,7 +2110,6 @@ export default function WarehousePage() {
             const classType = parts[2];
             const size = parts[4];
             
-            // Try to find in totals structure
             const totalsKey = `${variety}_${boxType}_${classType}_size${size}`;
             const totalsValue = totals[totalsKey];
             if (totalsValue !== undefined) {
@@ -1942,13 +2122,6 @@ export default function WarehousePage() {
         return 0;
       };
 
-      // Debug: Log sample data
-      if (records.indexOf(record) === 0) {
-        console.log('Sample counting_data keys:', Object.keys(countingData).filter(k => k.includes('size')));
-        console.log('Sample totals keys:', Object.keys(totals).filter(k => k.includes('size')));
-      }
-
-      // Fuerte 4kg sizes
       for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
         const class1Key = `fuerte_4kg_class1_size${size}`;
         const class2Key = `fuerte_4kg_class2_size${size}`;
@@ -1963,7 +2136,6 @@ export default function WarehousePage() {
         (newStats.fuerte['4kg'][class2Field] as number) += class2;
       }
 
-      // Fuerte 10kg sizes
       for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
         const class1Key = `fuerte_10kg_class1_size${size}`;
         const class2Key = `fuerte_10kg_class2_size${size}`;
@@ -1978,7 +2150,6 @@ export default function WarehousePage() {
         (newStats.fuerte['10kg'][class2Field] as number) += class2;
       }
 
-      // Hass 4kg sizes
       for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
         const class1Key = `hass_4kg_class1_size${size}`;
         const class2Key = `hass_4kg_class2_size${size}`;
@@ -1993,7 +2164,6 @@ export default function WarehousePage() {
         (newStats.hass['4kg'][class2Field] as number) += class2;
       }
 
-      // Hass 10kg sizes
       for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
         const class1Key = `hass_10kg_class1_size${size}`;
         const class2Key = `hass_10kg_class2_size${size}`;
@@ -2009,14 +2179,6 @@ export default function WarehousePage() {
       }
     });
 
-    // Log the calculated statistics
-    console.log('Calculated size statistics:', {
-      fuerte_4kg_total: Object.values(newStats.fuerte['4kg']).reduce((sum, value) => sum + Number(value || 0), 0),
-      fuerte_10kg_total: Object.values(newStats.fuerte['10kg']).reduce((sum, value) => sum + Number(value || 0), 0),
-      hass_4kg_total: Object.values(newStats.hass['4kg']).reduce((sum, value) => sum + Number(value || 0), 0),
-      hass_10kg_total: Object.values(newStats.hass['10kg']).reduce((sum, value) => sum + Number(value || 0), 0),
-    });
-
     setSizeStatistics(newStats);
     return newStats;
   }, []);
@@ -2029,26 +2191,21 @@ export default function WarehousePage() {
         const result = await response.json();
         console.log('API Size Statistics Result:', result);
         if (result.success && result.data) {
-          // Ensure we have proper data structure
           if (result.data.fuerte && result.data.hass) {
             setSizeStatistics(result.data);
           } else {
-            // If data structure is different, try to parse it
             console.log('Data structure mismatch, calculating from records');
             await fetchCountingRecords();
           }
         } else {
-          // Fallback to calculating from local records
           calculateSizeStatistics(countingRecords);
         }
       } else {
-        // Fallback to calculating from local records
         calculateSizeStatistics(countingRecords);
       }
       return sizeStatistics;
     } catch (err: any) {
       console.error('Error fetching size statistics:', err);
-      // Fallback to calculating from local records
       calculateSizeStatistics(countingRecords);
       return sizeStatistics;
     } finally {
@@ -2079,6 +2236,19 @@ export default function WarehousePage() {
 
   const fetchAllData = async () => {
     setError(null);
+    const currentUser = await getCurrentUser();
+    
+    // ✅ LOG DATA REFRESH
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'WAREHOUSE_DATA_REFRESH',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    
     await Promise.all([
       fetchIntakeRecords(),
       fetchQualityChecks(),
@@ -2089,9 +2259,25 @@ export default function WarehousePage() {
     setLastRefreshed(new Date());
   };
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
+useEffect(() => {
+  // Show page immediately
+  setIsLoading(prev => ({ 
+    ...prev, 
+    intake: false, 
+    quality: false, 
+    counting: false,
+    stats: false,
+    supplierDetails: false,
+    rejects: false 
+  }));
+  
+  // Load all data in the background
+  fetchIntakeRecords();
+  fetchQualityChecks();
+  fetchCountingRecords();
+  fetchSizeStatistics();
+  fetchRejects();
+}, []);
 
   const toggleIntakeExpansion = (supplierName: string) => {
     const newExpanded = new Set(expandedIntake);
@@ -2172,10 +2358,8 @@ export default function WarehousePage() {
     });
   };
 
-  // NEW: Function to load counting record for editing
   const handleEditCountingRecord = async (record: CountingRecord) => {
     try {
-      // Find the original supplier intake record
       const supplierIntake = supplierIntakeRecords.find(r => r.id === record.supplier_id);
       
       if (!supplierIntake) {
@@ -2187,14 +2371,11 @@ export default function WarehousePage() {
         return;
       }
       
-      // Find quality check
       const qc = qualityChecks.find(q => q.weight_entry_id === record.supplier_id);
       
-      // Set as editing mode
       setIsEditingMode(true);
       setEditingRecord(record);
       
-      // Prepare the counting form with existing data
       const countingData = record.counting_data || {};
       
       const editForm: CountingFormData = {
@@ -2207,7 +2388,6 @@ export default function WarehousePage() {
           weight: fv.weight
         })),
         
-        // Fuerte 4kg Class 1
         fuerte_4kg_class1_size12: countingData.fuerte_4kg_class1_size12 || 0,
         fuerte_4kg_class1_size14: countingData.fuerte_4kg_class1_size14 || 0,
         fuerte_4kg_class1_size16: countingData.fuerte_4kg_class1_size16 || 0,
@@ -2217,7 +2397,6 @@ export default function WarehousePage() {
         fuerte_4kg_class1_size24: countingData.fuerte_4kg_class1_size24 || 0,
         fuerte_4kg_class1_size26: countingData.fuerte_4kg_class1_size26 || 0,
         
-        // Fuerte 4kg Class 2
         fuerte_4kg_class2_size12: countingData.fuerte_4kg_class2_size12 || 0,
         fuerte_4kg_class2_size14: countingData.fuerte_4kg_class2_size14 || 0,
         fuerte_4kg_class2_size16: countingData.fuerte_4kg_class2_size16 || 0,
@@ -2227,7 +2406,6 @@ export default function WarehousePage() {
         fuerte_4kg_class2_size24: countingData.fuerte_4kg_class2_size24 || 0,
         fuerte_4kg_class2_size26: countingData.fuerte_4kg_class2_size26 || 0,
         
-        // Fuerte 10kg Class 1
         fuerte_10kg_class1_size12: countingData.fuerte_10kg_class1_size12 || 0,
         fuerte_10kg_class1_size14: countingData.fuerte_10kg_class1_size14 || 0,
         fuerte_10kg_class1_size16: countingData.fuerte_10kg_class1_size16 || 0,
@@ -2240,7 +2418,6 @@ export default function WarehousePage() {
         fuerte_10kg_class1_size30: countingData.fuerte_10kg_class1_size30 || 0,
         fuerte_10kg_class1_size32: countingData.fuerte_10kg_class1_size32 || 0,
         
-        // Fuerte 10kg Class 2
         fuerte_10kg_class2_size12: countingData.fuerte_10kg_class2_size12 || 0,
         fuerte_10kg_class2_size14: countingData.fuerte_10kg_class2_size14 || 0,
         fuerte_10kg_class2_size16: countingData.fuerte_10kg_class2_size16 || 0,
@@ -2253,7 +2430,6 @@ export default function WarehousePage() {
         fuerte_10kg_class2_size30: countingData.fuerte_10kg_class2_size30 || 0,
         fuerte_10kg_class2_size32: countingData.fuerte_10kg_class2_size32 || 0,
         
-        // Hass 4kg Class 1
         hass_4kg_class1_size12: countingData.hass_4kg_class1_size12 || 0,
         hass_4kg_class1_size14: countingData.hass_4kg_class1_size14 || 0,
         hass_4kg_class1_size16: countingData.hass_4kg_class1_size16 || 0,
@@ -2263,7 +2439,6 @@ export default function WarehousePage() {
         hass_4kg_class1_size24: countingData.hass_4kg_class1_size24 || 0,
         hass_4kg_class1_size26: countingData.hass_4kg_class1_size26 || 0,
         
-        // Hass 4kg Class 2
         hass_4kg_class2_size12: countingData.hass_4kg_class2_size12 || 0,
         hass_4kg_class2_size14: countingData.hass_4kg_class2_size14 || 0,
         hass_4kg_class2_size16: countingData.hass_4kg_class2_size16 || 0,
@@ -2273,7 +2448,6 @@ export default function WarehousePage() {
         hass_4kg_class2_size24: countingData.hass_4kg_class2_size24 || 0,
         hass_4kg_class2_size26: countingData.hass_4kg_class2_size26 || 0,
         
-        // Hass 10kg Class 1
         hass_10kg_class1_size12: countingData.hass_10kg_class1_size12 || 0,
         hass_10kg_class1_size14: countingData.hass_10kg_class1_size14 || 0,
         hass_10kg_class1_size16: countingData.hass_10kg_class1_size16 || 0,
@@ -2286,7 +2460,6 @@ export default function WarehousePage() {
         hass_10kg_class1_size30: countingData.hass_10kg_class1_size30 || 0,
         hass_10kg_class1_size32: countingData.hass_10kg_class1_size32 || 0,
         
-        // Hass 10kg Class 2
         hass_10kg_class2_size12: countingData.hass_10kg_class2_size12 || 0,
         hass_10kg_class2_size14: countingData.hass_10kg_class2_size14 || 0,
         hass_10kg_class2_size16: countingData.hass_10kg_class2_size16 || 0,
@@ -2308,7 +2481,6 @@ export default function WarehousePage() {
       setCountingForm(editForm);
       setSelectedSupplier(supplierIntake);
       setSelectedQC(qc ?? null);
-      // Set collapsible sections based on data
       setExpandedFuerteClass2(
         Object.keys(countingData).some(k => 
           k.startsWith('fuerte_4kg_class2_') && countingData[k] > 0
@@ -2330,7 +2502,6 @@ export default function WarehousePage() {
         )
       );
       
-      // Switch to counting tab
       setActiveTab('counting');
       
       toast({
@@ -2386,6 +2557,8 @@ export default function WarehousePage() {
     }
 
     try {
+      const currentUser = await getCurrentUser();
+      
       const totals = {
         fuerte_4kg_class1: calculateSubtotal('fuerte', 'class1', '4kg'),
         fuerte_4kg_class2: calculateSubtotal('fuerte', 'class2', '4kg'),
@@ -2425,10 +2598,9 @@ export default function WarehousePage() {
         total_weight: intakeWeight,
         counting_data: { ...countingForm },
         submitted_at: new Date().toISOString(),
-        processed_by: "Counting Clerk",
+        processed_by: currentUser?.name || "Counting Clerk",
         totals,
         total_counted_weight: totalCountedWeight,
-        // Add rejected weight
         rejected_weight: rejectedWeight > 0 ? rejectedWeight : 0,
         status: 'pending_coldroom',
         for_coldroom: true,
@@ -2437,13 +2609,10 @@ export default function WarehousePage() {
         kra_pin: countingForm.kra_pin,
         driver_name: selectedSupplier.driver_name,
         vehicle_plate: selectedSupplier.vehicle_plate,
-        // Include intake crate counts
         intake_fuerte_crates: selectedSupplier.fuerte_crates,
         intake_hass_crates: selectedSupplier.hass_crates,
         intake_total_crates: selectedSupplier.total_crates
       };
-
-      console.log('📦 Saving counting data directly to history:', countingData);
 
       const response = await fetch('/api/counting', {
         method: 'POST',
@@ -2459,11 +2628,27 @@ export default function WarehousePage() {
         throw new Error(result.error || 'Failed to save counting data');
       }
 
-      const countingRecordId = result.data.id;
-      
+      // ✅ LOG COUNTING DATA SAVED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'COUNTING_RECORD_SUBMITTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: selectedSupplier.id,
+          supplierName: selectedSupplier.supplier_name,
+          palletId: selectedSupplier.pallet_id,
+          totalBoxes: totals.fuerte_4kg_total + totals.fuerte_10kg_total + totals.hass_4kg_total + totals.hass_10kg_total,
+          totalWeight: totalCountedWeight,
+          rejectedWeight: rejectedWeight > 0 ? rejectedWeight : 0,
+          recordId: result.data.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       if (typeof window !== "undefined") {
         localStorage.setItem('recentCountingData', JSON.stringify({
-          id: countingRecordId,
+          id: result.data.id,
           supplier_name: selectedSupplier.supplier_name,
           totals,
           counting_data: countingForm,
@@ -2600,6 +2785,20 @@ export default function WarehousePage() {
       
     } catch (err: any) {
       console.error('Error saving counting data:', err);
+      
+      // ✅ LOG COUNTING DATA FAILURE
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COUNTING_RECORD_SUBMITTED',
+        status: 'failure',
+        metadata: {
+          supplierId: selectedSupplier?.id,
+          supplierName: selectedSupplier?.supplier_name,
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: "Error",
         description: err.message || "Failed to save counting data",
@@ -2608,7 +2807,6 @@ export default function WarehousePage() {
     }
   };
 
-  // NEW: Function to handle updating existing counting record
   const handleUpdateCountingForm = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -2622,6 +2820,8 @@ export default function WarehousePage() {
     }
 
     try {
+      const currentUser = await getCurrentUser();
+      
       const totals = {
         fuerte_4kg_class1: calculateSubtotal('fuerte', 'class1', '4kg'),
         fuerte_4kg_class2: calculateSubtotal('fuerte', 'class2', '4kg'),
@@ -2662,7 +2862,7 @@ export default function WarehousePage() {
         total_weight: intakeWeight,
         counting_data: { ...countingForm },
         submitted_at: new Date().toISOString(),
-        processed_by: "Counting Clerk",
+        processed_by: currentUser?.name || "Counting Clerk",
         totals,
         total_counted_weight: totalCountedWeight,
         rejected_weight: rejectedWeight > 0 ? rejectedWeight : 0,
@@ -2674,15 +2874,11 @@ export default function WarehousePage() {
         driver_name: selectedSupplier.driver_name,
         vehicle_plate: selectedSupplier.vehicle_plate,
         notes: countingForm.notes,
-        // Include intake crate counts
         intake_fuerte_crates: selectedSupplier.fuerte_crates,
         intake_hass_crates: selectedSupplier.hass_crates,
         intake_total_crates: selectedSupplier.total_crates
       };
 
-      console.log('🔄 Updating counting record:', updatedData);
-
-      // First delete the old record
       const deleteResponse = await fetch(`/api/counting?id=${editingRecord.id}`, {
         method: 'DELETE',
       });
@@ -2691,7 +2887,6 @@ export default function WarehousePage() {
         throw new Error('Failed to delete old record');
       }
 
-      // Then create new record with updated data
       const createResponse = await fetch('/api/counting', {
         method: 'POST',
         headers: {
@@ -2706,18 +2901,34 @@ export default function WarehousePage() {
         throw new Error(result.error || 'Failed to update counting data');
       }
 
+      // ✅ LOG COUNTING DATA UPDATED
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'COUNTING_RECORD_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: selectedSupplier.id,
+          supplierName: selectedSupplier.supplier_name,
+          oldRecordId: editingRecord.id,
+          newRecordId: result.data.id,
+          totalBoxes: totals.fuerte_4kg_total + totals.fuerte_10kg_total + totals.hass_4kg_total + totals.hass_10kg_total,
+          totalWeight: totalCountedWeight,
+          rejectedWeight: rejectedWeight > 0 ? rejectedWeight : 0,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       if (typeof window !== "undefined") {
         localStorage.setItem('refreshColdRoom', 'true');
       }
       console.log('✅ Set refreshColdRoom flag for cold room');
 
-      // Update local state
       setCountingRecords(prev => {
         const filtered = prev.filter(record => record.id !== editingRecord.id);
         return [result.data, ...filtered];
       });
       
-      // Reset form and exit edit mode
       const resetForm: CountingFormData = {
         supplier_id: '',
         supplier_name: '',
@@ -2841,6 +3052,21 @@ export default function WarehousePage() {
       
     } catch (err: any) {
       console.error('Error updating counting data:', err);
+      
+      // ✅ LOG COUNTING DATA UPDATE FAILURE
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COUNTING_RECORD_UPDATED',
+        status: 'failure',
+        metadata: {
+          supplierId: selectedSupplier?.id,
+          supplierName: selectedSupplier?.supplier_name,
+          recordId: editingRecord?.id,
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       toast({
         title: "Error",
         description: err.message || "Failed to update counting data",
@@ -2849,7 +3075,6 @@ export default function WarehousePage() {
     }
   };
 
-  // UPDATED: Filter history with date and time
   const filteredHistory = countingRecords.filter(record => {
     const matchesSearch = searchTerm === '' || 
       record.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -2858,7 +3083,6 @@ export default function WarehousePage() {
     
     const recordDate = new Date(record.submitted_at);
     
-    // Create start and end datetime with time
     let matchesDate = true;
     
     if (startDate) {
@@ -2895,86 +3119,87 @@ export default function WarehousePage() {
     setSearchTerm('');
   };
 
-type CountingSizeField =
-  | 'fuerte_4kg_class1_size12'
-  | 'fuerte_4kg_class1_size14'
-  | 'fuerte_4kg_class1_size16'
-  | 'fuerte_4kg_class1_size18'
-  | 'fuerte_4kg_class1_size20'
-  | 'fuerte_4kg_class1_size22'
-  | 'fuerte_4kg_class1_size24'
-  | 'fuerte_4kg_class1_size26'
-  | 'fuerte_4kg_class2_size12'
-  | 'fuerte_4kg_class2_size14'
-  | 'fuerte_4kg_class2_size16'
-  | 'fuerte_4kg_class2_size18'
-  | 'fuerte_4kg_class2_size20'
-  | 'fuerte_4kg_class2_size22'
-  | 'fuerte_4kg_class2_size24'
-  | 'fuerte_4kg_class2_size26'
-  | 'fuerte_10kg_class1_size12'
-  | 'fuerte_10kg_class1_size14'
-  | 'fuerte_10kg_class1_size16'
-  | 'fuerte_10kg_class1_size18'
-  | 'fuerte_10kg_class1_size20'
-  | 'fuerte_10kg_class1_size22'
-  | 'fuerte_10kg_class1_size24'
-  | 'fuerte_10kg_class1_size26'
-  | 'fuerte_10kg_class1_size28'
-  | 'fuerte_10kg_class1_size30'
-  | 'fuerte_10kg_class1_size32'
-  | 'fuerte_10kg_class2_size12'
-  | 'fuerte_10kg_class2_size14'
-  | 'fuerte_10kg_class2_size16'
-  | 'fuerte_10kg_class2_size18'
-  | 'fuerte_10kg_class2_size20'
-  | 'fuerte_10kg_class2_size22'
-  | 'fuerte_10kg_class2_size24'
-  | 'fuerte_10kg_class2_size26'
-  | 'fuerte_10kg_class2_size28'
-  | 'fuerte_10kg_class2_size30'
-  | 'fuerte_10kg_class2_size32'
-  | 'hass_4kg_class1_size12'
-  | 'hass_4kg_class1_size14'
-  | 'hass_4kg_class1_size16'
-  | 'hass_4kg_class1_size18'
-  | 'hass_4kg_class1_size20'
-  | 'hass_4kg_class1_size22'
-  | 'hass_4kg_class1_size24'
-  | 'hass_4kg_class1_size26'
-  | 'hass_4kg_class2_size12'
-  | 'hass_4kg_class2_size14'
-  | 'hass_4kg_class2_size16'
-  | 'hass_4kg_class2_size18'
-  | 'hass_4kg_class2_size20'
-  | 'hass_4kg_class2_size22'
-  | 'hass_4kg_class2_size24'
-  | 'hass_4kg_class2_size26'
-  | 'hass_10kg_class1_size12'
-  | 'hass_10kg_class1_size14'
-  | 'hass_10kg_class1_size16'
-  | 'hass_10kg_class1_size18'
-  | 'hass_10kg_class1_size20'
-  | 'hass_10kg_class1_size22'
-  | 'hass_10kg_class1_size24'
-  | 'hass_10kg_class1_size26'
-  | 'hass_10kg_class1_size28'
-  | 'hass_10kg_class1_size30'
-  | 'hass_10kg_class1_size32'
-  | 'hass_10kg_class2_size12'
-  | 'hass_10kg_class2_size14'
-  | 'hass_10kg_class2_size16'
-  | 'hass_10kg_class2_size18'
-  | 'hass_10kg_class2_size20'
-  | 'hass_10kg_class2_size22'
-  | 'hass_10kg_class2_size24'
-  | 'hass_10kg_class2_size26'
-  | 'hass_10kg_class2_size28'
-  | 'hass_10kg_class2_size30'
-  | 'hass_10kg_class2_size32';
+  type CountingSizeField =
+    | 'fuerte_4kg_class1_size12'
+    | 'fuerte_4kg_class1_size14'
+    | 'fuerte_4kg_class1_size16'
+    | 'fuerte_4kg_class1_size18'
+    | 'fuerte_4kg_class1_size20'
+    | 'fuerte_4kg_class1_size22'
+    | 'fuerte_4kg_class1_size24'
+    | 'fuerte_4kg_class1_size26'
+    | 'fuerte_4kg_class2_size12'
+    | 'fuerte_4kg_class2_size14'
+    | 'fuerte_4kg_class2_size16'
+    | 'fuerte_4kg_class2_size18'
+    | 'fuerte_4kg_class2_size20'
+    | 'fuerte_4kg_class2_size22'
+    | 'fuerte_4kg_class2_size24'
+    | 'fuerte_4kg_class2_size26'
+    | 'fuerte_10kg_class1_size12'
+    | 'fuerte_10kg_class1_size14'
+    | 'fuerte_10kg_class1_size16'
+    | 'fuerte_10kg_class1_size18'
+    | 'fuerte_10kg_class1_size20'
+    | 'fuerte_10kg_class1_size22'
+    | 'fuerte_10kg_class1_size24'
+    | 'fuerte_10kg_class1_size26'
+    | 'fuerte_10kg_class1_size28'
+    | 'fuerte_10kg_class1_size30'
+    | 'fuerte_10kg_class1_size32'
+    | 'fuerte_10kg_class2_size12'
+    | 'fuerte_10kg_class2_size14'
+    | 'fuerte_10kg_class2_size16'
+    | 'fuerte_10kg_class2_size18'
+    | 'fuerte_10kg_class2_size20'
+    | 'fuerte_10kg_class2_size22'
+    | 'fuerte_10kg_class2_size24'
+    | 'fuerte_10kg_class2_size26'
+    | 'fuerte_10kg_class2_size28'
+    | 'fuerte_10kg_class2_size30'
+    | 'fuerte_10kg_class2_size32'
+    | 'hass_4kg_class1_size12'
+    | 'hass_4kg_class1_size14'
+    | 'hass_4kg_class1_size16'
+    | 'hass_4kg_class1_size18'
+    | 'hass_4kg_class1_size20'
+    | 'hass_4kg_class1_size22'
+    | 'hass_4kg_class1_size24'
+    | 'hass_4kg_class1_size26'
+    | 'hass_4kg_class2_size12'
+    | 'hass_4kg_class2_size14'
+    | 'hass_4kg_class2_size16'
+    | 'hass_4kg_class2_size18'
+    | 'hass_4kg_class2_size20'
+    | 'hass_4kg_class2_size22'
+    | 'hass_4kg_class2_size24'
+    | 'hass_4kg_class2_size26'
+    | 'hass_10kg_class1_size12'
+    | 'hass_10kg_class1_size14'
+    | 'hass_10kg_class1_size16'
+    | 'hass_10kg_class1_size18'
+    | 'hass_10kg_class1_size20'
+    | 'hass_10kg_class1_size22'
+    | 'hass_10kg_class1_size24'
+    | 'hass_10kg_class1_size26'
+    | 'hass_10kg_class1_size28'
+    | 'hass_10kg_class1_size30'
+    | 'hass_10kg_class1_size32'
+    | 'hass_10kg_class2_size12'
+    | 'hass_10kg_class2_size14'
+    | 'hass_10kg_class2_size16'
+    | 'hass_10kg_class2_size18'
+    | 'hass_10kg_class2_size20'
+    | 'hass_10kg_class2_size22'
+    | 'hass_10kg_class2_size24'
+    | 'hass_10kg_class2_size26'
+    | 'hass_10kg_class2_size28'
+    | 'hass_10kg_class2_size30'
+    | 'hass_10kg_class2_size32';
 
 const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
-  const sizes = ['14', '16', '18', '20', '22', '24'];
+  const sizes4kg = ['14', '16', '18', '20', '22', '24', '26'];
+  const sizes10kg = ['14', '16', '18', '20', '22', '24', '26', '28', '30'];
   const varieties: Array<'fuerte' | 'hass'> = ['fuerte', 'hass'];
   const classTypes: Array<'class1' | 'class2'> = ['class1', 'class2'];
 
@@ -2988,31 +3213,58 @@ const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
           supplier_name: record.supplier_name,
           telephone_number: record.supplier_phone || '',
           rowClass: `${variety.charAt(0).toUpperCase() + variety.slice(1)} ${classType === 'class1' ? 'Class 1' : 'Class 2'}`,
-          size_14: 0,
-          size_16: 0,
-          size_18: 0,
-          size_20: 0,
-          size_22: 0,
-          size_24: 0,
-          total_boxes: 0,
+          // 4kg sizes (14-26)
+          size_14_4kg: 0,
+          size_16_4kg: 0,
+          size_18_4kg: 0,
+          size_20_4kg: 0,
+          size_22_4kg: 0,
+          size_24_4kg: 0,
+          size_26_4kg: 0,
+          // 10kg sizes (14-30)
+          size_14_10kg: 0,
+          size_16_10kg: 0,
+          size_18_10kg: 0,
+          size_20_10kg: 0,
+          size_22_10kg: 0,
+          size_24_10kg: 0,
+          size_26_10kg: 0,
+          size_28_10kg: 0,
+          size_30_10kg: 0,
+          // Totals at the end
+          total_4kg: 0,
+          total_10kg: 0,
+          grand_total: 0,
           unit_price: '',
-          total_price: '',
-          grand_total: ''
+          total_price: ''
         };
 
-          sizes.forEach(size => {
-          const count4kg = Number(countingData[`${variety}_4kg_${classType}_size${size}`]) || 0;
-          const count10kg = Number(countingData[`${variety}_10kg_${classType}_size${size}`]) || 0;
-          const sizeField = `size_${size}` as 'size_14' | 'size_16' | 'size_18' | 'size_20' | 'size_22' | 'size_24';
-          row[sizeField] = count4kg + count10kg;
+        // 4kg sizes (14-26)
+        sizes4kg.forEach(size => {
+          const field = `size_${size}_4kg` as keyof CSVRow;
+          row[field] = Number(countingData[`${variety}_4kg_${classType}_size${size}`]) || 0;
         });
 
-        row.total_boxes = sizes.reduce((sum, size) => {
-          const value = row[`size_${size}` as keyof CSVRow];
-          return sum + (typeof value === 'number' ? value : 0);
+        // 10kg sizes (14-30)
+        sizes10kg.forEach(size => {
+          const field = `size_${size}_10kg` as keyof CSVRow;
+          row[field] = Number(countingData[`${variety}_10kg_${classType}_size${size}`]) || 0;
+        });
+
+        // Calculate totals at the end
+        row.total_4kg = sizes4kg.reduce((sum, size) => {
+          const field = `size_${size}_4kg` as keyof CSVRow;
+          return sum + (row[field] as number);
         }, 0);
 
-        if (row.total_boxes === 0) {
+        row.total_10kg = sizes10kg.reduce((sum, size) => {
+          const field = `size_${size}_10kg` as keyof CSVRow;
+          return sum + (row[field] as number);
+        }, 0);
+
+        row.grand_total = row.total_4kg + row.total_10kg;
+
+        if (row.grand_total === 0) {
           return null;
         }
 
@@ -3039,44 +3291,169 @@ const downloadCSV = (records: CountingRecord[]) => {
     'Supplier Name',
     'Telephone Number',
     'Class',
-    'Size 14',
-    'Size 16',
-    'Size 18',
-    'Size 20',
-    'Size 22',
-    'Size 24',
-    'Total Boxes',
+    // 4kg sizes (14-26)
+    'Size 14 (4kg)',
+    'Size 16 (4kg)',
+    'Size 18 (4kg)',
+    'Size 20 (4kg)',
+    'Size 22 (4kg)',
+    'Size 24 (4kg)',
+    'Size 26 (4kg)',
+    // 10kg sizes (14-30)
+    'Size 14 (10kg)',
+    'Size 16 (10kg)',
+    'Size 18 (10kg)',
+    'Size 20 (10kg)',
+    'Size 22 (10kg)',
+    'Size 24 (10kg)',
+    'Size 26 (10kg)',
+    'Size 28 (10kg)',
+    'Size 30 (10kg)',
+    // Totals at the end
+    'Total 4kg Boxes',
+    'Total 10kg Crates',
+    'Grand Total',
     'Unit Price',
-    'Total Price',
-    'Grand Total'
+    'Total Price'
   ];
+
+  // Calculate summary totals
+  const summaryTotals = {
+    'Fuerte Class 1': { total_4kg: 0, total_10kg: 0, grand_total: 0 },
+    'Fuerte Class 2': { total_4kg: 0, total_10kg: 0, grand_total: 0 },
+    'Hass Class 1': { total_4kg: 0, total_10kg: 0, grand_total: 0 },
+    'Hass Class 2': { total_4kg: 0, total_10kg: 0, grand_total: 0 }
+  };
+
+  // Calculate totals for each class
+  csvData.forEach(row => {
+    const className = row.rowClass; // e.g., "Fuerte Class 1"
+    if (summaryTotals[className]) {
+      summaryTotals[className].total_4kg += row.total_4kg;
+      summaryTotals[className].total_10kg += row.total_10kg;
+      summaryTotals[className].grand_total += row.grand_total;
+    }
+  });
+
+  const grandTotalAll = 
+    summaryTotals['Fuerte Class 1'].grand_total + 
+    summaryTotals['Fuerte Class 2'].grand_total + 
+    summaryTotals['Hass Class 1'].grand_total + 
+    summaryTotals['Hass Class 2'].grand_total;
 
   const rows = csvData.map((row, index) => {
     const rowNumber = index + 2;
     const totalPriceFormula = `=L${rowNumber}*K${rowNumber}`;
-    const grandTotalFormula = `=M${rowNumber}`;
+
+    const telephoneNumber = row.telephone_number ? `"${row.telephone_number}\t"` : '""';
 
     return [
       row.date,
       `"${row.supplier_name}"`,
-      `"${row.telephone_number}"`,
+      telephoneNumber,
       `"${row.rowClass}"`,
-      row.size_14,
-      row.size_16,
-      row.size_18,
-      row.size_20,
-      row.size_22,
-      row.size_24,
-      row.total_boxes,
+      // 4kg sizes (14-26)
+      row.size_14_4kg,
+      row.size_16_4kg,
+      row.size_18_4kg,
+      row.size_20_4kg,
+      row.size_22_4kg,
+      row.size_24_4kg,
+      row.size_26_4kg,
+      // 10kg sizes (14-30)
+      row.size_14_10kg,
+      row.size_16_10kg,
+      row.size_18_10kg,
+      row.size_20_10kg,
+      row.size_22_10kg,
+      row.size_24_10kg,
+      row.size_26_10kg,
+      row.size_28_10kg,
+      row.size_30_10kg,
+      // Totals at the end
+      row.total_4kg,
+      row.total_10kg,
+      row.grand_total,
       '',
-      totalPriceFormula,
-      grandTotalFormula
+      totalPriceFormula
     ];
   });
 
+  // Add summary rows
+  const summaryRows = [
+    [
+      'TOTAL',
+      'Fuerte Class 1',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Fuerte Class 1'].total_4kg,
+      summaryTotals['Fuerte Class 1'].total_10kg,
+      summaryTotals['Fuerte Class 1'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'TOTAL',
+      'Fuerte Class 2',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Fuerte Class 2'].total_4kg,
+      summaryTotals['Fuerte Class 2'].total_10kg,
+      summaryTotals['Fuerte Class 2'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'TOTAL',
+      'Hass Class 1',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Hass Class 1'].total_4kg,
+      summaryTotals['Hass Class 1'].total_10kg,
+      summaryTotals['Hass Class 1'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'TOTAL',
+      'Hass Class 2',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Hass Class 2'].total_4kg,
+      summaryTotals['Hass Class 2'].total_10kg,
+      summaryTotals['Hass Class 2'].grand_total,
+      '',
+      ''
+    ],
+    [
+      'GRAND TOTAL',
+      'ALL CLASSES',
+      '',
+      '',
+      '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '',
+      summaryTotals['Fuerte Class 1'].total_4kg + summaryTotals['Fuerte Class 2'].total_4kg + summaryTotals['Hass Class 1'].total_4kg + summaryTotals['Hass Class 2'].total_4kg,
+      summaryTotals['Fuerte Class 1'].total_10kg + summaryTotals['Fuerte Class 2'].total_10kg + summaryTotals['Hass Class 1'].total_10kg + summaryTotals['Hass Class 2'].total_10kg,
+      grandTotalAll,
+      '',
+      ''
+    ]
+  ];
+
+  // Combine data rows with summary rows
+  const allRows = [...rows, ...summaryRows];
+
   const csvContent = [
     headers.join(','),
-    ...rows.map(row => row.join(','))
+    ...allRows.map(row => row.join(','))
   ].join('\n');
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -3106,6 +3483,23 @@ const downloadCSV = (records: CountingRecord[]) => {
   const downloadWarehouseGRN = async (record: CountingRecord) => {
     try {
       await generateWarehouseGRN(record);
+      
+      const currentUser = await getCurrentUser();
+      
+    
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WAREHOUSE_GRN_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: record.supplier_id,
+          supplierName: record.supplier_name,
+          recordId: record.id,
+          palletId: record.pallet_id,
+          timestamp: new Date().toISOString(),
+        },
+      });
       
       toast({
         title: '✅ Warehouse GRN Downloaded',
@@ -3472,7 +3866,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                 </div>
               </div>
 
-              {/* Box Totals */}
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                   <div className="flex items-center justify-between mb-3">
@@ -3525,7 +3918,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                 </div>
               </div>
 
-              {/* Weight Summary */}
               {stats.weight_summary && (
                 <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-200">
                   <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
@@ -3599,7 +3991,7 @@ const downloadCSV = (records: CountingRecord[]) => {
               <TabsTrigger value="statistics">Statistics</TabsTrigger>
             </TabsList>
 
-            {/* Intake Tab - UPDATED with crate counts */}
+            {/* Intake Tab */}
             <TabsContent value="intake" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -4259,12 +4651,12 @@ const downloadCSV = (records: CountingRecord[]) => {
                                 <CreditCard className="w-4 h-4" />
                                 Bank Account Number
                               </Label>
-                                <Input
-                                  id="bank_account"
-                                  value={countingForm.bank_account}
-                                  onChange={(e) => handleInputChange('bank_account', e.target.value)}
-                                  placeholder="Enter account number"
-                                />
+                              <Input
+                                id="bank_account"
+                                value={countingForm.bank_account}
+                                onChange={(e) => handleInputChange('bank_account', e.target.value)}
+                                placeholder="Enter account number"
+                              />
                             </div>
                           </div>
                         </div>
@@ -4317,7 +4709,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                           </CollapsibleContent>
                         </Collapsible>
                         
-                        {/* Cancel Edit Button */}
                         {isEditingMode && (
                           <div className="mt-4 pt-4 border-t">
                             <Button
@@ -4693,7 +5084,7 @@ const downloadCSV = (records: CountingRecord[]) => {
               </div>
             </TabsContent>
 
-            {/* History Tab - UPDATED with crate counts */}
+            {/* History Tab */}
             <TabsContent value="history" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -4728,7 +5119,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4 mb-6">
-                    {/* Date-time filter grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="search-history">Search</Label>
@@ -4752,7 +5142,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                         </div>
                       </div>
                       
-                      {/* Start Date-Time */}
                       <div className="space-y-2">
                         <Label htmlFor="start-date">Start Date & Time</Label>
                         <div className="grid grid-cols-3 gap-2">
@@ -4780,7 +5169,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                         </div>
                       </div>
                       
-                      {/* End Date-Time */}
                       <div className="space-y-2">
                         <Label htmlFor="end-date">End Date & Time</Label>
                         <div className="grid grid-cols-3 gap-2">
@@ -4893,7 +5281,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap justify-end items-center gap-2">
-                                    {/* Edit Button */}
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -5002,66 +5389,66 @@ const downloadCSV = (records: CountingRecord[]) => {
                                       </div>
                                     </div>
 
-                                      {rejectDraft.open && (
-                                        <div className="mt-4 rounded-lg border border-red-200 bg-black-50 p-4">
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div>
-                                              <Label htmlFor={`${rejectKey}-history-weight`} className="mb-2 text-sm">Rejected Weight (kg)</Label>
-                                              <Input
-                                                id={`${rejectKey}-history-weight`}
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                value={rejectDraft.total_rejected_weight}
-                                                onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_weight', e.target.value)}
-                                                placeholder="0.00"
-                                              />
-                                            </div>
-                                            <div>
-                                              <Label htmlFor={`${rejectKey}-history-crates`} className="mb-2 text-sm">Rejected Crates</Label>
-                                              <Input
-                                                id={`${rejectKey}-history-crates`}
-                                                type="number"
-                                                step="1"
-                                                min="0"
-                                                value={rejectDraft.total_rejected_crates}
-                                                onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_crates', e.target.value)}
-                                                placeholder="0"
-                                              />
-                                            </div>
-                                            <div className="md:col-span-2 flex justify-end">
-                                              <Button type="button" onClick={() => saveSupplierReject({
-                                                weight_entry_id: record.id,
-                                                pallet_id: record.pallet_id,
-                                                supplier_id: record.supplier_id,
-                                                supplier_name: record.supplier_name,
-                                                driver_name: record.driver_name || supplierInfo.driver_name || '',
-                                                vehicle_plate: record.vehicle_plate || supplierInfo.vehicle_plate || '',
-                                                region: record.region || ''
-                                              })}>
-                                                Save Reject
-                                              </Button>
-                                            </div>
+                                    {rejectDraft.open && (
+                                      <div className="mt-4 rounded-lg border border-red-200 bg-black-50 p-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <div>
+                                            <Label htmlFor={`${rejectKey}-history-weight`} className="mb-2 text-sm">Rejected Weight (kg)</Label>
+                                            <Input
+                                              id={`${rejectKey}-history-weight`}
+                                              type="number"
+                                              step="0.01"
+                                              min="0"
+                                              value={rejectDraft.total_rejected_weight}
+                                              onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_weight', e.target.value)}
+                                              placeholder="0.00"
+                                            />
+                                          </div>
+                                          <div>
+                                            <Label htmlFor={`${rejectKey}-history-crates`} className="mb-2 text-sm">Rejected Crates</Label>
+                                            <Input
+                                              id={`${rejectKey}-history-crates`}
+                                              type="number"
+                                              step="1"
+                                              min="0"
+                                              value={rejectDraft.total_rejected_crates}
+                                              onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_crates', e.target.value)}
+                                              placeholder="0"
+                                            />
+                                          </div>
+                                          <div className="md:col-span-2 flex justify-end">
+                                            <Button type="button" onClick={() => saveSupplierReject({
+                                              weight_entry_id: record.id,
+                                              pallet_id: record.pallet_id,
+                                              supplier_id: record.supplier_id,
+                                              supplier_name: record.supplier_name,
+                                              driver_name: record.driver_name || supplierInfo.driver_name || '',
+                                              vehicle_plate: record.vehicle_plate || supplierInfo.vehicle_plate || '',
+                                              region: record.region || ''
+                                            })}>
+                                              Save Reject
+                                            </Button>
                                           </div>
                                         </div>
-                                      )}
-                                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                                        <div className="bg-black-50 p-3 rounded border">
-                                          <div className="text-gray-500">Rejected Weight</div>
-                                          <div className="font-bold text-lg">{safeToFixed(record.rejected_weight || 0)} kg</div>
+                                      </div>
+                                    )}
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                                      <div className="bg-black-50 p-3 rounded border">
+                                        <div className="text-gray-500">Rejected Weight</div>
+                                        <div className="font-bold text-lg">{safeToFixed(record.rejected_weight || 0)} kg</div>
+                                      </div>
+                                      <div className="bg-black-50 p-3 rounded border">
+                                        <div className="text-gray-500">Weight Variance</div>
+                                        <div className={`font-bold text-lg ${
+                                          (record.total_weight - (record.total_counted_weight || 0) - (record.rejected_weight || 0)) > 0 
+                                            ? 'text-red-600' 
+                                            : 'text-green-600'
+                                        }`}>
+                                          {safeToFixed(record.total_weight - (record.total_counted_weight || 0) - (record.rejected_weight || 0))} kg
                                         </div>
-                                        <div className="bg-black-50 p-3 rounded border">
-                                      <div className="text-gray-500">Weight Variance</div>
-                                      <div className={`font-bold text-lg ${
-                                        (record.total_weight - (record.total_counted_weight || 0) - (record.rejected_weight || 0)) > 0 
-                                          ? 'text-red-600' 
-                                          : 'text-green-600'
-                                      }`}>
-                                        {safeToFixed(record.total_weight - (record.total_counted_weight || 0) - (record.rejected_weight || 0))} kg
                                       </div>
                                     </div>
                                   </div>
-                                </div>
 
                                   {(record.rejected_weight || record.rejected_crates || 0) > 0 && (
                                     <div className="bg-black-50 p-4 rounded-lg border border-red-200">
@@ -5211,7 +5598,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-8">
-                    {/* Summary Statistics */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                         <div className="flex items-center justify-between mb-2">
@@ -5266,7 +5652,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </div>
                     </div>
 
-                    {/* Fuerte Avocado Statistics */}
                     <div className="space-y-4">
                       <h3 className="text-lg font-semibold text-green-800 flex items-center gap-2">
                         <Apple className="w-5 h-5" />
@@ -5274,7 +5659,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </h3>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Fuerte 4kg Table */}
                         <div className="border rounded-lg overflow-hidden">
                           <div className="bg-green-100 p-3 border-b">
                             <h4 className="font-semibold text-green-800">Fuerte 4kg Boxes</h4>
@@ -5330,7 +5714,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                           </div>
                         </div>
 
-                        {/* Fuerte 10kg Table */}
                         <div className="border rounded-lg overflow-hidden">
                           <div className="bg-green-100 p-3 border-b">
                             <h4 className="font-semibold text-green-800">Fuerte 10kg Crates</h4>
@@ -5388,7 +5771,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </div>
                     </div>
 
-                    {/* Hass Avocado Statistics */}
                     <div className="space-y-4">
                       <h3 className="text-lg font-semibold text-purple-800 flex items-center gap-2">
                         <Apple className="w-5 h-5" />
@@ -5396,7 +5778,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </h3>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Hass 4kg Table */}
                         <div className="border rounded-lg overflow-hidden">
                           <div className="bg-purple-100 p-3 border-b">
                             <h4 className="font-semibold text-purple-800">Hass 4kg Boxes</h4>
@@ -5452,7 +5833,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                           </div>
                         </div>
 
-                        {/* Hass 10kg Table */}
                         <div className="border rounded-lg overflow-hidden">
                           <div className="bg-purple-100 p-3 border-b">
                             <h4 className="font-semibold text-purple-800">Hass 10kg Crates</h4>
@@ -5510,7 +5890,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </div>
                     </div>
 
-                    {/* Rejection Statistics */}
                     <div className="border rounded-lg overflow-hidden">
                       <div className="bg-red-50 p-3 border-b">
                         <div className="flex items-center gap-2">
@@ -5542,56 +5921,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </div>
                     </div>
 
-                    {/* Debug Information */}
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                      <h4 className="font-semibold text-gray-800 mb-3">Data Information</h4>
-                      <div className="text-sm text-gray-600">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <div className="font-medium">Total Counting Records:</div>
-                            <div>{countingRecords.length}</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">Total Rejects Records:</div>
-                            <div>{rejects.length}</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">Last Updated:</div>
-                            <div>{lastRefreshed ? format(lastRefreshed, 'PPpp') : 'Never'}</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">Integration Status:</div>
-                            <div className="text-green-600 font-medium">Active</div>
-                          </div>
-                        </div>
-                        <div className="mt-3">
-                          <Button
-                            onClick={() => {
-                              console.log('Debug Size Statistics:', {
-                                countingRecords: countingRecords.length,
-                                rejects: rejects.length,
-                                sizeStatistics,
-                                sampleRecord: countingRecords[0]?.counting_data
-                                  ? Object.keys(countingRecords[0].counting_data).filter(k => k.includes('size'))
-                                  : 'No counting_data',
-                                sampleReject: rejects[0] || 'No rejects'
-                              });
-                              toast({
-                                title: 'Debug Info Logged',
-                                description: 'Check console for size statistics details',
-                              });
-                            }}
-                            size="sm"
-                            variant="outline"
-                            className="mt-2"
-                          >
-                            Debug Size Data
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Export Button */}
                     <div className="flex justify-center">
                       <Button
                         onClick={() => {
@@ -5616,9 +5945,6 @@ const downloadCSV = (records: CountingRecord[]) => {
                             hass_4kg: sizeStatistics.hass['4kg'],
                             hass_10kg: sizeStatistics.hass['10kg'],
                             totals: sizeTotals,
-                            sample_size_data: countingRecords.length > 0 
-                              ? Object.keys(countingRecords[0].counting_data || {}).filter(k => k.includes('size')).slice(0, 5)
-                              : []
                           };
 
                           const dataStr = JSON.stringify(statsData, null, 2);

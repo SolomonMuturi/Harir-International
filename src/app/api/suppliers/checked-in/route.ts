@@ -1,122 +1,105 @@
-export async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    if (!id) {
-      return NextResponse.json({ error: 'Missing supplier id' }, { status: 400 });
-    }
-
-    // Remove supplier from checked-in status (set vehicle_status to something else, e.g., 'Checked-out')
-    const updated = await prisma.suppliers.update({
-      where: { id },
-      data: { vehicle_status: 'Checked-out' },
-    });
-
-    return NextResponse.json({ success: true, id });
-  } catch (error: any) {
-    console.error('❌ Error deleting checked-in supplier:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete checked-in supplier', details: error.message },
-      { status: 500 }
-    );
-  }
-}
+// app/api/suppliers/checked-in/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get checked-in suppliers (vehicle_status = 'Checked-in') with their latest visit
-    const checkedInSuppliers = await prisma.suppliers.findMany({
+    console.log('📡 GET /api/suppliers/checked-in - Fetching checked-in vehicles');
+    
+    // Fetch checked-in vehicles directly from vehicle_visits
+    const checkedInVehicles = await prisma.vehicle_visits.findMany({
       where: {
-        vehicle_status: 'Checked-in',
-        vehicle_check_in_time: {
-          not: null,
-        },
-      },
-      select: {
-        id: true,
-        supplier_code: true,
-        name: true,
-        contact_name: true,
-        contact_phone: true,
-        driver_name: true,
-        driver_id_number: true,
-        vehicle_number_plate: true,
-        produce_types: true,
-        location: true,
-        vehicle_status: true,
-        vehicle_check_in_time: true,
-        // Include the latest vehicle visit to get gate_entry_id
-        visits: {
-          where: {
-            status: {
-              in: ['Checked-in', 'Pending Exit']
-            }
-          },
-          orderBy: {
-            check_in_time: 'desc'
-          },
-          take: 1,
-          select: {
-            gate_entry_id: true,
-            visit_number: true,
-            check_in_time: true,
-            status: true
-          }
+        status: {
+          in: ['Pre-registered', 'Checked-in']
         }
       },
       orderBy: {
-        vehicle_check_in_time: 'desc',
-      },
+        check_in_time: 'desc'
+      }
     });
 
-    console.log(`📦 Found ${checkedInSuppliers.length} checked-in suppliers with visits`);
+    console.log(`✅ Found ${checkedInVehicles.length} checked-in vehicles`);
 
-    const transformedSuppliers = checkedInSuppliers.map(supplier => {
-      const latestVisit = supplier.visits && supplier.visits.length > 0 
-        ? supplier.visits[0] 
-        : null;
-
-      if (latestVisit?.gate_entry_id) {
-        console.log(`🔑 Supplier ${supplier.name} has gate entry ID: ${latestVisit.gate_entry_id}`);
-      }
-
-      let fruitVarieties = [];
+    // Transform to match the CheckedInSupplier interface
+    const checkedInSuppliers = checkedInVehicles.map(vehicle => {
+      let fruitVarieties: string[] = [];
       try {
-        if (Array.isArray(supplier.produce_types)) {
-          fruitVarieties = supplier.produce_types;
-        } else if (typeof supplier.produce_types === 'string') {
-          fruitVarieties = JSON.parse(supplier.produce_types || '[]');
+        if (vehicle.fruit_varieties) {
+          fruitVarieties = JSON.parse(vehicle.fruit_varieties);
         }
       } catch (e) {
-        console.error('Error parsing produce_types:', e);
         fruitVarieties = [];
       }
 
       return {
-        id: supplier.id,
-        supplier_code: supplier.supplier_code || '',
-        company_name: supplier.name || '',
-        driver_name: supplier.driver_name || supplier.contact_name || '',
-        phone_number: supplier.contact_phone || '',
-        id_number: supplier.driver_id_number || '',
-        vehicle_plate: supplier.vehicle_number_plate || '',
+        id: vehicle.id,
+        supplier_code: `VISIT-${vehicle.id.slice(-6)}`,
+        company_name: vehicle.company_name || 'Unknown',
+        driver_name: vehicle.driver_name || 'Unknown',
+        phone_number: vehicle.contact_phone || '',
+        id_number: vehicle.driver_id_number || '',
+        vehicle_plate: vehicle.vehicle_plate || '',
         fruit_varieties: fruitVarieties,
-        region: supplier.location || '',
-        check_in_time: supplier.vehicle_check_in_time?.toISOString() || '',
-        gate_entry_id: latestVisit?.gate_entry_id || null,
-        visit_number: latestVisit?.visit_number || null,
-        visit_status: latestVisit?.status || null,
+        region: vehicle.region || '',
+        check_in_time: vehicle.check_in_time?.toISOString() || vehicle.registered_at.toISOString(),
+        gate_entry_id: vehicle.gate_entry_id || undefined,
+        status: vehicle.gate_entry_id ? 'weighed' : 'pending'
       };
     });
-    
-    return NextResponse.json(transformedSuppliers);
-    
+
+    return NextResponse.json(checkedInSuppliers);
+
   } catch (error: any) {
-    console.error('❌ Error fetching checked-in suppliers:', error);
+    console.error('❌ Error fetching checked-in vehicles:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch checked-in suppliers', details: error.message },
+      { error: 'Failed to fetch checked-in vehicles', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Vehicle ID is required' },
+        { status: 400 }
+      );
+    }
+
+    console.log(`🗑️ Deleting vehicle visit: ${id}`);
+
+    // Check if vehicle exists
+    const vehicle = await prisma.vehicle_visits.findUnique({
+      where: { id }
+    });
+
+    if (!vehicle) {
+      return NextResponse.json(
+        { error: 'Vehicle visit not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete the vehicle visit
+    await prisma.vehicle_visits.delete({
+      where: { id }
+    });
+
+    console.log(`✅ Vehicle visit deleted: ${id}`);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Vehicle visit deleted successfully'
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error deleting vehicle visit:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete vehicle visit', details: error.message },
       { status: 500 }
     );
   }

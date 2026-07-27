@@ -10,7 +10,7 @@ export function usePermissions() {
   const userRole = (session?.user as any)?.role || 'No Role';
   
   const hasPermission = (requiredPermission: string | string[]) => {
-    // Admin has all permissions
+    
     if (userRole === 'Administrator' || permissions.includes('admin.all')) {
       return true;
     }

@@ -349,10 +349,9 @@ model vehicle_visits {
   id                String   @id @default(cuid()) @db.VarChar(20)
   visit_number      Int      @default(1)
   
-  // Direct fields (no supplier relation)
   company_name      String?  @map("company_name") @db.VarChar(100)
   contact_phone     String?  @map("contact_phone") @db.VarChar(20)
-  vehicle_plate     String?  @map("vehicle_plate") @db.VarChar(20)
+  vehicle_plate     String   @db.VarChar(20)  // NOT NULL in database
   vehicle_type      String?  @map("vehicle_type") @db.VarChar(50)
   driver_name       String?  @map("driver_name") @db.VarChar(100)
   driver_id_number  String?  @map("driver_id_number") @db.VarChar(50)
@@ -361,24 +360,20 @@ model vehicle_visits {
   region            String?  @db.VarChar(100)
   location          String?  @db.VarChar(100)
   
-  // Status and tracking
   status            String   @default("Pre-registered") @db.VarChar(50)
   registered_at     DateTime @default(now()) @map("registered_at") @db.DateTime(0)
   check_in_time     DateTime? @map("check_in_time") @db.DateTime(0)
   check_out_time    DateTime? @map("check_out_time") @db.DateTime(0)
   
-  // Gate entry fields
   gate_entry_id     String?  @unique @map("gate_entry_id") @db.VarChar(50)
   gate_entry_number Int?     @map("gate_entry_number")
   gate_entry_date   String?  @map("gate_entry_date") @db.VarChar(8)
   is_recheck_in     Boolean? @default(false) @map("is_recheck_in")
   previous_gate_entry_id String? @map("previous_gate_entry_id") @db.VarChar(50)
   
-  // Weight entry link
   weight_entry_id   String?  @map("weight_entry_id") @db.VarChar(20)
   weight_entry      weight_entries? @relation(fields: [weight_entry_id], references: [id])
   
-  // Timestamps
   created_at        DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updated_at        DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
@@ -393,7 +388,6 @@ model vehicle_visits {
   @@index([contact_phone])
   @@map("vehicle_visits")
 }
-
 
 model suppliers {
   id                     String           @id @default(cuid()) @db.VarChar(20)
@@ -1075,4 +1069,77 @@ model supplier_checkins {
   @@index([check_in_time])
   @@index([status])
   @@map("supplier_checkins")
+}
+
+model citrus_intake {
+  id                  String   @id @default(cuid())
+  supplier            String   @db.VarChar(255)
+  vehicle_plate       String?  @db.VarChar(50)
+  date                String?  @db.VarChar(20)
+  truck_number        String   @db.VarChar(100)
+  container_number    String?  @db.VarChar(100)
+  seal_number         String?  @db.VarChar(100)
+  oranges_class1      Int      @default(0)
+  oranges_class2      Int      @default(0)
+  oranges_class3      Int      @default(0)
+  oranges_total_boxes Int      @default(0)
+  oranges_total_weight Float   @default(0)
+  lemons_class1       Int      @default(0)
+  lemons_class2       Int      @default(0)
+  lemons_class3       Int      @default(0)
+  lemons_total_boxes  Int      @default(0)
+  lemons_total_weight Float    @default(0)
+  tangerines_class1   Int      @default(0)
+  tangerines_class2   Int      @default(0)
+  tangerines_class3   Int      @default(0)
+  tangerines_total_boxes Int   @default(0)
+  tangerines_total_weight  Float @default(0)
+  grand_total_boxes   Int      @default(0)
+  grand_total_weight   Float   @default(0)
+  notes               String?  @db.Text
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  @@index([supplier])
+  @@index([truck_number])
+  @@index([created_at])
+  @@map("citrus_intake")
+}
+
+model citrus_movements {
+  id                  String   @id @default(cuid())
+  type                String   @db.VarChar(20) // "carry" or "return"
+  carry_id            String?  @db.VarChar(255)
+  sales_person_name   String   @db.VarChar(255)
+  sales_person_phone  String?  @db.VarChar(50)
+  vehicle_plate       String?  @db.VarChar(50)
+  oranges_class1      Int      @default(0)
+  oranges_class2      Int      @default(0)
+  oranges_class3      Int      @default(0)
+  oranges_total_boxes Int      @default(0)
+  oranges_total_weight Float   @default(0)
+  lemons_class1       Int      @default(0)
+  lemons_class2       Int      @default(0)
+  lemons_class3       Int      @default(0)
+  lemons_total_boxes  Int      @default(0)
+  lemons_total_weight Float    @default(0)
+  tangerines_class1   Int      @default(0)
+  tangerines_class2   Int      @default(0)
+  tangerines_class3   Int      @default(0)
+  tangerines_total_boxes Int   @default(0)
+  tangerines_total_weight  Float @default(0)
+  grand_total_boxes   Int      @default(0)
+  grand_total_weight   Float   @default(0)
+  notes               String?  @db.Text
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  carry citrus_movements? @relation("CarryReturns", fields: [carry_id], references: [id])
+  returns citrus_movements[] @relation("CarryReturns")
+
+  @@index([type])
+  @@index([carry_id])
+  @@index([sales_person_name])
+  @@index([created_at])
+  @@map("citrus_movements")
 }

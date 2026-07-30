@@ -159,6 +159,13 @@ export async function POST(request: NextRequest) {
       location
     } = body
 
+    if (!vehicle_plate) {
+      return NextResponse.json(
+        { error: 'vehicle_plate is required' },
+        { status: 400 }
+      )
+    }
+
     // Get the latest visit number for this vehicle plate
     const latestVisit = await prisma.vehicle_visits.findFirst({
       where: { vehicle_plate: vehicle_plate },
@@ -175,7 +182,7 @@ export async function POST(request: NextRequest) {
         visit_number: visitNumber,
         company_name: company_name || driver_name || 'Unknown',
         contact_phone: formattedPhone,
-        vehicle_plate: vehicle_plate || null,
+        vehicle_plate: vehicle_plate,
         vehicle_type: vehicle_type || 'Truck',
         driver_name: driver_name || null,
         driver_id_number: driver_id_number || null,

@@ -459,8 +459,8 @@ export default function WeightCapturePage() {
     };
   }, []);
 
-  // Updated handleAddCitrusIntake with new fields
-  const handleAddCitrusIntake = (event: FormEvent<HTMLFormElement>) => {
+  // Updated handleAddCitrusIntake with new fields - saves to database
+  const handleAddCitrusIntake = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!citrusIntakeForm.supplier.trim()) {
@@ -482,66 +482,88 @@ export default function WeightCapturePage() {
       return;
     }
 
-    const totals = calculateFruitTotals(citrusIntakeForm);
-    
-    const newEntry: CitrusIntakeEntry = {
-      id: `${Date.now()}`,
-      supplier: citrusIntakeForm.supplier.trim(),
-      vehiclePlate: citrusIntakeForm.vehiclePlate.trim(),
-      date: citrusIntakeForm.date || new Date().toISOString().split('T')[0],
-      truckNumber: citrusIntakeForm.truckNumber.trim(),
-      containerNumber: citrusIntakeForm.containerNumber.trim(),
-      sealNumber: citrusIntakeForm.sealNumber.trim(),
-      oranges: {
-        class1: Number(citrusIntakeForm.orangesClass1Boxes) || 0,
-        class2: Number(citrusIntakeForm.orangesClass2Boxes) || 0,
-        class3: Number(citrusIntakeForm.orangesClass3Boxes) || 0,
-        totalBoxes: totals.oranges.boxes,
-        totalWeight: totals.oranges.weight,
-      },
-      lemons: {
-        class1: Number(citrusIntakeForm.lemonsClass1Boxes) || 0,
-        class2: Number(citrusIntakeForm.lemonsClass2Boxes) || 0,
-        class3: Number(citrusIntakeForm.lemonsClass3Boxes) || 0,
-        totalBoxes: totals.lemons.boxes,
-        totalWeight: totals.lemons.weight,
-      },
-      tangerines: {
-        class1: Number(citrusIntakeForm.tangerinesClass1Boxes) || 0,
-        class2: Number(citrusIntakeForm.tangerinesClass2Boxes) || 0,
-        class3: Number(citrusIntakeForm.tangerinesClass3Boxes) || 0,
-        totalBoxes: totals.tangerines.boxes,
-        totalWeight: totals.tangerines.weight,
-      },
-      grandTotal: totals.grandTotal,
-      notes: citrusIntakeForm.notes.trim(),
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const response = await fetch('/api/citrus-intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(citrusIntakeForm),
+      });
 
-    setCitrusIntakeEntries((prev) => [newEntry, ...prev]);
-    setCitrusIntakeForm({
-      supplier: '',
-      vehiclePlate: '',
-      date: '',
-      truckNumber: '',
-      containerNumber: '',
-      sealNumber: '',
-      orangesClass1Boxes: '',
-      orangesClass2Boxes: '',
-      orangesClass3Boxes: '',
-      lemonsClass1Boxes: '',
-      lemonsClass2Boxes: '',
-      lemonsClass3Boxes: '',
-      tangerinesClass1Boxes: '',
-      tangerinesClass2Boxes: '',
-      tangerinesClass3Boxes: '',
-      notes: '',
-    });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to save citrus intake');
+      }
 
-    toast({
-      title: 'Citrus intake recorded',
-      description: `${newEntry.supplier} has been added to the intake log. Truck #${newEntry.truckNumber}`,
-    });
+      const saved = await response.json();
+
+      const newEntry: CitrusIntakeEntry = {
+        id: saved.id,
+        supplier: saved.supplier,
+        vehiclePlate: saved.vehicle_plate || '',
+        date: saved.date || '',
+        truckNumber: saved.truck_number,
+        containerNumber: saved.container_number || '',
+        sealNumber: saved.seal_number || '',
+        oranges: {
+          class1: saved.oranges_class1,
+          class2: saved.oranges_class2,
+          class3: saved.oranges_class3,
+          totalBoxes: saved.oranges_total_boxes,
+          totalWeight: saved.oranges_total_weight,
+        },
+        lemons: {
+          class1: saved.lemons_class1,
+          class2: saved.lemons_class2,
+          class3: saved.lemons_class3,
+          totalBoxes: saved.lemons_total_boxes,
+          totalWeight: saved.lemons_total_weight,
+        },
+        tangerines: {
+          class1: saved.tangerines_class1,
+          class2: saved.tangerines_class2,
+          class3: saved.tangerines_class3,
+          totalBoxes: saved.tangerines_total_boxes,
+          totalWeight: saved.tangerines_total_weight,
+        },
+        grandTotal: {
+          boxes: saved.grand_total_boxes,
+          weight: saved.grand_total_weight,
+        },
+        notes: saved.notes || '',
+        createdAt: saved.created_at,
+      };
+
+      setCitrusIntakeEntries((prev) => [newEntry, ...prev]);
+      setCitrusIntakeForm({
+        supplier: '',
+        vehiclePlate: '',
+        date: '',
+        truckNumber: '',
+        containerNumber: '',
+        sealNumber: '',
+        orangesClass1Boxes: '',
+        orangesClass2Boxes: '',
+        orangesClass3Boxes: '',
+        lemonsClass1Boxes: '',
+        lemonsClass2Boxes: '',
+        lemonsClass3Boxes: '',
+        tangerinesClass1Boxes: '',
+        tangerinesClass2Boxes: '',
+        tangerinesClass3Boxes: '',
+        notes: '',
+      });
+
+      toast({
+        title: 'Citrus intake recorded',
+        description: `${newEntry.supplier} has been added to the intake log. Truck #${newEntry.truckNumber}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error saving citrus intake',
+        description: error.message || 'Failed to save to database.',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Updated filtered entries
@@ -792,6 +814,54 @@ const fetchCheckedInSuppliers = useCallback(async () => {
   }
 }, []);
 
+  const fetchCitrusIntake = useCallback(async () => {
+    try {
+      const response = await fetch('/api/citrus-intake?limit=500');
+      if (response.ok) {
+        const data = await response.json();
+        const mapped: CitrusIntakeEntry[] = data.map((entry: any) => ({
+          id: entry.id,
+          supplier: entry.supplier,
+          vehiclePlate: entry.vehicle_plate || '',
+          date: entry.date || '',
+          truckNumber: entry.truck_number,
+          containerNumber: entry.container_number || '',
+          sealNumber: entry.seal_number || '',
+          oranges: {
+            class1: entry.oranges_class1,
+            class2: entry.oranges_class2,
+            class3: entry.oranges_class3,
+            totalBoxes: entry.oranges_total_boxes,
+            totalWeight: entry.oranges_total_weight,
+          },
+          lemons: {
+            class1: entry.lemons_class1,
+            class2: entry.lemons_class2,
+            class3: entry.lemons_class3,
+            totalBoxes: entry.lemons_total_boxes,
+            totalWeight: entry.lemons_total_weight,
+          },
+          tangerines: {
+            class1: entry.tangerines_class1,
+            class2: entry.tangerines_class2,
+            class3: entry.tangerines_class3,
+            totalBoxes: entry.tangerines_total_boxes,
+            totalWeight: entry.tangerines_total_weight,
+          },
+          grandTotal: {
+            boxes: entry.grand_total_boxes,
+            weight: entry.grand_total_weight,
+          },
+          notes: entry.notes || '',
+          createdAt: entry.created_at,
+        }));
+        setCitrusIntakeEntries(mapped);
+      }
+    } catch (error: any) {
+      console.error('Error fetching citrus intake:', error);
+    }
+  }, []);
+
   const fetchCountingHistory = useCallback(async () => {
     try {
       const response = await fetch('/api/counting?action=history');
@@ -988,7 +1058,8 @@ const fetchCheckedInSuppliers = useCallback(async () => {
     fetchCheckedInSuppliers();
     fetchCountingHistory();
     fetchRejects();
-  }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects]);
+    fetchCitrusIntake();
+  }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, fetchCitrusIntake]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -1082,7 +1153,8 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       fetchWeights(),
       fetchCheckedInSuppliers(),
       fetchCountingHistory(),
-      fetchRejects()
+      fetchRejects(),
+      fetchCitrusIntake()
     ]);
     setIsRefreshing(false);
     
@@ -1090,7 +1162,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       title: 'Data Refreshed',
       description: 'Latest data has been loaded.',
     });
-  }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, toast]);
+  }, [fetchWeights, fetchCheckedInSuppliers, fetchCountingHistory, fetchRejects, fetchCitrusIntake, toast]);
 
   const fetchHistoryWeights = useCallback(() => {
     setIsHistoryLoading(true);

@@ -1,0 +1,33 @@
+-- CreateTable
+CREATE TABLE IF NOT EXISTS `citrus_movements` (
+    `id` VARCHAR(30) NOT NULL,
+    `type` VARCHAR(20) NOT NULL,
+    `sales_person_name` VARCHAR(255) NOT NULL,
+    `sales_person_phone` VARCHAR(50) NULL,
+    `vehicle_plate` VARCHAR(50) NULL,
+    `oranges_class1` INT NOT NULL DEFAULT 0,
+    `oranges_class2` INT NOT NULL DEFAULT 0,
+    `oranges_class3` INT NOT NULL DEFAULT 0,
+    `oranges_total_boxes` INT NOT NULL DEFAULT 0,
+    `oranges_total_weight` DOUBLE NOT NULL DEFAULT 0,
+    `lemons_class1` INT NOT NULL DEFAULT 0,
+    `lemons_class2` INT NOT NULL DEFAULT 0,
+    `lemons_class3` INT NOT NULL DEFAULT 0,
+    `lemons_total_boxes` INT NOT NULL DEFAULT 0,
+    `lemons_total_weight` DOUBLE NOT NULL DEFAULT 0,
+    `tangerines_class1` INT NOT NULL DEFAULT 0,
+    `tangerines_class2` INT NOT NULL DEFAULT 0,
+    `tangerines_class3` INT NOT NULL DEFAULT 0,
+    `tangerines_total_boxes` INT NOT NULL DEFAULT 0,
+    `tangerines_total_weight` DOUBLE NOT NULL DEFAULT 0,
+    `grand_total_boxes` INT NOT NULL DEFAULT 0,
+    `grand_total_weight` DOUBLE NOT NULL DEFAULT 0,
+    `notes` TEXT NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+
+    INDEX `citrus_movements_type_idx`(`type`),
+    INDEX `citrus_movements_sales_person_name_idx`(`sales_person_name`),
+    INDEX `citrus_movements_created_at_idx`(`created_at`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

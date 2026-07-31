@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -108,6 +108,8 @@ export function WeightCapture({
   const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
   const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
+  const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
+  const lastValidSupplierRef = useRef('');
   
   const [formData, setFormData] = useState<WeightCaptureFormData>({
     supplier_id: '',
@@ -296,7 +298,7 @@ export function WeightCapture({
 
       const supplierMap: Record<string, SupplierIntakeRecord[]> = {};
       weightEntries.forEach((entry: any) => {
-        const supplierKey = entry.supplier || entry.supplier_name || 'Unknown Supplier';
+        const supplierKey = entry.supplier || entry.supplier_name || 'Enter Supplier Name';
         const fuerteWeight = Number(entry.fuerte_weight) || 0;
         const fuerteCrates = Number(entry.fuerte_crates) || 0;
         const hassWeight = Number(entry.hass_weight) || 0;
@@ -1197,42 +1199,103 @@ export function WeightCapture({
                       <div className="space-y-2">
                         <Label htmlFor="supplier_name">Supplier Name *</Label>
                         <div className="relative">
-                            <select
-                              id="supplier_name"
-                              value={formData.supplier_name}
-                              onChange={(e) => {
-                                const selectedSupplier = allSuppliers.find(s => s.name === e.target.value);
-                                setFormData(prev => ({ 
-                                  ...prev, 
-                                  supplier_name: e.target.value,
-                                  supplier_phone: selectedSupplier?.contactPhone || prev.supplier_phone,
-                                  region: selectedSupplier?.location || prev.region,
+                          <Input
+                            id="supplier_name"
+                            value={formData.supplier_name}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const selectedSupplier = allSuppliers.find(s => s.name.toLowerCase() === value.toLowerCase());
+                              if (selectedSupplier) {
+                                lastValidSupplierRef.current = selectedSupplier.name;
+                              }
+                              setFormData(prev => ({
+                                ...prev,
+                                supplier_name: value,
+                                supplier_phone: selectedSupplier?.contactPhone || prev.supplier_phone,
+                                region: selectedSupplier?.location || prev.region,
+                              }));
+                              setSupplierDropdownOpen(true);
+                            }}
+                            onFocus={() => setSupplierDropdownOpen(true)}
+                            onBlur={() => {
+                              const matches = allSuppliers.some(
+                                s => s.name.toLowerCase() === formData.supplier_name.trim().toLowerCase()
+                              );
+                              if (!matches) {
+                                const fallback = lastValidSupplierRef.current;
+                                setFormData(prev => ({
+                                  ...prev,
+                                  supplier_name: fallback,
+                                  supplier_phone: fallback
+                                    ? allSuppliers.find(s => s.name === fallback)?.contactPhone || prev.supplier_phone
+                                    : '',
+                                  region: fallback
+                                    ? allSuppliers.find(s => s.name === fallback)?.location || prev.region
+                                    : '',
                                 }));
+                              } else {
+                                lastValidSupplierRef.current = formData.supplier_name;
+                              }
+                              setSupplierDropdownOpen(false);
+                            }}
+                            placeholder="Search and select a supplier..."
+                            required
+                            className="h-10 pr-9"
+                          />
+                          {formData.supplier_name ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                lastValidSupplierRef.current = '';
+                                setFormData(prev => ({ ...prev, supplier_name: '', supplier_phone: '', region: '' }));
+                                setSupplierDropdownOpen(true);
                               }}
-                              required
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none pr-8"
-                              style={{
-                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                                backgroundRepeat: 'no-repeat',
-                                backgroundPosition: 'right 0.75rem center',
-                                backgroundSize: '12px 12px',
-                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              title="Clear supplier"
                             >
-                              <option value="">Select a supplier...</option>
-                              {/* Sort suppliers alphabetically by name */}
+                              <X className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
+                          )}
+                          {supplierDropdownOpen && (
+                            <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md">
                               {[...allSuppliers]
+                                .filter(s => s.name.toLowerCase().includes(formData.supplier_name.toLowerCase()))
                                 .sort((a, b) => a.name.localeCompare(b.name))
                                 .map((supplier) => (
-                                  <option key={supplier.id} value={supplier.name}>
-                                    {supplier.name} - {supplier.contactPhone || 'No phone'}
-                                  </option>
+                                  <button
+                                    type="button"
+                                    key={supplier.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      lastValidSupplierRef.current = supplier.name;
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        supplier_name: supplier.name,
+                                        supplier_phone: supplier.contactPhone || prev.supplier_phone,
+                                        region: supplier.location || prev.region,
+                                      }));
+                                      setSupplierDropdownOpen(false);
+                                    }}
+                                    className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground ${
+                                      formData.supplier_name.toLowerCase() === supplier.name.toLowerCase() ? 'bg-accent' : ''
+                                    }`}
+                                  >
+                                    <span className="truncate">{supplier.name}</span>
+                                    <span className="shrink-0 text-xs text-muted-foreground">
+                                      {supplier.contactPhone || 'No phone'}
+                                    </span>
+                                  </button>
                                 ))}
-                            </select>                          {formData.supplier_name && (
-                            <div className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none">
-                              <CheckCircle className="w-4 h-4 text-green-500" />
+                              {allSuppliers.filter(s => s.name.toLowerCase().includes(formData.supplier_name.toLowerCase())).length === 0 && (
+                                <div className="px-3 py-2 text-sm text-muted-foreground">
+                                  No matching suppliers.
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div> 
+                        </div>
                       </div>
                       
                       <div className="space-y-2">

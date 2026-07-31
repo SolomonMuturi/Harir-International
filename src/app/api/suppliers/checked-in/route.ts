@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       return {
         id: vehicle.id,
         supplier_code: `VISIT-${vehicle.id.slice(-6)}`,
-        company_name: vehicle.company_name || 'Unknown',
+        company_name: vehicle.company_name || 'Enter Supplier Name',
         driver_name: vehicle.driver_name || 'Unknown',
         phone_number: vehicle.contact_phone || '',
         id_number: vehicle.driver_id_number || '',

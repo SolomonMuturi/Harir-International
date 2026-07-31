@@ -34,6 +34,7 @@ import { format } from 'date-fns';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { logActivity } from '@/lib/activity-logger';
 
 // Define API response type matching your Prisma schema
 interface DatabaseShipment {
@@ -137,6 +138,17 @@ function convertDisplayStatusToDb(displayStatus: ShipmentStatus): string | null 
   
   return statusMap[displayStatus] || null;
 }
+
+// Helper function to get current user
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
 
 // Create a separate component that uses URL params
 function ShipmentsContent() {
@@ -466,17 +478,46 @@ function ShipmentsContent() {
   };
 
   const handlePrintReport = async () => {
-    const element = printRef.current;
-    if (element) {
-      const canvas = await html2canvas(element, { scale: 2 });
-      const data = canvas.toDataURL('image/jpeg');
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`fresh-produce-intake-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    try {
+      const currentUser = await getCurrentUser();
+      const element = printRef.current;
+      if (element) {
+        const canvas = await html2canvas(element, { scale: 2 });
+        const data = canvas.toDataURL('image/jpeg');
+        
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`fresh-produce-intake-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'SHIPMENT_MANIFEST_DOWNLOADED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            shipmentCount: shipments.length,
+            fileType: 'PDF',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Error generating PDF report:', error);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SHIPMENT_MANIFEST_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'PDF',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
     }
   };
 

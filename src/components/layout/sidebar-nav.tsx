@@ -82,7 +82,7 @@ const allNavItems: NavItem[] = [
   { name: 'Intake', href: '/weight-capture', icon: Weight, permission: 'suppliers.weigh' },
   { name: 'Quality Control', href: '/quality-control', icon: FlaskConical, permissions: ['qc.view', 'qc.perform'] },
   { name: 'Counting', href: '/warehouse', icon: Warehouse, permission: 'counting.perform' },
-  { name: 'Citrus', href: '/oranges', icon: Apple, permission: 'counting.perform' },
+  { name: 'Citrus', href: '/oranges', icon: Apple, permissions: ['citrus.view', 'citrus.manage'] },
   { name: 'Cold Room', href: '/cold-room', icon: Thermometer, permissions: ['cold_room.view', 'cold_room.temperature'] },
   { name: 'Shipments', href: '/shipments', icon: Truck, permissions: ['shipments.view', 'shipments.track'] },
   { name: 'Carriers', href: '/carriers', icon: Briefcase, permissions: ['carriers.view', 'carriers.manage'] },

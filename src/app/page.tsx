@@ -64,6 +64,9 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     if (permissions.includes('suppliers.weigh')) {
       return '/weight-capture';
     }
+    if (permissions.includes('citrus.view') || permissions.includes('citrus.manage')) {
+      return '/oranges';
+    }
     if (permissions.includes('counting.perform')) {
       return '/warehouse';
     }

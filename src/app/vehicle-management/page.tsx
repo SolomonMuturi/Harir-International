@@ -196,6 +196,7 @@ export default function VehicleManagementPage() {
   });
   const [presetDateRange, setPresetDateRange] = useState<PresetDateRange>('custom');
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [isMobileDatePickerOpen, setIsMobileDatePickerOpen] = useState(false);
   const [isExportingCSV, setIsExportingCSV] = useState(false);
   
   const { toast } = useToast();
@@ -231,6 +232,7 @@ export default function VehicleManagementPage() {
       setHistoryDateRange({ from: range.from, to: range.to });
       setPresetDateRange('custom');
       setIsDatePickerOpen(false);
+      setIsMobileDatePickerOpen(false);
     }
   };
 
@@ -293,6 +295,7 @@ export default function VehicleManagementPage() {
       });
     } else if (activeTab === 'gate-entries') {
       filtered = filtered.filter(v => v.gateEntryId);
+      filtered = filtered.filter(v => isWithinDateRange(v.checkInTime, historyDateRange, historyTimeRange));
       filtered.sort((a, b) => {
         if (!a.checkInTime) return 1;
         if (!b.checkInTime) return -1;
@@ -862,25 +865,33 @@ export default function VehicleManagementPage() {
     }
   };
 
-  const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
-  
-  const filteredCompletedVehicles = checkedOutVehicles.filter(vehicle => {
-    if (!vehicle.checkOutTime) return false;
-    const checkOutDate = parseISO(vehicle.checkOutTime);
-    const startDateTime = new Date(historyDateRange.from);
-    const endDateTime = new Date(historyDateRange.to);
+  const isWithinDateRange = (
+    dateStr: string | undefined | null,
+    dateRange: DateRange,
+    timeRange: { from: string; to: string }
+  ): boolean => {
+    if (!dateStr) return false;
+    const date = parseISO(dateStr);
+    const startDateTime = new Date(dateRange.from);
+    const endDateTime = new Date(dateRange.to);
 
-    const [startHour, startMinute] = historyTimeRange.from.split(':').map(Number);
+    const [startHour, startMinute] = timeRange.from.split(':').map(Number);
     startDateTime.setHours(startHour, startMinute, 0, 0);
 
-    const [endHour, endMinute] = historyTimeRange.to.split(':').map(Number);
+    const [endHour, endMinute] = timeRange.to.split(':').map(Number);
     endDateTime.setHours(endHour, endMinute, 59, 999);
 
-    return isWithinInterval(checkOutDate, {
+    return isWithinInterval(date, {
       start: startDateTime,
       end: endDateTime
     });
-  });
+  };
+
+  const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
+  
+  const filteredCompletedVehicles = checkedOutVehicles.filter(vehicle =>
+    isWithinDateRange(vehicle.checkOutTime, historyDateRange, historyTimeRange)
+  );
 
   const vehiclesOnSite = vehicles.filter(v => 
     v.status === 'Checked-in' || v.status === 'Pending Exit'
@@ -889,6 +900,13 @@ export default function VehicleManagementPage() {
   const pendingExitVehicles = vehicles.filter(v => v.status === 'Pending Exit');
   const preRegisteredVehicles = vehicles.filter(v => v.status === 'Pre-registered');
   const gateEntryVehicles = vehicles.filter(v => v.gateEntryId);
+  const filteredGateEntryVehicles = gateEntryVehicles
+    .filter(v => isWithinDateRange(v.checkInTime, historyDateRange, historyTimeRange))
+    .sort((a, b) => {
+      if (!a.checkInTime) return 1;
+      if (!b.checkInTime) return -1;
+      return new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime();
+    });
 
   const escapeCsvField = (field: any): string => {
     if (field === null || field === undefined) return '';
@@ -1639,11 +1657,11 @@ export default function VehicleManagementPage() {
                         Filters
                       </Button>
                       
-                      {activeTab === 'completed' && (
+                      {(activeTab === 'completed' || activeTab === 'gate-entries') && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setIsDatePickerOpen(true)}
+                          onClick={() => setIsMobileDatePickerOpen(true)}
                           className="flex-1"
                         >
                           <Calendar className="h-4 w-4 mr-2" />
@@ -1667,7 +1685,7 @@ export default function VehicleManagementPage() {
                         </SelectContent>
                       </Select>
 
-                      {activeTab === 'completed' && (
+                      {(activeTab === 'completed' || activeTab === 'gate-entries') && (
                         <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                           <PopoverTrigger asChild>
                             <Button variant="outline" className="gap-2">
@@ -1832,13 +1850,15 @@ export default function VehicleManagementPage() {
                     </SheetContent>
                   </Sheet>
 
-                  {activeTab === 'completed' && (
-                    <Sheet open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                  {(activeTab === 'completed' || activeTab === 'gate-entries') && (
+                    <Sheet open={isMobileDatePickerOpen} onOpenChange={setIsMobileDatePickerOpen}>
                       <SheetContent side="bottom" className="h-auto">
                         <SheetHeader>
                           <SheetTitle>Select Date Range</SheetTitle>
                           <SheetDescription>
-                            Filter completed visits by checkout date and time
+                            {activeTab === 'completed'
+                              ? 'Filter completed visits by checkout date and time'
+                              : 'Filter gate entry records by check-in date and time'}
                           </SheetDescription>
                         </SheetHeader>
                         <div className="py-4 space-y-4">
@@ -1848,7 +1868,7 @@ export default function VehicleManagementPage() {
                               size="sm"
                               onClick={() => {
                                 handlePresetDateChange('today');
-                                setIsDatePickerOpen(false);
+                                setIsMobileDatePickerOpen(false);
                               }}
                             >
                               Today
@@ -1858,7 +1878,7 @@ export default function VehicleManagementPage() {
                               size="sm"
                               onClick={() => {
                                 handlePresetDateChange('yesterday');
-                                setIsDatePickerOpen(false);
+                                setIsMobileDatePickerOpen(false);
                               }}
                             >
                               Yesterday
@@ -1868,7 +1888,7 @@ export default function VehicleManagementPage() {
                               size="sm"
                               onClick={() => {
                                 handlePresetDateChange('week');
-                                setIsDatePickerOpen(false);
+                                setIsMobileDatePickerOpen(false);
                               }}
                             >
                               This Week
@@ -1878,7 +1898,7 @@ export default function VehicleManagementPage() {
                               size="sm"
                               onClick={() => {
                                 handlePresetDateChange('month');
-                                setIsDatePickerOpen(false);
+                                setIsMobileDatePickerOpen(false);
                               }}
                             >
                               This Month
@@ -2256,7 +2276,7 @@ export default function VehicleManagementPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline">
-                            {gateEntryVehicles.length} Entries
+                            {filteredGateEntryVehicles.length} Entries
                           </Badge>
                           <Badge variant="outline" className="bg-purple-50 hidden sm:inline-flex">
                             Re: {gateEntryVehicles.filter(v => v.isRecheckIn).length}
@@ -2264,13 +2284,17 @@ export default function VehicleManagementPage() {
                         </div>
                       </div>
 
-                      {gateEntryVehicles.length === 0 ? (
+                      {filteredGateEntryVehicles.length === 0 ? (
                         <Card>
                           <CardContent className="p-6 md:p-8 text-center">
                             <Fingerprint className="h-10 w-10 md:h-12 md:w-12 mx-auto text-gray-400 mb-4" />
-                            <h3 className="text-base md:text-lg font-semibold mb-2">No Gate Entries</h3>
+                            <h3 className="text-base md:text-lg font-semibold mb-2">
+                              {gateEntryVehicles.length === 0 ? 'No Gate Entries' : 'No Gate Entries in Range'}
+                            </h3>
                             <p className="text-sm md:text-base text-gray-500">
-                              No vehicles have been checked in yet.
+                              {gateEntryVehicles.length === 0
+                                ? 'No vehicles have been checked in yet.'
+                                : 'No gate entries match the selected date range.'}
                             </p>
                           </CardContent>
                         </Card>
@@ -2329,26 +2353,33 @@ export default function VehicleManagementPage() {
 
                             <div className="border rounded-lg overflow-hidden">
                               <div className="overflow-x-auto">
-                                <table className="w-full min-w-[600px] md:min-w-full">
+                                <table className="w-full min-w-[600px] md:min-w-full table-fixed">
+                                  <colgroup>
+                                    <col className="w-[15%]" />
+                                    <col className="w-[15%]" />
+                                    <col className="w-[24%]" />
+                                    <col className="w-[12%]" />
+                                    <col className="w-[12%]" />
+                                    <col className="w-[11%]" />
+                                    <col className="w-[11%]" />
+                                  </colgroup>
                                   <thead className="bg-black-50">
                                     <tr>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Gate ID</th>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Check-in</th>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Gate ID</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Driver</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Company</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Vehicle</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Date</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Check-in</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Status</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y">
-                                    {gateEntryVehicles.slice(0, displayCount).map((vehicle) => (
+                                    {filteredGateEntryVehicles.slice(0, displayCount).map((vehicle) => (
                                       <tr 
                                         key={vehicle.id}
                                         onClick={() => handleRowClick(vehicle)}
-                                        className={`hover:bg-black-50 cursor-pointer text-sm ${
-                                          selectedVehicle?.id === vehicle.id ? 'bg-blue-50' : ''
-                                        }`}
-                                      >
+                                        className="hover:bg-black-50 cursor-pointer text-sm">
                                         <td className="px-2 md:px-4 py-2 md:py-3">
                                           <Badge variant="outline" className={`text-xs font-mono ${
                                             vehicle.isRecheckIn 
@@ -2358,16 +2389,19 @@ export default function VehicleManagementPage() {
                                             {vehicle.gateEntryId}
                                           </Badge>
                                         </td>
-                                        <td className="px-2 md:px-4 py-2 md:py-3 font-medium text-xs md:text-sm">
+                                        <td className="px-2 md:px-4 py-2 md:py-3 font-medium text-xs md:text-sm truncate">
                                           {vehicle.driverName}
                                         </td>
-                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate max-w-[100px] md:max-w-none">
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate">
                                           {vehicle.company}
                                         </td>
-                                        <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs">
+                                        <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs truncate">
                                           {vehicle.vehiclePlate}
                                         </td>
-                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs">
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs whitespace-nowrap">
+                                          {vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'dd MMM yyyy') : 'N/A'}
+                                        </td>
+                                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs whitespace-nowrap">
                                           {vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'HH:mm') : 'N/A'}
                                         </td>
                                         <td className="px-2 md:px-4 py-2 md:py-3">
@@ -2387,7 +2421,7 @@ export default function VehicleManagementPage() {
                               </div>
                             </div>
 
-                            {gateEntryVehicles.length > displayCount && (
+                            {filteredGateEntryVehicles.length > displayCount && (
                               <div className="flex justify-center py-6">
                                 <Button
                                   variant="outline"
@@ -2400,7 +2434,7 @@ export default function VehicleManagementPage() {
                                   ) : (
                                     <>
                                       <ChevronDown className="h-4 w-4" />
-                                      Load More Gate Entries ({gateEntryVehicles.length - displayCount} remaining)
+                                      Load More Gate Entries ({filteredGateEntryVehicles.length - displayCount} remaining)
                                     </>
                                   )}
                                 </Button>

@@ -26,6 +26,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Avocado Inventory Types
 interface ColdRoomBox {
@@ -150,6 +151,16 @@ const BOX_SIZES = [
   'size32', 'size30', 'size28', 'size26', 'size24',
   'size22', 'size20', 'size18', 'size16', 'size14', 'size12'
 ];
+
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
 
 export default function InventoryPage() {
   const [stockTakeMode, setStockTakeMode] = useState(false);
@@ -517,6 +528,7 @@ export default function InventoryPage() {
       : Math.max(0, material.currentStock - bulkUpdateQuantity);
 
     try {
+      const currentUser = await getCurrentUser();
       // Update in database
       const response = await fetch(`/api/inventory/packaging/${selectedMaterialId}`, {
         method: 'PATCH',
@@ -541,6 +553,22 @@ export default function InventoryPage() {
         )
       );
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'INVENTORY_PACKAGING_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          materialId: selectedMaterialId,
+          materialName: material.name,
+          actionType: action,
+          previousStock: material.currentStock,
+          newQuantity: newQuantity,
+          unit: material.unit,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Stock Updated',
         description: `${material.name} stock updated to ${newQuantity} ${material.unit}`,
@@ -554,6 +582,17 @@ export default function InventoryPage() {
       const kpis = calculateKPIs();
       setInventoryKPIs(kpis);
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'INVENTORY_PACKAGING_UPDATED',
+        status: 'failure',
+        metadata: {
+          materialId: selectedMaterialId,
+          actionType: action,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Update Failed',
         description: error.message || 'Failed to update stock',
@@ -565,6 +604,7 @@ export default function InventoryPage() {
   // Handle add packaging material
   const handleAddPackaging = async (values: PackagingFormValues) => {
     try {
+      const currentUser = await getCurrentUser();
       const response = await fetch('/api/inventory/packaging', {
         method: 'POST',
         headers: {
@@ -590,6 +630,22 @@ export default function InventoryPage() {
       const newMaterial: PackagingMaterial = await response.json();
       setPackagingMaterials(prev => [newMaterial, ...prev]);
       
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'INVENTORY_PACKAGING_CREATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          materialId: newMaterial.id,
+          name: values.name,
+          category: values.category,
+          unit: values.unit,
+          initialStock: values.initialStock || 0,
+          reorderLevel: values.reorderLevel,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Packaging Material Added',
         description: `${values.name} has been added to your inventory.`,
@@ -600,6 +656,18 @@ export default function InventoryPage() {
       setInventoryKPIs(kpis);
       
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'INVENTORY_PACKAGING_CREATED',
+        status: 'failure',
+        metadata: {
+          name: values.name,
+          category: values.category,
+          unit: values.unit,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to add packaging material',
@@ -648,7 +716,7 @@ export default function InventoryPage() {
   };
 
   // Download packaging materials as CSV
-  const downloadPackagingCSV = () => {
+  const downloadPackagingCSV = async () => {
     const filteredMaterials = getFilteredPackagingMaterials();
     
     // CSV headers
@@ -713,6 +781,21 @@ export default function InventoryPage() {
     toast({
       title: 'CSV Downloaded',
       description: `Downloaded ${filteredMaterials.length} packaging materials`,
+    });
+
+    const currentUser = await getCurrentUser();
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'INVENTORY_PACKAGING_EXPORTED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        fileType: 'csv',
+        fileName: fileName,
+        recordCount: filteredMaterials.length,
+        dateFilter: dateFilter.packaging,
+        timestamp: new Date().toISOString(),
+      },
     });
   };
 

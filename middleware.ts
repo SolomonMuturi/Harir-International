@@ -49,6 +49,8 @@ const routePermissions: Record<string, string[]> = {
   '/vehicle-management': ['vehicle_log.view', 'vehicle_log.manage'],
   
   // Operations
+  '/oranges': ['citrus.view'],
+  '/oranges/manage': ['citrus.manage'],
   '/traceability': ['inventory.view'],
   '/weight-capture': ['suppliers.weigh'],
   '/quality-control': ['qc.view'],
@@ -115,6 +117,9 @@ const getFirstAccessiblePage = (permissions: string[]): string => {
   }
   if (permissions.includes('suppliers.weigh')) {
     return '/weight-capture';
+  }
+  if (permissions.includes('citrus.view') || permissions.includes('citrus.manage')) {
+    return '/oranges';
   }
   if (permissions.includes('counting.perform')) {
     return '/warehouse';

@@ -71,6 +71,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Switch } from '@/components/ui/switch';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { logActivity } from '@/lib/activity-logger';
 
 
 // Types
@@ -409,8 +410,38 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
       }
       const data = await response.json();
       setAttendance(prev => [...prev, data]);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_DUPLICATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          attendanceId: data.id || todayRecord.id,
+          date: todayRecord.date,
+          status: todayRecord.status,
+          designation: todayRecord.designation,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({ title: 'Attendance duplicated', description: 'A duplicate attendance record has been created.' });
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_DUPLICATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          date: todayRecord?.date,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({ title: 'Duplicate Failed', description: error.message || 'Failed to duplicate attendance', variant: 'destructive' });
     }
   };
@@ -431,8 +462,38 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
       }
       // Only update local state, do not re-fetch all attendance
       setAttendance(prev => prev.filter(record => record.id !== todayRecord.id));
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          attendanceId: todayRecord.id,
+          date: todayRecord.date,
+          status: todayRecord.status,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({ title: 'Attendance deleted', description: 'This attendance record has been deleted.' });
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_DELETED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          attendanceId: todayRecord?.id,
+          date: todayRecord?.date,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({ title: 'Delete Failed', description: error.message || 'Failed to delete attendance', variant: 'destructive' });
     }
   };
@@ -726,6 +787,16 @@ const getShiftType = (clockInTime?: string, clockOutTime?: string): string => {
 // Helper function to calculate number of days in date range
 const getNumberOfDays = (from: Date, to: Date): number => {
   return differenceInDays(to, from) + 1;
+};
+
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
 };
 
 // Helper function to load image as base64 for PDF
@@ -1361,7 +1432,39 @@ export default function EmployeesPage() {
         description: `${employee.name} has been checked in${isLate ? ' (Late)' : ''} at ${format(new Date(), 'HH:mm')}`,
       });
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CHECK_IN',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          department: employee.role,
+          status,
+          isLate,
+          date: dateStr,
+          attendanceId: data.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
     } catch (error: any) {
+      const failedEmployee = employees.find(emp => emp.id === employeeId);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CHECK_IN',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          employeeName: failedEmployee?.name,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Check-in Failed',
         description: error.message || 'Failed to check in',
@@ -1429,7 +1532,38 @@ export default function EmployeesPage() {
         description: `${employee.name} has been checked out at ${format(new Date(), 'HH:mm')}`,
       });
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CHECK_OUT',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          department: employee.role,
+          date: dateStr,
+          attendanceId: data.id,
+          clockOutTime: checkOutTime,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
     } catch (error: any) {
+      const failedEmployee = employees.find(emp => emp.id === employeeId);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CHECK_OUT',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          employeeName: failedEmployee?.name,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Check-out Failed',
         description: error.message || 'Failed to check out',
@@ -1507,7 +1641,39 @@ export default function EmployeesPage() {
         description: `${employee.name} has been marked as absent`,
       });
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_MARKED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          department: employee.role,
+          attendanceStatus: 'Absent',
+          date: dateStr,
+          attendanceId: data.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
     } catch (error: any) {
+      const failedEmployee = employees.find(emp => emp.id === employeeId);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_MARKED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          employeeName: failedEmployee?.name,
+          attendanceStatus: 'Absent',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to mark as absent',
@@ -1585,7 +1751,39 @@ export default function EmployeesPage() {
         description: `${employee.name} has been marked as on leave`,
       });
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_MARKED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          department: employee.role,
+          attendanceStatus: 'On Leave',
+          date: dateStr,
+          attendanceId: data.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
     } catch (error: any) {
+      const failedEmployee = employees.find(emp => emp.id === employeeId);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_MARKED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          employeeName: failedEmployee?.name,
+          attendanceStatus: 'On Leave',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to mark as on leave',
@@ -1656,8 +1854,41 @@ export default function EmployeesPage() {
       
       // Automatically switch to Gate Out tab after successful save
       setActiveTab('gate-out');
-      
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_DESIGNATION_ASSIGNED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          department: employee.role,
+          contract: employee.contract,
+          designation,
+          date: dateStr,
+          attendanceId: data.id,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
     } catch (error: any) {
+      const failedEmployee = employees.find(emp => emp.id === employeeId);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_DESIGNATION_ASSIGNED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          employeeName: failedEmployee?.name,
+          designation,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to assign designation',
@@ -1684,23 +1915,59 @@ export default function EmployeesPage() {
     const currentHour = new Date().getHours();
     const isLate = currentHour >= 9; // Late if after 9 AM
     
-    let successCount = 0;
-    let failedCount = 0;
+    try {
+      let successCount = 0;
+      let failedCount = 0;
 
-    for (const employee of employeesToCheckIn) {
-      try {
-        await handleCheckIn(employee.id, isLate);
-        successCount++;
-      } catch (error) {
-        failedCount++;
+      for (const employee of employeesToCheckIn) {
+        try {
+          await handleCheckIn(employee.id, isLate);
+          successCount++;
+        } catch (error) {
+          failedCount++;
+        }
       }
-    }
 
-    toast({
-      title: 'Bulk Check-in Complete',
-      description: `Successfully checked in ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
-      variant: failedCount > 0 ? 'destructive' : 'default',
-    });
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_BULK_ACTION',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          bulkOperation: 'check-in',
+          employeeCount: employeesToCheckIn.length,
+          successCount,
+          failedCount,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'Bulk Check-in Complete',
+        description: `Successfully checked in ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
+        variant: failedCount > 0 ? 'destructive' : 'default',
+      });
+    } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_BULK_ACTION',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          bulkOperation: 'check-in',
+          employeeCount: employeesToCheckIn.length,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      toast({
+        title: 'Bulk Check-in Failed',
+        description: error.message || 'Bulk check-in failed',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Bulk check-out for all ready
@@ -1719,20 +1986,56 @@ export default function EmployeesPage() {
     let successCount = 0;
     let failedCount = 0;
 
-    for (const employee of employeesToCheckOut) {
-      try {
-        await handleCheckOut(employee.id);
-        successCount++;
-      } catch (error) {
-        failedCount++;
+    try {
+      for (const employee of employeesToCheckOut) {
+        try {
+          await handleCheckOut(employee.id);
+          successCount++;
+        } catch (error) {
+          failedCount++;
+        }
       }
-    }
 
-    toast({
-      title: 'Bulk Check-out Complete',
-      description: `Successfully checked out ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
-      variant: failedCount > 0 ? 'destructive' : 'default',
-    });
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_BULK_ACTION',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          bulkOperation: 'check-out',
+          employeeCount: employeesToCheckOut.length,
+          successCount,
+          failedCount,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'Bulk Check-out Complete',
+        description: `Successfully checked out ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
+        variant: failedCount > 0 ? 'destructive' : 'default',
+      });
+    } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_BULK_ACTION',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          bulkOperation: 'check-out',
+          employeeCount: employeesToCheckOut.length,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      toast({
+        title: 'Bulk Check-out Failed',
+        description: error.message || 'Bulk check-out failed',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Bulk assign designation
@@ -1751,21 +2054,59 @@ export default function EmployeesPage() {
     let successCount = 0;
     let failedCount = 0;
 
-    for (const employee of employeesToAssign) {
-      try {
-        const designation = designationForEmployee[employee.id] || bulkDesignation;
-        await handleAssignDesignation(employee.id, designation);
-        successCount++;
-      } catch (error) {
-        failedCount++;
+    try {
+      for (const employee of employeesToAssign) {
+        try {
+          const designation = designationForEmployee[employee.id] || bulkDesignation;
+          await handleAssignDesignation(employee.id, designation);
+          successCount++;
+        } catch (error) {
+          failedCount++;
+        }
       }
-    }
 
-    toast({
-      title: 'Bulk Designation Complete',
-      description: `Successfully assigned designations to ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
-      variant: failedCount > 0 ? 'destructive' : 'default',
-    });
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_BULK_ACTION',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          bulkOperation: 'designation',
+          employeeCount: employeesToAssign.length,
+          designation: bulkDesignation,
+          successCount,
+          failedCount,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'Bulk Designation Complete',
+        description: `Successfully assigned designations to ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
+        variant: failedCount > 0 ? 'destructive' : 'default',
+      });
+    } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_BULK_ACTION',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          bulkOperation: 'designation',
+          employeeCount: employeesToAssign.length,
+          designation: bulkDesignation,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      toast({
+        title: 'Bulk Designation Failed',
+        description: error.message || 'Bulk designation failed',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Handle create employee
@@ -1787,6 +2128,27 @@ export default function EmployeesPage() {
 
       await fetchData();
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CREATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: data?.id,
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+          contract: formData.contract,
+          idNumber: formData.idNumber,
+          phone: formData.phone,
+          status: formData.status,
+          salary: formData.salary,
+          company: formData.company,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Employee Created',
         description: `${formData.name} has been successfully added.`,
@@ -1794,6 +2156,21 @@ export default function EmployeesPage() {
       
       setIsCreateDialogOpen(false);
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CREATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          name: formData?.name,
+          email: formData?.email,
+          role: formData?.role,
+          contract: formData?.contract,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to create employee',
@@ -1824,6 +2201,27 @@ export default function EmployeesPage() {
 
       await fetchData();
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: editingEmployee.id,
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+          contract: formData.contract,
+          idNumber: formData.idNumber,
+          phone: formData.phone,
+          status: formData.status,
+          salary: formData.salary,
+          company: formData.company,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Employee Updated',
         description: `${formData.name} has been successfully updated.`,
@@ -1832,6 +2230,19 @@ export default function EmployeesPage() {
       setIsEditDialogOpen(false);
       setEditingEmployee(null);
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_UPDATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: editingEmployee?.id,
+          name: formData?.name,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to update employee',
@@ -1846,6 +2257,8 @@ export default function EmployeesPage() {
     if (!confirm('Are you sure you want to delete this employee? This action cannot be undone.')) return;
     
     try {
+      const employee = employees.find(emp => emp.id === employeeId);
+
       const response = await fetch(`/api/employees?id=${employeeId}`, {
         method: 'DELETE',
       });
@@ -1856,11 +2269,38 @@ export default function EmployeesPage() {
 
       await fetchData();
       
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          name: employee?.name,
+          role: employee?.role,
+          contract: employee?.contract,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Employee Deleted',
         description: 'Employee has been successfully deleted.',
       });
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_DELETED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error',
         description: error.message || 'Failed to delete employee',
@@ -1887,7 +2327,37 @@ export default function EmployeesPage() {
           description: 'Attendance report has been downloaded as PDF.',
         });
       }
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_PDF_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: type,
+          fileType: 'pdf',
+          employeeCount: employees.length,
+          attendanceRecordCount: attendance.length,
+          from: dateRange.from.toISOString(),
+          to: dateRange.to.toISOString(),
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_PDF_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: type,
+          fileType: 'pdf',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Error Exporting PDF',
         description: error.message || 'Failed to generate PDF',
@@ -1999,7 +2469,7 @@ export default function EmployeesPage() {
   }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees, attendanceStartTime, attendanceEndTime]);
 
   // Export attendance to CSV with enhanced headers
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     if (filteredAttendance.length === 0) {
       toast({
         title: 'No Data',
@@ -2009,97 +2479,135 @@ export default function EmployeesPage() {
       return;
     }
 
-    // Calculate number of days in the date range (inclusive)
-    let numberOfDays = 1;
-    if (dateRange.from && dateRange.to) {
-      numberOfDays = getNumberOfDays(dateRange.from, dateRange.to);
-    }
-    
-    // Create the header row
-    const headers = [
-      'From Date',
-      'To Date',
-      'Name', 
-      'ID Number', 
-      'Tel Number', 
-      'Designation', 
-      'Designation Assignment Count',
-      'Shift(Full/Half)'
-    ];
-    
-    // Group attendance by employee for the date range
-    const employeeAttendanceMap = new Map<string, any[]>();
-    
-    filteredAttendance.forEach(record => {
-      const employee = employees.find(emp => emp.id === record.employeeId);
-      if (!employee) return;
-      
-      if (!employeeAttendanceMap.has(employee.id)) {
-        employeeAttendanceMap.set(employee.id, []);
+    try {
+      // Calculate number of days in the date range (inclusive)
+      let numberOfDays = 1;
+      if (dateRange.from && dateRange.to) {
+        numberOfDays = getNumberOfDays(dateRange.from, dateRange.to);
       }
       
-      employeeAttendanceMap.get(employee.id)?.push({
-        date: record.date,
-        shift: getShiftType(record.clockInTime, record.clockOutTime),
-        designation: record.designation ? designationLabels[record.designation] : 'N/A'
-      });
-    });
-    
-    // Create CSV data rows
-    const csvData = Array.from(employeeAttendanceMap.entries()).map(([employeeId, records]) => {
-      const employee = employees.find(emp => emp.id === employeeId);
-      if (!employee) return null;
-      
-      // Get unique designations for this employee in the date range
-      const designations = [...new Set(records.map(r => r.designation))].filter(d => d !== 'N/A');
-      const designation = designations.length > 0 ? designations.join(', ') : 'N/A';
-
-      // Count the number of times the employee was assigned any designation (excluding 'N/A')
-      const designationAssignmentCount = records.filter(r => r.designation !== 'N/A').length;
-
-      // Get most common shift type
-      const shiftCounts = records.reduce((acc, record) => {
-        acc[record.shift] = (acc[record.shift] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const mostCommonShift = Object.entries(shiftCounts).sort((a, b) => b[1] - a[1])[0];
-      const shift = mostCommonShift ? `${mostCommonShift[0]} (${mostCommonShift[1]} days)` : '';
-
-      return [
-        format(dateRange.from, 'yyyy-MM-dd'),
-        format(dateRange.to, 'yyyy-MM-dd'),
-        employee?.name || 'Unknown',
-        employee?.id_number || 'N/A',
-        employee?.phone || 'N/A',
-        designation,
-        designationAssignmentCount.toString(),
-        shift
+      // Create the header row
+      const headers = [
+        'From Date',
+        'To Date',
+        'Name', 
+        'ID Number', 
+        'Tel Number', 
+        'Designation', 
+        'Designation Assignment Count',
+        'Shift(Full/Half)'
       ];
-    }).filter(row => row !== null);
-    
-    // Create CSV content
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row!.map(cell => escapeCsvField(cell)).join(','))
-    ].join('\n');
+      
+      // Group attendance by employee for the date range
+      const employeeAttendanceMap = new Map<string, any[]>();
+      
+      filteredAttendance.forEach(record => {
+        const employee = employees.find(emp => emp.id === record.employeeId);
+        if (!employee) return;
+        
+        if (!employeeAttendanceMap.has(employee.id)) {
+          employeeAttendanceMap.set(employee.id, []);
+        }
+        
+        employeeAttendanceMap.get(employee.id)?.push({
+          date: record.date,
+          shift: getShiftType(record.clockInTime, record.clockOutTime),
+          designation: record.designation ? designationLabels[record.designation] : 'N/A'
+        });
+      });
+      
+      // Create CSV data rows
+      const csvData = Array.from(employeeAttendanceMap.entries()).map(([employeeId, records]) => {
+        const employee = employees.find(emp => emp.id === employeeId);
+        if (!employee) return null;
+        
+        // Get unique designations for this employee in the date range
+        const designations = [...new Set(records.map(r => r.designation))].filter(d => d !== 'N/A');
+        const designation = designations.length > 0 ? designations.join(', ') : 'N/A';
 
-    // Download the CSV file
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendance_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.csv`;
-    a.click();
-    
-    toast({
-      title: 'CSV Exported',
-      description: 'Attendance report has been downloaded.',
-    });
+        // Count the number of times the employee was assigned any designation (excluding 'N/A')
+        const designationAssignmentCount = records.filter(r => r.designation !== 'N/A').length;
+
+        // Get most common shift type
+        const shiftCounts = records.reduce((acc, record) => {
+          acc[record.shift] = (acc[record.shift] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        const mostCommonShift = Object.entries(shiftCounts).sort((a, b) => b[1] - a[1])[0];
+        const shift = mostCommonShift ? `${mostCommonShift[0]} (${mostCommonShift[1]} days)` : '';
+
+        return [
+          format(dateRange.from, 'yyyy-MM-dd'),
+          format(dateRange.to, 'yyyy-MM-dd'),
+          employee?.name || 'Unknown',
+          employee?.id_number || 'N/A',
+          employee?.phone || 'N/A',
+          designation,
+          designationAssignmentCount.toString(),
+          shift
+        ];
+      }).filter(row => row !== null);
+      
+      // Create CSV content
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row!.map(cell => escapeCsvField(cell)).join(','))
+      ].join('\n');
+
+      // Download the CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attendance_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.csv`;
+      a.click();
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: 'attendance',
+          fileType: 'csv',
+          recordCount: filteredAttendance.length,
+          employeeCount: csvData.length,
+          from: dateRange.from.toISOString(),
+          to: dateRange.to.toISOString(),
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'CSV Exported',
+        description: 'Attendance report has been downloaded.',
+      });
+    } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: 'attendance',
+          fileType: 'csv',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      toast({
+        title: 'CSV Export Failed',
+        description: error.message || 'Failed to export CSV',
+        variant: 'destructive',
+      });
+    }
   };
 
   // Export employee list to CSV with enhanced headers
-  const exportEmployeeCSV = () => {
+  const exportEmployeeCSV = async () => {
     if (employees.length === 0) {
       toast({
         title: 'No Data',
@@ -2109,55 +2617,90 @@ export default function EmployeesPage() {
       return;
     }
 
-    // Get current date for the report
-    const reportDate = new Date();
-    
-    // Create the header row
-    const headers = [
-      'Report Date',
-      'Name', 
-      'ID Number', 
-      'Tel Number', 
-      'Designation', 
-      'Shift(Full/Half)', 
-      'Contract Type',
-      'Status'
-    ];
-    
-    // Create CSV data rows
-    const csvData = employees.map(employee => {
-      // Determine shift based on contract type
-      const shift = employee.contract === 'Full-time' ? 'Full' : 
-                   employee.contract === 'Part-time' ? 'Half' : 'Varies';
+    try {
+      // Get current date for the report
+      const reportDate = new Date();
       
-      return [
-        format(reportDate, 'yyyy-MM-dd'),
-        employee.name || 'N/A',
-        employee.id_number || 'N/A',
-        employee.phone || 'N/A',
-        employee.role || 'N/A',
-        shift,
-        employee.contract,
-        employee.status
+      // Create the header row
+      const headers = [
+        'Report Date',
+        'Name', 
+        'ID Number', 
+        'Tel Number', 
+        'Designation', 
+        'Shift(Full/Half)', 
+        'Contract Type',
+        'Status'
       ];
-    });
+      
+      // Create CSV data rows
+      const csvData = employees.map(employee => {
+        // Determine shift based on contract type
+        const shift = employee.contract === 'Full-time' ? 'Full' : 
+                     employee.contract === 'Part-time' ? 'Half' : 'Varies';
+        
+        return [
+          format(reportDate, 'yyyy-MM-dd'),
+          employee.name || 'N/A',
+          employee.id_number || 'N/A',
+          employee.phone || 'N/A',
+          employee.role || 'N/A',
+          shift,
+          employee.contract,
+          employee.status
+        ];
+      });
 
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row.map(cell => escapeCsvField(cell)).join(','))
-    ].join('\n');
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.map(cell => escapeCsvField(cell)).join(','))
+      ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `employee_directory_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
-    
-    toast({
-      title: 'CSV Exported',
-      description: 'Employee directory has been downloaded.',
-    });
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `employee_directory_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      a.click();
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: 'employees',
+          fileType: 'csv',
+          employeeCount: employees.length,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'CSV Exported',
+        description: 'Employee directory has been downloaded.',
+      });
+    } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: 'employees',
+          fileType: 'csv',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      toast({
+        title: 'CSV Export Failed',
+        description: error.message || 'Failed to export CSV',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (!isClient || isLoading) {

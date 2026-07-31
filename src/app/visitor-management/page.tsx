@@ -40,6 +40,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { logActivity } from '@/lib/activity-logger';
 
 // Visitor type
 interface Visitor {
@@ -63,6 +64,16 @@ interface Visitor {
 type DateRange = {
   from: Date;
   to: Date;
+};
+
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
 };
 
 export default function VisitorManagementPage() {
@@ -163,6 +174,8 @@ export default function VisitorManagementPage() {
 
   const handleAddVisitor = async (values: VisitorFormValues) => {
     try {
+      const currentUser = await getCurrentUser();
+
       const visitorData = {
         name: values.visitorName,
         id_number: values.idNumber,
@@ -216,7 +229,24 @@ export default function VisitorManagementPage() {
       
       setVisitors(prev => [newVisitor, ...prev]);
       setNewlyRegisteredVisitor(newVisitor);
-      
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VISITOR_CREATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          visitorId: newVisitor.id,
+          name: newVisitor.name,
+          contact: newVisitor.phone,
+          idNumber: newVisitor.idNumber,
+          department: newVisitor.department,
+          purpose: newVisitor.purpose,
+          host: newVisitor.hostName,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Visitor Registered',
         description: `${newVisitor.name} has been successfully registered.`,
@@ -224,7 +254,17 @@ export default function VisitorManagementPage() {
       
     } catch (error: any) {
       console.error('❌ Error registering visitor:', error);
-      
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'VISITOR_CREATED',
+        status: 'failure',
+        metadata: {
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Registration Failed',
         description: error.message || 'Failed to register visitor',
@@ -253,6 +293,7 @@ export default function VisitorManagementPage() {
     }
 
     try {
+      const currentUser = await getCurrentUser();
       const visitor = visitors.find(v => v.id === visitorIdToCheckIn);
       if (!visitor) return;
 
@@ -292,7 +333,23 @@ export default function VisitorManagementPage() {
       
       // Clear selection after successful check-in
       setSelectedVisitor(null);
-      
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VISITOR_CHECK_IN',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          visitorId: visitor.id,
+          name: visitor.name,
+          contact: visitor.phone,
+          purpose: visitor.purpose,
+          host: visitor.hostName,
+          checkInTime: updatedVisitorData.check_in_time,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: "Visitor Checked In",
         description: `${visitor.name} has been successfully checked in.`,
@@ -303,6 +360,18 @@ export default function VisitorManagementPage() {
       
     } catch (error: any) {
       console.error('Error checking in visitor:', error);
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'VISITOR_CHECK_IN',
+        status: 'failure',
+        metadata: {
+          visitorId: visitorIdToCheckIn,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Check-in Failed',
         description: error.message || 'Failed to check in visitor',
@@ -313,6 +382,7 @@ export default function VisitorManagementPage() {
 
   const handleCheckOut = async (visitorId: string, final: boolean = false) => {
     try {
+      const currentUser = await getCurrentUser();
       const visitor = visitors.find(v => v.id === visitorId);
       if (!visitor) return;
 
@@ -341,7 +411,25 @@ export default function VisitorManagementPage() {
 
         setSelectedVisitor(updatedVisitor);
         setVisitors(prev => prev.map(v => v.id === visitorId ? updatedVisitor : v));
-        
+
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'VISITOR_CHECK_OUT',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            visitorId: visitor.id,
+            name: visitor.name,
+            contact: visitor.phone,
+            purpose: visitor.purpose,
+            host: visitor.hostName,
+            final: true,
+            status: 'Checked-out',
+            checkOutTime: updatedVisitorData.check_out_time,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         toast({
           title: "Visitor Verified for Exit",
           description: `${visitor.name} has been successfully checked out.`,
@@ -369,7 +457,24 @@ export default function VisitorManagementPage() {
 
         setSelectedVisitor(updatedVisitor);
         setVisitors(prev => prev.map(v => v.id === visitorId ? updatedVisitor : v));
-        
+
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'VISITOR_CHECK_OUT',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            visitorId: visitor.id,
+            name: visitor.name,
+            contact: visitor.phone,
+            purpose: visitor.purpose,
+            host: visitor.hostName,
+            final: false,
+            status: 'Pending Exit',
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         toast({
           title: "Checkout Initiated",
           description: `${visitor.name} is now pending exit.`,
@@ -379,6 +484,19 @@ export default function VisitorManagementPage() {
       }
     } catch (error: any) {
       console.error('Error during checkout:', error);
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'VISITOR_CHECK_OUT',
+        status: 'failure',
+        metadata: {
+          visitorId: visitorId,
+          final: final,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to process checkout',
@@ -395,6 +513,7 @@ export default function VisitorManagementPage() {
     const element = printRef.current;
     if (element) {
       try {
+        const currentUser = await getCurrentUser();
         const canvas = await html2canvas(element, { 
           scale: 2,
           useCORS: true,
@@ -408,13 +527,37 @@ export default function VisitorManagementPage() {
         
         pdf.addImage(data, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`visitor-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
-        
+
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'VISITOR_PDF_EXPORTED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            fileType: 'pdf',
+            recordCount: visitors.length,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         toast({
           title: 'Report Generated',
           description: 'Visitor report has been downloaded as PDF.',
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error generating PDF:', error);
+
+        await logActivity({
+          user: (await getCurrentUser())?.name || 'System',
+          action: 'VISITOR_PDF_EXPORTED',
+          status: 'failure',
+          metadata: {
+            fileType: 'pdf',
+            error: error.message,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         toast({
           title: 'PDF Generation Failed',
           description: 'Could not generate PDF report.',
@@ -487,6 +630,8 @@ export default function VisitorManagementPage() {
 
     setIsExportingCSV(true);
     try {
+      const currentUser = await getCurrentUser();
+
       // Prepare data for CSV
       const headers = [
         'Visitor ID',
@@ -531,13 +676,41 @@ export default function VisitorManagementPage() {
       link.click();
       document.body.removeChild(link);
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VISITOR_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'csv',
+          recordCount: filteredHistoryVisitors.length,
+          scope: 'history',
+          dateRangeFrom: historyDateRange.from.toISOString(),
+          dateRangeTo: historyDateRange.to.toISOString(),
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'CSV Export Complete',
         description: `Visitor history (${filteredHistoryVisitors.length} records) has been downloaded.`,
       });
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error exporting CSV:', error);
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'VISITOR_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          fileType: 'csv',
+          scope: 'history',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         variant: 'destructive',
         title: 'Export Failed',
@@ -561,6 +734,8 @@ export default function VisitorManagementPage() {
 
     setIsExportingCSV(true);
     try {
+      const currentUser = await getCurrentUser();
+
       const headers = [
         'Visitor ID',
         'Name',
@@ -606,13 +781,39 @@ export default function VisitorManagementPage() {
       link.click();
       document.body.removeChild(link);
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VISITOR_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'csv',
+          recordCount: visitors.length,
+          scope: 'all',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'CSV Export Complete',
         description: `All visitors (${visitors.length} records) have been downloaded.`,
       });
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error exporting CSV:', error);
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'VISITOR_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          fileType: 'csv',
+          scope: 'all',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         variant: 'destructive',
         title: 'Export Failed',

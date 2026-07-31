@@ -76,6 +76,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { logActivity } from '@/lib/activity-logger';
 
 // Define utility rates
 const UTILITY_RATES = {
@@ -424,6 +425,16 @@ function DateRangePicker({
     </Popover>
   );
 }
+
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
 
 // Main Dashboard Component
 export default function UtilityManagementPage() {
@@ -944,6 +955,7 @@ export default function UtilityManagementPage() {
     setIsSavingPower(true);
 
     try {
+      const currentUser = await getCurrentUser();
       const powerConsumption = calculatePowerConsumption();
       const totalPowerConsumed = Object.values(powerConsumption).reduce((a, b) => a + b, 0);
 
@@ -977,6 +989,23 @@ export default function UtilityManagementPage() {
           description: 'Power readings saved successfully',
         });
 
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'UTILITY_ELECTRICITY_READING_RECORDED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            meter: 'power',
+            unit: 'kWh',
+            date,
+            shift,
+            recordedBy,
+            totalPowerConsumed,
+            powerConsumption,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         if (typeof window !== "undefined") {
           localStorage.setItem('recordedBy', recordedBy);
           localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
@@ -996,6 +1025,20 @@ export default function UtilityManagementPage() {
         throw new Error('Failed to save power readings');
       }
     } catch (error) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'UTILITY_ELECTRICITY_READING_RECORDED',
+        status: 'failure',
+        metadata: {
+          meter: 'power',
+          unit: 'kWh',
+          date,
+          shift,
+          recordedBy,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Save Failed',
         description: 'Failed to save power readings',
@@ -1033,6 +1076,7 @@ export default function UtilityManagementPage() {
     setIsSavingWater(true);
 
     try {
+      const currentUser = await getCurrentUser();
       const waterConsumption = calculateWaterConsumption();
       const totalWaterConsumed = Object.values(waterConsumption).reduce((a, b) => a + b, 0);
 
@@ -1059,6 +1103,23 @@ export default function UtilityManagementPage() {
           description: 'Water readings saved successfully',
         });
 
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'UTILITY_WATER_READING_RECORDED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            meter: 'water',
+            unit: 'm3',
+            date,
+            shift,
+            recordedBy,
+            totalWaterConsumed,
+            waterConsumption,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         if (typeof window !== "undefined") {
           localStorage.setItem('recordedBy', recordedBy);
           localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
@@ -1074,6 +1135,20 @@ export default function UtilityManagementPage() {
         throw new Error('Failed to save water readings');
       }
     } catch (error) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'UTILITY_WATER_READING_RECORDED',
+        status: 'failure',
+        metadata: {
+          meter: 'water',
+          unit: 'm3',
+          date,
+          shift,
+          recordedBy,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Save Failed',
         description: 'Failed to save water readings',
@@ -1098,6 +1173,7 @@ export default function UtilityManagementPage() {
     setIsSavingInternet(true);
 
     try {
+      const currentUser = await getCurrentUser();
       const totalInternetCost = (Number(internetCosts.safaricom) || 0) +
                                (Number(internetCosts.internet5G) || 0) +
                                (Number(internetCosts.syokinet) || 0);
@@ -1125,6 +1201,26 @@ export default function UtilityManagementPage() {
           description: 'Internet costs saved successfully',
         });
 
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'UTILITY_INTERNET_COST_RECORDED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            meter: 'internet',
+            unit: 'KES',
+            date,
+            shift,
+            recordedBy,
+            totalInternetCost,
+            safaricom: internetCosts.safaricom,
+            internet5G: internetCosts.internet5G,
+            syokinet: internetCosts.syokinet,
+            billingCycle: internetBillingCycle,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         if (typeof window !== "undefined") {
           localStorage.setItem('recordedBy', recordedBy);
           localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
@@ -1142,6 +1238,20 @@ export default function UtilityManagementPage() {
         throw new Error('Failed to save internet costs');
       }
     } catch (error) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'UTILITY_INTERNET_COST_RECORDED',
+        status: 'failure',
+        metadata: {
+          meter: 'internet',
+          unit: 'KES',
+          date,
+          shift,
+          recordedBy,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Save Failed',
         description: 'Failed to save internet costs',
@@ -1166,6 +1276,7 @@ export default function UtilityManagementPage() {
     setIsSavingGenerator(true);
 
     try {
+      const currentUser = await getCurrentUser();
       const generatorData = calculateGeneratorData();
 
       const response = await fetch('/api/utility-readings', {
@@ -1191,6 +1302,25 @@ export default function UtilityManagementPage() {
           description: 'Generator readings saved successfully',
         });
 
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'GENERATOR_USAGE_RECORDED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            unit: 'L',
+            date,
+            shift,
+            recordedBy,
+            generatorStart,
+            generatorStop,
+            runtimeHours: generatorData.totalHours,
+            dieselConsumed: generatorData.diesel,
+            dieselRefill,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         if (typeof window !== "undefined") {
           localStorage.setItem('recordedBy', recordedBy);
           localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
@@ -1204,6 +1334,22 @@ export default function UtilityManagementPage() {
         throw new Error('Failed to save generator readings');
       }
     } catch (error) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'GENERATOR_USAGE_RECORDED',
+        status: 'failure',
+        metadata: {
+          unit: 'L',
+          date,
+          shift,
+          recordedBy,
+          generatorStart,
+          generatorStop,
+          dieselRefill,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Save Failed',
         description: 'Failed to save generator readings',
@@ -1217,6 +1363,7 @@ export default function UtilityManagementPage() {
   // Handle export to CSV
   const handleExportCSV = async () => {
     try {
+      const currentUser = await getCurrentUser();
       let url = '/api/utility-readings/export';
 
       if (dateFilter === 'custom') {
@@ -1250,7 +1397,8 @@ export default function UtilityManagementPage() {
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `utility-readings-${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = `utility-readings-${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1261,7 +1409,33 @@ export default function UtilityManagementPage() {
         description: 'Data exported to CSV file',
       });
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'UTILITY_REPORT_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'CSV',
+          filename,
+          dateFilter,
+          dateRange,
+          recordCount: readings.length,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
     } catch (error) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'UTILITY_REPORT_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          fileType: 'CSV',
+          dateFilter,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
       toast({
         title: 'Export Failed',
         description: 'Failed to export data',

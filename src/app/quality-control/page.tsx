@@ -46,6 +46,7 @@ import {
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useReactToPrint } from 'react-to-print';
+import { logActivity } from '@/lib/activity-logger';
 
 interface QualityCheck {
   id: string;
@@ -73,6 +74,17 @@ interface LabelItem {
   class: 'C1' | 'C2' | 'Reject';
 }
 
+// Helper function to get current user
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export default function QualityControlPage() {
   const { toast } = useToast();
   const [qualityChecks, setQualityChecks] = useState<QualityCheck[]>([]);
@@ -86,7 +98,7 @@ export default function QualityControlPage() {
   
   const printRef = useRef<HTMLDivElement>(null);
 
-  const handlePrint = useReactToPrint({
+  const printStickers = useReactToPrint({
     contentRef: printRef,
     pageStyle: `
       @page {
@@ -106,6 +118,38 @@ export default function QualityControlPage() {
       }
     `,
   });
+
+  const handlePrint = async () => {
+    try {
+      printStickers();
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKERS_PRINTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'print',
+          stickerCount: labels.length,
+          codes: labels.map(label => label.code),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKERS_PRINTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'print',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  };
 
   // Load quality checks from database
   const loadQualityChecks = async () => {
@@ -161,34 +205,130 @@ export default function QualityControlPage() {
   }, [toast]);
 
   // Add a new label
-  const addLabel = () => {
-    if (!currentCode.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a code',
-        variant: 'destructive',
+  const addLabel = async () => {
+    try {
+      if (!currentCode.trim()) {
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'QC_STICKER_ADDED',
+          status: 'failure',
+          metadata: {
+            userId: currentUser?.id,
+            error: 'No code entered',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        toast({
+          title: 'Error',
+          description: 'Please enter a code',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const newLabel: LabelItem = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        code: currentCode.trim(),
+        class: currentClass,
+      };
+
+      setLabels([...labels, newLabel]);
+      setCurrentCode('');
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKER_ADDED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          labelId: newLabel.id,
+          code: newLabel.code,
+          class: newLabel.class,
+          timestamp: new Date().toISOString(),
+        },
       });
-      return;
+    } catch (error) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKER_ADDED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
     }
-
-    const newLabel: LabelItem = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      code: currentCode.trim(),
-      class: currentClass,
-    };
-
-    setLabels([...labels, newLabel]);
-    setCurrentCode('');
   };
 
   // Remove a label
-  const removeLabel = (id: string) => {
-    setLabels(labels.filter(label => label.id !== id));
+  const removeLabel = async (id: string) => {
+    try {
+      const removedLabel = labels.find(label => label.id === id);
+      setLabels(labels.filter(label => label.id !== id));
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKER_REMOVED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          labelId: id,
+          code: removedLabel?.code,
+          class: removedLabel?.class,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKER_REMOVED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          labelId: id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
   };
 
   // Clear all labels
-  const clearAllLabels = () => {
-    setLabels([]);
+  const clearAllLabels = async () => {
+    try {
+      const removedCount = labels.length;
+      setLabels([]);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKERS_CLEARED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          removedCount,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'QC_STICKERS_CLEARED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
   };
 
   // Handle key press (Enter to add)

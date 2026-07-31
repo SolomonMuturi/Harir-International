@@ -59,7 +59,7 @@ export function VehicleDataTable({
     if (!hasMounted) {
       return <Skeleton className="h-4 w-10" />;
     }
-    return ts ? format(new Date(ts), 'HH:mm') : '-';
+    return ts ? format(new Date(ts), 'dd MMM HH:mm') : '-';
   };
   
   const getCargoIcon = (cargoDescription?: string) => {

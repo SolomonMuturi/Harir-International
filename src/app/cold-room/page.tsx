@@ -70,6 +70,7 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 interface ColdRoomBox {
   id: string;
@@ -451,6 +452,16 @@ const checkForExistingPallet = async (
   }
 };
 
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export default function ColdRoomPage() {
   const { toast } = useToast();
   
@@ -556,130 +567,162 @@ export default function ColdRoomPage() {
     return grade === 'class1' ? 'Class 1' : 'Class 2';
   };
 
-  const exportColdRoomBoxesToCSV = (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
+  const exportColdRoomBoxesToCSV = async (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
     if (!data || data.length === 0) {
       return;
     }
 
-    const groupedBoxes: Record<string, {
-      variety: string;
-      box_type: string;
-      size: string;
-      grade: string;
-      totalQuantity: number;
-      cold_room_id: string;
-      supplier_names: Set<string>;
-      regions: Set<string>;
-      created_dates: Set<string>;
-      hasMultipleGrades: boolean;
-      hasMultipleVarieties: boolean;
-    }> = {};
+    try {
+      const groupedBoxes: Record<string, {
+        variety: string;
+        box_type: string;
+        size: string;
+        grade: string;
+        totalQuantity: number;
+        cold_room_id: string;
+        supplier_names: Set<string>;
+        regions: Set<string>;
+        created_dates: Set<string>;
+        hasMultipleGrades: boolean;
+        hasMultipleVarieties: boolean;
+      }> = {};
 
-    data.forEach(box => {
-      const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.size}`;
-      
-      if (!groupedBoxes[key]) {
-        groupedBoxes[key] = {
-          variety: box.variety,
-          box_type: box.box_type,
-          size: box.size,
-          grade: box.grade,
-          totalQuantity: 0,
-          cold_room_id: box.cold_room_id,
-          supplier_names: new Set<string>(),
-          regions: new Set<string>(),
-          created_dates: new Set<string>(),
-          hasMultipleGrades: false,
-          hasMultipleVarieties: false
-        };
-      }
-      
-      groupedBoxes[key].totalQuantity += box.quantity || 0;
-      if (box.supplier_name) groupedBoxes[key].supplier_names.add(box.supplier_name);
-      if (box.region) groupedBoxes[key].regions.add(box.region);
-      if (box.created_at) {
-        const date = new Date(box.created_at).toISOString().split('T')[0];
-        groupedBoxes[key].created_dates.add(date);
-      }
-      
-      if (groupedBoxes[key].grade !== box.grade) {
-        groupedBoxes[key].hasMultipleGrades = true;
-      }
-      
-      if (groupedBoxes[key].variety !== box.variety) {
-        groupedBoxes[key].hasMultipleVarieties = true;
-      }
-    });
+      data.forEach(box => {
+        const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.size}`;
+        
+        if (!groupedBoxes[key]) {
+          groupedBoxes[key] = {
+            variety: box.variety,
+            box_type: box.box_type,
+            size: box.size,
+            grade: box.grade,
+            totalQuantity: 0,
+            cold_room_id: box.cold_room_id,
+            supplier_names: new Set<string>(),
+            regions: new Set<string>(),
+            created_dates: new Set<string>(),
+            hasMultipleGrades: false,
+            hasMultipleVarieties: false
+          };
+        }
+        
+        groupedBoxes[key].totalQuantity += box.quantity || 0;
+        if (box.supplier_name) groupedBoxes[key].supplier_names.add(box.supplier_name);
+        if (box.region) groupedBoxes[key].regions.add(box.region);
+        if (box.created_at) {
+          const date = new Date(box.created_at).toISOString().split('T')[0];
+          groupedBoxes[key].created_dates.add(date);
+        }
+        
+        if (groupedBoxes[key].grade !== box.grade) {
+          groupedBoxes[key].hasMultipleGrades = true;
+        }
+        
+        if (groupedBoxes[key].variety !== box.variety) {
+          groupedBoxes[key].hasMultipleVarieties = true;
+        }
+      });
 
-    const headers = [
-      'Added Date',
-      'Supplier Name',
-      'Region',
-      'Variety',
-      'Box Type',
-      'Size',
-      'Grade',
-      'Quantity',
-      'Weight Per Box (kg)',
-      'Total Weight (kg)',
-      'Cold Room',
-      'Status',
-      'Created Date'
-    ];
+      const headers = [
+        'Added Date',
+        'Supplier Name',
+        'Region',
+        'Variety',
+        'Box Type',
+        'Size',
+        'Grade',
+        'Quantity',
+        'Weight Per Box (kg)',
+        'Total Weight (kg)',
+        'Cold Room',
+        'Status',
+        'Created Date'
+      ];
 
-    const rows = Object.values(groupedBoxes).map(box => {
-      const boxWeight = box.box_type === '4kg' ? 4 : 10;
-      const totalWeight = box.totalQuantity * boxWeight;
-      const addedDate = Array.from(box.created_dates).join(', ') || '';
-      const status = 'Available in Cold Room';
-      const supplierName = Array.from(box.supplier_names).join(', ') || 'Unknown';
-      const region = Array.from(box.regions).join(', ') || '';
-      
-      let varietyDisplay = getVarietyDisplay(box.variety);
-      if (box.hasMultipleVarieties) {
-        varietyDisplay = 'Mixed';
-      }
-      
-      let gradeDisplay = getGradeDisplay(box.grade);
-      if (box.hasMultipleGrades) {
-        gradeDisplay = 'Mixed';
-      }
-      
-      return [
-        `"${addedDate}"`,
-        `"${supplierName}"`,
-        `"${region}"`,
-        `"${varietyDisplay}"`,
-        `"${box.box_type}"`,
-        `"${formatSize(box.size)}"`,
-        `"${gradeDisplay}"`,
-        `"${box.totalQuantity}"`,
-        `"${boxWeight}"`,
-        `"${totalWeight}"`,
-        `"${box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
-        `"${status}"`,
-        `"${addedDate}"`
-      ].join(',');
-    });
+      const rows = Object.values(groupedBoxes).map(box => {
+        const boxWeight = box.box_type === '4kg' ? 4 : 10;
+        const totalWeight = box.totalQuantity * boxWeight;
+        const addedDate = Array.from(box.created_dates).join(', ') || '';
+        const status = 'Available in Cold Room';
+        const supplierName = Array.from(box.supplier_names).join(', ') || 'Unknown';
+        const region = Array.from(box.regions).join(', ') || '';
+        
+        let varietyDisplay = getVarietyDisplay(box.variety);
+        if (box.hasMultipleVarieties) {
+          varietyDisplay = 'Mixed';
+        }
+        
+        let gradeDisplay = getGradeDisplay(box.grade);
+        if (box.hasMultipleGrades) {
+          gradeDisplay = 'Mixed';
+        }
+        
+        return [
+          `"${addedDate}"`,
+          `"${supplierName}"`,
+          `"${region}"`,
+          `"${varietyDisplay}"`,
+          `"${box.box_type}"`,
+          `"${formatSize(box.size)}"`,
+          `"${gradeDisplay}"`,
+          `"${box.totalQuantity}"`,
+          `"${boxWeight}"`,
+          `"${totalWeight}"`,
+          `"${box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
+          `"${status}"`,
+          `"${addedDate}"`
+        ].join(',');
+      });
 
-    const csvContent = [
-      headers.join(','),
-      ...rows
-    ].join('\n');
+      const csvContent = [
+        headers.join(','),
+        ...rows
+      ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    URL.revokeObjectURL(url);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      URL.revokeObjectURL(url);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'COLD_ROOM_INVENTORY_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          recordCount: data.length,
+          filename: `${filename}_${new Date().toISOString().split('T')[0]}.csv`,
+          fileType: 'csv',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'COLD_ROOM_INVENTORY_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message || 'Unknown error',
+          filename: filename,
+          fileType: 'csv',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      throw error;
+    }
   };
 
   const filterCountingRecordsByDateRange = (startDate?: string, endDate?: string) => {
@@ -1598,6 +1641,7 @@ const fetchRepackingRecords = async () => {
     }
 
     try {
+      const currentUser = await getCurrentUser();
       const duplicateCheck = await checkForExistingPallet(
         palletCreation.coldRoomId,
         summary.selectedGroups
@@ -1684,6 +1728,24 @@ const fetchRepackingRecords = async () => {
           viewMode: 'grouped',
         });
 
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'COLD_ROOM_PALLET_CREATED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            palletId: result.data?.palletId || result.data?.id || null,
+            palletName: palletCreation.palletName,
+            coldRoomId: palletCreation.coldRoomId,
+            totalBoxes: summary.totalBoxes,
+            totalWeight: summary.totalWeight,
+            boxesPerPallet: palletCreation.boxesPerPallet,
+            isAirFreight: palletCreation.boxesPerPallet === 0,
+            groupCount: summary.selectedGroups.length,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchPallets(),
@@ -1714,6 +1776,20 @@ const fetchRepackingRecords = async () => {
         }
       }
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COLD_ROOM_PALLET_CREATED',
+        status: 'failure',
+        metadata: {
+          palletName: palletCreation.palletName,
+          coldRoomId: palletCreation.coldRoomId,
+          totalBoxes: summary.totalBoxes,
+          boxesPerPallet: palletCreation.boxesPerPallet,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to create pallet',
@@ -1724,6 +1800,7 @@ const fetchRepackingRecords = async () => {
 
   const handleDissolvePallet = async (palletId: string, coldRoomId: string) => {
     try {
+      const currentUser = await getCurrentUser();
       const pallet = pallets.find(p => p.id === palletId);
       if (pallet?.loading_sheet_id) {
         toast({
@@ -1758,6 +1835,20 @@ const fetchRepackingRecords = async () => {
           description: `${result.data.boxesReturned} boxes returned to available inventory`,
         });
 
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'COLD_ROOM_PALLET_DISSOLVED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            palletId,
+            coldRoomId,
+            palletName: pallet?.pallet_name || null,
+            boxesReturned: result.data.boxesReturned,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchPallets(),
@@ -1770,6 +1861,19 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || 'Failed to dissolve pallet');
       }
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COLD_ROOM_PALLET_DISSOLVED',
+        status: 'failure',
+        metadata: {
+          palletId,
+          coldRoomId,
+          palletName: pallets.find(p => p.id === palletId)?.pallet_name || null,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to dissolve pallet',
@@ -2004,6 +2108,30 @@ const fetchRepackingRecords = async () => {
           ),
         });
         
+        const currentUser = await getCurrentUser();
+        const coldroom1Boxes = validGroups
+          .filter(({ group }) => group.targetColdRoom === 'coldroom1')
+          .reduce((sum, { group }) => sum + group.loadingQuantity, 0);
+        const coldroom2Boxes = validGroups
+          .filter(({ group }) => group.targetColdRoom === 'coldroom2')
+          .reduce((sum, { group }) => sum + group.loadingQuantity, 0);
+
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'COLD_ROOM_BOXES_LOADED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            totalBoxes,
+            sizeGroupCount: validGroups.length,
+            coldroom1Boxes,
+            coldroom2Boxes,
+            skippedDuplicateGroups: duplicateGroups.length,
+            countingRecordIds: Array.from(countingRecordIds),
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchColdRoomStats(),
@@ -2015,6 +2143,18 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || `Failed to load boxes: ${result.message || 'Unknown error'}`);
       }
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COLD_ROOM_BOXES_LOADED',
+        status: 'failure',
+        metadata: {
+          totalBoxes: selectedGroups.reduce((sum, group) => sum + group.loadingQuantity, 0),
+          sizeGroupCount: selectedGroups.length,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to load boxes to cold room',
@@ -2092,6 +2232,19 @@ const fetchRepackingRecords = async () => {
           description: `Temperature ${temperature}°C recorded for ${selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}`,
         });
         
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'COLD_ROOM_TEMPERATURE_UPDATED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            coldRoomId: selectedColdRoom,
+            temperature: parseFloat(temperature),
+            timestamp: new Date().toISOString(),
+          },
+        });
+
         setTemperature('');
         fetchTemperatureLogs();
         fetchColdRooms();
@@ -2100,6 +2253,18 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || 'Failed to record temperature');
       }
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COLD_ROOM_TEMPERATURE_UPDATED',
+        status: 'failure',
+        metadata: {
+          coldRoomId: selectedColdRoom,
+          temperature: temperature ? parseFloat(temperature) : null,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to record temperature',
@@ -2241,6 +2406,22 @@ const fetchRepackingRecords = async () => {
           returnedBoxes: [],
           notes: '',
         });
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'COLD_ROOM_REPACKING_RECORDED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            coldRoomId: selectedColdRoom,
+            removedBoxes: safeArray(repackingForm.removedBoxes),
+            returnedBoxes: safeArray(repackingForm.returnedBoxes),
+            rejectedBoxes: 0,
+            notes: repackingForm.notes,
+            timestamp: new Date().toISOString(),
+          },
+        });
         
         fetchColdRoomBoxes();
         fetchColdRoomStats();
@@ -2251,6 +2432,19 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || 'Failed to record repacking');
       }
     } catch (error: any) {
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: 'COLD_ROOM_REPACKING_RECORDED',
+        status: 'failure',
+        metadata: {
+          coldRoomId: selectedColdRoom,
+          removedBoxes: safeArray(repackingForm.removedBoxes),
+          returnedBoxes: safeArray(repackingForm.returnedBoxes),
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to record repacking',
@@ -4523,7 +4717,7 @@ const returnedBoxes = safeArray(
                       </div>
                       <div className="flex gap-2">
                         <Button
-                          onClick={() => {
+                          onClick={async () => {
                             const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
                             if (availableBoxes.length === 0) {
                               toast({
@@ -4535,7 +4729,7 @@ const returnedBoxes = safeArray(
                             }
                             
                             try {
-                              exportColdRoomBoxesToCSV(availableBoxes, 'cold-room-available-inventory');
+                              await exportColdRoomBoxesToCSV(availableBoxes, 'cold-room-available-inventory');
                               
                               toast({
                                 title: 'CSV Export Started',

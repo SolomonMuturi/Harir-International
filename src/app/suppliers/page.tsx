@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { CreateSupplierForm } from '@/components/dashboard/create-supplier-form'
-import { PlusCircle, Grape, Download, Calendar, FileDown, AlertCircle, Phone, Banknote, Users, FileCheck, ChevronRight, Edit, Trash2, Search } from 'lucide-react'
+import { PlusCircle, Grape, Download, Calendar, FileDown, AlertCircle, Phone, Banknote, Users, FileCheck, ChevronRight, Edit, Trash2, Search, Eye, Mail, MapPin, Truck, User, CreditCard, Building2 } from 'lucide-react'
 import { OverviewCard } from '@/components/dashboard/overview-card'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
@@ -64,6 +64,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { logActivity } from '@/lib/activity-logger'
 
 interface DatabaseSupplier {
   id: string
@@ -105,11 +106,22 @@ interface SupplierStats {
   completeProfiles: number
 }
 
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session')
+    const session = await response.json()
+    return session?.user || { name: 'System', id: 'system' }
+  } catch (error) {
+    return { name: 'System', id: 'system' }
+  }
+}
+
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [viewSupplier, setViewSupplier] = useState<Supplier | null>(null)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null)
   const [isLoadingDelete, setIsLoadingDelete] = useState(false)
@@ -314,8 +326,37 @@ export default function SuppliersPage() {
         title: 'Report Downloaded',
         description: `${formatType.toUpperCase()} report has been downloaded successfully.`,
       })
+
+      const currentUser = await getCurrentUser()
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: formatType === 'csv' ? 'SUPPLIER_CSV_EXPORTED' : 'SUPPLIER_REPORT_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: formatType,
+          recordCount: filteredSuppliers.length,
+          startDate: format(dateRange.from, 'yyyy-MM-dd'),
+          endDate: format(dateRange.to, 'yyyy-MM-dd'),
+          timestamp: new Date().toISOString(),
+        },
+      })
     } catch (error: any) {
       console.error(`Error downloading ${formatType} report:`, error)
+
+      const currentUser = await getCurrentUser()
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: formatType === 'csv' ? 'SUPPLIER_CSV_EXPORTED' : 'SUPPLIER_REPORT_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: formatType,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Error',
         description: error.message || `Failed to download ${formatType.toUpperCase()} report`,
@@ -334,6 +375,7 @@ export default function SuppliersPage() {
   // Handle add supplier
   const handleAddSupplier = async (values: SupplierFormValues) => {
     try {
+      const currentUser = await getCurrentUser()
       console.log('🔄 Creating new supplier with locked name-phone combination:', values)
       
       const apiData = {
@@ -374,6 +416,21 @@ export default function SuppliersPage() {
 
       await fetchSuppliers()
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_CREATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: responseData?.id || responseData?.supplier?.id,
+          supplierName: values.name,
+          supplierCode: values.supplierCode || '',
+          contactPhone: values.contactPhone || '',
+          location: values.location || '',
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Supplier Created',
         description: `${values.name} has been successfully added with locked name-phone combination.`,
@@ -382,6 +439,21 @@ export default function SuppliersPage() {
       setIsCreateDialogOpen(false)
     } catch (error: any) {
       console.error('❌ Error creating supplier:', error)
+
+      const currentUser = await getCurrentUser()
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_CREATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          supplierName: values.name,
+          supplierCode: values.supplierCode || '',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to create supplier',
@@ -395,6 +467,7 @@ export default function SuppliersPage() {
     if (!editingSupplier) return
     
     try {
+      const currentUser = await getCurrentUser()
       console.log('🔄 Updating supplier:', values)
       
       // Build API data with only non-empty values (partial update)
@@ -435,6 +508,20 @@ export default function SuppliersPage() {
 
       await fetchSuppliers()
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: editingSupplier.id,
+          supplierName: values.name || editingSupplier.name,
+          supplierCode: values.supplierCode || editingSupplier.supplierCode,
+          contactPhone: values.contactPhone || editingSupplier.contactPhone,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Supplier Updated',
         description: `${values.name || editingSupplier.name}'s details have been updated successfully.`,
@@ -443,6 +530,21 @@ export default function SuppliersPage() {
       setEditingSupplier(null)
     } catch (error: any) {
       console.error('❌ Error updating supplier:', error)
+
+      const currentUser = await getCurrentUser()
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_UPDATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: editingSupplier.id,
+          supplierName: editingSupplier.name,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to update supplier',
@@ -468,6 +570,7 @@ export default function SuppliersPage() {
 
     try {
       setIsLoadingDelete(true)
+      const currentUser = await getCurrentUser()
       const response = await fetch(`/api/suppliers?id=${supplierToDelete.id}`, {
         method: 'DELETE',
         headers: {
@@ -483,6 +586,19 @@ export default function SuppliersPage() {
 
       await fetchSuppliers()
 
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: supplierToDelete.id,
+          supplierName: supplierToDelete.name,
+          supplierCode: supplierToDelete.supplierCode,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Supplier Deleted',
         description: `${supplierToDelete.name} has been successfully deleted.`,
@@ -491,6 +607,21 @@ export default function SuppliersPage() {
       setSupplierToDelete(null)
     } catch (error: any) {
       console.error('Error deleting supplier:', error)
+
+      const currentUser = await getCurrentUser()
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'SUPPLIER_DELETED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: supplierToDelete.id,
+          supplierName: supplierToDelete.name,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
       toast({
         title: 'Error',
         description: error.message || 'Failed to delete supplier',
@@ -918,13 +1049,21 @@ export default function SuppliersPage() {
                         <TableRow 
                           key={supplier.id}
                           className="cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => openEditDialog(supplier)}
+                          onClick={() => setViewSupplier(supplier)}
                         >
                           <TableCell className="font-medium">{supplier.name}</TableCell>
                           <TableCell>{supplier.contactPhone || 'N/A'}</TableCell>
                           <TableCell>{getStatusBadge(supplier.status)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-gray-600 hover:text-gray-700 hover:bg-gray-100"
+                                onClick={() => setViewSupplier(supplier)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -952,6 +1091,124 @@ export default function SuppliersPage() {
             </Card>
           </div>
         </main>
+
+        {/* View Supplier Dialog */}
+        <Dialog open={!!viewSupplier} onOpenChange={(open) => !open && setViewSupplier(null)}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between pr-10">
+                <span>{viewSupplier?.name}</span>
+                <span>{viewSupplier ? getStatusBadge(viewSupplier.status) : null}</span>
+              </DialogTitle>
+              <DialogDescription>
+                {viewSupplier?.supplierCode ? `Code: ${viewSupplier.supplierCode}` : 'Supplier details'}
+              </DialogDescription>
+            </DialogHeader>
+            {viewSupplier && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <MapPin className="h-3.5 w-3.5" /> Location
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.location || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <User className="h-3.5 w-3.5" /> Contact person
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.contactName || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Phone className="h-3.5 w-3.5" /> Phone
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.contactPhone || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Mail className="h-3.5 w-3.5" /> Email
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900 break-all">{viewSupplier.contactEmail || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Truck className="h-3.5 w-3.5" /> Vehicle plate
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.vehicleNumberPlate || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <User className="h-3.5 w-3.5" /> Driver
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.driverName || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <User className="h-3.5 w-3.5" /> Driver ID
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.driverIdNumber || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <FileCheck className="h-3.5 w-3.5" /> KRA PIN
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.kraPin || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Banknote className="h-3.5 w-3.5" /> Active contracts
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.activeContracts}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Grape className="h-3.5 w-3.5" /> Produce types
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.produceTypes.length ? viewSupplier.produceTypes.join(', ') : 'N/A'}</div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Building2 className="h-3.5 w-3.5" /> Bank
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.bankName || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <CreditCard className="h-3.5 w-3.5" /> Bank account
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.bankAccountNumber || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Banknote className="h-3.5 w-3.5" /> MPESA paybill
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.mpesaPaybill || 'N/A'}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Banknote className="h-3.5 w-3.5" /> MPESA account
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-gray-900">{viewSupplier.mpesaAccountNumber || 'N/A'}</div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setViewSupplier(null)}>Close</Button>
+                  <Button onClick={() => { setViewSupplier(null); openEditDialog(viewSupplier) }}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit Supplier
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Edit Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={(open) => !open && closeEditDialog()}>

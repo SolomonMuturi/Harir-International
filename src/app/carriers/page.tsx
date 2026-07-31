@@ -20,6 +20,7 @@ import { Separator } from '@/components/ui/separator';
 import { PlusCircle, Search, Edit, Trash2, Phone, Mail, Truck, Star, RefreshCw, Download, FileText, Calendar, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 interface Carrier {
   id: string;
@@ -183,6 +184,17 @@ const formatDateForInput = (date: Date) => {
   return date.toISOString().split('T')[0];
 };
 
+// Helper function to get current user
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export default function CarriersPage() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -314,6 +326,23 @@ export default function CarriersPage() {
       
       if (result.success) {
         alert('✅ Carrier added successfully!');
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'CARRIER_CREATED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            carrierId: result.data?.id,
+            name: newCarrier.name,
+            contactName: newCarrier.contact_name,
+            contactEmail: newCarrier.contact_email,
+            contactPhone: newCarrier.contact_phone,
+            vehicle: newCarrier.vehicle_registration,
+            status: newCarrier.status,
+            timestamp: new Date().toISOString(),
+          },
+        });
         setIsAdding(false);
         setNewCarrier({
           name: '',
@@ -331,6 +360,20 @@ export default function CarriersPage() {
       }
     } catch (error: any) {
       console.error('🔴 Error adding carrier:', error);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'CARRIER_CREATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          name: newCarrier.name,
+          contactEmail: newCarrier.contact_email,
+          vehicle: newCarrier.vehicle_registration,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       alert('🔴 Network error: ' + error.message);
     }
   };
@@ -347,11 +390,37 @@ export default function CarriersPage() {
       
       if (data.success) {
         alert('Carrier deleted successfully!');
+        const deletedCarrier = carriers.find(c => c.id === id);
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'CARRIER_DELETED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            carrierId: id,
+            name: deletedCarrier?.name,
+            vehicle: deletedCarrier?.vehicle_registration,
+            timestamp: new Date().toISOString(),
+          },
+        });
         fetchCarriers();
       } else {
         alert('Error: ' + data.error);
       }
     } catch (error: any) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'CARRIER_DELETED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          carrierId: id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       alert('Error deleting carrier: ' + error.message);
     }
   };
@@ -371,7 +440,7 @@ export default function CarriersPage() {
   };
 
   // Handle CSV download
-  const handleDownloadCSV = () => {
+  const handleDownloadCSV = async () => {
     if (carriers.length === 0) {
       alert('No carriers data to export');
       return;
@@ -388,8 +457,36 @@ export default function CarriersPage() {
       if (count) {
         alert(`Downloaded ${count} carriers as CSV file`);
       }
-    } catch (error) {
+      
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'CARRIER_CSV_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: 'all',
+          count: count || 0,
+          statusFilter,
+          dateFrom,
+          dateTo,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
       console.error('Error exporting CSV:', error);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'CARRIER_CSV_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          exportType: 'all',
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
       alert('Could not generate CSV file. Please try again.');
     }
   };
@@ -854,15 +951,43 @@ export default function CarriersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        const activeCarriers = carriers.filter(c => c.status === 'Active');
-                        const count = exportCarriersToCSV(
-                          activeCarriers, 
-                          { searchTerm, statusFilter: 'Active', dateFrom, dateTo }, 
-                          'active-carriers'
-                        );
-                        if (count) {
-                          alert(`Downloaded ${count} active carriers`);
+                      onClick={async () => {
+                        try {
+                          const activeCarriers = carriers.filter(c => c.status === 'Active');
+                          const count = exportCarriersToCSV(
+                            activeCarriers, 
+                            { searchTerm, statusFilter: 'Active', dateFrom, dateTo }, 
+                            'active-carriers'
+                          );
+                          if (count) {
+                            alert(`Downloaded ${count} active carriers`);
+                          }
+                          const currentUser = await getCurrentUser();
+                          await logActivity({
+                            user: currentUser?.name || 'System',
+                            action: 'CARRIER_CSV_EXPORTED',
+                            status: 'success',
+                            metadata: {
+                              userId: currentUser?.id,
+                              exportType: 'active',
+                              count: count || 0,
+                              timestamp: new Date().toISOString(),
+                            },
+                          });
+                        } catch (error: any) {
+                          console.error('Error exporting active carriers CSV:', error);
+                          const currentUser = await getCurrentUser();
+                          await logActivity({
+                            user: currentUser?.name || 'System',
+                            action: 'CARRIER_CSV_EXPORTED',
+                            status: 'failure',
+                            metadata: {
+                              userId: currentUser?.id,
+                              exportType: 'active',
+                              error: error.message,
+                              timestamp: new Date().toISOString(),
+                            },
+                          });
                         }
                       }}
                       className="flex items-center gap-2"
@@ -872,30 +997,58 @@ export default function CarriersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        // Export for this month
-                        const startOfMonth = new Date();
-                        startOfMonth.setDate(1);
-                        const endOfMonth = new Date();
-                        
-                        const monthCarriers = carriers.filter(carrier => {
-                          const carrierDate = new Date(carrier.created_at);
-                          return carrierDate >= startOfMonth && carrierDate <= endOfMonth;
-                        });
-                        
-                        const count = exportCarriersToCSV(
-                          monthCarriers,
-                          { 
-                            searchTerm, 
-                            statusFilter,
-                            dateFrom: formatDateForInput(startOfMonth),
-                            dateTo: formatDateForInput(endOfMonth)
-                          },
-                          'carriers-this-month'
-                        );
-                        
-                        if (count) {
-                          alert(`Downloaded ${count} carriers from this month`);
+                      onClick={async () => {
+                        try {
+                          const startOfMonth = new Date();
+                          startOfMonth.setDate(1);
+                          const endOfMonth = new Date();
+                          
+                          const monthCarriers = carriers.filter(carrier => {
+                            const carrierDate = new Date(carrier.created_at);
+                            return carrierDate >= startOfMonth && carrierDate <= endOfMonth;
+                          });
+                          
+                          const count = exportCarriersToCSV(
+                            monthCarriers,
+                            { 
+                              searchTerm, 
+                              statusFilter,
+                              dateFrom: formatDateForInput(startOfMonth),
+                              dateTo: formatDateForInput(endOfMonth)
+                            },
+                            'carriers-this-month'
+                          );
+                          
+                          if (count) {
+                            alert(`Downloaded ${count} carriers from this month`);
+                          }
+                          
+                          const currentUser = await getCurrentUser();
+                          await logActivity({
+                            user: currentUser?.name || 'System',
+                            action: 'CARRIER_CSV_EXPORTED',
+                            status: 'success',
+                            metadata: {
+                              userId: currentUser?.id,
+                              exportType: 'this-month',
+                              count: count || 0,
+                              timestamp: new Date().toISOString(),
+                            },
+                          });
+                        } catch (error: any) {
+                          console.error('Error exporting this month carriers CSV:', error);
+                          const currentUser = await getCurrentUser();
+                          await logActivity({
+                            user: currentUser?.name || 'System',
+                            action: 'CARRIER_CSV_EXPORTED',
+                            status: 'failure',
+                            metadata: {
+                              userId: currentUser?.id,
+                              exportType: 'this-month',
+                              error: error.message,
+                              timestamp: new Date().toISOString(),
+                            },
+                          });
                         }
                       }}
                       className="flex items-center gap-2"

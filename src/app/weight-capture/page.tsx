@@ -584,7 +584,7 @@ export default function WeightCapturePage() {
   );
 
   const citrusEntryGroups = filteredCitrusEntries.reduce<Record<string, typeof filteredCitrusEntries>>((groups, entry) => {
-    const supplier = entry.supplier.trim() || 'Unknown supplier';
+    const supplier = entry.supplier.trim() || 'Enter Supplier Name';
     if (!groups[supplier]) {
       groups[supplier] = [];
     }
@@ -1426,7 +1426,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
     weightsToExport.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
       const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const supplierKey = entry.supplier || entry.driver_name || 'Unknown';
+      const supplierKey = entry.supplier || entry.driver_name || 'Enter Supplier Name';
       const phoneKey = entry.supplier_phone || entry.driver_phone || '';
       const vehicleKey = entry.vehicle_plate || '';
       const regionKey = entry.region || '';
@@ -1636,7 +1636,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
         return;
       }
       
-      const supplierName = supplierWeights[0]?.supplier || 'Unknown Supplier';
+      const supplierName = supplierWeights[0]?.supplier || 'Enter Supplier Name';
       const supplierPhone = supplierWeights[0]?.supplier_phone || '';
       const driverName = supplierWeights[0]?.driver_name || '';
       const vehiclePlate = supplierWeights[0]?.vehicle_plate || '';
@@ -3894,7 +3894,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
                                   <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-2">
                                       <div className="font-semibold text-lg">
-                                        {reject.supplier_name || 'Unknown Supplier'}
+                                        {reject.supplier_name || 'Enter Supplier Name'}
                                       </div>
                                       {getStatusBadge(reject.status)}
                                     </div>
@@ -4116,7 +4116,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
                             </div>
                             <div className="text-sm space-y-1">
                               <div><span className="font-medium">Supplier:</span> {
-                                selectedWeightForReject?.supplier || selectedCountingRecordForReject?.supplier_name || 'Unknown'
+                                selectedWeightForReject?.supplier || selectedCountingRecordForReject?.supplier_name || 'Enter Supplier Name'
                               }</div>
                               <div><span className="font-medium">Pallet ID:</span> {
                                 selectedWeightForReject?.pallet_id || selectedCountingRecordForReject?.pallet_id || '-'
@@ -4402,7 +4402,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
                                     {format(new Date(record.submitted_at), 'MM/dd/yyyy')}
                                   </TableCell>
                                   <TableCell className="font-medium">
-                                    {record.supplier_name || 'Unknown'}
+                                    {record.supplier_name || 'Enter Supplier Name'}
                                   </TableCell>
                                   <TableCell>
                                     <Badge variant="outline">{record.pallet_id || '-'}</Badge>
@@ -5260,7 +5260,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
               </DialogTitle>
               <DialogDescription>
                 This action cannot be undone. This will permanently delete the weight entry for{' '}
-                <span className="font-semibold">{weightToDelete?.supplier || 'Unknown Supplier'}</span>
+                <span className="font-semibold">{weightToDelete?.supplier || 'Enter Supplier Name'}</span>
                 {' '}with Pallet ID: <span className="font-mono font-semibold">{weightToDelete?.pallet_id}</span>
                 {weightToDelete?.gate_entry_id && (
                   <> and Gate ID: <span className="font-mono font-semibold text-purple-600">{weightToDelete.gate_entry_id}</span></>

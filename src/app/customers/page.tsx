@@ -31,6 +31,17 @@ import { OverviewCard } from '@/components/dashboard/overview-card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import { logActivity } from '@/lib/activity-logger';
+
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
 
 const uniqueTags = Array.from(new Set(customerData.flatMap(c => c.tags)));
 const uniqueLocations = Array.from(new Set(customerData.map(c => c.location)));
@@ -47,62 +58,123 @@ export default function CustomersPage() {
 
   const isEditDialogOpen = !!editingCustomer;
 
-  const handleAddCustomer = (newCustomerData: CustomerFormValues) => {
-    const newCustomer: Customer = {
-      id: `cust-${Date.now()}`,
-      name: newCustomerData.name,
-      location: newCustomerData.location,
-      tags: newCustomerData.tags || [],
-      website: newCustomerData.website || '',
-      ytdSales: 0,
-      lastOrder: new Date().toISOString().split('T')[0],
-      status: 'new',
-      outstandingBalance: 0,
-      openInvoices: 0,
-      logoUrl: `https://i.pravatar.cc/150?u=cust-${Date.now()}`,
-      contacts: [{
-          name: newCustomerData.primaryContactName,
-          role: newCustomerData.primaryContactRole,
-          email: newCustomerData.primaryContactEmail,
-          phone: newCustomerData.primaryContactPhone || '',
-          isPrimary: true,
-      }],
-      activity: [],
-      orderHistory: [],
-      documents: [],
-    };
-    setCustomers(prev => [newCustomer, ...prev]);
-    setIsCreateDialogOpen(false);
+  const handleAddCustomer = async (newCustomerData: CustomerFormValues) => {
+    try {
+        const newCustomer: Customer = {
+          id: `cust-${Date.now()}`,
+          name: newCustomerData.name,
+          location: newCustomerData.location,
+          tags: newCustomerData.tags || [],
+          website: newCustomerData.website || '',
+          ytdSales: 0,
+          lastOrder: new Date().toISOString().split('T')[0],
+          status: 'new',
+          outstandingBalance: 0,
+          openInvoices: 0,
+          logoUrl: `https://i.pravatar.cc/150?u=cust-${Date.now()}`,
+          contacts: [{
+              name: newCustomerData.primaryContactName,
+              role: newCustomerData.primaryContactRole,
+              email: newCustomerData.primaryContactEmail,
+              phone: newCustomerData.primaryContactPhone || '',
+              isPrimary: true,
+          }],
+          activity: [],
+          orderHistory: [],
+          documents: [],
+        };
+        setCustomers(prev => [newCustomer, ...prev]);
+        setIsCreateDialogOpen(false);
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'CUSTOMER_CREATED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            customerId: newCustomer.id,
+            name: newCustomerData.name,
+            location: newCustomerData.location,
+            primaryContactEmail: newCustomerData.primaryContactEmail,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'CUSTOMER_CREATED',
+          status: 'failure',
+          metadata: {
+            userId: currentUser?.id,
+            name: newCustomerData.name,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
   };
 
-  const handleUpdateCustomer = (updatedCustomerData: CustomerFormValues) => {
+  const handleUpdateCustomer = async (updatedCustomerData: CustomerFormValues) => {
     if (!editingCustomer) return;
-    
-    // Create a new object with all required fields from Customer type
-    const updatedCustomer: Customer = {
-      ...editingCustomer, // Start with existing customer data
-      name: updatedCustomerData.name,
-      location: updatedCustomerData.location,
-      tags: updatedCustomerData.tags || [],
-      status: updatedCustomerData.status || editingCustomer.status,
-      website: updatedCustomerData.website || editingCustomer.website,
-      contacts: [{
-          name: updatedCustomerData.primaryContactName,
-          role: updatedCustomerData.primaryContactRole,
-          email: updatedCustomerData.primaryContactEmail,
-          phone: updatedCustomerData.primaryContactPhone || '',
-          isPrimary: true,
-      }, ...editingCustomer.contacts.slice(1)]
-    };
 
-    setCustomers(prev =>
-      prev.map(cust =>
-        cust.id === editingCustomer.id
-          ? updatedCustomer
-          : cust
-      )
-    );
-    setEditingCustomer(null);
+    try {
+      // Create a new object with all required fields from Customer type
+      const updatedCustomer: Customer = {
+        ...editingCustomer, // Start with existing customer data
+        name: updatedCustomerData.name,
+        location: updatedCustomerData.location,
+        tags: updatedCustomerData.tags || [],
+        status: updatedCustomerData.status || editingCustomer.status,
+        website: updatedCustomerData.website || editingCustomer.website,
+        contacts: [{
+            name: updatedCustomerData.primaryContactName,
+            role: updatedCustomerData.primaryContactRole,
+            email: updatedCustomerData.primaryContactEmail,
+            phone: updatedCustomerData.primaryContactPhone || '',
+            isPrimary: true,
+        }, ...editingCustomer.contacts.slice(1)]
+      };
+
+      setCustomers(prev =>
+        prev.map(cust =>
+          cust.id === editingCustomer.id
+            ? updatedCustomer
+            : cust
+        )
+      );
+      setEditingCustomer(null);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'CUSTOMER_UPDATED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          customerId: editingCustomer.id,
+          name: updatedCustomerData.name,
+          location: updatedCustomerData.location,
+          primaryContactEmail: updatedCustomerData.primaryContactEmail,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'CUSTOMER_UPDATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          customerId: editingCustomer?.id,
+          name: updatedCustomerData.name,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
   };
 
   const openEditDialog = (customer: Customer) => {

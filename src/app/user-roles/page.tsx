@@ -79,7 +79,8 @@ import {
   ClipboardList,
   Database,
   Calendar,
-  User
+  User,
+  Apple
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -174,6 +175,11 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'vehicle_log.view', name: 'View Vehicle Logs', description: 'View vehicle log entries and history', category: 'Access Control', icon: Truck },
   { id: 'vehicle_log.manage', name: 'Manage Vehicle Logs', description: 'Add, edit, or delete vehicle log entries', category: 'Access Control', icon: Edit },
   
+  // === CITRUS ===
+  { id: 'citrus.view', name: 'View Citrus', description: 'View citrus intake and movements', category: 'Citrus', icon: Apple },
+  { id: 'citrus.manage', name: 'Manage Citrus', description: 'Add/edit/delete citrus records', category: 'Citrus', icon: Edit },
+  { id: 'citrus.reports', name: 'Citrus Reports', description: 'Generate citrus reports and delivery notes', category: 'Citrus', icon: FileText },
+
   // === COLD ROOM ===
   { id: 'cold_room.view', name: 'View Cold Rooms', description: 'View cold room inventory and status', category: 'Cold Room', icon: Thermometer },
   { id: 'cold_room.manage', name: 'Manage Cold Rooms', description: 'Add/edit/delete cold room data', category: 'Cold Room', icon: Edit },
@@ -262,6 +268,7 @@ const PREDEFINED_ROLES = [
       'inventory.packaging',
       'inventory.reports',
       'counting.perform',
+      'citrus.view',
       'utilities.view',
       'utilities.record',
       'employees.overview.view',
@@ -413,6 +420,7 @@ const PREDEFINED_ROLES = [
     permissions: [
       'dashboard.view',
       'cold_room.view',
+      'citrus.view',
       'qc.view',
       'inventory.view',
       'counting.perform',
@@ -434,6 +442,7 @@ const PREDEFINED_ROLES = [
     permissions: [
       'dashboard.view',
       'cold_room.view',
+      'citrus.view',
       'qc.view',
       'shipments.view',
       'carriers.view',

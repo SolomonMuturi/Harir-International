@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, Fragment } from 'react';
 import { format } from 'date-fns';
 import { FileSpreadsheet, Download, RefreshCw, Truck, Apple, Package, Scale, Calculator } from 'lucide-react';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { FreshTraceLogo } from '@/components/icons';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 import {
   Dialog,
   DialogContent,
@@ -55,10 +54,20 @@ interface OrangeMovementEntry {
   createdAt: string;
 }
 
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
+
 export function OrangesModule() {
   const { toast } = useToast();
 
-  // Orange Carry Form with Classes
+  // Orange Carry-out Form with Classes
   const [orangeCarryForm, setOrangeCarryForm] = useState({
     salesPersonName: '',
     salesPersonPhone: '',
@@ -130,9 +139,8 @@ export function OrangesModule() {
     orangesClass3: '',
     notes: '',
   });
-  const deliveryNoteRef = useRef<HTMLDivElement>(null);
-  const [deliveryNoteEntry, setDeliveryNoteEntry] = useState<OrangeMovementEntry | null>(null);
   const [selectedCarryForReturn, setSelectedCarryForReturn] = useState<OrangeMovementEntry | null>(null);
+  const [selectedCarryDetail, setSelectedCarryDetail] = useState<OrangeMovementEntry | null>(null);
   const [orangeCarryFilterDate, setOrangeCarryFilterDate] = useState('');
   const [orangeTransactionsFilterDate, setOrangeTransactionsFilterDate] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<OrangeTransactionRow | null>(null);
@@ -401,14 +409,40 @@ export function OrangesModule() {
       });
 
       toast({
-        title: 'Carry entry saved',
+        title: 'Carry-out entry saved',
         description: `${newEntry.salesPersonName} has been added to the carry log. Total: ${newEntry.grandTotalWeight.toFixed(1)} kg / ${newEntry.grandTotalBoxes} boxes`,
+      });
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_CARRY_CREATED,
+        status: 'success',
+        metadata: {
+          carryId: newEntry.id,
+          salesPersonName: newEntry.salesPersonName,
+          vehiclePlate: newEntry.vehiclePlate,
+          orangesBoxes: newEntry.orangesTotalBoxes,
+          lemonsBoxes: newEntry.lemonsTotalBoxes,
+          tangerinesBoxes: newEntry.citrusTotalBoxes,
+          totalBoxes: newEntry.grandTotalBoxes,
+          totalWeight: newEntry.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
       });
     } catch (error: any) {
       toast({
         title: 'Error saving carry entry',
         description: error.message,
         variant: 'destructive',
+      });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_CARRY_CREATED,
+        status: 'failure',
+        metadata: {
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -468,11 +502,37 @@ export function OrangesModule() {
         title: 'Return entry saved',
         description: `Return of ${newEntry.grandTotalWeight.toFixed(1)} kg recorded against ${selectedCarryForReturn.salesPersonName}.`,
       });
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_RETURN_CREATED,
+        status: 'success',
+        metadata: {
+          returnId: newEntry.id,
+          carryId: selectedCarryForReturn.id,
+          salesPersonName: selectedCarryForReturn.salesPersonName,
+          orangesBoxes: newEntry.orangesTotalBoxes,
+          lemonsBoxes: newEntry.lemonsTotalBoxes,
+          tangerinesBoxes: newEntry.citrusTotalBoxes,
+          totalBoxes: newEntry.grandTotalBoxes,
+          totalWeight: newEntry.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (error: any) {
       toast({
         title: 'Error saving return entry',
         description: error.message,
         variant: 'destructive',
+      });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_RETURN_CREATED,
+        status: 'failure',
+        metadata: {
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -488,23 +548,70 @@ export function OrangesModule() {
       return;
     }
     if (!confirm('Delete this carry entry?')) return;
+    const target = orangeCarryEntries.find((e) => e.id === id);
     const result = await deleteMovement(id);
     if (result.ok) {
       setOrangeCarryEntries((prev) => prev.filter((e) => e.id !== id));
-      toast({ title: 'Carry entry deleted', description: 'The carry entry has been removed.' });
+      toast({ title: 'Carry-out entry deleted', description: 'The carry-out entry has been removed.' });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_CARRY_DELETED,
+        status: 'success',
+        metadata: {
+          carryId: id,
+          salesPersonName: target?.salesPersonName,
+          totalBoxes: target?.grandTotalBoxes,
+          totalWeight: target?.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } else {
       toast({ title: 'Error', description: result.error || 'Failed to delete carry entry.', variant: 'destructive' });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_CARRY_DELETED,
+        status: 'failure',
+        metadata: {
+          carryId: id,
+          error: result.error || 'Failed to delete carry entry',
+          timestamp: new Date().toISOString(),
+        },
+      });
     }
   };
 
   const handleDeleteOrangeReturn = async (id: string) => {
     if (!confirm('Delete this return entry?')) return;
+    const target = orangeReturnEntries.find((e) => e.id === id);
     const result = await deleteMovement(id);
     if (result.ok) {
       setOrangeReturnEntries((prev) => prev.filter((e) => e.id !== id));
       toast({ title: 'Return entry deleted', description: 'The return entry has been removed.' });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_RETURN_DELETED,
+        status: 'success',
+        metadata: {
+          returnId: id,
+          carryId: target?.carryId,
+          salesPersonName: target?.salesPersonName,
+          totalBoxes: target?.grandTotalBoxes,
+          totalWeight: target?.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } else {
       toast({ title: 'Error', description: result.error || 'Failed to delete return entry.', variant: 'destructive' });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_RETURN_DELETED,
+        status: 'failure',
+        metadata: {
+          returnId: id,
+          error: result.error || 'Failed to delete return entry',
+          timestamp: new Date().toISOString(),
+        },
+      });
     }
   };
 
@@ -554,14 +661,37 @@ export function OrangesModule() {
       });
 
       toast({
-        title: 'Carry entry updated',
+        title: 'Carry-out entry updated',
         description: 'The carry entry has been updated.',
+      });
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_CARRY_UPDATED,
+        status: 'success',
+        metadata: {
+          carryId: entryId,
+          salesPersonName: updated.salesPersonName,
+          totalBoxes: updated.grandTotalBoxes,
+          totalWeight: updated.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
       });
     } catch (error: any) {
       toast({
         title: 'Error updating carry entry',
         description: error.message,
         variant: 'destructive',
+      });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_CARRY_UPDATED,
+        status: 'failure',
+        metadata: {
+          carryId: entryId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -634,11 +764,35 @@ export function OrangesModule() {
         title: 'Return entry updated',
         description: 'The return entry has been updated.',
       });
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_RETURN_UPDATED,
+        status: 'success',
+        metadata: {
+          returnId: entryId,
+          carryId: updated.carryId,
+          salesPersonName: updated.salesPersonName,
+          totalBoxes: updated.grandTotalBoxes,
+          totalWeight: updated.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (error: any) {
       toast({
         title: 'Error updating return entry',
         description: error.message,
         variant: 'destructive',
+      });
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_RETURN_UPDATED,
+        status: 'failure',
+        metadata: {
+          returnId: entryId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -663,42 +817,267 @@ export function OrangesModule() {
   };
 
   const handleDownloadOrangeGrn = async (entry: OrangeMovementEntry) => {
-    setDeliveryNoteEntry(entry);
-    // Wait for DOM update
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const element = deliveryNoteRef.current;
-    if (!element) {
-      setDeliveryNoteEntry(null);
-      return;
-    }
     try {
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      const data = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = pdfWidth / imgWidth;
-      const pdfHeight = imgHeight * ratio;
-      pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`delivery-note-${entry.id}.pdf`);
+      const doc = new jsPDF('p', 'mm', 'a5');
+
+      // Logo
+      let hasLogo = false;
+      let logoHeight = 0;
+      const pageWidth = 148;
+      const leftMargin = 8;
+      const contentWidth = pageWidth - 2 * leftMargin;
+
+      const logoPaths = [
+        '/images/HLogo.png',
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico',
+      ];
+
+      for (const path of logoPaths) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) {
+            const blob = await response.blob();
+            const base64String = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+            const logoWidth = 80;
+            const logoHeightRect = 14;
+            const x = (pageWidth - logoWidth) / 2;
+            doc.addImage(base64String as string, 'PNG', x, 6, logoWidth, logoHeightRect);
+            hasLogo = true;
+            logoHeight = 15;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!hasLogo) {
+        doc.setFillColor(34, 139, 34);
+        doc.circle(pageWidth / 2, 17.5, 7, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('HI', pageWidth / 2, 19.5, { align: 'center' });
+        logoHeight = 15;
+      }
+
+      const startY = 24;
+      doc.setDrawColor(34, 139, 34);
+      doc.setLineWidth(0.5);
+      doc.line(leftMargin, startY, pageWidth - leftMargin, startY);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('DELIVERY NOTE - CITRUS', pageWidth / 2, startY + 7, { align: 'center' });
+      let yPos = startY + 13;
+
+      // Document details
+      doc.setFillColor(248, 249, 250);
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Document Details', leftMargin + 2, yPos + 4);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+
+      doc.text(`Date: ${format(new Date(entry.createdAt), 'dd/MM/yyyy')}`, leftMargin + 50, yPos + 8);
+      doc.text(`Time: ${format(new Date(entry.createdAt), 'HH:mm')}`, leftMargin + 95, yPos + 8);
+      yPos += 13;
+
+      // Sales person info
+      doc.setFillColor(233, 236, 239);
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Sales Person Information', leftMargin + 2, yPos + 3);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text(`Sales person: ${entry.salesPersonName}`, leftMargin + 2, yPos + 7);
+      doc.text(`Phone: ${entry.salesPersonPhone || 'N/A'}`, leftMargin + 50, yPos + 7);
+      doc.text(`Vehicle: ${entry.vehiclePlate || 'N/A'}`, leftMargin + 95, yPos + 7);
+      yPos += 13;
+
+      // Summary
+      doc.setFillColor(220, 252, 231);
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Summary', leftMargin + 2, yPos + 5);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total: ${entry.grandTotalBoxes} boxes`, leftMargin + 2, yPos + 9);
+      doc.text(`Weight: ${entry.grandTotalWeight.toFixed(1)} kg`, leftMargin + 50, yPos + 9);
+      yPos += 13;
+
+      // Product breakdown table
+      doc.setFillColor(52, 58, 64);
+      doc.rect(leftMargin, yPos, contentWidth, 6, 'F');
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text('PRODUCT BREAKDOWN', leftMargin + 2, yPos + 4.5);
+      yPos += 9;
+
+      const productRows: { label: string; c1: number; c2: number; c3: number; totalBoxes: number; totalWeight: number }[] = [];
+
+      if (entry.orangesTotalBoxes > 0) {
+        productRows.push({
+          label: 'Oranges (15kg)',
+          c1: entry.orangesClass1, c2: entry.orangesClass2, c3: entry.orangesClass3,
+          totalBoxes: entry.orangesTotalBoxes, totalWeight: entry.orangesTotalWeight,
+        });
+      }
+      if (entry.lemonsTotalBoxes > 0) {
+        productRows.push({
+          label: 'Lemons (15kg)',
+          c1: entry.lemonsClass1, c2: entry.lemonsClass2, c3: entry.lemonsClass3,
+          totalBoxes: entry.lemonsTotalBoxes, totalWeight: entry.lemonsTotalWeight,
+        });
+      }
+      if (entry.citrusTotalBoxes > 0) {
+        productRows.push({
+          label: 'Tangerines (20kg)',
+          c1: entry.citrusClass1, c2: entry.citrusClass2, c3: entry.citrusClass3,
+          totalBoxes: entry.citrusTotalBoxes, totalWeight: entry.citrusTotalWeight,
+        });
+      }
+
+      // Manual table to avoid autoTable dependency
+      const col1 = leftMargin;
+      const colW = contentWidth / 6;
+      const col2 = col1 + colW;
+      const col3 = col2 + colW;
+      const col4 = col3 + colW;
+      const col5 = col4 + colW;
+      const col6 = col5 + colW;
+
+      // Header
+      doc.setFillColor(108, 117, 125);
+      doc.rect(col1, yPos, contentWidth, 6, 'F');
+      doc.setFontSize(6);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text('Product', col1 + 1, yPos + 4);
+      doc.text('Class 1', col2 + 1, yPos + 4);
+      doc.text('Class 2', col3 + 1, yPos + 4);
+      doc.text('Class 3', col4 + 1, yPos + 4);
+      doc.text('Boxes', col5 + 1, yPos + 4);
+      doc.text('Weight', col6 + 1, yPos + 4);
+      yPos += 7;
+
+      // Rows
+      productRows.forEach((row, idx) => {
+        doc.setFillColor(idx % 2 === 0 ? 255 : 248, 249, 250);
+        doc.rect(col1, yPos, contentWidth, 6, 'F');
+        doc.setFontSize(6);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        doc.text(row.label, col1 + 1, yPos + 4);
+        doc.text(row.c1.toString(), col2 + 1, yPos + 4);
+        doc.text(row.c2.toString(), col3 + 1, yPos + 4);
+        doc.text(row.c3.toString(), col4 + 1, yPos + 4);
+        doc.text(row.totalBoxes.toString(), col5 + 1, yPos + 4);
+        doc.text(`${row.totalWeight.toFixed(1)} kg`, col6 + 1, yPos + 4);
+        yPos += 7;
+      });
+
+      // Grand total row
+      doc.setFillColor(173, 216, 230);
+      doc.rect(col1, yPos, contentWidth, 6, 'F');
+      doc.setFontSize(6);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      const totalC1 = productRows.reduce((s, r) => s + r.c1, 0);
+      const totalC2 = productRows.reduce((s, r) => s + r.c2, 0);
+      const totalC3 = productRows.reduce((s, r) => s + r.c3, 0);
+      doc.text('GRAND TOTAL', col1 + 1, yPos + 4);
+      doc.text(totalC1 > 0 ? totalC1.toString() : '', col2 + 1, yPos + 4);
+      doc.text(totalC2 > 0 ? totalC2.toString() : '', col3 + 1, yPos + 4);
+      doc.text(totalC3 > 0 ? totalC3.toString() : '', col4 + 1, yPos + 4);
+      doc.text(entry.grandTotalBoxes.toString(), col5 + 1, yPos + 4);
+      doc.text(`${entry.grandTotalWeight.toFixed(1)} kg`, col6 + 1, yPos + 4);
+      yPos += 10;
+
+      // Notes
+      if (entry.notes && entry.notes.trim() !== '') {
+        doc.setFillColor(255, 248, 225);
+        doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Notes', leftMargin + 2, yPos + 6);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        const notes = entry.notes;
+        const maxLength = 70;
+        let notesY = yPos + 9;
+        for (let i = 0; i < notes.length; i += maxLength) {
+          const line = notes.substring(i, Math.min(i + maxLength, notes.length));
+          doc.text(line, leftMargin + 2, notesY);
+          notesY += 3;
+        }
+        yPos = notesY + 3;
+      }
+
+      // Signature section
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.2);
+      const signatureX = pageWidth / 2 - 40;
+      doc.line(signatureX, yPos, signatureX + 70, yPos);
+      doc.setFontSize(6);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Receiver Name & Signature', signatureX + 35, yPos + 3, { align: 'center' });
+      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, signatureX + 35, yPos + 6, { align: 'center' });
+
+      yPos += 10;
+
+      // Footer
+      doc.setFontSize(5);
+      doc.setTextColor(128, 128, 128);
+      const docInfo1 = `Harir International - Delivery Note • Document: DN-${entry.id.slice(0, 8).toUpperCase()}`;
+      const docInfo2 = `Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')} • This is a computer-generated document`;
+      doc.text(docInfo1, pageWidth / 2, yPos, { align: 'center' });
+      doc.text(docInfo2, pageWidth / 2, yPos + 2.5, { align: 'center' });
+
+      doc.save(`Delivery-Note-${entry.salesPersonName.replace(/\s+/g, '-')}-${format(new Date(entry.createdAt), 'dd-MMM-yyyy')}.pdf`);
+
+      await logActivity({
+        user: (await getCurrentUser())?.name || 'System',
+        action: ActivityTypes.CITRUS_DELIVERY_NOTE_DOWNLOADED,
+        status: 'success',
+        metadata: {
+          carryId: entry.id,
+          salesPersonName: entry.salesPersonName,
+          totalBoxes: entry.grandTotalBoxes,
+          totalWeight: entry.grandTotalWeight,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
     }
-    setDeliveryNoteEntry(null);
   };
 
-  const handleExportOrangeTransactions = () => {
+  const handleExportOrangeTransactions = async () => {
     const exportRows = orangeTransactionRows.map((row) => ({
       date: format(new Date(row.carry.createdAt), 'dd MMM yyyy HH:mm'),
       salesPersonName: row.carry.salesPersonName,
       salesPersonPhone: row.carry.salesPersonPhone,
       vehiclePlate: row.carry.vehiclePlate,
-      'Carry Oranges': row.carry.orangesTotalBoxes,
-      'Carry Lemons': row.carry.lemonsTotalBoxes,
-      'Carry Tangerines': row.carry.citrusTotalBoxes,
-      'Carry Total Boxes': row.carry.grandTotalBoxes,
-      'Carry Total Weight': row.carry.grandTotalWeight,
+      'Carry-out Oranges': row.carry.orangesTotalBoxes,
+      'Carry-out Lemons': row.carry.lemonsTotalBoxes,
+      'Carry-out Tangerines': row.carry.citrusTotalBoxes,
+      'Carry-out Total Boxes': row.carry.grandTotalBoxes,
+      'Carry-out Total Weight': row.carry.grandTotalWeight,
       'Return Boxes': row.returns.reduce((s, r) => s + r.grandTotalBoxes, 0),
       'Return Weight': row.returns.reduce((s, r) => s + r.grandTotalWeight, 0),
       'Net Sales Boxes': row.netBoxes,
@@ -710,6 +1089,16 @@ export function OrangesModule() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Orange Transactions');
     XLSX.writeFile(workbook, 'orange-transactions.xlsx');
+
+    await logActivity({
+      user: (await getCurrentUser())?.name || 'System',
+      action: ActivityTypes.CITRUS_TRANSACTIONS_EXPORTED,
+      status: 'success',
+      metadata: {
+        rowCount: exportRows.length,
+        timestamp: new Date().toISOString(),
+      },
+    });
   };
 
   // Render class input fields for a fruit type
@@ -941,7 +1330,7 @@ export function OrangesModule() {
 
         <Tabs value={orangeActiveTab} onValueChange={(value) => setOrangeActiveTab(value as 'carry' | 'returns' | 'transactions' | 'stock')} className="w-full">
           <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 bg-slate-900/80 p-1 rounded-xl">
-            <TabsTrigger value="carry">Carry</TabsTrigger>
+            <TabsTrigger value="carry">Carry-out</TabsTrigger>
             <TabsTrigger value="returns">Returns</TabsTrigger>
             <TabsTrigger value="transactions">Transactions</TabsTrigger>
             <TabsTrigger value="stock">Stock</TabsTrigger>
@@ -1063,64 +1452,117 @@ export function OrangesModule() {
                   />
                 </div>
                 <div>
-                  <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white">Save carry entry</Button>
+                  <Button type="submit" className="bg-green-700 hover:bg-green-600 text-white">Save carry entry</Button>
                 </div>
               </form>
             </div>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white">Carry history</h3>
-                <Badge variant="secondary" className="bg-slate-800 text-gray-300">{orangeCarryEntries.length}</Badge>
-              </div>
-              {orangeCarryEntries.length > 0 ? (
-                <div className="space-y-3">
-                  {orangeCarryEntries.map((entry) => {
-                    const isEditing = editingOrangeCarryEntryId === entry.id;
-                    return (
-                      <div key={entry.id} className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 shadow-sm">
-                        {isEditing ? (
-                          <div className="space-y-3">
-                            {renderEditFields(orangeCarryEditForm, setOrangeCarryEditForm)}
-                            <div className="flex flex-wrap gap-2">
-                              <Button type="button" size="sm" onClick={() => handleSaveOrangeCarryEdit(entry.id)}>Save</Button>
-                              <Button type="button" variant="outline" size="sm" onClick={handleCancelOrangeCarryEdit}>Cancel</Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                              <p className="font-semibold text-white">{entry.salesPersonName}</p>
-                              <p className="text-sm text-gray-400">{entry.salesPersonPhone || 'No phone'} • {entry.vehiclePlate || 'No plate'}</p>
-                              <p className="text-sm text-gray-400">{format(new Date(entry.createdAt), 'dd MMM yyyy • HH:mm')}</p>
-                              {entry.notes && <p className="text-sm text-gray-500 mt-1">{entry.notes}</p>}
-                            </div>
-                            <div className="flex-1">
-                              {renderEntryDetails(entry)}
-                            </div>
-                          </div>
-                        )}
-                        {!isEditing && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => handleStartOrangeCarryEdit(entry)} className="border-gray-700 text-gray-300 hover:bg-slate-800">Edit</Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => handleDeleteOrangeCarry(entry.id)} className="border-red-800 text-red-400 hover:bg-red-950">Delete</Button>
-                            <Button type="button" variant="outline" size="sm" onClick={() => handleDownloadOrangeGrn(entry)} className="border-gray-700 text-gray-300 hover:bg-slate-800">
-                              <Download className="mr-2 h-4 w-4" />GRN (A5)
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <h3 className="text-lg font-semibold text-white">Carry-out history</h3>
+                <div className="flex items-center gap-2">
+                  <Input 
+                    type="date" 
+                    value={orangeCarryFilterDate} 
+                    onChange={(e) => setOrangeCarryFilterDate(e.target.value)} 
+                    className="w-auto bg-black border-gray-700 text-white text-xs h-8"
+                  />
+                  <Badge variant="secondary" className="bg-slate-800 text-gray-300">{orangeCarryEntries.length}</Badge>
                 </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-gray-700 p-8 text-center text-sm text-gray-500">No carry entries have been recorded yet.</div>
-              )}
+              </div>
+              {(() => {
+                const filtered = orangeCarryFilterDate
+                  ? orangeCarryEntries.filter((c) => format(new Date(c.createdAt), 'yyyy-MM-dd') === orangeCarryFilterDate)
+                  : orangeCarryEntries;
+                if (filtered.length === 0) {
+                  return <div className="rounded-lg border border-dashed border-gray-700 p-8 text-center text-sm text-gray-500">No carry entries have been recorded yet.</div>;
+                }
+                return (
+                  <>
+                    <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/70">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-gray-300">Date</TableHead>
+                            <TableHead className="text-gray-300">Sales person</TableHead>
+                            <TableHead className="text-gray-300">Phone</TableHead>
+                            <TableHead className="text-gray-300">Vehicle</TableHead>
+                            <TableHead className="text-gray-300">Oranges</TableHead>
+                            <TableHead className="text-gray-300">Lemons</TableHead>
+                            <TableHead className="text-gray-300">Tangerines</TableHead>
+                            <TableHead className="text-gray-300">Total</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filtered.map((entry) => (
+                            <Fragment key={entry.id}>
+                              <TableRow
+                                className={`cursor-pointer ${selectedCarryDetail?.id === entry.id ? 'bg-sky-950/30 ring-1 ring-sky-500' : 'hover:bg-slate-800/50'}`}
+                                onClick={() => setSelectedCarryDetail(selectedCarryDetail?.id === entry.id ? null : entry)}
+                              >
+                                <TableCell className="text-gray-300">{format(new Date(entry.createdAt), 'dd MMM yy')}</TableCell>
+                                <TableCell className="text-white font-medium">{entry.salesPersonName}</TableCell>
+                                <TableCell className="text-gray-400">{entry.salesPersonPhone || '—'}</TableCell>
+                                <TableCell className="text-gray-400">{entry.vehiclePlate || '—'}</TableCell>
+                                <TableCell className="text-gray-300">{entry.orangesTotalBoxes} b</TableCell>
+                                <TableCell className="text-gray-300">{entry.lemonsTotalBoxes} b</TableCell>
+                                <TableCell className="text-gray-300">{entry.citrusTotalBoxes} b</TableCell>
+                                <TableCell className="text-blue-400 font-semibold">{entry.grandTotalBoxes} b / {entry.grandTotalWeight.toFixed(1)} kg</TableCell>
+                              </TableRow>
+                              {selectedCarryDetail?.id === entry.id && (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="p-4 bg-sky-950/10 border-b border-sky-800/30">
+                                    {(() => {
+                                      const isEditing = editingOrangeCarryEntryId === selectedCarryDetail.id;
+                                      if (isEditing) {
+                                        return (
+                                          <div>
+                                            <h4 className="font-semibold text-white text-base mb-3">Editing: {selectedCarryDetail.salesPersonName}</h4>
+                                            {renderEditFields(orangeCarryEditForm, setOrangeCarryEditForm)}
+                                            <div className="flex flex-wrap gap-2 mt-3">
+                                              <Button type="button" size="sm" onClick={() => handleSaveOrangeCarryEdit(selectedCarryDetail.id)}>Save</Button>
+                                              <Button type="button" variant="outline" size="sm" onClick={() => { handleCancelOrangeCarryEdit(); setSelectedCarryDetail(null); }}>Cancel</Button>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                      return (
+                                        <div>
+                                          <div className="flex items-start justify-between mb-3">
+                                            <div>
+                                              <h4 className="font-semibold text-white text-base">{selectedCarryDetail.salesPersonName}</h4>
+                                              <p className="text-sm text-gray-400">{selectedCarryDetail.salesPersonPhone || 'No phone'} &bull; {selectedCarryDetail.vehiclePlate || 'No plate'}</p>
+                                              <p className="text-sm text-gray-400">{format(new Date(selectedCarryDetail.createdAt), "dd MMM yyyy '•' HH:mm")}</p>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                              <Button type="button" variant="outline" size="sm" onClick={() => { setEditingOrangeCarryEntryId(selectedCarryDetail.id); setOrangeCarryEditForm({ salesPersonName: selectedCarryDetail.salesPersonName, salesPersonPhone: selectedCarryDetail.salesPersonPhone, vehiclePlate: selectedCarryDetail.vehiclePlate, lemonsClass1: String(selectedCarryDetail.lemonsClass1), lemonsClass2: String(selectedCarryDetail.lemonsClass2), lemonsClass3: String(selectedCarryDetail.lemonsClass3), citrusClass1: String(selectedCarryDetail.citrusClass1), citrusClass2: String(selectedCarryDetail.citrusClass2), citrusClass3: String(selectedCarryDetail.citrusClass3), orangesClass1: String(selectedCarryDetail.orangesClass1), orangesClass2: String(selectedCarryDetail.orangesClass2), orangesClass3: String(selectedCarryDetail.orangesClass3), notes: selectedCarryDetail.notes, }); }} className="border-gray-700 text-gray-300 hover:bg-slate-800">Edit</Button>
+                                              <Button type="button" variant="outline" size="sm" onClick={() => handleDeleteOrangeCarry(selectedCarryDetail.id)} className="border-red-800 text-red-400 hover:bg-red-950">Delete</Button>
+                                              <Button type="button" variant="outline" size="sm" onClick={() => handleDownloadOrangeGrn(selectedCarryDetail)} className="border-gray-700 text-gray-300 hover:bg-slate-800">
+                                                <Download className="mr-2 h-4 w-4" />Delivery Note
+                                              </Button>
+                                            </div>
+                                          </div>
+                                          {selectedCarryDetail.notes && <p className="text-sm text-gray-400 mb-3 italic">{selectedCarryDetail.notes}</p>}
+                                          {renderEntryDetails(selectedCarryDetail)}
+                                        </div>
+                                      );
+                                    })()}
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </TabsContent>
 
           <TabsContent value="returns" className="mt-6 space-y-6 rounded-2xl bg-slate-950/40 p-2 sm:p-4">
-            {/* Carry selector */}
+            {/* Carry-out selector */}
             <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
                 <h3 className="text-base font-semibold text-white">Select a carry transaction</h3>
@@ -1198,7 +1640,7 @@ export function OrangesModule() {
                     <Button type="button" variant="outline" size="sm" onClick={() => { setSelectedCarryForReturn(null); setOrangeReturnForm({ salesPersonName: '', salesPersonPhone: '', vehiclePlate: '', lemonsClass1: '', lemonsClass2: '', lemonsClass3: '', citrusClass1: '', citrusClass2: '', citrusClass3: '', orangesClass1: '', orangesClass2: '', orangesClass3: '', notes: '' }); }} className="border-gray-700 text-gray-300 hover:bg-slate-800">Change carry</Button>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-3 mb-4">
-                    <div className="text-sm"><span className="text-gray-400">Carry date:</span> <span className="text-white">{format(new Date(selectedCarryForReturn.createdAt), 'dd MMM yyyy HH:mm')}</span></div>
+                    <div className="text-sm"><span className="text-gray-400">Carry-out date:</span> <span className="text-white">{format(new Date(selectedCarryForReturn.createdAt), 'dd MMM yyyy HH:mm')}</span></div>
                     <div className="text-sm"><span className="text-gray-400">Phone:</span> <span className="text-white">{selectedCarryForReturn.salesPersonPhone || 'N/A'}</span></div>
                     <div className="text-sm"><span className="text-gray-400">Vehicle:</span> <span className="text-white">{selectedCarryForReturn.vehiclePlate || 'N/A'}</span></div>
                   </div>
@@ -1284,7 +1726,7 @@ export function OrangesModule() {
                       />
                     </div>
                     <div>
-                      <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white">Save return entry</Button>
+                      <Button type="submit" className="bg-green-700 hover:bg-green-600 text-white">Save return entry</Button>
                     </div>
                   </form>
                 </div>
@@ -1394,7 +1836,7 @@ export function OrangesModule() {
                       <TableHead className="text-gray-300">Date</TableHead>
                       <TableHead className="text-gray-300">Sales person</TableHead>
                       <TableHead className="text-gray-300">Vehicle</TableHead>
-                      <TableHead className="text-gray-300">Carry Total</TableHead>
+                      <TableHead className="text-gray-300">Carry-out Total</TableHead>
                       <TableHead className="text-gray-300">Returns</TableHead>
                       <TableHead className="text-gray-300">Net Sales</TableHead>
                       <TableHead className="text-gray-300">Details</TableHead>
@@ -1533,136 +1975,6 @@ export function OrangesModule() {
       </CardContent>
     </Card>
 
-      {deliveryNoteEntry && (
-      <div className="fixed left-[-9999px] top-0" ref={deliveryNoteRef}>
-        <div style={{ width: '210mm', padding: '32px', fontFamily: 'sans-serif', color: '#000', background: '#fff' }}>
-          {/* Header with Logo */}
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <tbody>
-              <tr>
-                <td style={{ verticalAlign: 'top', width: '50%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <FreshTraceLogo className="h-12 w-12" />
-                    <div>
-                      <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Harir Int.</h3>
-                      <div style={{ fontSize: '0.875rem', color: '#666' }}>info@harirint.com | www.harirint.com</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ verticalAlign: 'top', textAlign: 'right', width: '50%' }}>
-                  <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>Delivery Note</h2>
-                  <div style={{ fontFamily: 'monospace', color: '#666' }}>DN-{String(deliveryNoteEntry.id).slice(-8)}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <hr style={{ margin: '24px 0', border: '0', borderTop: '2px solid #333' }} />
-
-          {/* Supplier & Shipment Details */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-            <tbody>
-              <tr>
-                <td style={{ verticalAlign: 'top', paddingRight: '16px', width: '50%' }}>
-                  <h4 style={{ fontWeight: '600', marginBottom: '8px', margin: 0 }}>Sales Details</h4>
-                  <div><span style={{ fontWeight: '500', color: '#666' }}>Sales person:</span> {deliveryNoteEntry.salesPersonName}</div>
-                  <div><span style={{ fontWeight: '500', color: '#666' }}>Phone:</span> {deliveryNoteEntry.salesPersonPhone || 'N/A'}</div>
-                  <div><span style={{ fontWeight: '500', color: '#666' }}>Vehicle:</span> {deliveryNoteEntry.vehiclePlate || 'N/A'}</div>
-                </td>
-                <td style={{ verticalAlign: 'top', width: '50%' }}>
-                  <h4 style={{ fontWeight: '600', marginBottom: '8px', margin: 0 }}>Document Info</h4>
-                  <div><span style={{ fontWeight: '500', color: '#666' }}>Date:</span> {format(new Date(deliveryNoteEntry.createdAt), 'dd MMM yyyy HH:mm')}</div>
-                  <div><span style={{ fontWeight: '500', color: '#666' }}>ID:</span> {deliveryNoteEntry.id}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <hr style={{ margin: '24px 0', border: '0', borderTop: '1px solid #eee' }} />
-
-          {/* Product Details Table */}
-          <h4 style={{ fontWeight: '600', marginBottom: '12px' }}>Product Details</h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-            <thead>
-              <tr style={{ background: '#f3f4f6' }}>
-                <th style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'left', fontWeight: '600' }}>Product</th>
-                <th style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '600' }}>Class 1</th>
-                <th style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '600' }}>Class 2</th>
-                <th style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '600' }}>Class 3</th>
-                <th style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '600' }}>Total Boxes</th>
-                <th style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '600' }}>Total Weight</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deliveryNoteEntry.orangesTotalBoxes > 0 && (
-                <tr>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', fontWeight: '500' }}>Oranges</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.orangesClass1 > 0 ? deliveryNoteEntry.orangesClass1 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.orangesClass2 > 0 ? deliveryNoteEntry.orangesClass2 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.orangesClass3 > 0 ? deliveryNoteEntry.orangesClass3 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '500' }}>{deliveryNoteEntry.orangesTotalBoxes}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '500' }}>{deliveryNoteEntry.orangesTotalWeight.toFixed(1)} kg</td>
-                </tr>
-              )}
-              {deliveryNoteEntry.lemonsTotalBoxes > 0 && (
-                <tr>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', fontWeight: '500' }}>Lemons</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.lemonsClass1 > 0 ? deliveryNoteEntry.lemonsClass1 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.lemonsClass2 > 0 ? deliveryNoteEntry.lemonsClass2 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.lemonsClass3 > 0 ? deliveryNoteEntry.lemonsClass3 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '500' }}>{deliveryNoteEntry.lemonsTotalBoxes}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '500' }}>{deliveryNoteEntry.lemonsTotalWeight.toFixed(1)} kg</td>
-                </tr>
-              )}
-              {deliveryNoteEntry.citrusTotalBoxes > 0 && (
-                <tr>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', fontWeight: '500' }}>Tangerines</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.citrusClass1 > 0 ? deliveryNoteEntry.citrusClass1 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.citrusClass2 > 0 ? deliveryNoteEntry.citrusClass2 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right' }}>{deliveryNoteEntry.citrusClass3 > 0 ? deliveryNoteEntry.citrusClass3 : '—'}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '500' }}>{deliveryNoteEntry.citrusTotalBoxes}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '500' }}>{deliveryNoteEntry.citrusTotalWeight.toFixed(1)} kg</td>
-                </tr>
-              )}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: '#f9fafb' }}>
-                <td style={{ border: '1px solid #d1d5db', padding: '8px', fontWeight: '700' }}>GRAND TOTAL</td>
-                <td style={{ border: '1px solid #d1d5db', padding: '8px' }} colSpan={3}></td>
-                <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '700' }}>{deliveryNoteEntry.grandTotalBoxes}</td>
-                <td style={{ border: '1px solid #d1d5db', padding: '8px', textAlign: 'right', fontWeight: '700' }}>{deliveryNoteEntry.grandTotalWeight.toFixed(1)} kg</td>
-              </tr>
-            </tfoot>
-          </table>
-
-          {/* Notes */}
-          {deliveryNoteEntry.notes && (
-            <>
-              <hr style={{ margin: '24px 0', border: '0', borderTop: '1px solid #eee' }} />
-              <div style={{ fontSize: '0.875rem' }}>
-                <h4 style={{ fontWeight: '600', marginBottom: '4px', margin: 0 }}>Notes</h4>
-                <p style={{ color: '#666', margin: '4px 0' }}>{deliveryNoteEntry.notes}</p>
-              </div>
-            </>
-          )}
-
-          {/* Footer */}
-          <hr style={{ margin: '24px 0', border: '0', borderTop: '1px solid #eee' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
-            <div style={{ textAlign: 'center', width: '45%' }}>
-              <div style={{ borderTop: '1px solid #333', paddingTop: '4px', marginTop: '32px' }}>Receiver Signature</div>
-            </div>
-            <div style={{ textAlign: 'center', width: '45%' }}>
-              <div style={{ borderTop: '1px solid #333', paddingTop: '4px', marginTop: '32px' }}>Driver Signature</div>
-            </div>
-          </div>
-          <div style={{ marginTop: '16px', fontSize: '0.75rem', color: '#999', textAlign: 'center' }}>
-            Harir International - Delivery Note - {format(new Date(deliveryNoteEntry.createdAt), 'dd MMM yyyy')}
-          </div>
-        </div>
-      </div>
-      )}
-
       <Dialog open={!!selectedTransaction} onOpenChange={(open) => { if (!open) setSelectedTransaction(null); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 text-white">
           {selectedTransaction && (
@@ -1674,7 +1986,7 @@ export function OrangesModule() {
                 </DialogDescription>
               </DialogHeader>
 
-              {/* Carry details */}
+              {/* Carry-out details */}
               <div className="rounded-lg border border-blue-800 bg-blue-950/20 p-3">
                 <h4 className="text-sm font-semibold text-blue-300 mb-2 flex items-center gap-2">
                   <Truck className="h-4 w-4" /> Carry-out
@@ -1741,7 +2053,7 @@ export function OrangesModule() {
               {/* Net Sales */}
               <div className="rounded-lg border border-emerald-800 bg-emerald-950/20 p-3">
                 <h4 className="text-sm font-semibold text-emerald-300 mb-2 flex items-center gap-2">
-                  <Scale className="h-4 w-4" /> Net Sales (Carry - Returns)
+                  <Scale className="h-4 w-4" /> Net Sales (Carry-out - Returns)
                 </h4>
                 <div className="grid grid-cols-3 gap-3 text-sm">
                   <div>

@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
@@ -319,6 +320,16 @@ function calculateTotalQuantityFromBoxes(boxes: Array<{ quantity: number }>): nu
   if (!boxes || boxes.length === 0) return 0;
   return boxes.reduce((total, box) => total + (box.quantity || 0), 0);
 }
+
+const getCurrentUser = async () => {
+  try {
+    const response = await fetch('/api/auth/session');
+    const session = await response.json();
+    return session?.user || { name: 'System', id: 'system' };
+  } catch (error) {
+    return { name: 'System', id: 'system' };
+  }
+};
 
 // Pallet Details Modal Component
 function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingSheet }) {
@@ -972,18 +983,77 @@ function LoadingSheet() {
     toast.success(`Removed pallet ${removedPallet?.pallet_no} from loading sheet`);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     window.print();
+
+    const currentUser = await getCurrentUser();
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'OUTBOUND_LOADING_SHEET_PRINTED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        sheetId: sheetData.id || null,
+        billNumber: sheetData.billNumber,
+        client: sheetData.client,
+        container: sheetData.container,
+        destination: sheetData.port,
+        totalPallets: sheetData.pallets.length,
+        totalBoxes: totals.totalBoxes,
+        totalWeight: totals.totalWeight,
+        fileType: 'print',
+        timestamp: new Date().toISOString(),
+      },
+    });
   };
 
-  const handleDownload = () => {
-    const element = document.createElement('a');
-    const text = generateCSV();
-    element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(text));
-    element.setAttribute('download', `loading-sheet-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+  const handleDownload = async () => {
+    try {
+      const element = document.createElement('a');
+      const text = generateCSV();
+      element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(text));
+      element.setAttribute('download', `loading-sheet-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          sheetId: sheetData.id || null,
+          billNumber: sheetData.billNumber,
+          client: sheetData.client,
+          container: sheetData.container,
+          destination: sheetData.port,
+          totalPallets: sheetData.pallets.length,
+          totalBoxes: totals.totalBoxes,
+          totalWeight: totals.totalWeight,
+          fileType: 'csv',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error downloading loading sheet CSV:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          billNumber: sheetData.billNumber,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast.error('Failed to download loading sheet CSV');
+    }
   };
 
   const handleSave = async () => {
@@ -1059,6 +1129,26 @@ function LoadingSheet() {
 
       if (result.success) {
         toast.success(`✅ Loading sheet saved successfully!\nBill Number: ${sheetData.billNumber}`);
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: sheetData.id ? 'LOADING_SHEET_UPDATED' : 'LOADING_SHEET_CREATED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            sheetId: result.data?.id || sheetData.id,
+            billNumber: sheetData.billNumber,
+            client: sheetData.client,
+            container: sheetData.container,
+            destination: sheetData.port,
+            truck: sheetData.truck,
+            totalPallets: sheetData.pallets.length,
+            totalBoxes: totals.totalBoxes,
+            totalWeight: totals.totalWeight,
+            timestamp: new Date().toISOString(),
+          },
+        });
         
         await fetchLoadingSheets();
         await fetchAssignments();
@@ -1075,6 +1165,22 @@ function LoadingSheet() {
 
     } catch (error: any) {
       console.error('❌ Error saving loading sheet:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: sheetData.id ? 'LOADING_SHEET_UPDATED' : 'LOADING_SHEET_CREATED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          sheetId: sheetData.id || null,
+          billNumber: sheetData.billNumber,
+          container: sheetData.container,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast.error(`❌ Failed to save loading sheet: ${error.message}`);
     } finally {
       setSaving(false);
@@ -1320,11 +1426,41 @@ function LoadingSheet() {
                                 const result = await response.json();
                                 if (result.success) {
                                   toast.success('Loading sheet deleted successfully');
+
+                                  const currentUser = await getCurrentUser();
+                                  await logActivity({
+                                    user: currentUser?.name || 'System',
+                                    action: 'LOADING_SHEET_DELETED',
+                                    status: 'success',
+                                    metadata: {
+                                      userId: currentUser?.id,
+                                      sheetId: sheet.id,
+                                      billNumber: sheet.bill_number,
+                                      client: sheet.client,
+                                      container: sheet.container,
+                                      timestamp: new Date().toISOString(),
+                                    },
+                                  });
+
                                   await fetchLoadingSheets();
                                 } else {
                                   toast.error(result.error || 'Failed to delete loading sheet');
                                 }
-                              } catch (error) {
+                              } catch (error: any) {
+                                const currentUser = await getCurrentUser();
+                                await logActivity({
+                                  user: currentUser?.name || 'System',
+                                  action: 'LOADING_SHEET_DELETED',
+                                  status: 'failure',
+                                  metadata: {
+                                    userId: currentUser?.id,
+                                    sheetId: sheet.id,
+                                    billNumber: sheet.bill_number,
+                                    error: error.message,
+                                    timestamp: new Date().toISOString(),
+                                  },
+                                });
+
                                 toast.error('Failed to delete loading sheet');
                               }
                             }
@@ -2110,6 +2246,25 @@ function CarrierAssignmentForm() {
 
       if (result.success) {
         toast.success(`✅ Successfully assigned carrier "${selectedCarrier.name}" to loading sheet "${selectedLoadingSheet.bill_number || selectedLoadingSheet.id}"`);
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'LOADING_ASSIGNED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            carrierId: selectedCarrierId,
+            carrier: selectedCarrier.name,
+            loadingSheetId: selectedLoadingSheetId,
+            billNumber: selectedLoadingSheet.bill_number,
+            client: selectedLoadingSheet.client,
+            destination: selectedLoadingSheet.port,
+            status: assignmentStatus,
+            notes: assignmentNotes,
+            timestamp: new Date().toISOString(),
+          },
+        });
         
         await fetchData();
         
@@ -2123,6 +2278,21 @@ function CarrierAssignmentForm() {
       
     } catch (error: any) {
       console.error('Error assigning carrier:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'LOADING_ASSIGNED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          carrierId: selectedCarrierId,
+          loadingSheetId: selectedLoadingSheetId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast.error(`❌ Failed to assign carrier: ${error.message}`);
     } finally {
       setAssigning(false);
@@ -2498,6 +2668,24 @@ function TransitManagement() {
         if (updateResponse.ok) {
           await fetchData();
         }
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'OUTBOUND_TRANSIT_STARTED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            assignmentId: selectedAssignment.id,
+            carrier: selectedAssignment.carrier?.name,
+            billNumber: selectedAssignment.loading_sheet?.bill_number,
+            client: selectedAssignment.loading_sheet?.client,
+            destination: selectedAssignment.loading_sheet?.port,
+            location: transitLocation,
+            notes: transitNotes,
+            timestamp: new Date().toISOString(),
+          },
+        });
         
         setShowStartTransitModal(false);
         setSelectedAssignment(null);
@@ -2509,6 +2697,20 @@ function TransitManagement() {
       
     } catch (error: any) {
       console.error('Error starting transit:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_TRANSIT_STARTED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          assignmentId: selectedAssignment?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast.error(`Failed to start transit: ${error.message}`);
     } finally {
       setActionLoading(null);
@@ -2553,6 +2755,24 @@ function TransitManagement() {
         if (updateResponse.ok) {
           await fetchData();
         }
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'OUTBOUND_TRANSIT_COMPLETED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            assignmentId: selectedAssignment.id,
+            carrier: selectedAssignment.carrier?.name,
+            billNumber: selectedAssignment.loading_sheet?.bill_number,
+            client: selectedAssignment.loading_sheet?.client,
+            destination: selectedAssignment.loading_sheet?.port,
+            location: transitLocation,
+            notes: transitNotes,
+            timestamp: new Date().toISOString(),
+          },
+        });
         
         setShowEndTransitModal(false);
         setSelectedAssignment(null);
@@ -2564,6 +2784,20 @@ function TransitManagement() {
       
     } catch (error: any) {
       console.error('Error ending transit:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_TRANSIT_COMPLETED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          assignmentId: selectedAssignment?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast.error(`Failed to end transit: ${error.message}`);
     } finally {
       setActionLoading(null);
@@ -2611,12 +2845,43 @@ function TransitManagement() {
         } else {
           await fetchData();
         }
+
+        const currentUser = await getCurrentUser();
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'OUTBOUND_SHIPMENT_DELIVERED',
+          status: 'success',
+          metadata: {
+            userId: currentUser?.id,
+            assignmentId,
+            carrier: assignment?.carrier?.name,
+            billNumber: assignment?.loading_sheet?.bill_number,
+            client: assignment?.loading_sheet?.client,
+            destination: assignment?.loading_sheet?.port,
+            container: assignment?.loading_sheet?.container,
+            timestamp: new Date().toISOString(),
+          },
+        });
       } else {
         throw new Error(result.error || 'Failed to mark as delivered');
       }
       
     } catch (error: any) {
       console.error('Error marking as delivered:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_SHIPMENT_DELIVERED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          assignmentId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast.error(`Failed to mark as delivered: ${error.message}`);
     } finally {
       setActionLoading(null);
@@ -3155,68 +3420,133 @@ function HistoryDownload() {
     return true;
   });
 
-  const downloadLoadingSheetsCSV = () => {
-    const headers = ['ID', 'Created At', 'Exporter', 'Client', 'Shipping Line', 'Bill Number', 'Container', 'Seal 1', 'Seal 2', 'Truck', 'Vessel', 'Port', 'Loading Date', 'Loaded By', 'Checked By'];
-    
-    const rows = filteredLoadingSheets.map(sheet => [
-      sheet.id,
-      new Date(sheet.created_at).toLocaleDateString(),
-      sheet.exporter,
-      sheet.client,
-      sheet.shipping_line || '',
-      sheet.bill_number || '',
-      sheet.container || '',
-      sheet.seal1 || '',
-      sheet.seal2 || '',
-      sheet.truck || '',
-      sheet.vessel || '',
-      sheet.port || '',
-      sheet.loading_date ? new Date(sheet.loading_date).toLocaleDateString() : '',
-      sheet.loaded_by || '',
-      sheet.checked_by || ''
-      ]);
-    
-    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `loading-sheets-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+  const downloadLoadingSheetsCSV = async () => {
+    try {
+      const headers = ['ID', 'Created At', 'Exporter', 'Client', 'Shipping Line', 'Bill Number', 'Container', 'Seal 1', 'Seal 2', 'Truck', 'Vessel', 'Port', 'Loading Date', 'Loaded By', 'Checked By'];
+
+      const rows = filteredLoadingSheets.map(sheet => [
+        sheet.id,
+        new Date(sheet.created_at).toLocaleDateString(),
+        sheet.exporter,
+        sheet.client,
+        sheet.shipping_line || '',
+        sheet.bill_number || '',
+        sheet.container || '',
+        sheet.seal1 || '',
+        sheet.seal2 || '',
+        sheet.truck || '',
+        sheet.vessel || '',
+        sheet.port || '',
+        sheet.loading_date ? new Date(sheet.loading_date).toLocaleDateString() : '',
+        sheet.loaded_by || '',
+        sheet.checked_by || ''
+        ]);
+
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `loading-sheets-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEETS_CSV_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'csv',
+          sheetCount: filteredLoadingSheets.length,
+          dateFilter,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error downloading loading sheets CSV:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEETS_CSV_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast.error('Failed to download loading sheets CSV');
+    }
   };
 
-  const downloadAssignmentsCSV = () => {
-    const headers = ['ID', 'Assigned At', 'Carrier Name', 'Carrier ID', 'Carrier Vehicle', 'Loading Sheet Bill', 'Client', 'Container', 'Assigned By', 'Status', 'Transit Started', 'Transit Completed', 'Notes'];
-    
-    const rows = filteredAssignments.map(assignment => [
-      assignment.id,
-      new Date(assignment.assigned_at).toLocaleDateString(),
-      assignment.carrier?.name || '',
-      assignment.carrier?.id_number || '',
-      assignment.carrier?.vehicle_registration || '',
-      assignment.loading_sheet?.bill_number || '',
-      assignment.loading_sheet?.client || '',
-      assignment.loading_sheet?.container || '',
-      assignment.assigned_by,
-      assignment.status,
-      assignment.transit_started_at ? new Date(assignment.transit_started_at).toLocaleDateString() : '',
-      assignment.transit_completed_at ? new Date(assignment.transit_completed_at).toLocaleDateString() : '',
-      assignment.notes || ''
-    ]);
-    
-    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `carrier-assignments-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+  const downloadAssignmentsCSV = async () => {
+    try {
+      const headers = ['ID', 'Assigned At', 'Carrier Name', 'Carrier ID', 'Carrier Vehicle', 'Loading Sheet Bill', 'Client', 'Container', 'Assigned By', 'Status', 'Transit Started', 'Transit Completed', 'Notes'];
+
+      const rows = filteredAssignments.map(assignment => [
+        assignment.id,
+        new Date(assignment.assigned_at).toLocaleDateString(),
+        assignment.carrier?.name || '',
+        assignment.carrier?.id_number || '',
+        assignment.carrier?.vehicle_registration || '',
+        assignment.loading_sheet?.bill_number || '',
+        assignment.loading_sheet?.client || '',
+        assignment.loading_sheet?.container || '',
+        assignment.assigned_by,
+        assignment.status,
+        assignment.transit_started_at ? new Date(assignment.transit_started_at).toLocaleDateString() : '',
+        assignment.transit_completed_at ? new Date(assignment.transit_completed_at).toLocaleDateString() : '',
+        assignment.notes || ''
+      ]);
+
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `carrier-assignments-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_ASSIGNMENTS_CSV_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          fileType: 'csv',
+          assignmentCount: filteredAssignments.length,
+          statusFilter,
+          dateFilter,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error downloading assignments CSV:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_ASSIGNMENTS_CSV_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast.error('Failed to download assignments CSV');
+    }
   };
 
   const downloadLoadingSheet = async (loadingSheetId: string) => {
@@ -3363,9 +3693,43 @@ function HistoryDownload() {
       window.URL.revokeObjectURL(url);
       
       toast.success('Loading sheet downloaded as CSV successfully!');
-      
-    } catch (error) {
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          sheetId: loadingSheet.id,
+          billNumber: loadingSheet.bill_number,
+          client: loadingSheet.client,
+          container: loadingSheet.container,
+          destination: loadingSheet.port,
+          totalPallets: pallets.length,
+          totalBoxes,
+          totalWeight,
+          fileType: 'csv',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+    } catch (error: any) {
       console.error('Error downloading loading sheet:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          loadingSheetId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
       toast.error('Failed to download loading sheet');
     }
   };
@@ -3931,8 +4295,39 @@ export default function OutboundPage() {
   const handleRecordWeight = (shipmentId: string) => router.push(`/weight-capture?shipmentId=${shipmentId}`);
   const handleManageTags = (shipmentId: string) => router.push(`/tag-management?shipmentId=${shipmentId}`);
   const handleViewDetails = (shipmentId: string) => router.push(`/traceability?shipmentId=${shipmentId}`);
-  const handleViewNote = (shipmentId: string) => router.push(`/outbound/dispatch-note/${shipmentId}`);
-  const handleViewManifest = (shipmentId: string) => router.push(`/outbound/manifest/${shipmentId}`);
+  const handleViewNote = async (shipmentId: string) => {
+    router.push(`/outbound/dispatch-note/${shipmentId}`);
+
+    const currentUser = await getCurrentUser();
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'OUTBOUND_DISPATCH_NOTE_VIEWED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        shipmentId,
+        fileType: 'dispatch-note',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  };
+
+  const handleViewManifest = async (shipmentId: string) => {
+    router.push(`/outbound/manifest/${shipmentId}`);
+
+    const currentUser = await getCurrentUser();
+    await logActivity({
+      user: currentUser?.name || 'System',
+      action: 'OUTBOUND_MANIFEST_VIEWED',
+      status: 'success',
+      metadata: {
+        userId: currentUser?.id,
+        shipmentId,
+        fileType: 'manifest',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  };
 
   const handleRefresh = () => {
     console.log('🔄 Refreshing outbound data...');

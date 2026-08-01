@@ -46,8 +46,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 interface SupplierIntakeRecord {
@@ -492,6 +490,11 @@ const getCurrentUser = async () => {
 
 const generateWarehouseGRN = async (record: CountingRecord) => {
   try {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+    
     const countingData = record.counting_data || {};
     const totals = record.totals || {};
     const today = new Date();
@@ -1855,12 +1858,15 @@ export default function WarehousePage() {
   const fetchCountingRecords = async () => {
     try {
       setIsLoading(prev => ({ ...prev, counting: true }));
-      const response = await fetch('/api/counting?action=history');
+      const [historyResponse, weightsResponse, rejectionsResponse] = await Promise.all([
+        fetch('/api/counting?action=history'),
+        fetch('/api/weights'),
+        fetch('/api/rejects'),
+      ]);
       
-      if (response.ok) {
-        const result = await response.json();
+      if (historyResponse.ok) {
+        const result = await historyResponse.json();
         if (result.success) {
-          const weightsResponse = await fetch('/api/weights');
           let weightEntries: any[] = [];
           if (weightsResponse.ok) {
             const weightsData = await weightsResponse.json();
@@ -1929,7 +1935,11 @@ export default function WarehousePage() {
             };
           });
           
-          const rejections = await fetchRejects();
+          let rejections: RejectionEntry[] = [];
+          if (rejectionsResponse.ok) {
+            const rejectsData = await rejectionsResponse.json();
+            rejections = Array.isArray(rejectsData) ? rejectsData : (rejectsData.rejects || []);
+          }
           
           const recordsWithRejects = processedRecords.map((record: CountingRecord) => {
             const rejection = rejections.find(reject => 
@@ -1966,26 +1976,6 @@ export default function WarehousePage() {
       return [];
     } finally {
       setIsLoading(prev => ({ ...prev, counting: false }));
-    }
-  };
-
-  const fetchStats = async () => {
-    try {
-      setIsLoading(prev => ({ ...prev, stats: true }));
-      const response = await fetch('/api/counting?action=stats');
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setStats(prev => ({
-            ...prev,
-            ...result.data
-          }));
-        }
-      }
-    } catch (err: any) {
-      console.error('Error fetching stats:', err);
-    } finally {
-      setIsLoading(prev => ({ ...prev, stats: false }));
     }
   };
 

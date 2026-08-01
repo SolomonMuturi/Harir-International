@@ -139,7 +139,6 @@ export function VehicleDataTable({
                 <TableHead className="font-semibold">Driver & Vehicle</TableHead>
                 <TableHead className="font-semibold"> Supplier</TableHead>
                 <TableHead className="font-semibold">Registration</TableHead>
-                <TableHead className="font-semibold">Expected</TableHead>
                 <TableHead className="font-semibold">Check-in</TableHead>
                 <TableHead className="font-semibold">Check-out</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
@@ -211,9 +210,6 @@ export function VehicleDataTable({
                       ) : (
                         <span className="text-muted-foreground text-sm">No vehicle</span>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-mono text-sm">{formatTimestamp(vehicle.expectedCheckInTime)}</div>
                     </TableCell>
                     <TableCell>
                       <div className="font-mono text-sm">{formatTimestamp(vehicle.checkInTime)}</div>

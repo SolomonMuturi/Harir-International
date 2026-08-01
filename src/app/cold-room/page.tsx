@@ -270,23 +270,6 @@ interface LoadingSheet {
   status: string;
 }
 
-interface PalletHistory {
-  id: string;
-  pallet_id: string;
-  pallet_name: string;
-  cold_room_id: string;
-  conversion_date: string;
-  box_type: string;
-  variety: string;
-  size: string;
-  grade: string;
-  boxes_converted: number;
-  original_box_ids: string[];
-  is_manual: boolean;
-  created_at: string;
-  is_air_freight?: boolean;
-}
-
 const BOX_SIZES = [
   'size32', 'size30', 'size28', 'size26', 'size24',
   'size22', 'size20', 'size18', 'size16', 'size14', 'size12'
@@ -476,7 +459,6 @@ export default function ColdRoomPage() {
   
   const [coldRoomBoxes, setColdRoomBoxes] = useState<ColdRoomBox[]>([]);
   const [pallets, setPallets] = useState<Pallet[]>([]);
-  const [palletHistory, setPalletHistory] = useState<PalletHistory[]>([]);
   const [temperatureLogs, setTemperatureLogs] = useState<TemperatureLog[]>([]);
   const [repackingRecords, setRepackingRecords] = useState<RepackingRecord[]>([]);
   const [coldRoomStats, setColdRoomStats] = useState<{
@@ -495,7 +477,6 @@ export default function ColdRoomPage() {
     coldRooms: true,
     boxes: true,
     pallets: true,
-    palletHistory: true,
     temperature: true,
     repacking: true,
     stats: true,
@@ -963,62 +944,51 @@ export default function ColdRoomPage() {
       const result = await response.json();
       
       if (result.success && Array.isArray(result.data)) {
-        const palletsData = await Promise.all(
-          result.data.map(async (pallet: any) => {
-            let boxes: ColdRoomBox[] = [];
-            try {
-              const boxesResponse = await fetch(`/api/cold-room?action=pallet-boxes&palletId=${pallet.id}`);
-              const boxesResult = await boxesResponse.json();
-              
-              if (boxesResult.success && Array.isArray(boxesResult.data)) {
-                boxes = boxesResult.data.map((box: any) => ({
-                  id: box.id,
-                  variety: box.variety,
-                  box_type: box.boxType || box.box_type,
-                  size: box.size,
-                  grade: box.grade,
-                  quantity: Number(box.quantity) || 0,
-                  cold_room_id: box.cold_room_id,
-                  created_at: box.created_at,
-                  updated_at: box.updated_at,
-                  supplier_name: box.supplier_name,
-                  pallet_id: box.pallet_id,
-                  region: box.region,
-                  counting_record_id: box.counting_record_id,
-                  is_in_pallet: box.is_in_pallet || false,
-                  converted_to_pallet_at: box.converted_to_pallet_at,
-                  loading_sheet_id: box.loading_sheet_id || null,
-                  converted_to_pallet_date: box.converted_to_pallet_date,
-                  original_box_count: box.original_box_count || 0
-                }));
-              }
-            } catch (error) {
-            }
-            
-            const totalBoxes = boxes.reduce((sum: number, box: ColdRoomBox) => sum + (box.quantity || 0), 0);
-            
-            return {
-              id: pallet.id,
-              variety: pallet.variety,
-              box_type: pallet.boxType || pallet.box_type,
-              size: pallet.size,
-              grade: pallet.grade,
-              pallet_count: Number(pallet.pallet_count) || 0,
-              cold_room_id: pallet.cold_room_id,
-              pallet_name: pallet.pallet_name,
-              is_manual: pallet.is_manual || false,
-              created_at: pallet.created_at,
-              last_updated: pallet.last_updated,
-              boxes: boxes,
-              total_boxes: totalBoxes,
-              boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
-              loading_sheet_id: pallet.loading_sheet_id || null,
-              conversion_date: pallet.conversion_date || pallet.created_at,
-              original_box_ids: pallet.original_box_ids || [],
-              is_air_freight: pallet.is_air_freight || false
-            };
-          })
-        );
+        const palletsData = result.data.map((pallet: any) => {
+          const boxes: ColdRoomBox[] = (pallet.boxes || []).map((box: any) => ({
+            id: box.id,
+            variety: box.variety,
+            box_type: box.boxType || box.box_type,
+            size: box.size,
+            grade: box.grade,
+            quantity: Number(box.quantity) || 0,
+            cold_room_id: box.cold_room_id,
+            created_at: box.created_at,
+            updated_at: box.updated_at,
+            supplier_name: box.supplier_name,
+            pallet_id: box.pallet_id,
+            region: box.region,
+            counting_record_id: box.counting_record_id,
+            is_in_pallet: box.is_in_pallet || false,
+            converted_to_pallet_at: box.converted_to_pallet_at,
+            loading_sheet_id: box.loading_sheet_id || null,
+            converted_to_pallet_date: box.converted_to_pallet_date,
+            original_box_count: box.original_box_count || 0
+          }));
+          
+          const totalBoxes = boxes.reduce((sum: number, box: ColdRoomBox) => sum + (box.quantity || 0), 0);
+          
+          return {
+            id: pallet.id,
+            variety: pallet.variety,
+            box_type: pallet.boxType || pallet.box_type,
+            size: pallet.size,
+            grade: pallet.grade,
+            pallet_count: Number(pallet.pallet_count) || 0,
+            cold_room_id: pallet.cold_room_id,
+            pallet_name: pallet.pallet_name,
+            is_manual: pallet.is_manual || false,
+            created_at: pallet.created_at,
+            last_updated: pallet.last_updated,
+            boxes: boxes,
+            total_boxes: totalBoxes,
+            boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
+            loading_sheet_id: pallet.loading_sheet_id || null,
+            conversion_date: pallet.conversion_date || pallet.created_at,
+            original_box_ids: pallet.original_box_ids || [],
+            is_air_freight: pallet.is_air_freight || false
+          };
+        });
         
         setPallets(palletsData);
       } else {
@@ -1028,23 +998,6 @@ export default function ColdRoomPage() {
       setPallets([]);
     } finally {
       setIsLoading(prev => ({ ...prev, pallets: false }));
-    }
-  };
-
-  const fetchPalletHistory = async () => {
-    try {
-      const response = await fetch('/api/cold-room?action=pallet-history');
-      const result = await response.json();
-      
-      if (result.success && Array.isArray(result.data)) {
-        setPalletHistory(result.data);
-      } else {
-        setPalletHistory([]);
-      }
-    } catch (error) {
-      setPalletHistory([]);
-    } finally {
-      setIsLoading(prev => ({ ...prev, palletHistory: false }));
     }
   };
 
@@ -1215,7 +1168,6 @@ const fetchRepackingRecords = async () => {
         coldRooms: true,
         boxes: true,
         pallets: true,
-        palletHistory: true,
         temperature: true,
         repacking: true,
         stats: true,
@@ -1228,7 +1180,6 @@ const fetchRepackingRecords = async () => {
         fetchColdRooms(),
         fetchColdRoomBoxes(),
         fetchPallets(),
-        fetchPalletHistory(),
         fetchTemperatureLogs(),
         fetchRepackingRecords(),
         fetchColdRoomStats(),
@@ -1749,7 +1700,6 @@ const fetchRepackingRecords = async () => {
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchPallets(),
-          fetchPalletHistory(),
           fetchColdRoomStats(),
           fetchGroupedBoxes(),
         ]);
@@ -1852,7 +1802,6 @@ const fetchRepackingRecords = async () => {
         await Promise.allSettled([
           fetchColdRoomBoxes(),
           fetchPallets(),
-          fetchPalletHistory(),
           fetchColdRoomStats(),
           fetchGroupedBoxes(),
         ]);
@@ -4754,11 +4703,10 @@ const returnedBoxes = safeArray(
                           onClick={() => {
                             fetchColdRoomBoxes();
                             fetchLoadingSheets();
-                            fetchPalletHistory();
                           }}
                           variant="outline"
                           size="sm"
-                          disabled={isLoading.boxes || isLoading.loadingSheets || isLoading.palletHistory}
+                          disabled={isLoading.boxes || isLoading.loadingSheets}
                         >
                           <RefreshCw className={`w-4 h-4 mr-1 ${isLoading.boxes || isLoading.loadingSheets ? 'animate-spin' : ''}`} />
                           Refresh

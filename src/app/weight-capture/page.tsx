@@ -27,8 +27,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format, isSameDay, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -37,6 +35,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Skeleton } from '@/components/ui/skeleton';
 import { logActivity } from '@/lib/activity-logger';
 
 // Define types
@@ -1625,6 +1624,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {
     try {
       const currentUser = await getCurrentUser();
+      const { default: jsPDF } = await import('jspdf');
       const supplierWeights = weights.filter(w => w.supplier_id === supplierId);
       
       if (supplierWeights.length === 0) {
@@ -2475,11 +2475,31 @@ const fetchCheckedInSuppliers = useCallback(async () => {
             <Header />
           </div>
           <main className="p-6 space-y-6">
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-                <p className="text-muted-foreground">Loading weight data...</p>
+            <div className="space-y-4">
+              <div>
+                <Skeleton className="h-8 w-64" />
+                <Skeleton className="h-4 w-40 mt-2" />
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Card key={i}>
+                    <CardContent className="p-4 space-y-2">
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-8 w-16" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-6 w-52" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </CardContent>
+              </Card>
             </div>
           </main>
         </SidebarInset>

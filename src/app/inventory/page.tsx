@@ -26,6 +26,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 // Avocado Inventory Types
@@ -293,62 +294,50 @@ export default function InventoryPage() {
       const result = await response.json();
       
       if (result.success && Array.isArray(result.data)) {
-        const palletsData = await Promise.all(
-          result.data.map(async (pallet: any) => {
-            let boxes: ColdRoomBox[] = [];
-            try {
-              const boxesResponse = await fetch(`/api/cold-room?action=pallet-boxes&palletId=${pallet.id}`);
-              const boxesResult = await boxesResponse.json();
-              
-              if (boxesResult.success && Array.isArray(boxesResult.data)) {
-                boxes = boxesResult.data.map((box: any) => ({
-                  id: box.id,
-                  variety: box.variety,
-                  box_type: box.boxType || box.box_type,
-                  size: box.size,
-                  grade: box.grade,
-                  quantity: Number(box.quantity) || 0,
-                  cold_room_id: box.cold_room_id,
-                  created_at: box.created_at,
-                  updated_at: box.updated_at,
-                  supplier_name: box.supplier_name,
-                  pallet_id: box.pallet_id,
-                  region: box.region,
-                  counting_record_id: box.counting_record_id,
-                  is_in_pallet: box.is_in_pallet || false,
-                  converted_to_pallet_at: box.converted_to_pallet_at,
-                  loading_sheet_id: box.loading_sheet_id || null,
-                  converted_to_pallet_date: box.converted_to_pallet_date,
-                  original_box_count: box.original_box_count || 0
-                }));
-              }
-            } catch (error) {
-              console.warn(`Could not fetch boxes for pallet ${pallet.id}:`, error);
-            }
+        const palletsData = result.data.map((pallet: any) => {
+          const boxes: ColdRoomBox[] = (pallet.boxes || []).map((box: any) => ({
+            id: box.id,
+            variety: box.variety,
+            box_type: box.boxType || box.box_type,
+            size: box.size,
+            grade: box.grade,
+            quantity: Number(box.quantity) || 0,
+            cold_room_id: box.cold_room_id,
+            created_at: box.created_at,
+            updated_at: box.updated_at,
+            supplier_name: box.supplier_name,
+            pallet_id: box.pallet_id,
+            region: box.region,
+            counting_record_id: box.counting_record_id,
+            is_in_pallet: box.is_in_pallet || false,
+            converted_to_pallet_at: box.converted_to_pallet_at,
+            loading_sheet_id: box.loading_sheet_id || null,
+            converted_to_pallet_date: box.converted_to_pallet_date,
+            original_box_count: box.original_box_count || 0
+          }));
             
-            const totalBoxes = boxes.reduce((sum: number, box: ColdRoomBox) => sum + (box.quantity || 0), 0);
-            
-            return {
-              id: pallet.id,
-              variety: pallet.variety,
-              box_type: pallet.boxType || pallet.box_type,
-              size: pallet.size,
-              grade: pallet.grade,
-              pallet_count: Number(pallet.pallet_count) || 0,
-              cold_room_id: pallet.cold_room_id,
-              pallet_name: pallet.pallet_name,
-              is_manual: pallet.is_manual || false,
-              created_at: pallet.created_at,
-              last_updated: pallet.last_updated,
-              boxes: boxes,
-              total_boxes: totalBoxes,
-              boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
-              loading_sheet_id: pallet.loading_sheet_id || null,
-              conversion_date: pallet.conversion_date || pallet.created_at,
-              original_box_ids: pallet.original_box_ids || []
-            };
-          })
-        );
+          const totalBoxes = boxes.reduce((sum: number, box: ColdRoomBox) => sum + (box.quantity || 0), 0);
+          
+          return {
+            id: pallet.id,
+            variety: pallet.variety,
+            box_type: pallet.boxType || pallet.box_type,
+            size: pallet.size,
+            grade: pallet.grade,
+            pallet_count: Number(pallet.pallet_count) || 0,
+            cold_room_id: pallet.cold_room_id,
+            pallet_name: pallet.pallet_name,
+            is_manual: pallet.is_manual || false,
+            created_at: pallet.created_at,
+            last_updated: pallet.last_updated,
+            boxes: boxes,
+            total_boxes: totalBoxes,
+            boxes_per_pallet: pallet.boxes_per_pallet || (pallet.box_type === '10kg' ? 120 : 288),
+            loading_sheet_id: pallet.loading_sheet_id || null,
+            conversion_date: pallet.conversion_date || pallet.created_at,
+            original_box_ids: pallet.original_box_ids || []
+          };
+        });
         
         setPallets(palletsData);
       } else {
@@ -905,13 +894,32 @@ export default function InventoryPage() {
         </Sidebar>
         <SidebarInset>
           <Header />
-          <main className="p-4 md:p-6 lg:p-8">
-            <div className="flex items-center justify-center h-96">
-              <div className="text-center">
-                <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-                <p className="text-lg font-medium">Loading inventory data...</p>
-                <p className="text-sm text-muted-foreground mt-2">Please wait while we fetch your inventory</p>
+          <main className="p-4 md:p-6 lg:p-8 space-y-6">
+            <div className="space-y-6">
+              <div>
+                <Skeleton className="h-9 w-64" />
+                <Skeleton className="h-4 w-48 mt-2" />
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Card key={i}>
+                    <CardContent className="p-4 space-y-2">
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-8 w-16" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-6 w-56" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </CardContent>
+              </Card>
             </div>
           </main>
         </SidebarInset>

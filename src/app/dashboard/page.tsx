@@ -44,35 +44,44 @@ import {
   XCircle,
   User,
 } from 'lucide-react';
-import { ColdChainChart } from '@/components/dashboard/cold-chain-chart';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  AreaChart, 
-  Area, 
-  BarChart, 
-  Bar, 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend
-} from 'recharts';
+
+const ChartSkeleton = ({ className = 'h-64' }: { className?: string }) => (
+  <Skeleton className={`w-full ${className}`} />
+);
+
+// Lazy-load chart components so recharts isn't part of the initial bundle
+const ColdChainChart = dynamic(
+  () => import('@/components/dashboard/cold-chain-chart').then(m => m.ColdChainChart),
+  { ssr: false, loading: () => <ChartSkeleton className="h-64" /> }
+);
+const WeeklyIntakeAreaChart = dynamic(
+  () => import('@/components/dashboard/charts/weekly-intake-area-chart').then(m => m.WeeklyIntakeAreaChart),
+  { ssr: false, loading: () => <ChartSkeleton className="h-64" /> }
+);
+const ColdRoomOccupancyChart = dynamic(
+  () => import('@/components/dashboard/charts/cold-room-occupancy-chart').then(m => m.ColdRoomOccupancyChart),
+  { ssr: false, loading: () => <ChartSkeleton className="h-64" /> }
+);
+const EmployeeDistributionChart = dynamic(
+  () => import('@/components/dashboard/charts/employee-distribution-chart').then(m => m.EmployeeDistributionChart),
+  { ssr: false, loading: () => <ChartSkeleton className="h-64" /> }
+);
+const WeeklyIntakeLineChart = dynamic(
+  () => import('@/components/dashboard/charts/weekly-intake-line-chart').then(m => m.WeeklyIntakeLineChart),
+  { ssr: false, loading: () => <ChartSkeleton className="h-80" /> }
+);
 
 // Types
 interface DashboardStats {
@@ -532,30 +541,7 @@ export default function DashboardPage() {
                           <div>
                             <h3 className="text-sm font-medium mb-4">Weekly Intake Trend</h3>
                             <div className="h-64">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={stats.weeklyIntakeTrend}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                                  <XAxis dataKey="day" />
-                                  <YAxis />
-                                  <Tooltip />
-                                  <Area 
-                                    type="monotone" 
-                                    dataKey="pallets" 
-                                    stroke="#3b82f6" 
-                                    fill="#3b82f6" 
-                                    fillOpacity={0.2}
-                                    name="Pallets"
-                                  />
-                                  <Area 
-                                    type="monotone" 
-                                    dataKey="weight" 
-                                    stroke="#10b981" 
-                                    fill="#10b981" 
-                                    fillOpacity={0.2}
-                                    name="Weight (kg)"
-                                  />
-                                </AreaChart>
-                              </ResponsiveContainer>
+                              <WeeklyIntakeAreaChart data={stats.weeklyIntakeTrend} />
                             </div>
                           </div>
                         </div>
@@ -921,20 +907,7 @@ export default function DashboardPage() {
                           </CardHeader>
                           <CardContent>
                             <div className="h-64">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={coldRoomOccupancyData}>
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey="name" />
-                                  <YAxis />
-                                  <Tooltip />
-                                  <Bar 
-                                    dataKey="occupied" 
-                                    name="Occupied Pallets" 
-                                    fill="#3b82f6" 
-                                    radius={[4, 4, 0, 0]}
-                                  />
-                                </BarChart>
-                              </ResponsiveContainer>
+                              <ColdRoomOccupancyChart data={coldRoomOccupancyData} />
                             </div>
                           </CardContent>
                         </Card>
@@ -958,26 +931,7 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                       <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={employeeDistributionData}
-                              cx="50%"
-                              cy="50%"
-                              labelLine={false}
-                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                              outerRadius={80}
-                              fill="#8884d8"
-                              dataKey="value"
-                            >
-                              {employeeDistributionData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
+                        <EmployeeDistributionChart data={employeeDistributionData} />
                       </div>
                     </CardContent>
                   </Card>
@@ -1148,36 +1102,7 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="h-80">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={stats.weeklyIntakeTrend}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f8f5f5ff" />
-                          <XAxis dataKey="day" />
-                          <YAxis yAxisId="left" />
-                          <YAxis yAxisId="right" orientation="right" />
-                          <Tooltip />
-                          <Legend />
-                          <Line
-                            yAxisId="left"
-                            type="monotone"
-                            dataKey="pallets"
-                            stroke="#3b82f6"
-                            strokeWidth={2}
-                            name="Pallets"
-                            dot={{ r: 4 }}
-                            activeDot={{ r: 6 }}
-                          />
-                          <Line
-                            yAxisId="right"
-                            type="monotone"
-                            dataKey="weight"
-                            stroke="#10b981"
-                            strokeWidth={2}
-                            name="Weight (kg)"
-                            dot={{ r: 4 }}
-                            activeDot={{ r: 6 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      <WeeklyIntakeLineChart data={stats.weeklyIntakeTrend} />
                     </div>
                   </CardContent>
                 </Card>

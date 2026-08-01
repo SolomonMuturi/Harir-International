@@ -101,7 +101,6 @@ export async function GET(request: NextRequest) {
     const [visits, totalCount] = await Promise.all([
       prisma.vehicle_visits.findMany({
         where: whereClause,
-        include: { weight_entry: true },
         orderBy: { registered_at: 'desc' },
         skip,
         take: limit

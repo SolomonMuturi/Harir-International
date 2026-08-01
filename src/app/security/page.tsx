@@ -47,11 +47,11 @@ export default function SecurityPage() {
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-3">
+                    <ActivityLog logs={activityLogData} />
+                </div>
                 <div className="lg:col-span-1">
                     <TwoFactorAuth />
-                </div>
-                <div className="lg:col-span-2">
-                    <ActivityLog logs={activityLogData} />
                 </div>
             </div>
           </div>

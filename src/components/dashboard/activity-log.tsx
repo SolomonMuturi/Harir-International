@@ -454,7 +454,7 @@ export function ActivityLog() {
       </CardHeader>
 
       <CardContent className="p-0">
-        <ScrollArea className="h-[400px]">
+        <ScrollArea className="h-[600px]">
           {loading ? (
             <div className="p-4 space-y-3">
               {[...Array(8)].map((_, i) => (

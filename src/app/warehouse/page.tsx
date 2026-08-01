@@ -1,7 +1,7 @@
 // app/warehouse/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -248,6 +248,30 @@ interface VarietySizeStats {
   size32_class2?: number;
 }
 
+interface SupplierBoxSummary {
+  supplierId: string;
+  supplierName: string;
+  region: string;
+  recordCount: number;
+  fuerte_4kg: number;
+  fuerte_10kg: number;
+  hass_4kg: number;
+  hass_10kg: number;
+  class1: number;
+  class2: number;
+  total: number;
+  sizeStats: {
+    fuerte: {
+      '4kg': VarietySizeStats;
+      '10kg': VarietySizeStats;
+    };
+    hass: {
+      '4kg': VarietySizeStats;
+      '10kg': VarietySizeStats;
+    };
+  };
+}
+
 interface RejectionEntry {
   id?: string;
   weight_entry_id: string;
@@ -450,6 +474,174 @@ const getBoxesSummary = (countingTotals: any): {
   const total = fuerte_4kg + fuerte_10kg + hass_4kg + hass_10kg;
   
   return { fuerte_4kg, fuerte_10kg, hass_4kg, hass_10kg, total };
+};
+
+const createEmptySizeStats = (variety: 'fuerte' | 'hass', boxType: '4kg' | '10kg'): VarietySizeStats => {
+  const base: VarietySizeStats = {
+    variety,
+    boxType,
+    size12_class1: 0,
+    size12_class2: 0,
+    size14_class1: 0,
+    size14_class2: 0,
+    size16_class1: 0,
+    size16_class2: 0,
+    size18_class1: 0,
+    size18_class2: 0,
+    size20_class1: 0,
+    size20_class2: 0,
+    size22_class1: 0,
+    size22_class2: 0,
+    size24_class1: 0,
+    size24_class2: 0,
+    size26_class1: 0,
+    size26_class2: 0,
+  };
+
+  if (boxType === '10kg') {
+    base.size28_class1 = 0;
+    base.size28_class2 = 0;
+    base.size30_class1 = 0;
+    base.size30_class2 = 0;
+    base.size32_class1 = 0;
+    base.size32_class2 = 0;
+  }
+
+  return base;
+};
+
+const sumSizeStats = (stat: VarietySizeStats): { class1: number; class2: number; total: number } => {
+  const sizes = stat.boxType === '4kg'
+    ? ['12', '14', '16', '18', '20', '22', '24', '26']
+    : ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'];
+
+  let class1 = 0;
+  let class2 = 0;
+
+  for (const size of sizes) {
+    class1 += Number(stat[`size${size}_class1` as keyof VarietySizeStats]) || 0;
+    class2 += Number(stat[`size${size}_class2` as keyof VarietySizeStats]) || 0;
+  }
+
+  return { class1, class2, total: class1 + class2 };
+};
+
+const buildSupplierBoxSummaries = (records: CountingRecord[]): SupplierBoxSummary[] => {
+  const grouped = new Map<string, SupplierBoxSummary>();
+
+  const ensureSummary = (id: string, name: string, region: string): SupplierBoxSummary => {
+    if (!grouped.has(id)) {
+      grouped.set(id, {
+        supplierId: id,
+        supplierName: name,
+        region: region || '',
+        recordCount: 0,
+        fuerte_4kg: 0,
+        fuerte_10kg: 0,
+        hass_4kg: 0,
+        hass_10kg: 0,
+        class1: 0,
+        class2: 0,
+        total: 0,
+        sizeStats: {
+          fuerte: {
+            '4kg': createEmptySizeStats('fuerte', '4kg'),
+            '10kg': createEmptySizeStats('fuerte', '10kg'),
+          },
+          hass: {
+            '4kg': createEmptySizeStats('hass', '4kg'),
+            '10kg': createEmptySizeStats('hass', '10kg'),
+          },
+        },
+      });
+    }
+    return grouped.get(id)!;
+  };
+
+  records.forEach(record => {
+    const countingData = record.counting_data || {};
+    const totals = record.totals || {};
+    const normalizedName = (record.supplier_name || '').trim();
+    const id = normalizedName ? normalizedName.toLowerCase() : (record.supplier_id || 'unknown');
+    const summary = ensureSummary(id, normalizedName || record.supplier_id || 'Unknown', record.region);
+    summary.recordCount++;
+
+    const getValue = (key: string): number => {
+      let value = countingData[key];
+      if (value !== undefined && value !== null && value !== '') {
+        const num = Number(value);
+        if (!isNaN(num)) return num;
+      }
+
+      if (key.includes('_class') && key.includes('_size')) {
+        const parts = key.split('_');
+        if (parts.length >= 5) {
+          const variety = parts[0];
+          const boxType = parts[1];
+          const classType = parts[2];
+          const size = parts[4];
+
+          const totalsKey = `${variety}_${boxType}_${classType}_size${size}`;
+          const totalsValue = totals[totalsKey];
+          if (totalsValue !== undefined) {
+            const num = Number(totalsValue);
+            if (!isNaN(num)) return num;
+          }
+        }
+      }
+
+      return 0;
+    };
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+      const class1 = getValue(`fuerte_4kg_class1_size${size}`);
+      const class2 = getValue(`fuerte_4kg_class2_size${size}`);
+      summary.sizeStats.fuerte['4kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+      summary.sizeStats.fuerte['4kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+    }
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+      const class1 = getValue(`fuerte_10kg_class1_size${size}`);
+      const class2 = getValue(`fuerte_10kg_class2_size${size}`);
+      summary.sizeStats.fuerte['10kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+      summary.sizeStats.fuerte['10kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+    }
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+      const class1 = getValue(`hass_4kg_class1_size${size}`);
+      const class2 = getValue(`hass_4kg_class2_size${size}`);
+      summary.sizeStats.hass['4kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+      summary.sizeStats.hass['4kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+    }
+
+    for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+      const class1 = getValue(`hass_10kg_class1_size${size}`);
+      const class2 = getValue(`hass_10kg_class2_size${size}`);
+      summary.sizeStats.hass['10kg'][`size${size}_class1` as keyof VarietySizeStats] += class1;
+      summary.sizeStats.hass['10kg'][`size${size}_class2` as keyof VarietySizeStats] += class2;
+    }
+  });
+
+  const result = Array.from(grouped.values());
+
+  result.forEach(summary => {
+    const f4 = sumSizeStats(summary.sizeStats.fuerte['4kg']);
+    const f10 = sumSizeStats(summary.sizeStats.fuerte['10kg']);
+    const h4 = sumSizeStats(summary.sizeStats.hass['4kg']);
+    const h10 = sumSizeStats(summary.sizeStats.hass['10kg']);
+
+    summary.fuerte_4kg = f4.total;
+    summary.fuerte_10kg = f10.total;
+    summary.hass_4kg = h4.total;
+    summary.hass_10kg = h10.total;
+    summary.class1 = f4.class1 + f10.class1 + h4.class1 + h10.class1;
+    summary.class2 = f4.class2 + f10.class2 + h4.class2 + h10.class2;
+    const total4kg = summary.fuerte_4kg + summary.hass_4kg;
+    const total10kg = summary.fuerte_10kg + summary.hass_10kg;
+    summary.total = total4kg + total10kg * 2.5;
+  });
+
+  return result.sort((a, b) => b.total - a.total);
 };
 
 const getSupplierInfoFromCountingData = (countingData: any) => {
@@ -1308,6 +1500,8 @@ export default function WarehousePage() {
   const [expandedIntake, setExpandedIntake] = useState<Set<string>>(new Set());
   const [expandedQuality, setExpandedQuality] = useState<Set<string>>(new Set());
   const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
+  const [expandedSupplierBox, setExpandedSupplierBox] = useState<string | null>(null);
+  const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierIntakeRecord | null>(null);
   const [selectedQC, setSelectedQC] = useState<QualityCheck | null>(null);
   const [selectedSupplierDetails, setSelectedSupplierDetails] = useState<SupplierDetails | null>(null);
@@ -3709,6 +3903,155 @@ const downloadCSV = (records: CountingRecord[]) => {
 
   const sizeTotals = calculateTotalsFromSizeStats();
 
+  const supplierBoxSummaries = useMemo(
+    () => buildSupplierBoxSummaries(countingRecords),
+    [countingRecords]
+  );
+
+  const filteredSupplierSummaries = useMemo(() => {
+    const term = supplierSearchTerm.trim().toLowerCase();
+    if (!term) return supplierBoxSummaries;
+    return supplierBoxSummaries.filter(s =>
+      s.supplierName.toLowerCase().includes(term) ||
+      s.region.toLowerCase().includes(term)
+    );
+  }, [supplierBoxSummaries, supplierSearchTerm]);
+
+  const renderSupplierSizeDetail = (summary: SupplierBoxSummary, variety: 'fuerte' | 'hass', boxType: '4kg' | '10kg') => {
+    const stat = summary.sizeStats[variety][boxType];
+    const sizes = boxType === '4kg'
+      ? ['12', '14', '16', '18', '20', '22', '24', '26']
+      : ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'];
+    const isFuerte = variety === 'fuerte';
+    const { class1, class2, total } = sumSizeStats(stat);
+    const colors = isFuerte
+      ? { header: 'bg-green-100 border-b', title: 'text-green-800', badge: 'bg-green-50 text-green-700' }
+      : { header: 'bg-purple-100 border-b', title: 'text-purple-800', badge: 'bg-purple-50 text-purple-700' };
+
+    return (
+      <div className="border rounded-lg overflow-hidden">
+        <div className={`${colors.header} p-3`}>
+          <h5 className={`font-semibold ${colors.title}`}>
+            {isFuerte ? 'Fuerte' : 'Hass'} {boxType === '4kg' ? '4kg Boxes' : '10kg Crates'}
+          </h5>
+          <div className={`text-sm ${colors.title}`}>
+            Total: {total} (Class 1: {class1}, Class 2: {class2})
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[100px]">Size</TableHead>
+                <TableHead className="text-center">Class 1</TableHead>
+                <TableHead className="text-center">Class 2</TableHead>
+                <TableHead className="text-center">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sizes.map(size => {
+                const c1 = Number(stat[`size${size}_class1` as keyof VarietySizeStats]) || 0;
+                const c2 = Number(stat[`size${size}_class2` as keyof VarietySizeStats]) || 0;
+                const rowTotal = c1 + c2;
+
+                return (
+                  <TableRow key={size}>
+                    <TableCell className="font-medium">Size {size}</TableCell>
+                    <TableCell className="text-center">
+                      {c1 > 0 ? (
+                        <Badge variant="outline" className={colors.badge}>{c1}</Badge>
+                      ) : (
+                        <span className="text-gray-400">0</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {c2 > 0 ? (
+                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700">{c2}</Badge>
+                      ) : (
+                        <span className="text-gray-400">0</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center font-bold">{rowTotal > 0 ? rowTotal : '-'}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
+
+  const exportSupplierBoxesToExcel = async () => {
+    try {
+      const XLSX = await import('xlsx');
+
+      const summaryRows = supplierBoxSummaries.map(s => ({
+        Supplier: s.supplierName,
+        Region: s.region,
+        Records: s.recordCount,
+        'Fuerte 4kg': s.fuerte_4kg,
+        'Fuerte 10kg': s.fuerte_10kg,
+        'Hass 4kg': s.hass_4kg,
+        'Hass 10kg': s.hass_10kg,
+        'Class 1': s.class1,
+        'Class 2': s.class2,
+        'Total (4kg + 10kg x 2.5)': Number(s.total.toFixed(1)),
+      }));
+
+      const detailRows: any[] = [];
+      supplierBoxSummaries.forEach(s => {
+        (['fuerte', 'hass'] as const).forEach(variety => {
+          (['4kg', '10kg'] as const).forEach(boxType => {
+            const stat = s.sizeStats[variety][boxType];
+            const sizes = boxType === '4kg'
+              ? ['12', '14', '16', '18', '20', '22', '24', '26']
+              : ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'];
+
+            sizes.forEach(size => {
+              const c1 = Number(stat[`size${size}_class1` as keyof VarietySizeStats]) || 0;
+              const c2 = Number(stat[`size${size}_class2` as keyof VarietySizeStats]) || 0;
+              if (c1 > 0 || c2 > 0) {
+                detailRows.push({
+                  Supplier: s.supplierName,
+                  Variety: variety === 'fuerte' ? 'Fuerte' : 'Hass',
+                  'Box Type': boxType,
+                  Size: `Size ${size}`,
+                  'Class 1': c1,
+                  'Class 2': c2,
+                  Total: c1 + c2,
+                });
+              }
+            });
+          });
+        });
+      });
+
+      const workbook = XLSX.utils.book_new();
+      const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Supplier Summary');
+
+      if (detailRows.length > 0) {
+        const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+        XLSX.utils.book_append_sheet(workbook, detailSheet, 'Supplier Box Details');
+      }
+
+      XLSX.writeFile(workbook, `supplier-box-counts_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+
+      toast({
+        title: 'Excel Exported',
+        description: 'Supplier box counts exported to Excel',
+      });
+    } catch (error: any) {
+      console.error('Error exporting supplier box counts to Excel:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'Could not export supplier box counts to Excel',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const today = new Date();
   const todayIntakeRecords = supplierIntakeRecords.filter(record => {
     const recordDate = new Date(record.timestamp);
@@ -5911,54 +6254,140 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </div>
                     </div>
 
-                    <div className="flex justify-center">
-                      <Button
-                        onClick={() => {
-                          const statsData = {
-                            summary: {
-                              total_records: countingRecords.length,
-                              total_rejections: rejects.length,
-                              total_fuerte_boxes: sizeTotals.fuerte.overall,
-                              total_hass_boxes: sizeTotals.hass.overall,
-                              total_class1: sizeTotals.fuerte['4kg'].class1 + sizeTotals.fuerte['10kg'].class1 + 
-                                         sizeTotals.hass['4kg'].class1 + sizeTotals.hass['10kg'].class1,
-                              total_class2: sizeTotals.fuerte['4kg'].class2 + sizeTotals.fuerte['10kg'].class2 + 
-                                         sizeTotals.hass['4kg'].class2 + sizeTotals.hass['10kg'].class2,
-                              total_rejected_weight: stats.weight_summary?.total_rejected_weight || 0,
-                              total_intake_crates: stats.weight_summary?.total_intake_crates || 0,
-                              total_rejected_crates: stats.weight_summary?.total_rejected_crates || 0,
-                              grand_total: sizeTotals.grandTotal,
-                              generated_at: new Date().toISOString()
-                            },
-                            fuerte_4kg: sizeStatistics.fuerte['4kg'],
-                            fuerte_10kg: sizeStatistics.fuerte['10kg'],
-                            hass_4kg: sizeStatistics.hass['4kg'],
-                            hass_10kg: sizeStatistics.hass['10kg'],
-                            totals: sizeTotals,
-                          };
-
-                          const dataStr = JSON.stringify(statsData, null, 2);
-                          const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                          const url = URL.createObjectURL(dataBlob);
-                          const link = document.createElement('a');
-                          link.href = url;
-                          link.download = `box_size_statistics_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.json`;
-                          link.click();
-                          URL.revokeObjectURL(url);
-
-                          toast({
-                            title: 'Statistics Exported',
-                            description: 'Box size statistics have been downloaded as JSON',
-                          });
-                        }}
-                        className="gap-2"
-                        disabled={countingRecords.length === 0}
-                      >
-                        <Download className="w-4 h-4" />
-                        Export Statistics (JSON)
-                      </Button>
-                    </div>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="w-5 h-5" />
+                        Supplier Box Counts
+                      </CardTitle>
+                      <CardDescription>
+                        Per-supplier box totals from counting history across {supplierBoxSummaries.length} suppliers. Click a supplier row for the detailed size breakdown.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 flex-shrink-0"
+                      onClick={exportSupplierBoxesToExcel}
+                      disabled={supplierBoxSummaries.length === 0}
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      Export Excel
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="relative mb-4 max-w-sm">
+                    <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search suppliers by name..."
+                      value={supplierSearchTerm}
+                      onChange={(e) => setSupplierSearchTerm(e.target.value)}
+                      className="pl-8 h-9"
+                    />
+                  </div>
+                  <ScrollArea className="h-[500px]">
+                    <div className="border rounded-lg overflow-hidden [&>div]:overflow-visible">
+                      <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-card">
+                          <TableRow className="bg-muted/50">
+                            <TableHead className="font-semibold">Supplier</TableHead>
+                            <TableHead className="text-center font-semibold">Records</TableHead>
+                            <TableHead className="text-center font-semibold">Fuerte 4kg</TableHead>
+                            <TableHead className="text-center font-semibold">Fuerte 10kg</TableHead>
+                            <TableHead className="text-center font-semibold">Hass 4kg</TableHead>
+                            <TableHead className="text-center font-semibold">Hass 10kg</TableHead>
+                            <TableHead className="text-center font-semibold">Class 1</TableHead>
+                            <TableHead className="text-center font-semibold">Class 2</TableHead>
+                            <TableHead className="text-center font-semibold">Total</TableHead>
+                            <TableHead className="w-[40px]"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                      <TableBody>
+                        {filteredSupplierSummaries.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
+                              {supplierSearchTerm
+                                ? 'No suppliers match your search.'
+                                : 'No counting records found. Complete counting to see supplier box totals.'}
+                            </TableCell>
+                          </TableRow>
+                        ) : filteredSupplierSummaries.map((summary) => {
+                          const isExpanded = expandedSupplierBox === summary.supplierId;
+                          return (
+                            <Fragment key={summary.supplierId}>
+                              <TableRow
+                                onClick={() => setExpandedSupplierBox(isExpanded ? null : summary.supplierId)}
+                                className="cursor-pointer transition-colors hover:bg-muted/50"
+                              >
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Building className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                    <div>
+                                      <div className="font-medium">{summary.supplierName}</div>
+                                      {summary.region && (
+                                        <div className="text-xs text-muted-foreground">{summary.region}</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center">{summary.recordCount}</TableCell>
+                                <TableCell className="text-center font-medium">{summary.fuerte_4kg}</TableCell>
+                                <TableCell className="text-center">{summary.fuerte_10kg}</TableCell>
+                                <TableCell className="text-center">{summary.hass_4kg}</TableCell>
+                                <TableCell className="text-center">{summary.hass_10kg}</TableCell>
+                                <TableCell className="text-center text-blue-700 font-medium">{summary.class1}</TableCell>
+                                <TableCell className="text-center text-yellow-700 font-medium">{summary.class2}</TableCell>
+                                <TableCell className="text-center font-bold">
+                                  {Number(summary.total.toFixed(1)).toLocaleString()}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <ChevronDown
+                                    className={`w-4 h-4 mx-auto transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded && (
+                                <TableRow>
+                                  <TableCell colSpan={10} className="bg-muted/20 p-4">
+                                    <div className="space-y-4">
+                                      <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <h4 className="font-semibold text-green-800">
+                                          <Apple className="w-4 h-4 inline mr-1" />
+                                          Fuerte Avocado
+                                        </h4>
+                                        <h4 className="font-semibold text-purple-800">
+                                          <Apple className="w-4 h-4 inline mr-1" />
+                                          Hass Avocado
+                                        </h4>
+                                      </div>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-4">
+                                          {renderSupplierSizeDetail(summary, 'fuerte', '4kg')}
+                                          {renderSupplierSizeDetail(summary, 'fuerte', '10kg')}
+                                        </div>
+                                        <div className="space-y-4">
+                                          {renderSupplierSizeDetail(summary, 'hass', '4kg')}
+                                          {renderSupplierSizeDetail(summary, 'hass', '10kg')}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  </ScrollArea>
                 </CardContent>
               </Card>
             </TabsContent>

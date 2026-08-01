@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { logActivity } from "@/lib/activity-logger";
 
 export function Header() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
   const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -83,6 +83,13 @@ export function Header() {
   };
 
   useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/");
+      router.refresh();
+    }
+  }, [status, router]);
+
+  useEffect(() => {
     if (session?.user) {
       resetLogoutTimer();
       const cleanup = setupActivityListeners();
@@ -116,7 +123,7 @@ export function Header() {
 
   const user = session?.user;
   const userRole = (user as any)?.role || "No Role";
-  const userInitials = getInitials(user?.name || user?.email || "U");
+  const userInitials = user ? getInitials(user.name || user.email || "U") : "";
 
   const WarningModal = () =>
     showWarning ? (
@@ -156,60 +163,62 @@ export function Header() {
               className="pl-9 w-[200px] lg:w-[280px] transition-all focus:w-[240px] lg:focus:w-[320px]"
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className={cn(
-                  "h-10 w-10 p-0 rounded-full",
-                  "hover:bg-primary/10 hover:scale-105",
-                  "transition-all duration-200",
-                  "border border-border hover:border-primary/20"
-                )}
-              >
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold text-sm shadow-sm">
-                  {userInitials}
-                </div>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-56 p-0"
-              align="end"
-              forceMount
-              sideOffset={8}
-            >
-              <div className="p-4 border-b">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold shadow-sm">
+          {session?.user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "h-10 w-10 p-0 rounded-full",
+                    "hover:bg-primary/10 hover:scale-105",
+                    "transition-all duration-200",
+                    "border border-border hover:border-primary/20"
+                  )}
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold text-sm shadow-sm">
                     {userInitials}
                   </div>
-                  <div className="flex flex-col overflow-hidden">
-                    <p className="text-sm font-medium truncate">
-                      {user?.name || "User"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {user?.email}
-                    </p>
-                    <div className="mt-1">
-                      <Badge variant="secondary" className="text-xs font-normal px-2 py-0 h-5">
-                        {userRole}
-                      </Badge>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-56 p-0"
+                align="end"
+                forceMount
+                sideOffset={8}
+              >
+                <div className="p-4 border-b">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold shadow-sm">
+                      {userInitials}
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                      <p className="text-sm font-medium truncate">
+                        {user?.name || "User"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {user?.email}
+                      </p>
+                      <div className="mt-1">
+                        <Badge variant="secondary" className="text-xs font-normal px-2 py-0 h-5">
+                          {userRole}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              <DropdownMenuSeparator className="mx-2" />
-              <div className="p-2">
-                <DropdownMenuItem
-                  onClick={handleLogout}
-                  className="cursor-pointer rounded-md px-3 py-2 text-sm transition-colors focus:bg-destructive/10 focus:text-destructive text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
-                </DropdownMenuItem>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuSeparator className="mx-2" />
+                <div className="p-2">
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="cursor-pointer rounded-md px-3 py-2 text-sm transition-colors focus:bg-destructive/10 focus:text-destructive text-destructive"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </header>
     </>

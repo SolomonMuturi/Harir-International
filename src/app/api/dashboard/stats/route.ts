@@ -3,6 +3,10 @@ import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { startOfDay, endOfDay, subDays, format } from 'date-fns';
 
+// Cache the response for 60 seconds so the 30+ DB queries don't
+// re-run on every page load / 5-minute poll.
+export const revalidate = 60;
+
 export async function GET() {
   try {
     const today = new Date();
@@ -104,6 +108,9 @@ export async function GET() {
       
       // Weekly Trend Data
       weeklyTrendData,
+
+      // Supplier Performance Data
+      supplierPerformanceData,
       
     ] = await Promise.all([
       // Supplier queries
@@ -216,29 +223,56 @@ export async function GET() {
       (async () => {
         try {
           const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          const trendData = [];
-          
-          for (let i = 6; i >= 0; i--) {
-            const date = subDays(today, i);
-            const start = startOfDay(date);
-            const end = endOfDay(date);
-            
-            const dayWeights = await safeAggregate(models.weightEntries, {
-              where: {
-                created_at: { gte: start, lte: end }
-              },
-              _count: true,
-              _sum: { net_weight: true }
-            });
-            
-            trendData.push({
-              day: days[6 - i],
-              pallets: dayWeights._count || 0,
-              weight: dayWeights._sum?.net_weight || 0,
-            });
-          }
-          
-          return trendData;
+
+          // Run the 7 day-aggregates in parallel instead of sequentially
+          const dayAggregates = await Promise.all(
+            Array.from({ length: 7 }, (_, i) => {
+              const date = subDays(today, 6 - i);
+              const start = startOfDay(date);
+              const end = endOfDay(date);
+              return safeAggregate(models.weightEntries, {
+                where: {
+                  created_at: { gte: start, lte: end }
+                },
+                _count: true,
+                _sum: { net_weight: true }
+              });
+            })
+          );
+
+          return dayAggregates.map((dayWeights, i) => ({
+            day: days[i],
+            pallets: dayWeights._count || 0,
+            weight: dayWeights._sum?.net_weight || 0,
+          }));
+        } catch (e) {
+          return [];
+        }
+      })(),
+
+      // Supplier performance (last 30 days, top 8 by net weight)
+      (async () => {
+        try {
+          if (!models.weightEntries) return [];
+          return await models.weightEntries.groupBy({
+            by: ['supplier_id', 'supplier'],
+            where: {
+              created_at: { gte: monthAgo }
+            },
+            _sum: {
+              net_weight: true,
+              fuerte_weight: true,
+              hass_weight: true,
+              fuerte_crates: true,
+              hass_crates: true,
+            },
+            orderBy: {
+              _sum: {
+                net_weight: 'desc'
+              }
+            },
+            take: 8
+          }).catch(() => []);
         } catch (e) {
           return [];
         }
@@ -257,25 +291,7 @@ export async function GET() {
     // Get supplier performance data
     let supplierPerformance = [];
     try {
-      const performanceData = await models.weightEntries.groupBy({
-        by: ['supplier_id', 'supplier'],
-        where: {
-          created_at: { gte: monthAgo }
-        },
-        _sum: {
-          net_weight: true,
-          fuerte_weight: true,
-          hass_weight: true,
-          fuerte_crates: true,
-          hass_crates: true,
-        },
-        orderBy: {
-          _sum: {
-            net_weight: 'desc'
-          }
-        },
-        take: 8
-      }).catch(() => []);
+      const performanceData = supplierPerformanceData || [];
 
       supplierPerformance = performanceData.map((entry: any) => ({
         id: entry.supplier_id || `sp_${Math.random().toString(36).substr(2, 6)}`,

@@ -1,7 +1,7 @@
 // app/vehicle-management/page.tsx
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -60,8 +60,6 @@ import { format, parseISO, startOfDay, endOfDay, isWithinInterval, subDays, subW
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { PrintableVehicleReport } from '@/components/dashboard/printable-vehicle-report';
@@ -91,6 +89,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 
 interface VehicleVisit {
@@ -315,23 +314,13 @@ export default function VehicleManagementPage() {
 
   // Load more handler
   const handleLoadMore = () => {
-    setIsLoadingMore(true);
-    
-    // Simulate loading delay for smooth UX
-    setTimeout(() => {
-      const newCount = Math.min(displayCount + BATCH_SIZE, vehicles.length);
-      setDisplayCount(newCount);
-      
-      const filtered = applyFilters(vehicles);
-      setFilteredVehicles(filtered.slice(0, newCount));
-      
-      setIsLoadingMore(false);
-      
-      toast({
-        title: 'Loaded More',
-        description: `Showing ${Math.min(newCount, vehicles.length)} of ${vehicles.length} vehicles`,
-      });
-    }, 300);
+    const newCount = Math.min(displayCount + BATCH_SIZE, vehicles.length);
+    setDisplayCount(newCount);
+
+    toast({
+      title: 'Loaded More',
+      description: `Showing ${Math.min(newCount, vehicles.length)} of ${vehicles.length} vehicles`,
+    });
   };
 
   // Reset display count when filters change
@@ -341,7 +330,6 @@ export default function VehicleManagementPage() {
 
   const fetchSupplierVehicles = useCallback(async () => {
     try {
-      setIsLoading(true);
       setApiError(null);
       console.log('🔄 Fetching vehicle visits...');
       
@@ -825,6 +813,10 @@ export default function VehicleManagementPage() {
       const currentUser = await getCurrentUser();
       const element = printRef.current;
       if (element) {
+        const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+          import('html2canvas'),
+          import('jspdf'),
+        ]);
         const canvas = await html2canvas(element, { 
           scale: 2,
           useCORS: true,
@@ -887,26 +879,48 @@ export default function VehicleManagementPage() {
     });
   };
 
-  const checkedOutVehicles = vehicles.filter(v => v.status === 'Checked-out');
-  
-  const filteredCompletedVehicles = checkedOutVehicles.filter(vehicle =>
-    isWithinDateRange(vehicle.checkOutTime, historyDateRange, historyTimeRange)
+  const onSiteVehicles = useMemo(
+    () => vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)),
+    [vehicles]
   );
 
-  const vehiclesOnSite = vehicles.filter(v => 
-    v.status === 'Checked-in' || v.status === 'Pending Exit'
-  ).length;
+  const checkedOutVehicles = useMemo(
+    () => vehicles.filter(v => v.status === 'Checked-out'),
+    [vehicles]
+  );
 
-  const pendingExitVehicles = vehicles.filter(v => v.status === 'Pending Exit');
-  const preRegisteredVehicles = vehicles.filter(v => v.status === 'Pre-registered');
-  const gateEntryVehicles = vehicles.filter(v => v.gateEntryId);
-  const filteredGateEntryVehicles = gateEntryVehicles
-    .filter(v => isWithinDateRange(v.checkInTime, historyDateRange, historyTimeRange))
-    .sort((a, b) => {
-      if (!a.checkInTime) return 1;
-      if (!b.checkInTime) return -1;
-      return new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime();
-    });
+  const filteredCompletedVehicles = useMemo(
+    () => checkedOutVehicles.filter(vehicle =>
+      isWithinDateRange(vehicle.checkOutTime, historyDateRange, historyTimeRange)
+    ),
+    [checkedOutVehicles, historyDateRange, historyTimeRange]
+  );
+
+  const vehiclesOnSite = useMemo(
+    () => vehicles.filter(v => v.status === 'Checked-in' || v.status === 'Pending Exit').length,
+    [vehicles]
+  );
+
+  const pendingExitVehicles = useMemo(
+    () => vehicles.filter(v => v.status === 'Pending Exit'),
+    [vehicles]
+  );
+
+  const gateEntryVehicles = useMemo(
+    () => vehicles.filter(v => v.gateEntryId),
+    [vehicles]
+  );
+
+  const filteredGateEntryVehicles = useMemo(
+    () => gateEntryVehicles
+      .filter(v => isWithinDateRange(v.checkInTime, historyDateRange, historyTimeRange))
+      .sort((a, b) => {
+        if (!a.checkInTime) return 1;
+        if (!b.checkInTime) return -1;
+        return new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime();
+      }),
+    [gateEntryVehicles, historyDateRange, historyTimeRange]
+  );
 
   const escapeCsvField = (field: any): string => {
     if (field === null || field === undefined) return '';
@@ -1126,11 +1140,31 @@ export default function VehicleManagementPage() {
             <Header />
           </div>
           <main className="p-4 md:p-6 space-y-6">
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-                <p className="text-muted-foreground">Loading vehicle visits...</p>
+            <div className="space-y-4">
+              <div>
+                <Skeleton className="h-8 w-64" />
+                <Skeleton className="h-4 w-40 mt-2" />
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Card key={i}>
+                    <CardContent className="p-4 space-y-2">
+                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="h-8 w-20" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-6 w-48" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </CardContent>
+              </Card>
             </div>
           </main>
         </SidebarInset>
@@ -1567,9 +1601,9 @@ export default function VehicleManagementPage() {
                         <TabsTrigger value="active" className="px-3 py-1.5 text-xs">
                           <Truck className="h-3 w-3 mr-1" />
                           On Site
-                          {vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length > 0 && (
+                          {onSiteVehicles.length > 0 && (
                             <Badge variant="secondary" className="ml-1 text-xs">
-                              {vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length}
+                              {onSiteVehicles.length}
                             </Badge>
                           )}
                         </TabsTrigger>
@@ -1611,9 +1645,9 @@ export default function VehicleManagementPage() {
                       <TabsTrigger value="active" className="flex items-center gap-2">
                         <Truck className="h-4 w-4" />
                         On Site
-                        {vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length > 0 && (
+                        {onSiteVehicles.length > 0 && (
                           <Badge variant="secondary" className="ml-1">
-                            {vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length}
+                            {onSiteVehicles.length}
                           </Badge>
                         )}
                       </TabsTrigger>
@@ -2063,10 +2097,10 @@ export default function VehicleManagementPage() {
                           </p>
                         </div>
                         <Badge variant="outline" className="w-fit">
-                          {vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length} Active
+                          {onSiteVehicles.length} Active
                         </Badge>
                       </div>
-                      {vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length === 0 ? (
+                      {onSiteVehicles.length === 0 ? (
                         <Card>
                           <CardContent className="p-6 md:p-8 text-center">
                             <Package className="h-10 w-10 md:h-12 md:w-12 mx-auto text-gray-400 mb-4" />
@@ -2077,7 +2111,7 @@ export default function VehicleManagementPage() {
                       ) : (
                         <>
                           <VehicleDataTable 
-                            vehicles={vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status))}
+                            vehicles={onSiteVehicles}
                             onCheckIn={handleCheckIn}
                             onCheckOut={handleCheckOut}
                             onRowClick={handleRowClick}
@@ -2085,7 +2119,7 @@ export default function VehicleManagementPage() {
                           />
                           
                           {/* LAZY LOADING - Load More Button for active tab */}
-                          {filteredVehicles.length < vehicles.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length && (
+                          {filteredVehicles.length < onSiteVehicles.length && (
                             <div className="flex justify-center py-6">
                               <Button
                                 variant="outline"

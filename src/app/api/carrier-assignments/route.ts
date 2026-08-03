@@ -1,6 +1,7 @@
 // /api/carrier-assignments/route.ts - FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Generate a short ID that fits VARCHAR(20)
 function generateShortId(prefix: string = 'ca'): string {
@@ -10,6 +11,9 @@ function generateShortId(prefix: string = 'ca'): string {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['carriers.assign', 'carriers.manage']);
+  if (auth.error) return auth.error;
+
   console.log('🚀 POST /api/carrier-assignments');
   
   try {
@@ -118,6 +122,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['carriers.assign', 'carriers.manage']);
+  if (auth.error) return auth.error;
+
   console.log('📡 GET /api/carrier-assignments');
   
   try {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Helper: Generate short ID for transit history
 function generateShortId(prefix: string = 'th'): string {
@@ -13,6 +14,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['carriers.assign', 'carriers.manage']);
+  if (auth.error) return auth.error;
+
   try {
     console.log(`📡 GET /api/carrier-assignments/${params.id}`);
 
@@ -79,6 +83,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['carriers.assign', 'carriers.manage']);
+  if (auth.error) return auth.error;
+
   try {
     console.log(`✏️ PATCH /api/carrier-assignments/${params.id}`);
 
@@ -243,6 +250,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['carriers.assign', 'carriers.manage']);
+  if (auth.error) return auth.error;
+
   try {
     console.log(`🗑️ DELETE /api/carrier-assignments/${params.id}`);
 

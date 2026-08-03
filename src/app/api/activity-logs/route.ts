@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import { requirePermission } from '@/lib/api-auth';
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,8 @@ function generateId(): string {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['admin.audit', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get('limit') || '100');
@@ -207,6 +210,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['admin.audit', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');

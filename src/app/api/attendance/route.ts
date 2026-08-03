@@ -1,8 +1,11 @@
 import { prisma } from '@/lib/db'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { requirePermission } from '@/lib/api-auth'
 
 // GET - Fetch attendance records
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  if (auth.error) return auth.error;
   try {
     console.log('📨 GET /api/attendance - Fetching attendance records');
     
@@ -60,7 +63,9 @@ export async function GET(request: Request) {
 }
 
 // POST - Create or update attendance record
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  if (auth.error) return auth.error;
   try {
     console.log('📨 POST /api/attendance - Creating/updating attendance');
     
@@ -174,7 +179,9 @@ export async function POST(request: Request) {
 }
 
 // PUT - Update attendance record
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -238,7 +245,9 @@ export async function PUT(request: Request) {
 }
 
 // DELETE - Delete attendance record
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

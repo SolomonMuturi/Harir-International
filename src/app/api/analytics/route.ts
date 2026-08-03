@@ -1,8 +1,11 @@
 // /app/api/analytics/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['dashboard.analytics', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     console.log('📊 Analytics API: Fetching real data from database...');
     

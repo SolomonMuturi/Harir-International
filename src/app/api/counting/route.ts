@@ -1,9 +1,13 @@
 // app/api/counting/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // GET endpoint to fetch counting records
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['counting.perform', 'suppliers.weigh', 'inventory.view', 'cold_room.view']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action');
@@ -736,6 +740,9 @@ export async function GET(request: NextRequest) {
 
 // POST endpoint to save counting data
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['counting.perform']);
+  if (auth.error) return auth.error;
+
   try {
     const data = await request.json();
 
@@ -1022,6 +1029,9 @@ export async function POST(request: NextRequest) {
 
 // PATCH endpoint to update counting record status (for cold room completion)
 export async function PATCH(request: NextRequest) {
+  const auth = await requirePermission(request, ['counting.perform']);
+  if (auth.error) return auth.error;
+
   try {
     const data = await request.json();
 
@@ -1079,6 +1089,9 @@ export async function PATCH(request: NextRequest) {
 
 // PUT endpoint to move counting record to rejection (complete the process)
 export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['counting.perform']);
+  if (auth.error) return auth.error;
+
   try {
     const data = await request.json();
 
@@ -1216,6 +1229,9 @@ export async function PUT(request: NextRequest) {
 
 // DELETE endpoint to remove a counting record
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['counting.perform']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

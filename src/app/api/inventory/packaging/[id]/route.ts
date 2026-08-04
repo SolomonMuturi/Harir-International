@@ -1,12 +1,15 @@
 // src/app/api/inventory/packaging/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // PATCH: Update individual packaging material
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['inventory.packaging', 'inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     const id = params.id;
     
@@ -73,6 +76,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['inventory.packaging', 'inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     const id = params.id;
     

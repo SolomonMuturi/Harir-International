@@ -1,8 +1,11 @@
 import { prisma } from '@/lib/db'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { requirePermission } from '@/lib/api-auth'
 
 // GET - Fetch all employees or a single employee
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.overview.view', 'employees.list.view', 'employees.edit', 'employees.create']);
+  if (auth.error) return auth.error;
   try {
     console.log('📨 GET /api/employees - Fetching employees');
     
@@ -78,7 +81,9 @@ export async function GET(request: Request) {
 }
 
 // POST - Create new employee
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.overview.view', 'employees.list.view', 'employees.edit', 'employees.create']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     console.log('📨 POST /api/employees - Creating employee:', body);
@@ -140,7 +145,9 @@ export async function POST(request: Request) {
 }
 
 // PUT - Update employee
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.overview.view', 'employees.list.view', 'employees.edit', 'employees.create']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -216,7 +223,9 @@ export async function PUT(request: Request) {
 }
 
 // DELETE - Delete an employee
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['employees.overview.view', 'employees.list.view', 'employees.edit', 'employees.create']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

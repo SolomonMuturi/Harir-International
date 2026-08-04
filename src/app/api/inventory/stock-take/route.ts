@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/api-auth';
 
 // Mock storage for stock take results (in real app, use database)
 let stockTakeHistory: any[] = [];
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     const { counts, userId, timestamp } = body;
@@ -77,7 +80,9 @@ export async function POST(request: NextRequest) {
 }
 
 // GET: Retrieve stock take history
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     return NextResponse.json({
       success: true,

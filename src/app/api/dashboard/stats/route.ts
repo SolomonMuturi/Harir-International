@@ -1,13 +1,16 @@
 // app/api/dashboard/stats/route.ts
 import { prisma } from '@/lib/db';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { startOfDay, endOfDay, subDays, format } from 'date-fns';
+import { requirePermission } from '@/lib/api-auth';
 
 // Cache the response for 60 seconds so the 30+ DB queries don't
 // re-run on every page load / 5-minute poll.
 export const revalidate = 60;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['dashboard.view', 'dashboard.analytics']);
+  if (auth.error) return auth.error;
   try {
     const today = new Date();
     const startOfToday = startOfDay(today);

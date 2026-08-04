@@ -1,9 +1,12 @@
 // src/app/api/inventory/packaging/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // GET: Fetch all packaging materials
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['inventory.packaging', 'inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     console.log('GET /api/inventory/packaging - Fetching packaging materials');
     
@@ -45,6 +48,8 @@ export async function GET(request: NextRequest) {
 
 // POST: Create new packaging material
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['inventory.packaging', 'inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     console.log('POST /api/inventory/packaging - Creating new material:', body);
@@ -98,6 +103,8 @@ export async function POST(request: NextRequest) {
 
 // PATCH: Update packaging material (for bulk updates)
 export async function PATCH(request: NextRequest) {
+  const auth = await requirePermission(request, ['inventory.packaging', 'inventory.manage']);
+  if (auth.error) return auth.error;
   try {
     const url = new URL(request.url);
     const pathParts = url.pathname.split('/');

@@ -1,10 +1,13 @@
 import { prisma } from '@/lib/db'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { requirePermission } from '@/lib/api-auth'
 
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['employees.overview.view', 'employees.list.view', 'employees.edit', 'employees.create']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json()
     console.log('📨 PUT API Received:', body)

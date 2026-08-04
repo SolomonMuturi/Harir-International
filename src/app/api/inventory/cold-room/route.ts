@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/api-auth';
 
 // Mock data for cold room inventory
 const mockColdRoomInventory = [
@@ -57,6 +58,9 @@ const mockColdRoomInventory = [
 ];
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['cold_room.inventory', 'cold_room.manage', 'inventory.view']);
+  if (auth.error) return auth.error;
+
   try {
     await new Promise(resolve => setTimeout(resolve, 300));
     

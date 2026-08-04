@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['citrus.view', 'citrus.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const supplier = searchParams.get('supplier');
@@ -49,6 +53,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['citrus.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
 
@@ -146,6 +153,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['citrus.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { id, ...updateData } = body;
@@ -232,6 +242,9 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['citrus.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

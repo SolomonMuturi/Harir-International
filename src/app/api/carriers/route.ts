@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Generate shorter, database-friendly ID
 function generateCarrierId() {
@@ -11,6 +12,9 @@ function generateCarrierId() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['carriers.manage']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('🚀 POST /api/carriers');
     
@@ -165,6 +169,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['carriers.view', 'carriers.manage', 'carriers.assign', 'carriers.track']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('📡 GET /api/carriers');
     
@@ -283,6 +290,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['carriers.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -353,6 +363,9 @@ export async function DELETE(request: NextRequest) {
 
 // Optional: Add a PATCH method for updating carriers
 export async function PATCH(request: NextRequest) {
+  const auth = await requirePermission(request, ['carriers.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { id, ...updateData } = body;

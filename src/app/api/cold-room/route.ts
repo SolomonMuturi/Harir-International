@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { requirePermission } from '@/lib/api-auth';
 
 const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['cold_room.view', 'cold_room.manage', 'cold_room.temperature', 'cold_room.inventory']);
+  if (auth.error) return auth.error;
+
   const searchParams = request.nextUrl.searchParams;
   const action = searchParams.get('action');
 
@@ -11,7 +15,17 @@ export async function GET(request: NextRequest) {
     // Fetch cold rooms
     if (action === 'cold-rooms') {
       const coldRooms = await prisma.cold_rooms.findMany();
-      return NextResponse.json({ success: true, data: coldRooms });
+      return NextResponse.json({
+        success: true,
+        data: coldRooms.map(room => ({
+          id: room.id,
+          name: room.name,
+          current_temperature: room.temperature != null ? Number(room.temperature) : 0,
+          capacity: 2000,
+          occupied: 0,
+          available_capacity: 2000,
+        })),
+      });
     }
 
     // Fetch cold room boxes
@@ -373,6 +387,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['cold_room.manage', 'cold_room.temperature', 'cold_room.inventory']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { action } = body;
@@ -790,10 +807,17 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Update cold room current temperature
-      await prisma.cold_rooms.update({
+      // Update cold room current temperature (create the row if it doesn't exist yet)
+      await prisma.cold_rooms.upsert({
         where: { id: coldRoomId },
-        data: { temperature: parseFloat(temperature) },
+        update: { temperature: parseFloat(temperature) },
+        create: {
+          id: coldRoomId,
+          name: coldRoomId === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
+          temperature: parseFloat(temperature),
+          status: 'Optimal',
+          zone_type: 'Fruit',
+        },
       });
 
       return NextResponse.json({

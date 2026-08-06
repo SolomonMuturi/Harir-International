@@ -1,9 +1,13 @@
 // app/api/rejects/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // GET all rejects
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['qc.view', 'qc.perform', 'qc.approve', 'suppliers.weigh', 'counting.perform', 'inventory.view']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('📋 GET /api/rejects called');
     
@@ -102,6 +106,9 @@ const transformedRejects = rejects.map(reject => {
 
 // POST new reject
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['qc.perform', 'suppliers.weigh']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     

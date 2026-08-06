@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['shipments.update', 'shipments.track']);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = params;
     const { status } = await request.json();

@@ -42,6 +42,7 @@ import {
   Trash2,
   Layers,
   Sticker,
+  QrCode,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -95,6 +96,13 @@ export default function QualityControlPage() {
   const [labels, setLabels] = useState<LabelItem[]>([]);
   const [currentCode, setCurrentCode] = useState('');
   const [currentClass, setCurrentClass] = useState<'C1' | 'C2' | 'Reject'>('C1');
+  
+  // QR Sticker state
+  const [qrVariety, setQrVariety] = useState('');
+  const [qrSize, setQrSize] = useState('');
+  const [qrClass, setQrClass] = useState<'C1' | 'C2' | 'Reject'>('C1');
+  const [qrDate, setQrDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [qrBoxes, setQrBoxes] = useState('');
   
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -557,6 +565,40 @@ export default function QualityControlPage() {
     </div>
   );
 
+  // --- QR Sticker (50mm x 25mm) ---
+  const qrStickerData = JSON.stringify({
+    variety: qrVariety,
+    size: qrSize,
+    class: qrClass,
+    date: qrDate,
+    boxes: parseInt(qrBoxes || '0', 10) || 0,
+  });
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrStickerData)}`;
+  const isQrFormValid = qrVariety.trim() !== '' && qrSize.trim() !== '' && qrDate.trim() !== '' && qrBoxes.trim() !== '' && (parseInt(qrBoxes, 10) || 0) > 0;
+
+  const handlePrintQrSticker = () => {
+    const printableArea = document.querySelector('.printable-qr-sticker-area');
+    if (!printableArea) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write('<html><head>');
+    printWindow.document.write(`<style>
+      @page { size: 50mm 25mm; margin: 0; }
+      html, body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .qr-sticker { width: 50mm; height: 25mm; display: flex; align-items: center; justify-content: center; box-sizing: border-box; border: 0.3mm solid #000; }
+      .qr-sticker img { width: 23mm; height: 23mm; }
+    </style>`);
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(printableArea.innerHTML);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
+  };
+
   return (
     <SidebarProvider>
       <Sidebar>
@@ -587,7 +629,7 @@ export default function QualityControlPage() {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="accepted" className="flex items-center gap-2">
                 <ThumbsUp className="w-4 h-4" />
                 Accepted ({acceptedQualityChecks.length})
@@ -603,6 +645,10 @@ export default function QualityControlPage() {
               <TabsTrigger value="print" className="flex items-center gap-2">
                 <Sticker className="w-4 h-4" />
                 Print Stickers
+              </TabsTrigger>
+              <TabsTrigger value="qr" className="flex items-center gap-2">
+                <QrCode className="w-4 h-4" />
+                QR Stickers
               </TabsTrigger>
             </TabsList>
 
@@ -945,11 +991,115 @@ export default function QualityControlPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* QR Stickers Tab */}
+            <TabsContent value="qr" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <QrCode className="w-4 h-4" />
+                    Generate Pallet QR Sticker
+                  </CardTitle>
+                  <CardDescription>
+                    Enter pallet details to generate a printable 50mm x 25mm QR code sticker for the pallet.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="qr-variety">Variety</Label>
+                      <Input
+                        id="qr-variety"
+                        placeholder="e.g. Hass Avocado"
+                        value={qrVariety}
+                        onChange={(e) => setQrVariety(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="qr-size">Size</Label>
+                      <Input
+                        id="qr-size"
+                        placeholder="e.g. 10kg"
+                        value={qrSize}
+                        onChange={(e) => setQrSize(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="qr-class">Class</Label>
+                      <Select value={qrClass} onValueChange={(value: any) => setQrClass(value)}>
+                        <SelectTrigger id="qr-class">
+                          <SelectValue placeholder="Select class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="C1">C1</SelectItem>
+                          <SelectItem value="C2">C2</SelectItem>
+                          <SelectItem value="Reject">Reject</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="qr-date">Date</Label>
+                      <Input
+                        id="qr-date"
+                        type="date"
+                        value={qrDate}
+                        onChange={(e) => setQrDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="qr-boxes">Number of Boxes</Label>
+                      <Input
+                        id="qr-boxes"
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 30"
+                        value={qrBoxes}
+                        onChange={(e) => setQrBoxes(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      Sticker size: 50mm x 25mm (landscape)
+                    </div>
+                    <Button
+                      onClick={handlePrintQrSticker}
+                      disabled={!isQrFormValid}
+                      className="flex items-center gap-2"
+                      size="lg"
+                    >
+                      <Printer className="w-4 h-4" />
+                      Print Sticker
+                    </Button>
+                  </div>
+
+                  {/* Live Preview */}
+                  <div>
+                    <Label className="mb-2 block">Sticker Preview</Label>
+                    <div className="flex justify-center">
+                      <div className="border rounded-lg p-3 bg-white">
+                        <div className="w-[200px] h-[100px] rounded border border-gray-800 overflow-hidden flex items-center justify-center">
+                          <img src={qrCodeUrl} alt="QR Sticker preview" className="w-[92px] h-[92px]" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
 
           {/* Printable Stickers Component - Hidden */}
           <div style={{ display: 'none' }}>
             <PrintableStickers labels={labels} />
+          </div>
+
+          {/* Printable QR Sticker - Hidden */}
+          <div className="printable-qr-sticker-area" style={{ display: 'none' }}>
+            <div className="qr-sticker">
+              <img src={qrCodeUrl} alt="QR Pallet Sticker" />
+            </div>
           </div>
         </main>
       </SidebarInset>

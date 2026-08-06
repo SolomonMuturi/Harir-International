@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/api-auth';
 
 const prisma = new PrismaClient();
 
@@ -12,6 +13,8 @@ const assignRoleSchema = z.object({
 
 // PATCH /api/user-roles/assign - Assign/unassign roles to users
 export async function PATCH(request: NextRequest) {
+  const auth = await requirePermission(request, ['admin.roles', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     

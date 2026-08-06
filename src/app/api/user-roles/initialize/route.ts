@@ -1,11 +1,14 @@
 // /app/api/user-roles/initialize/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { requirePermission } from '@/lib/api-auth';
 
 const prisma = new PrismaClient();
 
 // POST /api/user-roles/initialize - Initialize predefined roles
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['admin.roles', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     const { roles: predefinedRoles } = body;

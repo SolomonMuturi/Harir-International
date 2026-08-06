@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/api-auth';
 
 // Enhanced schema with all equipment data - all fields optional
 const utilityReadingInputSchema = z.object({
@@ -56,6 +57,8 @@ const utilityReadingInputSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['utilities.record']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
 
@@ -377,6 +380,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['utilities.view', 'utilities.record', 'utilities.analyze', 'utilities.reports']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '100');
@@ -546,6 +551,8 @@ export async function GET(request: NextRequest) {
 
 // New endpoint for CSV export
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['utilities.record']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

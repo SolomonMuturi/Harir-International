@@ -916,11 +916,11 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     
     if (rejectedTotalCrates > 0) {
       doc.setFillColor(255, 243, 243);
-      doc.rect(leftMargin, yPos, contentWidth, 12, 'F');
+      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
       doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(220, 38, 38);
-      doc.text('REJECTED MATERIAL', leftMargin + 2, yPos + 6);
+      doc.text('REJECTED MATERIAL', leftMargin + 2, yPos + 5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(6);
@@ -928,23 +928,23 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
       const rejectionPercentage = intakeTotalCrates > 0 ? ((rejectedTotalCrates / intakeTotalCrates) * 100).toFixed(1) : '0';
       
       if (rejectedFuerteCrates > 0 && rejectedHassCrates > 0) {
-        doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Fuerte: ${rejectedFuerteCrates}, Hass: ${rejectedHassCrates})`, leftMargin + 2, yPos + 10);
+        doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Fuerte: ${rejectedFuerteCrates}, Hass: ${rejectedHassCrates})`, leftMargin + 2, yPos + 8.5);
       } else if (rejectedFuerteCrates > 0) {
-        doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Fuerte only)`, leftMargin + 2, yPos + 10);
+        doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Fuerte only)`, leftMargin + 2, yPos + 8.5);
       } else if (rejectedHassCrates > 0) {
-        doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Hass only)`, leftMargin + 2, yPos + 10);
+        doc.text(`Total Rejected: ${rejectedTotalCrates} crates (Hass only)`, leftMargin + 2, yPos + 8.5);
       } else {
-        doc.text(`Total Rejected: ${rejectedTotalCrates} crates`, leftMargin + 2, yPos + 10);
+        doc.text(`Total Rejected: ${rejectedTotalCrates} crates`, leftMargin + 2, yPos + 8.5);
       }
       
-      let extraY = 14;
+      let extraY = 11;
       if (rejectionReason) {
         doc.text(`Reason: ${rejectionReason}`, leftMargin + 2, yPos + extraY);
-        extraY += 4;
+        extraY += 3;
       }
       if (rejectionNotes) {
         doc.text(`Notes: ${rejectionNotes}`, leftMargin + 2, yPos + extraY);
-        extraY += 4;
+        extraY += 3;
       }
       yPos += extraY;
     }
@@ -956,7 +956,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
     doc.text('DETAILED BOX SIZE COUNTS', leftMargin + 2, yPos + 4.5);
-    yPos += 12;
+    yPos += 10;
     
     // Start both sections at the same position with minimal padding
     let leftY = yPos;
@@ -995,206 +995,163 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     const hasFuerte = fuerte4kgSizes.length > 0 || fuerte10kgSizes.length > 0;
     const hasHass = hass4kgSizes.length > 0 || hass10kgSizes.length > 0;
     
-    const tableWidth = hasFuerte && hasHass ? (contentWidth / 2 - 2.5) : contentWidth;
-    const rightMargin = hasFuerte && hasHass ? leftMargin + tableWidth + 5 : leftMargin;
+    const fuerteHasBoth = fuerte4kgSizes.length > 0 && fuerte10kgSizes.length > 0;
+    const hassHasBoth = hass4kgSizes.length > 0 && hass10kgSizes.length > 0;
+    
+    const splitColumns = (hasFuerte && hasHass) || (!hasFuerte && hassHasBoth) || (!hasHass && fuerteHasBoth);
+    
+    const tableWidth = splitColumns ? (contentWidth / 2 - 2.5) : contentWidth;
+    const rightMargin = splitColumns ? leftMargin + tableWidth + 5 : leftMargin;
+    
+    const drawSizeTable = (params: {
+      prefix: string;
+      boxType: string;
+      sizeData: Array<{ size: string; class1: number; class2: number }>;
+      title: string;
+      headerColor: [number, number, number];
+      startX: number;
+      startY: number;
+      marginRight: number;
+      totalPrefix: string;
+      unit: string;
+    }) => {
+      const { prefix, boxType, sizeData, title, headerColor, startX, startY, marginRight, totalPrefix, unit } = params;
+      let y = startY;
+      
+      if (title) {
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(headerColor[0], headerColor[1], headerColor[2]);
+        doc.text(title, startX, y);
+        y += 1;
+      }
+      
+      const class1Total = (totals as any)[`${prefix}_${boxType}_class1`] || 0;
+      const class2Total = (totals as any)[`${prefix}_${boxType}_class2`] || 0;
+      const total = (totals as any)[`${prefix}_${boxType}_total`] || 0;
+      
+      const cellPadding = hasFuerte !== hasHass ? 1.5 : 0.6;
+      
+      const tableBody = sizeData.map(s => [
+        `Size ${s.size}`,
+        s.class1.toString(),
+        s.class2.toString()
+      ]);
+      tableBody.push(['Subtotal', class1Total.toString(), class2Total.toString()]);
+      
+      autoTable(doc, {
+        startY: y,
+        margin: { left: startX, right: marginRight },
+        head: [['Size', 'Class 1', 'Class 2']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { 
+          fillColor: headerColor,
+          textColor: [255, 255, 255],
+          fontSize: 6,
+          fontStyle: 'bold'
+        },
+        styles: { 
+          fontSize: 6,
+          cellPadding,
+          textColor: [0, 0, 0]
+        },
+        columnStyles: {
+          0: { cellWidth: splitColumns ? 27 : 30, fontStyle: 'bold' },
+          1: { cellWidth: splitColumns ? 18 : 20, halign: 'center' },
+          2: { cellWidth: splitColumns ? 18 : 20, halign: 'center' }
+        },
+        tableWidth: tableWidth,
+        rowStyles: {
+          [tableBody.length - 1]: { 
+            fillColor: [173, 216, 230],
+            fontStyle: 'bold',
+            textColor: [0, 0, 0],
+            lineWidth: 0
+          }
+        },
+        didDrawCell: function(data) {
+          if (data.row.index === tableBody.length - 1) {
+            const cell = data.cell;
+            const x = cell.x;
+            const cy = cell.y;
+            const w = cell.width;
+            const h = cell.height;
+            
+            doc.setFillColor(173, 216, 230);
+            doc.rect(x, cy, w, h, 'F');
+            
+            doc.setFontSize(6);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(0, 0, 0);
+            
+            if (data.column.index === 0) {
+              doc.text('Subtotal', x + 2, cy + h / 2 + 1.5);
+            } else if (data.column.index === 1) {
+              doc.text(data.cell.raw.toString(), x + w / 2, cy + h / 2 + 1.5, { align: 'center' });
+            } else if (data.column.index === 2) {
+              doc.text(data.cell.raw.toString(), x + w / 2, cy + h / 2 + 1.5, { align: 'center' });
+            }
+          }
+        }
+      });
+      
+      y = (doc as any).lastAutoTable.finalY + 2;
+      
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setFillColor(220, 252, 231);
+      doc.rect(startX, y, tableWidth, 5, 'F');
+      doc.text(`Total ${totalPrefix}: ${total} ${unit}`, startX + 2, y + 3.5);
+      y += 10;
+      
+      return y;
+    };
     
     if (hasFuerte) {
       if (!hasHass) {
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(22, 101, 52);
-        doc.text('FUERTE AVOCADO - SIZE BREAKDOWN', pageWidth / 2, leftY - 2, { align: 'center' });
-        leftY += 4;
+        doc.text('FUERTE AVOCADO - SIZE BREAKDOWN', pageWidth / 2, leftY + 2, { align: 'center' });
+        leftY += 7;
+        rightY = leftY;
       }
       
       if (fuerte4kgSizes.length > 0) {
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(22, 101, 52);
-        doc.text('Fuerte 4kg Boxes - Size Breakdown:', leftMargin, leftY);
-        leftY += 1;
-        
-        // Build table body with size entries
-        const tableBody = fuerte4kgSizes.map(s => [
-          `Size ${s.size}`,
-          s.class1.toString(),
-          s.class2.toString()
-        ]);
-        
-        const f4kgClass1 = totals.fuerte_4kg_class1 || 0;
-        const f4kgClass2 = totals.fuerte_4kg_class2 || 0;
-        const f4kgTotal = totals.fuerte_4kg_total || 0;
-        
-        // Add Subtotal row at the END of the table
-        tableBody.push([
-          'Subtotal',
-          f4kgClass1.toString(),
-          f4kgClass2.toString()
-        ]);
-        
-        autoTable(doc, {
+        leftY = drawSizeTable({
+          prefix: 'fuerte',
+          boxType: '4kg',
+          sizeData: fuerte4kgSizes,
+          title: 'Fuerte 4kg Boxes - Size Breakdown:',
+          headerColor: [22, 101, 52],
+          startX: leftMargin,
           startY: leftY,
-          margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
-          head: [['Size', 'Class 1', 'Class 2']],
-          body: tableBody,
-          theme: 'grid',
-          headStyles: { 
-            fillColor: [22, 101, 52],
-            textColor: [255, 255, 255],
-            fontSize: 6,
-            fontStyle: 'bold'
-          },
-          styles: { 
-            fontSize: 6,
-            cellPadding: 1.5,
-            textColor: [0, 0, 0]
-          },
-          columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
-            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
-          },
-          tableWidth: tableWidth,
-          rowStyles: {
-            // Apply special styling to the last row (Subtotal)
-            [tableBody.length - 1]: { 
-              fillColor: [173, 216, 230], // Light blue shade for Subtotal
-              fontStyle: 'bold',
-              textColor: [0, 0, 0],
-              lineWidth: 0 // Remove borders
-            }
-          },
-          // Custom draw to remove borders around subtotal row
-          didDrawCell: function(data) {
-            if (data.row.index === tableBody.length - 1) {
-              // This is the subtotal row - draw a filled rectangle with rounded corners
-              const cell = data.cell;
-              const x = cell.x;
-              const y = cell.y;
-              const w = cell.width;
-              const h = cell.height;
-              
-              // Draw a clean filled rectangle without borders
-              doc.setFillColor(173, 216, 230);
-              doc.rect(x, y, w, h, 'F');
-              
-              // Draw the text manually
-              doc.setFontSize(6);
-              doc.setFont('helvetica', 'bold');
-              doc.setTextColor(0, 0, 0);
-              
-              // Position text based on column
-              if (data.column.index === 0) {
-                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
-              } else if (data.column.index === 1) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              } else if (data.column.index === 2) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              }
-            }
-          }
+          marginRight: splitColumns ? leftMargin + tableWidth : leftMargin + 2,
+          totalPrefix: 'Fuerte 4kg',
+          unit: 'boxes'
         });
-        
-        leftY = (doc as any).lastAutoTable.finalY + 2;
-        
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setFillColor(220, 252, 231);
-        doc.rect(leftMargin, leftY, tableWidth, 5, 'F');
-        doc.text(`Total Fuerte 4kg: ${f4kgTotal} boxes`, leftMargin + 2, leftY + 3.5);
-        leftY += 12;
       }
 
       if (fuerte10kgSizes.length > 0) {
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(22, 101, 52);
-        doc.text('Fuerte 10kg Crates - Size Breakdown:', leftMargin, leftY);
-        leftY += 1;
-        
-        const tableBody = fuerte10kgSizes.map(s => [
-          `Size ${s.size}`,
-          s.class1.toString(),
-          s.class2.toString()
-        ]);
-        
-        const f10kgClass1 = totals.fuerte_10kg_class1 || 0;
-        const f10kgClass2 = totals.fuerte_10kg_class2 || 0;
-        const f10kgTotal = totals.fuerte_10kg_total || 0;
-        
-        // Add Subtotal row at the END
-        tableBody.push([
-          'Subtotal',
-          f10kgClass1.toString(),
-          f10kgClass2.toString()
-        ]);
-        
-        autoTable(doc, {
-          startY: leftY,
-          margin: { left: leftMargin, right: hasFuerte && hasHass ? leftMargin + tableWidth : leftMargin + 2 },
-          head: [['Size', 'Class 1', 'Class 2']],
-          body: tableBody,
-          theme: 'grid',
-          headStyles: { 
-            fillColor: [22, 101, 52],
-            textColor: [255, 255, 255],
-            fontSize: 6,
-            fontStyle: 'bold'
-          },
-          styles: { 
-            fontSize: 6,
-            cellPadding: 1.5,
-            textColor: [0, 0, 0]
-          },
-          columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
-            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
-          },
-          tableWidth: tableWidth,
-          rowStyles: {
-            // Apply special styling to the last row (Subtotal)
-            [tableBody.length - 1]: { 
-              fillColor: [173, 216, 230],
-              fontStyle: 'bold',
-              textColor: [0, 0, 0],
-              lineWidth: 0
-            }
-          },
-          didDrawCell: function(data) {
-            if (data.row.index === tableBody.length - 1) {
-              const cell = data.cell;
-              const x = cell.x;
-              const y = cell.y;
-              const w = cell.width;
-              const h = cell.height;
-              
-              doc.setFillColor(173, 216, 230);
-              doc.rect(x, y, w, h, 'F');
-              
-              doc.setFontSize(6);
-              doc.setFont('helvetica', 'bold');
-              doc.setTextColor(0, 0, 0);
-              
-              if (data.column.index === 0) {
-                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
-              } else if (data.column.index === 1) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              } else if (data.column.index === 2) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              }
-            }
-          }
+        const isSplit = !hasHass && splitColumns;
+        const nextY = drawSizeTable({
+          prefix: 'fuerte',
+          boxType: '10kg',
+          sizeData: fuerte10kgSizes,
+          title: 'Fuerte 10kg Crates - Size Breakdown:',
+          headerColor: [22, 101, 52],
+          startX: isSplit ? rightMargin : leftMargin,
+          startY: isSplit ? rightY : leftY,
+          marginRight: isSplit ? leftMargin + 2 : (splitColumns ? leftMargin + tableWidth : leftMargin + 2),
+          totalPrefix: 'Fuerte 10kg',
+          unit: 'crates'
         });
-        
-        leftY = (doc as any).lastAutoTable.finalY + 2;
-        
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setFillColor(220, 252, 231);
-        doc.rect(leftMargin, leftY, tableWidth, 5, 'F');
-        doc.text(`Total Fuerte 10kg: ${f10kgTotal} crates`, leftMargin + 2, leftY + 3.5);
-        leftY += 14;
+        if (isSplit) {
+          rightY = nextY;
+        } else {
+          leftY = nextY;
+        }
       }
       
       if (!hasHass) {
@@ -1207,194 +1164,50 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(124, 58, 237);
-        doc.text('HASS AVOCADO - SIZE BREAKDOWN', pageWidth / 2, rightY - 2, { align: 'center' });
-        rightY += 5;
+        doc.text('HASS AVOCADO - SIZE BREAKDOWN', pageWidth / 2, rightY + 2, { align: 'center' });
+        rightY += 7;
+        leftY = rightY;
       }
       
       if (hass4kgSizes.length > 0) {
-        if (hasFuerte && hasHass) {
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(124, 58, 237);
-          doc.text('Hass 4kg Boxes - Size Breakdown:', rightMargin, rightY);
-        }
-        rightY += 1;
-        
-        const tableBody = hass4kgSizes.map(s => [
-          `Size ${s.size}`,
-          s.class1.toString(),
-          s.class2.toString()
-        ]);
-        
-        const h4kgClass1 = totals.hass_4kg_class1 || 0;
-        const h4kgClass2 = totals.hass_4kg_class2 || 0;
-        const h4kgTotal = totals.hass_4kg_total || 0;
-        
-        // Add Subtotal row at the END
-        tableBody.push([
-          'Subtotal',
-          h4kgClass1.toString(),
-          h4kgClass2.toString()
-        ]);
-        
-        autoTable(doc, {
-          startY: rightY,
-          margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
-          head: [['Size', 'Class 1', 'Class 2']],
-          body: tableBody,
-          theme: 'grid',
-          headStyles: { 
-            fillColor: [124, 58, 237],
-            textColor: [255, 255, 255],
-            fontSize: 6,
-            fontStyle: 'bold'
-          },
-          styles: { 
-            fontSize: 6,
-            cellPadding: 1.5,
-            textColor: [0, 0, 0]
-          },
-          columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
-            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
-          },
-          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
-          rowStyles: {
-            [tableBody.length - 1]: { 
-              fillColor: [173, 216, 230],
-              fontStyle: 'bold',
-              textColor: [0, 0, 0],
-              lineWidth: 0
-            }
-          },
-          didDrawCell: function(data) {
-            if (data.row.index === tableBody.length - 1) {
-              const cell = data.cell;
-              const x = cell.x;
-              const y = cell.y;
-              const w = cell.width;
-              const h = cell.height;
-              
-              doc.setFillColor(173, 216, 230);
-              doc.rect(x, y, w, h, 'F');
-              
-              doc.setFontSize(6);
-              doc.setFont('helvetica', 'bold');
-              doc.setTextColor(0, 0, 0);
-              
-              if (data.column.index === 0) {
-                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
-              } else if (data.column.index === 1) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              } else if (data.column.index === 2) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              }
-            }
-          }
+        const nextY = drawSizeTable({
+          prefix: 'hass',
+          boxType: '4kg',
+          sizeData: hass4kgSizes,
+          title: hasFuerte || hassHasBoth ? 'Hass 4kg Boxes - Size Breakdown:' : '',
+          headerColor: [124, 58, 237],
+          startX: hasFuerte ? rightMargin : leftMargin,
+          startY: hasFuerte ? rightY : (hassHasBoth ? leftY : rightY),
+          marginRight: hasFuerte ? leftMargin + 2 : (splitColumns ? leftMargin + tableWidth : leftMargin + 2),
+          totalPrefix: 'Hass 4kg',
+          unit: 'boxes'
         });
-        
-        rightY = (doc as any).lastAutoTable.finalY + 2;
-        
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setFillColor(220, 252, 231);
-        doc.rect(hasFuerte && hasHass ? rightMargin : leftMargin, rightY, hasFuerte && hasHass ? tableWidth : contentWidth, 5, 'F');
-        doc.text(`Total Hass 4kg: ${h4kgTotal} boxes`, (hasFuerte && hasHass ? rightMargin : leftMargin) + 2, rightY + 3.5);
-        rightY += 12;
+        if (hasFuerte) {
+          rightY = nextY;
+        } else {
+          leftY = nextY;
+        }
       }
       
       if (hass10kgSizes.length > 0) {
-        if (hasFuerte && hasHass) {
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(124, 58, 237);
-          doc.text('Hass 10kg Crates - Size Breakdown:', rightMargin, rightY);
-        }
-        rightY += 1;
-        
-        const tableBody = hass10kgSizes.map(s => [
-          `Size ${s.size}`,
-          s.class1.toString(),
-          s.class2.toString()
-        ]);
-        
-        const h10kgClass1 = totals.hass_10kg_class1 || 0;
-        const h10kgClass2 = totals.hass_10kg_class2 || 0;
-        const h10kgTotal = totals.hass_10kg_total || 0;
-        
-        // Add Subtotal row at the END
-        tableBody.push([
-          'Subtotal',
-          h10kgClass1.toString(),
-          h10kgClass2.toString()
-        ]);
-        
-        autoTable(doc, {
-          startY: rightY,
-          margin: { left: hasFuerte && hasHass ? rightMargin : leftMargin, right: leftMargin + 2 },
-          head: [['Size', 'Class 1', 'Class 2']],
-          body: tableBody,
-          theme: 'grid',
-          headStyles: { 
-            fillColor: [124, 58, 237],
-            textColor: [255, 255, 255],
-            fontSize: 6,
-            fontStyle: 'bold'
-          },
-          styles: { 
-            fontSize: 6,
-            cellPadding: 1.5,
-            textColor: [0, 0, 0]
-          },
-          columnStyles: {
-            0: { cellWidth: hasFuerte && hasHass ? 27 : 30, fontStyle: 'bold' },
-            1: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' },
-            2: { cellWidth: hasFuerte && hasHass ? 18 : 20, halign: 'center' }
-          },
-          tableWidth: hasFuerte && hasHass ? tableWidth : contentWidth,
-          rowStyles: {
-            [tableBody.length - 1]: { 
-              fillColor: [173, 216, 230],
-              fontStyle: 'bold',
-              textColor: [0, 0, 0],
-              lineWidth: 0
-            }
-          },
-          didDrawCell: function(data) {
-            if (data.row.index === tableBody.length - 1) {
-              const cell = data.cell;
-              const x = cell.x;
-              const y = cell.y;
-              const w = cell.width;
-              const h = cell.height;
-              
-              doc.setFillColor(173, 216, 230);
-              doc.rect(x, y, w, h, 'F');
-              
-              doc.setFontSize(6);
-              doc.setFont('helvetica', 'bold');
-              doc.setTextColor(0, 0, 0);
-              
-              if (data.column.index === 0) {
-                doc.text('Subtotal', x + 2, y + h / 2 + 1.5);
-              } else if (data.column.index === 1) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              } else if (data.column.index === 2) {
-                doc.text(data.cell.raw.toString(), x + w / 2, y + h / 2 + 1.5, { align: 'center' });
-              }
-            }
-          }
+        const isRightCol = hasFuerte || hassHasBoth;
+        const nextY = drawSizeTable({
+          prefix: 'hass',
+          boxType: '10kg',
+          sizeData: hass10kgSizes,
+          title: isRightCol ? 'Hass 10kg Crates - Size Breakdown:' : '',
+          headerColor: [124, 58, 237],
+          startX: isRightCol ? rightMargin : leftMargin,
+          startY: isRightCol ? rightY : leftY,
+          marginRight: leftMargin + 2,
+          totalPrefix: 'Hass 10kg',
+          unit: 'crates'
         });
-        
-        rightY = (doc as any).lastAutoTable.finalY + 2;
-        
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setFillColor(220, 252, 231);
-        doc.rect(hasFuerte && hasHass ? rightMargin : leftMargin, rightY, hasFuerte && hasHass ? tableWidth : contentWidth, 5, 'F');
-        doc.text(`Total Hass 10kg: ${h10kgTotal} crates`, (hasFuerte && hasHass ? rightMargin : leftMargin) + 2, rightY + 3.5);
-        rightY += 14;
+        if (isRightCol) {
+          rightY = nextY;
+        } else {
+          leftY = nextY;
+        }
       }
     }
     

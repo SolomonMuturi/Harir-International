@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Valid status values from your database
 const VALID_STATUSES = [
@@ -26,6 +27,9 @@ function isValidStatus(status: string | null): boolean {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['shipments.view', 'shipments.create', 'shipments.update', 'shipments.track', 'shipments.manifest', 'loading.view', 'inventory.view', 'carriers.view']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('🔍 API: Fetching shipments...');
     
@@ -182,6 +186,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['shipments.create', 'inventory.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     

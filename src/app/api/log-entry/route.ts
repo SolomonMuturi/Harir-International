@@ -1,10 +1,14 @@
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/api-auth';
 
 /**
  * API route to handle logging a package entry into a cold room.
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh', 'cold_room.manage', 'loading.manage']);
+  if (auth.error) return auth.error;
+
   try {
     const { packageId, coldRoomId, scanType } = await request.json();
 

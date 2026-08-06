@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['suppliers.visitors', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const { id } = params;
     
@@ -39,6 +42,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['suppliers.visitors']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     const { id } = params;
@@ -113,6 +118,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['suppliers.visitors']);
+  if (auth.error) return auth.error;
   try {
     const { id } = params;
     

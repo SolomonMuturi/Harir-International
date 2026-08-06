@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import { startOfDay, endOfDay, format } from 'date-fns'
+import { requirePermission } from '@/lib/api-auth'
 
 function generateTinyId(): string {
   return `v${Date.now().toString(36)}${Math.random().toString(36).substr(2, 3)}`
@@ -52,6 +53,8 @@ function formatPhoneNumber(phone: string): string {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['vehicle_log.view', 'vehicle_log.manage']);
+  if (auth.error) return auth.error;
   try {
     console.log('📨 GET /api/vehicle-visits - Fetching vehicle visits')
     
@@ -139,6 +142,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['vehicle_log.manage']);
+  if (auth.error) return auth.error;
   try {
     console.log('📨 POST /api/vehicle-visits - Creating new vehicle visit')
     
@@ -217,6 +222,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['vehicle_log.manage']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -315,6 +322,8 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['vehicle_log.manage']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')

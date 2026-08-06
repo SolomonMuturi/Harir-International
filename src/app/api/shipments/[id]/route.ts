@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Add this constant at the top
 const VALID_STATUSES = [
@@ -17,6 +18,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['shipments.view', 'shipments.create', 'shipments.update', 'shipments.track', 'shipments.manifest', 'loading.view', 'inventory.view', 'carriers.view']);
+  if (auth.error) return auth.error;
+
   try {
     // Extract ID from params
     const shipmentId = params.id;
@@ -84,6 +88,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['shipments.create', 'inventory.manage', 'shipments.update']);
+  if (auth.error) return auth.error;
+
   try {
     const shipmentId = params.id;
     const body = await request.json();
@@ -172,6 +179,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['shipments.create', 'inventory.manage', 'shipments.update']);
+  if (auth.error) return auth.error;
+
   try {
     const shipmentId = params.id;
     const body = await request.json();
@@ -215,6 +225,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['shipments.create', 'inventory.manage', 'shipments.update']);
+  if (auth.error) return auth.error;
+
   try {
     const shipmentId = params.id;
     

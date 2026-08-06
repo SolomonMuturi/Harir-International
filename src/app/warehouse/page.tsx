@@ -6297,6 +6297,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                       <Table>
                         <TableHeader className="sticky top-0 z-10 bg-card">
                           <TableRow className="bg-muted/50">
+                            <TableHead className="w-[40px] text-center font-semibold">#</TableHead>
                             <TableHead className="font-semibold">Supplier</TableHead>
                             <TableHead className="text-center font-semibold">Records</TableHead>
                             <TableHead className="text-center font-semibold">Fuerte 4kg</TableHead>
@@ -6312,13 +6313,13 @@ const downloadCSV = (records: CountingRecord[]) => {
                       <TableBody>
                         {filteredSupplierSummaries.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
+                            <TableCell colSpan={11} className="text-center text-muted-foreground py-10">
                               {supplierSearchTerm
                                 ? 'No suppliers match your search.'
                                 : 'No counting records found. Complete counting to see supplier box totals.'}
                             </TableCell>
                           </TableRow>
-                        ) : filteredSupplierSummaries.map((summary) => {
+                        ) : filteredSupplierSummaries.map((summary, index) => {
                           const isExpanded = expandedSupplierBox === summary.supplierId;
                           return (
                             <Fragment key={summary.supplierId}>
@@ -6326,6 +6327,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                                 onClick={() => setExpandedSupplierBox(isExpanded ? null : summary.supplierId)}
                                 className="cursor-pointer transition-colors hover:bg-muted/50"
                               >
+                                <TableCell className="text-center text-muted-foreground font-medium">{index + 1}</TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-2">
                                     <Building className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -6355,7 +6357,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                               </TableRow>
                               {isExpanded && (
                                 <TableRow>
-                                  <TableCell colSpan={10} className="bg-muted/20 p-4">
+                                  <TableCell colSpan={11} className="bg-muted/20 p-4">
                                     <div className="space-y-4">
                                       <div className="flex items-center justify-between flex-wrap gap-2">
                                         <h4 className="font-semibold text-green-800">

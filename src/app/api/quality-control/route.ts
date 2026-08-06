@@ -1,8 +1,11 @@
 // app/api/quality-control/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['qc.view', 'qc.perform', 'qc.approve']);
+  if (auth.error) return auth.error;
   try {
     console.log('Fetching intake data and quality checks...');
     
@@ -104,6 +107,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['qc.perform', 'qc.approve']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     

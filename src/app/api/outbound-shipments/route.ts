@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'inventory.view']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('📦 Fetching outbound shipments...');
     

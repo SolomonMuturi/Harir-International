@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Helper functions
 function cleanString(input: string | null): string | null {
@@ -27,6 +28,9 @@ function generateShortId(prefix: string = 'ls'): string {
 
 // GET: Fetch loading sheets
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('📋 Loading Sheets API: Fetching...');
     
@@ -121,6 +125,9 @@ export async function GET(request: NextRequest) {
 
 // POST: Create a new loading sheet
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     
@@ -373,6 +380,9 @@ export async function POST(request: NextRequest) {
 
 // GET: Fetch specific loading sheet details by ID
 export async function GET_BY_ID(request: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const id = params.id;
     console.log(`📋 Loading Sheets API: Fetching loading sheet ${id}...`);
@@ -424,6 +434,9 @@ export async function GET_BY_ID(request: NextRequest, { params }: { params: { id
 
 // GET: Fetch pallets for a specific loading sheet
 export async function GET_PALLETS(request: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const id = params.id;
     console.log(`📦 Loading Sheets API: Fetching pallets for loading sheet ${id}...`);
@@ -481,6 +494,9 @@ export async function GET_PALLETS(request: NextRequest, { params }: { params: { 
 
 // PUT: Update an existing loading sheet
 export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -698,6 +714,9 @@ export async function PUT(request: NextRequest) {
 
 // DELETE: Remove a loading sheet
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -759,6 +778,9 @@ export async function DELETE(request: NextRequest) {
 
 // PATCH: Update carrier assignment for a loading sheet
 export async function PATCH(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -840,6 +862,9 @@ export async function PATCH(request: NextRequest) {
 
 // GET: Download loading sheet as CSV
 export async function GET_DOWNLOAD(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -965,6 +990,9 @@ export async function GET_DOWNLOAD(request: NextRequest) {
 
 // POST: Mark pallets as assigned
 export async function POST_ASSIGN_PALLETS(request: NextRequest) {
+  const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     

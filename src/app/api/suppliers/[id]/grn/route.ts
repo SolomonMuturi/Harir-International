@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { format } from 'date-fns';
+import { requirePermission } from '@/lib/api-auth';
 
 interface SupplierGRNData {
   supplier_id: string;
@@ -31,6 +32,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requirePermission(request, ['suppliers.weigh']);
+  if (auth.error) return auth.error;
   try {
     // Await params for Next.js 15
     const { id: supplierId } = await params;

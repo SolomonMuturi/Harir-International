@@ -1,8 +1,11 @@
 // app/api/suppliers/checked-in/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh', 'suppliers.manage']);
+  if (auth.error) return auth.error;
   try {
     console.log('📡 GET /api/suppliers/checked-in - Fetching checked-in vehicles');
     
@@ -59,6 +62,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh', 'suppliers.manage']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { format } from 'date-fns';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['utilities.view', 'utilities.reports']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');

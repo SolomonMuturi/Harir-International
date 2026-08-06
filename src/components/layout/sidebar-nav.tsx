@@ -31,7 +31,7 @@ import {
   CalendarCheck,
   Apple,
 } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Separator } from '../ui/separator';
 import Link from 'next/link';
@@ -128,6 +128,7 @@ const getNavItemsByCategory = () => {
 
 export function SidebarNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session, status } = useSession();
   
   const userPermissions = (session?.user as any)?.permissions || [];
@@ -191,9 +192,13 @@ export function SidebarNav() {
                             variant={pathname === item.href || pathname?.startsWith(`${item.href}/`) ? 'secondary' : 'ghost'}
                             className="w-full justify-start"
                         >
-                            <Link href={item.href}>
-                            <item.icon className="mr-2 h-4 w-4" />
-                            <span>{item.name}</span>
+                            <Link
+                              href={item.href}
+                              onMouseEnter={() => router.prefetch(item.href)}
+                              onFocus={() => router.prefetch(item.href)}
+                            >
+                              <item.icon className="mr-2 h-4 w-4" />
+                              <span>{item.name}</span>
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>

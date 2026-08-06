@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requirePermission } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['qc.view', 'qc.perform']);
+  if (auth.error) return auth.error;
   try {
     // Create URL for the target endpoint
     const targetUrl = new URL('/api/quality-checks', request.url)
@@ -62,6 +65,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['qc.view', 'qc.perform']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json()
     

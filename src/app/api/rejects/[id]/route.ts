@@ -1,11 +1,15 @@
 // app/api/rejects/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission(request, ['qc.perform', 'suppliers.weigh']);
+  if (auth.error) return auth.error;
+
   try {
     const { id } = params;
     console.log('🗑️ DELETE /api/rejects called for id:', id);

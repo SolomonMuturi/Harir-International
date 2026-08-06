@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.visitors', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const visitors = await prisma.visitors.findMany({
       orderBy: { created_at: 'desc' }
@@ -19,6 +22,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.visitors']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     console.log('📥 POST received:', body);
@@ -72,6 +77,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.visitors']);
+  if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

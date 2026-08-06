@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // GET: Fetch all transit history
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['shipments.track', 'shipments.view']);
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const assignmentId = searchParams.get('assignmentId');
@@ -87,6 +91,9 @@ export async function GET(request: NextRequest) {
 
 // POST: Create new transit event
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['shipments.track', 'shipments.view']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { assignmentId, action, notes, location } = body;

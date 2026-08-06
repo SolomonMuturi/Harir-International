@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
+import { requirePermission } from '@/lib/api-auth';
 
 const prisma = new PrismaClient();
 
@@ -15,6 +16,8 @@ const createUserSchema = z.object({
 
 // GET /api/user-roles/users - Get all users with their roles
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['admin.roles', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const search = request.nextUrl.searchParams.get('search') || '';
     const roleId = request.nextUrl.searchParams.get('roleId');
@@ -66,6 +69,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/user-roles/users - Create new user
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['admin.roles', 'admin.settings']);
+  if (auth.error) return auth.error;
   try {
     const body = await request.json();
     

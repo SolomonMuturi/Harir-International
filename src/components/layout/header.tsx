@@ -9,8 +9,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Search, LogOut } from "lucide-react";
+import { Search, LogOut, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -23,8 +32,50 @@ export function Header() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+  const logoutCountdownRef = useRef<NodeJS.Timeout | null>(null);
+  const INACTIVITY_TIMEOUT = 5 * 60 * 1000;
   const [showWarning, setShowWarning] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Failed to change password");
+        return;
+      }
+      toast.success("Password changed successfully");
+      setChangePasswordOpen(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      console.error("Change password error:", error);
+      toast.error("Failed to change password");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   const getInitials = (name: string = "") => {
     return name
@@ -53,14 +104,24 @@ export function Header() {
     }
   };
 
-  const resetLogoutTimer = () => {
+  const clearLogoutTimers = () => {
     if (logoutTimerRef.current) {
       clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
     }
+    if (logoutCountdownRef.current) {
+      clearTimeout(logoutCountdownRef.current);
+      logoutCountdownRef.current = null;
+    }
+  };
+
+  const resetLogoutTimer = () => {
+    clearLogoutTimers();
+    setShowWarning(false);
     // Show warning modal 1 minute before logout
     logoutTimerRef.current = setTimeout(() => {
       setShowWarning(true);
-      setTimeout(() => {
+      logoutCountdownRef.current = setTimeout(() => {
         toast.warning("Session expired due to inactivity");
         handleLogout();
       }, 60 * 1000);
@@ -95,9 +156,7 @@ export function Header() {
       const cleanup = setupActivityListeners();
       return () => {
         cleanup();
-        if (logoutTimerRef.current) {
-          clearTimeout(logoutTimerRef.current);
-        }
+        clearLogoutTimers();
       };
     }
   }, [session?.user]);
@@ -115,9 +174,7 @@ export function Header() {
 
   useEffect(() => {
     return () => {
-      if (logoutTimerRef.current) {
-        clearTimeout(logoutTimerRef.current);
-      }
+      clearLogoutTimers();
     };
   }, []);
 
@@ -209,6 +266,13 @@ export function Header() {
                 <DropdownMenuSeparator className="mx-2" />
                 <div className="p-2">
                   <DropdownMenuItem
+                    onClick={() => setChangePasswordOpen(true)}
+                    className="cursor-pointer rounded-md px-3 py-2 text-sm transition-colors"
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    <span>Change Password</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     onClick={handleLogout}
                     className="cursor-pointer rounded-md px-3 py-2 text-sm transition-colors focus:bg-destructive/10 focus:text-destructive text-destructive"
                   >
@@ -221,6 +285,98 @@ export function Header() {
           )}
         </div>
       </header>
+
+      <Dialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Enter your current password and choose a new one.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleChangePassword}>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="current-password">Current Password</Label>
+                <div className="relative">
+                  <Input
+                    id="current-password"
+                    type={showPassword ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="confirm-password">Confirm New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setChangePasswordOpen(false)}
+                disabled={changingPassword}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={changingPassword}>
+                {changingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {changingPassword ? "Updating..." : "Update Password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

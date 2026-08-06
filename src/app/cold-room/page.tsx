@@ -1020,19 +1020,10 @@ export default function ColdRoomPage() {
   
 const fetchRepackingRecords = async () => {
   try {
-    console.log('📦 Fetching repacking records...');
     const response = await fetch('/api/cold-room?action=repacking');
     const result = await response.json();
-    console.log('📦 Repacking API response:', result);
     
     if (result.success) {
-      console.log('📦 Repacking records count:', result.data?.length);
-      if (result.data && result.data.length > 0) {
-        console.log('📦 First record sample:', result.data[0]);
-        // Check the removed_boxes field specifically
-        console.log('📦 First record removed_boxes:', result.data[0].removed_boxes);
-        console.log('📦 Type of removed_boxes:', typeof result.data[0].removed_boxes);
-      }
       setRepackingRecords(result.data || []);
     } else {
       console.error('📦 Repacking API failed:', result.error);
@@ -4253,27 +4244,26 @@ const fetchRepackingRecords = async () => {
                             {safeArray(repackingRecords)
                               .filter(record => record.cold_room_id === selectedColdRoom)
                               .map((record) => {
-                          
-console.log('Raw removed_boxes:', record.removed_boxes);
-console.log('Type of removed_boxes:', typeof record.removed_boxes);
+                                let parsedRemoved;
+                                try {
+                                  parsedRemoved = typeof record.removed_boxes === 'string' 
+                                    ? JSON.parse(record.removed_boxes) 
+                                    : record.removed_boxes;
+                                } catch (e) {
+                                  parsedRemoved = [];
+                                }
 
-let parsedRemoved;
-try {
-  parsedRemoved = typeof record.removed_boxes === 'string' 
-    ? JSON.parse(record.removed_boxes) 
-    : record.removed_boxes;
-  console.log('Parsed removed:', parsedRemoved);
-} catch (e) {
-  console.error('Failed to parse:', e);
-  parsedRemoved = [];
-}
+                                let parsedReturned;
+                                try {
+                                  parsedReturned = typeof record.returned_boxes === 'string' 
+                                    ? JSON.parse(record.returned_boxes) 
+                                    : record.returned_boxes;
+                                } catch (e) {
+                                  parsedReturned = [];
+                                }
 
-const removedBoxes = safeArray(parsedRemoved);
-const returnedBoxes = safeArray(
-  typeof record.returned_boxes === 'string' 
-    ? JSON.parse(record.returned_boxes) 
-    : record.returned_boxes
-);          
+                                const removedBoxes = safeArray(parsedRemoved);
+                                const returnedBoxes = safeArray(parsedReturned);
                                 return (
                                   <TableRow key={record.id}>
                                     <TableCell>{formatDate(record.timestamp)}</TableCell>

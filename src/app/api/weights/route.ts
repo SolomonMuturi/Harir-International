@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { requirePermission } from '@/lib/api-auth';
 
 // Helper function to generate sequential pallet ID
 function generateSequentialPalletId(counter: number, regionCode?: string): string {
@@ -23,6 +24,9 @@ function generateValidId(): string {
 
 // GET handler - Fetch weight entries with gate entry filtering
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh', 'qc.view', 'qc.perform', 'counting.perform', 'inventory.view', 'cold_room.view', 'cold_room.manage', 'dashboard.view', 'dashboard.analytics']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('📥 GET /api/weights called');
     
@@ -298,6 +302,9 @@ export async function GET(request: NextRequest) {
 
 // POST handler - Create new weight entry with gate entry ID
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('📤 POST /api/weights called');
     
@@ -566,6 +573,9 @@ export async function POST(request: NextRequest) {
 
 // PATCH handler - Update weight entry (including gate_entry_id)
 export async function PATCH(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('🔄 PATCH /api/weights called');
     
@@ -881,6 +891,9 @@ async function handleWeightUpdate(id: string, body: any) {
 
 // PUT handler - Alternative update method
 export async function PUT(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh']);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { id, ...updateData } = body;
@@ -909,6 +922,9 @@ export async function PUT(request: NextRequest) {
 
 // DELETE handler - Remove weight entry
 export async function DELETE(request: NextRequest) {
+  const auth = await requirePermission(request, ['suppliers.weigh']);
+  if (auth.error) return auth.error;
+
   try {
     console.log('🗑️ DELETE /api/weights called');
     

@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css';
 
 // Import SessionProviderWrapper component
 import { SessionProviderWrapper } from '@/components/session-provider-wrapper';
+import { ServiceWorkerRegister } from '@/components/service-worker-register';
 
 const ptSans = PT_Sans({
   subsets: ['latin'],
@@ -41,6 +42,7 @@ export default function RootLayout({
           </UserProvider>
           <Toaster />
         </SessionProviderWrapper>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

@@ -2525,7 +2525,7 @@ function CarrierAssignmentForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border max-h-[60vh] overflow-auto scrollbar-hide">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -2993,7 +2993,7 @@ function TransitManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border max-h-[60vh] overflow-auto scrollbar-hide">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -3106,7 +3106,7 @@ function TransitManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-hide">
             {transitHistory.map((history) => (
               <div key={history.id} className="flex items-start gap-4 p-4 border rounded-lg">
                 <div className={`p-2 rounded-full ${
@@ -3862,7 +3862,7 @@ function HistoryDownload() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border max-h-[60vh] overflow-auto scrollbar-hide">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -4090,7 +4090,7 @@ function HistoryDownload() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border max-h-[60vh] overflow-auto scrollbar-hide">
             <Table>
               <TableHeader>
                 <TableRow>

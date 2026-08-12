@@ -699,7 +699,7 @@ export default function CustomerDetailPage() {
       </SidebarInset>
     </SidebarProvider>
     
-    <div className="hidden">
+    <div style={{ position: 'absolute', left: '-9999px', top: 0, pointerEvents: 'none' }}>
       <div ref={contractPrintRef} className="bg-white">
         {selectedDocument && <PrintableContract customer={customer} document={selectedDocument} />}
       </div>

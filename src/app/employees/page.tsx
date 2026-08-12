@@ -72,6 +72,7 @@ import { Switch } from '@/components/ui/switch';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logActivity } from '@/lib/activity-logger';
+import { downloadXlsx, type XlsxColumn } from '@/lib/xlsx-export';
 
 
 // Types
@@ -759,18 +760,6 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
   );
 };
 
-// Helper function to escape CSV fields
-const escapeCsvField = (field: any): string => {
-  if (field === null || field === undefined) {
-    return '';
-  }
-  const stringField = String(field);
-  if (/[",\n]/.test(stringField)) {
-    return `"${stringField.replace(/"/g, '""')}"`;
-  }
-  return stringField;
-};
-
 // Helper function to determine shift type based on hours worked
 const getShiftType = (clockInTime?: string, clockOutTime?: string): string => {
   if (!clockInTime || !clockOutTime) return 'N/A';
@@ -831,6 +820,7 @@ const generateEmployeePDF = async (
     let hasLogo = false;
     try {
       const logoPaths = [
+        '/images/HLogo.png',
         '/Harirlogo.svg',
         '/Harirlogo.png',
         '/Harirlogo.jpg',
@@ -967,6 +957,7 @@ const generateAttendancePDF = async (
     let hasLogo = false;
     try {
       const logoPaths = [
+        '/images/HLogo.png',
         '/Harirlogo.svg',
         '/Harirlogo.png',
         '/Harirlogo.jpg',
@@ -2468,7 +2459,7 @@ export default function EmployeesPage() {
     setFilteredAttendance(filtered);
   }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees, attendanceStartTime, attendanceEndTime]);
 
-  // Export attendance to CSV with enhanced headers
+  // Export attendance to XLS with enhanced headers
   const exportToCSV = async () => {
     if (filteredAttendance.length === 0) {
       toast({
@@ -2487,15 +2478,15 @@ export default function EmployeesPage() {
       }
       
       // Create the header row
-      const headers = [
-        'From Date',
-        'To Date',
-        'Name', 
-        'ID Number', 
-        'Tel Number', 
-        'Designation', 
-        'Designation Assignment Count',
-        'Shift(Full/Half)'
+      const columns: XlsxColumn[] = [
+        { header: 'From Date', key: 'fromDate' },
+        { header: 'To Date', key: 'toDate' },
+        { header: 'Name', key: 'name' },
+        { header: 'ID Number', key: 'idNumber', text: true },
+        { header: 'Tel Number', key: 'telNumber', text: true },
+        { header: 'Designation', key: 'designation' },
+        { header: 'Designation Assignment Count', key: 'designationAssignmentCount' },
+        { header: 'Shift(Full/Half)', key: 'shift' },
       ];
       
       // Group attendance by employee for the date range
@@ -2516,8 +2507,8 @@ export default function EmployeesPage() {
         });
       });
       
-      // Create CSV data rows
-      const csvData = Array.from(employeeAttendanceMap.entries()).map(([employeeId, records]) => {
+      // Create XLS data rows
+      const xlsData = Array.from(employeeAttendanceMap.entries()).map(([employeeId, records]) => {
         const employee = employees.find(emp => emp.id === employeeId);
         if (!employee) return null;
         
@@ -2537,43 +2528,36 @@ export default function EmployeesPage() {
         const mostCommonShift = Object.entries(shiftCounts).sort((a, b) => b[1] - a[1])[0];
         const shift = mostCommonShift ? `${mostCommonShift[0]} (${mostCommonShift[1]} days)` : '';
 
-        return [
-          format(dateRange.from, 'yyyy-MM-dd'),
-          format(dateRange.to, 'yyyy-MM-dd'),
-          employee?.name || 'Unknown',
-          employee?.id_number || 'N/A',
-          employee?.phone || 'N/A',
+        return {
+          fromDate: format(dateRange.from, 'yyyy-MM-dd'),
+          toDate: format(dateRange.to, 'yyyy-MM-dd'),
+          name: employee?.name || 'Unknown',
+          idNumber: employee?.id_number || 'N/A',
+          telNumber: employee?.phone || 'N/A',
           designation,
-          designationAssignmentCount.toString(),
-          shift
-        ];
-      }).filter(row => row !== null);
-      
-      // Create CSV content
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => row!.map(cell => escapeCsvField(cell)).join(','))
-      ].join('\n');
+          designationAssignmentCount: designationAssignmentCount.toString(),
+          shift,
+        };
+      }).filter(row => row !== null) as Record<string, unknown>[];
 
-      // Download the CSV file
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `attendance_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.csv`;
-      a.click();
+      downloadXlsx(
+        xlsData,
+        columns,
+        `attendance_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.xlsx`,
+        'Attendance'
+      );
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'EMPLOYEE_CSV_EXPORTED',
+        action: 'EMPLOYEE_XLS_EXPORTED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
           exportType: 'attendance',
-          fileType: 'csv',
+          fileType: 'xlsx',
           recordCount: filteredAttendance.length,
-          employeeCount: csvData.length,
+          employeeCount: xlsData.length,
           from: dateRange.from.toISOString(),
           to: dateRange.to.toISOString(),
           timestamp: new Date().toISOString(),
@@ -2581,32 +2565,32 @@ export default function EmployeesPage() {
       });
 
       toast({
-        title: 'CSV Exported',
+        title: 'XLS Exported',
         description: 'Attendance report has been downloaded.',
       });
     } catch (error: any) {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'EMPLOYEE_CSV_EXPORTED',
+        action: 'EMPLOYEE_XLS_EXPORTED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
           exportType: 'attendance',
-          fileType: 'csv',
+          fileType: 'xlsx',
           error: error.message,
           timestamp: new Date().toISOString(),
         },
       });
       toast({
-        title: 'CSV Export Failed',
-        description: error.message || 'Failed to export CSV',
+        title: 'XLS Export Failed',
+        description: error.message || 'Failed to export XLS',
         variant: 'destructive',
       });
     }
   };
 
-  // Export employee list to CSV with enhanced headers
+  // Export employee list to XLS with enhanced headers
   const exportEmployeeCSV = async () => {
     if (employees.length === 0) {
       toast({
@@ -2622,82 +2606,77 @@ export default function EmployeesPage() {
       const reportDate = new Date();
       
       // Create the header row
-      const headers = [
-        'Report Date',
-        'Name', 
-        'ID Number', 
-        'Tel Number', 
-        'Designation', 
-        'Shift(Full/Half)', 
-        'Contract Type',
-        'Status'
+      const columns: XlsxColumn[] = [
+        { header: 'Report Date', key: 'reportDate' },
+        { header: 'Name', key: 'name' },
+        { header: 'ID Number', key: 'idNumber', text: true },
+        { header: 'Tel Number', key: 'telNumber', text: true },
+        { header: 'Designation', key: 'designation' },
+        { header: 'Shift(Full/Half)', key: 'shift' },
+        { header: 'Contract Type', key: 'contract' },
+        { header: 'Status', key: 'status' },
       ];
       
-      // Create CSV data rows
-      const csvData = employees.map(employee => {
+      // Create XLS data rows
+      const xlsData = employees.map(employee => {
         // Determine shift based on contract type
         const shift = employee.contract === 'Full-time' ? 'Full' : 
                      employee.contract === 'Part-time' ? 'Half' : 'Varies';
         
-        return [
-          format(reportDate, 'yyyy-MM-dd'),
-          employee.name || 'N/A',
-          employee.id_number || 'N/A',
-          employee.phone || 'N/A',
-          employee.role || 'N/A',
+        return {
+          reportDate: format(reportDate, 'yyyy-MM-dd'),
+          name: employee.name || 'N/A',
+          idNumber: employee.id_number || 'N/A',
+          telNumber: employee.phone || 'N/A',
+          designation: employee.role || 'N/A',
           shift,
-          employee.contract,
-          employee.status
-        ];
+          contract: employee.contract,
+          status: employee.status,
+        };
       });
 
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => row.map(cell => escapeCsvField(cell)).join(','))
-      ].join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `employee_directory_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      a.click();
+      downloadXlsx(
+        xlsData,
+        columns,
+        `employee_directory_${format(new Date(), 'yyyy-MM-dd')}.xlsx`,
+        'Employees'
+      );
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'EMPLOYEE_CSV_EXPORTED',
+        action: 'EMPLOYEE_XLS_EXPORTED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
           exportType: 'employees',
-          fileType: 'csv',
+          fileType: 'xlsx',
           employeeCount: employees.length,
           timestamp: new Date().toISOString(),
         },
       });
 
       toast({
-        title: 'CSV Exported',
+        title: 'XLS Exported',
         description: 'Employee directory has been downloaded.',
       });
     } catch (error: any) {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'EMPLOYEE_CSV_EXPORTED',
+        action: 'EMPLOYEE_XLS_EXPORTED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
           exportType: 'employees',
-          fileType: 'csv',
+          fileType: 'xlsx',
           error: error.message,
           timestamp: new Date().toISOString(),
         },
       });
       toast({
-        title: 'CSV Export Failed',
-        description: error.message || 'Failed to export CSV',
+        title: 'XLS Export Failed',
+        description: error.message || 'Failed to export XLS',
         variant: 'destructive',
       });
     }
@@ -3572,7 +3551,7 @@ export default function EmployeesPage() {
                       </Select>
                       <Button onClick={exportEmployeeCSV} variant="outline">
                         <Download className="mr-2 w-4 h-4" />
-                        Export CSV
+                        Export XLS
                       </Button>
                       <Button 
                         onClick={() => handleExportPDF('employees')}
@@ -3814,7 +3793,7 @@ export default function EmployeesPage() {
                       
                       <Button onClick={exportToCSV}>
                         <Download className="w-4 h-4 mr-2" />
-                        Export CSV
+                        Export XLS
                       </Button>
                       
                       <Button 

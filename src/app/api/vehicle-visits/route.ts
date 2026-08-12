@@ -119,10 +119,43 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // Resolve phone numbers. vehicle_visits.contact_phone is often empty for
+    // historical records, so fall back to the phone captured on the linked
+    // weight entry (matched by gate_entry_id).
+    const gateEntryIds = Array.from(
+      new Set(visits.map(v => v.gate_entry_id).filter(Boolean))
+    ) as string[];
+
+    let weightEntryPhones: Record<string, { supplier_phone?: string; driver_phone?: string }> = {};
+    if (gateEntryIds.length > 0) {
+      const weightEntries = await prisma.weight_entries.findMany({
+        where: { gate_entry_id: { in: gateEntryIds } },
+        select: {
+          gate_entry_id: true,
+          supplier_phone: true,
+          driver_phone: true
+        }
+      });
+      weightEntries.forEach(w => {
+        weightEntryPhones[w.gate_entry_id] = {
+          supplier_phone: w.supplier_phone || undefined,
+          driver_phone: w.driver_phone || undefined
+        };
+      });
+    }
+
+    const visitsWithPhone = visits.map(v => {
+      const phoneEntry = v.gate_entry_id ? weightEntryPhones[v.gate_entry_id] : undefined;
+      return {
+        ...v,
+        phone_number: v.contact_phone || phoneEntry?.supplier_phone || phoneEntry?.driver_phone || ''
+      };
+    });
+
     console.log(`✅ Found ${visits.length} vehicle visits`)
 
     return NextResponse.json({
-      visits,
+      visits: visitsWithPhone,
       stats: { todayGateEntries },
       pagination: {
         page,

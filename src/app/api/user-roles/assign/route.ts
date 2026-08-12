@@ -1,10 +1,8 @@
 // /app/api/user-roles/assign/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 const assignRoleSchema = z.object({
   userIds: z.array(z.string()),

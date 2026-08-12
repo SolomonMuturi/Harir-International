@@ -1050,7 +1050,7 @@ export default function ReportsPage() {
           </main>
         </SidebarInset>
       </SidebarProvider>
-      <div className="hidden">
+      <div style={{ position: 'absolute', left: '-9999px', top: 0, pointerEvents: 'none' }}>
         <div ref={printRef}>
           {selectedPdfReport === 'visitorManifest' && <PrintableVisitorReport visitors={visitorData} employees={employeeData} attendance={timeAttendanceData} />}
           {selectedPdfReport === 'shipmentManifest' && <PrintableShipmentReport shipments={shipmentData} />}

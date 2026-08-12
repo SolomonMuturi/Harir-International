@@ -1,11 +1,9 @@
 // /app/api/auth/change-password/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),

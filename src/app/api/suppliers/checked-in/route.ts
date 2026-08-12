@@ -23,6 +23,27 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Found ${checkedInVehicles.length} checked-in vehicles`);
 
+    // Resolve phone numbers from the linked weight entry (by gate_entry_id)
+    // for historical visits that predate vehicle_visits.contact_phone.
+    const gateEntryIds = Array.from(
+      new Set(checkedInVehicles.map(v => v.gate_entry_id).filter(Boolean))
+    ) as string[];
+
+    let weightEntryPhones: Record<string, string> = {};
+    if (gateEntryIds.length > 0) {
+      const weightEntries = await prisma.weight_entries.findMany({
+        where: { gate_entry_id: { in: gateEntryIds } },
+        select: {
+          gate_entry_id: true,
+          supplier_phone: true,
+          driver_phone: true
+        }
+      });
+      weightEntries.forEach(w => {
+        weightEntryPhones[w.gate_entry_id] = w.supplier_phone || w.driver_phone || '';
+      });
+    }
+
     // Transform to match the CheckedInSupplier interface
     const checkedInSuppliers = checkedInVehicles.map(vehicle => {
       let fruitVarieties: string[] = [];
@@ -39,7 +60,7 @@ export async function GET(request: NextRequest) {
         supplier_code: `VISIT-${vehicle.id.slice(-6)}`,
         company_name: vehicle.company_name || 'Enter Supplier Name',
         driver_name: vehicle.driver_name || 'Unknown',
-        phone_number: vehicle.contact_phone || '',
+        phone_number: vehicle.contact_phone || (vehicle.gate_entry_id ? weightEntryPhones[vehicle.gate_entry_id] : '') || '',
         id_number: vehicle.driver_id_number || '',
         vehicle_plate: vehicle.vehicle_plate || '',
         fruit_varieties: fruitVarieties,

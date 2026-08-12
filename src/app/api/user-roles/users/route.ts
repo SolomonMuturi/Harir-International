@@ -1,11 +1,9 @@
 // /app/api/user-roles/users/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 const createUserSchema = z.object({
   email: z.string().email('Invalid email address'),

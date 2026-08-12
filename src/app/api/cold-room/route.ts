@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   const auth = await requirePermission(request, ['cold_room.view', 'cold_room.manage', 'cold_room.temperature', 'cold_room.inventory']);

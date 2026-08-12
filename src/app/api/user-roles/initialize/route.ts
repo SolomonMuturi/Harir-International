@@ -1,9 +1,7 @@
 // /app/api/user-roles/initialize/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 // POST /api/user-roles/initialize - Initialize predefined roles
 export async function POST(request: NextRequest) {

@@ -1,10 +1,8 @@
 // src/app/api/activity-logs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 // Generate a 20-character ID
 function generateId(): string {

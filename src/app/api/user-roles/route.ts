@@ -1,10 +1,8 @@
 // /app/api/user-roles/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/api-auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 const createRoleSchema = z.object({
   name: z.string().min(1, 'Role name is required').max(100),

@@ -47,8 +47,6 @@ function generateCSV(suppliers) {
     'Bank Account',
     'M-PESA Paybill',
     'M-PESA Account',
-    'Active Contracts',
-    'Vehicle Type',
     'Created At'
   ]
 
@@ -64,8 +62,6 @@ function generateCSV(suppliers) {
     supplier.bank_account_number || 'N/A',
     supplier.mpesa_paybill || 'N/A',
     supplier.mpesa_account_number || 'N/A',
-    supplier.active_contracts || 0,
-    supplier.vehicle_type || 'Truck',
     new Date(supplier.created_at).toLocaleDateString()
   ])
 
@@ -77,8 +73,40 @@ function generateCSV(suppliers) {
   return csvContent
 }
 
+// Load the company logo as a base64 data URI for embedding in HTML reports
+function loadLogoBase64() {
+  const fs = require('fs')
+  const path = require('path')
+
+  const candidates = [
+    '/images/HLogo.png',
+    '/images/Harirlogo.jpg'
+  ]
+
+  for (const file of candidates) {
+    const filePath = path.join(process.cwd(), 'public', file)
+    try {
+      if (fs.existsSync(filePath)) {
+        const buffer = fs.readFileSync(filePath)
+        const ext = file.split('.').pop().toLowerCase()
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
+        return `data:${mime};base64,${buffer.toString('base64')}`
+      }
+    } catch (e) {
+      continue
+    }
+  }
+
+  return null
+}
+
 // Generate HTML report
 function generateHTMLReport(suppliers, startDate, endDate) {
+  const logoBase64 = loadLogoBase64()
+  const logoHtml = logoBase64
+    ? `<img src="${logoBase64}" alt="Harir International" style="max-height: 60px; margin: 0 auto 15px; display: block;" />`
+    : ''
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -95,7 +123,6 @@ function generateHTMLReport(suppliers, startDate, endDate) {
     tr:nth-child(even) { background: #f9f9f9; }
     .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
     .payment-info { background: #e8f5e9; padding: 10px; border-radius: 3px; margin: 5px 0; }
-    .vehicle-info { background: #e3f2fd; padding: 10px; border-radius: 3px; margin: 5px 0; }
     .locked-badge { 
       background: #2196F3; 
       color: white; 
@@ -107,6 +134,7 @@ function generateHTMLReport(suppliers, startDate, endDate) {
   </style>
 </head>
 <body>
+  ${logoHtml}
   <h1>Supplier Report</h1>
   <div class="header">
     <p><strong>Date Range:</strong> ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}</p>
@@ -117,7 +145,6 @@ function generateHTMLReport(suppliers, startDate, endDate) {
     <h3>Summary</h3>
     <p><strong>Active Suppliers:</strong> ${suppliers.filter(s => s.status === 'Active').length}</p>
     <p><strong>Inactive Suppliers:</strong> ${suppliers.filter(s => s.status === 'Inactive').length}</p>
-    <p><strong>Total Active Contracts:</strong> ${suppliers.reduce((acc, s) => acc + (s.active_contracts || 0), 0)}</p>
     <p><span class="locked-badge">🔒 Locked</span> = Name locked to phone & payment details</p>
   </div>
   
@@ -127,8 +154,6 @@ function generateHTMLReport(suppliers, startDate, endDate) {
         <th>Supplier Code</th>
         <th>Supplier Name <span class="locked-badge">🔒</span></th>
         <th>Phone Number <span class="locked-badge">🔒</span></th>
-        <th>Vehicle Type</th>
-        <th>Vehicle Plate</th>
         <th>Email</th>
         <th>Location</th>
         <th>Status</th>
@@ -141,18 +166,10 @@ function generateHTMLReport(suppliers, startDate, endDate) {
           <td><strong>${supplier.supplier_code || 'N/A'}</strong></td>
           <td>${supplier.name || 'N/A'}</td>
           <td>${supplier.contact_phone || 'N/A'}</td>
-          <td>${supplier.vehicle_type || 'Truck'}</td>
-          <td>${supplier.vehicle_number_plate || 'N/A'}</td>
           <td>${supplier.contact_email || 'N/A'}</td>
           <td>${supplier.location || 'N/A'}</td>
           <td>${supplier.status || 'N/A'}</td>
           <td>
-            ${supplier.vehicle_type || supplier.vehicle_number_plate ? `
-              <div class="vehicle-info">
-                <strong>Vehicle:</strong> ${supplier.vehicle_type || 'Truck'}<br>
-                <strong>Plate:</strong> ${supplier.vehicle_number_plate || 'N/A'}
-              </div>
-            ` : ''}
             ${supplier.bank_name ? `
               <div class="payment-info">
                 <strong>Bank:</strong> ${supplier.bank_name}<br>

@@ -41,6 +41,7 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { logActivity } from '@/lib/activity-logger';
+import { downloadXlsx, type XlsxColumn } from '@/lib/xlsx-export';
 
 // Visitor type
 interface Visitor {
@@ -92,7 +93,7 @@ export default function VisitorManagementPage() {
     to: new Date()
   });
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [isExportingCSV, setIsExportingCSV] = useState(false);
+  const [isExportingXLS, setIsExportingXLS] = useState(false);
   const { toast } = useToast();
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -588,37 +589,8 @@ export default function VisitorManagementPage() {
   const preRegisteredVisitors = visitors.filter(v => v.status === 'Pre-registered');
   const currentVisitors = visitors.filter(v => v.status === 'Checked-in' || v.status === 'Pending Exit');
 
-  // Helper function to escape CSV fields
-  const escapeCsvField = (field: any): string => {
-    if (field === null || field === undefined) {
-      return '';
-    }
-    const stringField = String(field);
-    if (/[",\n]/.test(stringField)) {
-      return `"${stringField.replace(/"/g, '""')}"`;
-    }
-    return stringField;
-  };
-
-  // Convert to CSV
-  const convertToCsv = (data: any[], headers: string[]): string => {
-    const headerRow = headers.map(escapeCsvField).join(',');
-    const dataRows = data.map(row => 
-      headers.map(header => {
-        const headerKey = header.toLowerCase().replace(/\s+/g, '_');
-        return escapeCsvField(
-          row[headerKey as keyof typeof row] ?? 
-          (row as any)[header] ?? 
-          (row as any)[header.toLowerCase()] ?? 
-          ''
-        );
-      }).join(',')
-    );
-    return [headerRow, ...dataRows].join('\n');
-  };
-
-  // Export filtered history to CSV
-  const exportHistoryToCSV = async () => {
+  // Export filtered history to XLS
+  const exportHistoryToXLSX = async () => {
     if (filteredHistoryVisitors.length === 0) {
       toast({
         title: 'No Data',
@@ -628,61 +600,55 @@ export default function VisitorManagementPage() {
       return;
     }
 
-    setIsExportingCSV(true);
+    setIsExportingXLS(true);
     try {
       const currentUser = await getCurrentUser();
 
-      // Prepare data for CSV
-      const headers = [
-        'Visitor ID',
-        'Name',
-        'ID Number',
-        'Phone',
-        'Vehicle Plate',
-        'Department',
-        'Purpose',
-        'Check-in Time',
-        'Check-out Time',
-        'Status',
-        'Expected Check-in Time',
-        'Visitor Type'
+      // Prepare data for XLS
+      const columns: XlsxColumn[] = [
+        { header: 'Visitor ID', key: 'visitorId', text: true },
+        { header: 'Name', key: 'name' },
+        { header: 'ID Number', key: 'idNumber', text: true },
+        { header: 'Phone', key: 'phone', text: true },
+        { header: 'Vehicle Plate', key: 'vehiclePlate' },
+        { header: 'Department', key: 'department' },
+        { header: 'Purpose', key: 'purpose' },
+        { header: 'Check-in Time', key: 'checkInTime' },
+        { header: 'Check-out Time', key: 'checkOutTime' },
+        { header: 'Status', key: 'status' },
+        { header: 'Expected Check-in Time', key: 'expectedCheckInTime' },
+        { header: 'Visitor Type', key: 'visitorType' },
       ];
       
       const data = filteredHistoryVisitors.map(visitor => ({
-        'Visitor ID': visitor.visitorCode,
-        'Name': visitor.name,
-        'ID Number': visitor.idNumber,
-        'Phone': visitor.phone,
-        'Vehicle Plate': visitor.vehiclePlate || 'None',
-        'Department': visitor.department,
-        'Purpose': visitor.purpose || '',
-        'Check-in Time': visitor.checkInTime ? format(parseISO(visitor.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Check-out Time': visitor.checkOutTime ? format(parseISO(visitor.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Status': visitor.status,
-        'Expected Check-in Time': visitor.expectedCheckInTime ? format(parseISO(visitor.expectedCheckInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Visitor Type': visitor.visitorType
+        visitorId: visitor.visitorCode,
+        name: visitor.name,
+        idNumber: visitor.idNumber,
+        phone: visitor.phone,
+        vehiclePlate: visitor.vehiclePlate || 'None',
+        department: visitor.department,
+        purpose: visitor.purpose || '',
+        checkInTime: visitor.checkInTime ? format(parseISO(visitor.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        checkOutTime: visitor.checkOutTime ? format(parseISO(visitor.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        status: visitor.status,
+        expectedCheckInTime: visitor.expectedCheckInTime ? format(parseISO(visitor.expectedCheckInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        visitorType: visitor.visitorType,
       }));
 
-      const csvContent = convertToCsv(data, headers);
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      
-      const filename = `visitor_history_${format(historyDateRange.from, 'yyyy-MM-dd')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}.csv`;
-      
-      link.setAttribute("href", url);
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadXlsx(
+        data,
+        columns,
+        `visitor_history_${format(historyDateRange.from, 'yyyy-MM-dd')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}.xlsx`,
+        'Visitor History'
+      );
 
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'VISITOR_CSV_EXPORTED',
+        action: 'VISITOR_XLS_EXPORTED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
-          fileType: 'csv',
+          fileType: 'xlsx',
           recordCount: filteredHistoryVisitors.length,
           scope: 'history',
           dateRangeFrom: historyDateRange.from.toISOString(),
@@ -692,19 +658,19 @@ export default function VisitorManagementPage() {
       });
 
       toast({
-        title: 'CSV Export Complete',
+        title: 'XLS Export Complete',
         description: `Visitor history (${filteredHistoryVisitors.length} records) has been downloaded.`,
       });
       
     } catch (error: any) {
-      console.error('Error exporting CSV:', error);
+      console.error('Error exporting XLS:', error);
 
       await logActivity({
         user: (await getCurrentUser())?.name || 'System',
-        action: 'VISITOR_CSV_EXPORTED',
+        action: 'VISITOR_XLS_EXPORTED',
         status: 'failure',
         metadata: {
-          fileType: 'csv',
+          fileType: 'xlsx',
           scope: 'history',
           error: error.message,
           timestamp: new Date().toISOString(),
@@ -714,15 +680,15 @@ export default function VisitorManagementPage() {
       toast({
         variant: 'destructive',
         title: 'Export Failed',
-        description: 'Failed to generate CSV file. Please try again.',
+        description: 'Failed to generate XLS file. Please try again.',
       });
     } finally {
-      setIsExportingCSV(false);
+      setIsExportingXLS(false);
     }
   };
 
-  // Export all visitors to CSV (for Reports page integration)
-  const exportAllVisitorsToCSV = async () => {
+  // Export all visitors to XLS (for Reports page integration)
+  const exportAllVisitorsToXLSX = async () => {
     if (visitors.length === 0) {
       toast({
         title: 'No Data',
@@ -732,62 +698,56 @@ export default function VisitorManagementPage() {
       return;
     }
 
-    setIsExportingCSV(true);
+    setIsExportingXLS(true);
     try {
       const currentUser = await getCurrentUser();
 
-      const headers = [
-        'Visitor ID',
-        'Name',
-        'ID Number',
-        'Phone',
-        'Vehicle Plate',
-        'Status',
-        'Check-in Time',
-        'Check-out Time',
-        'Expected Check-in Time',
-        'Department',
-        'Purpose',
-        'Visitor Type',
-        'Host Name'
+      const columns: XlsxColumn[] = [
+        { header: 'Visitor ID', key: 'visitorId', text: true },
+        { header: 'Name', key: 'name' },
+        { header: 'ID Number', key: 'idNumber', text: true },
+        { header: 'Phone', key: 'phone', text: true },
+        { header: 'Vehicle Plate', key: 'vehiclePlate' },
+        { header: 'Status', key: 'status' },
+        { header: 'Check-in Time', key: 'checkInTime' },
+        { header: 'Check-out Time', key: 'checkOutTime' },
+        { header: 'Expected Check-in Time', key: 'expectedCheckInTime' },
+        { header: 'Department', key: 'department' },
+        { header: 'Purpose', key: 'purpose' },
+        { header: 'Visitor Type', key: 'visitorType' },
+        { header: 'Host Name', key: 'hostName' },
       ];
       
       const data = visitors.map(visitor => ({
-        'Visitor ID': visitor.visitorCode,
-        'Name': visitor.name,
-        'ID Number': visitor.idNumber,
-        'Phone': visitor.phone,
-        'Vehicle Plate': visitor.vehiclePlate || 'None',
-        'Status': visitor.status,
-        'Check-in Time': visitor.checkInTime ? format(parseISO(visitor.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Check-out Time': visitor.checkOutTime ? format(parseISO(visitor.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Expected Check-in Time': visitor.expectedCheckInTime ? format(parseISO(visitor.expectedCheckInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Department': visitor.department,
-        'Purpose': visitor.purpose || '',
-        'Visitor Type': visitor.visitorType,
-        'Host Name': visitor.hostName
+        visitorId: visitor.visitorCode,
+        name: visitor.name,
+        idNumber: visitor.idNumber,
+        phone: visitor.phone,
+        vehiclePlate: visitor.vehiclePlate || 'None',
+        status: visitor.status,
+        checkInTime: visitor.checkInTime ? format(parseISO(visitor.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        checkOutTime: visitor.checkOutTime ? format(parseISO(visitor.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        expectedCheckInTime: visitor.expectedCheckInTime ? format(parseISO(visitor.expectedCheckInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        department: visitor.department,
+        purpose: visitor.purpose || '',
+        visitorType: visitor.visitorType,
+        hostName: visitor.hostName,
       }));
 
-      const csvContent = convertToCsv(data, headers);
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      
-      const filename = `all_visitors_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      
-      link.setAttribute("href", url);
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadXlsx(
+        data,
+        columns,
+        `all_visitors_${format(new Date(), 'yyyy-MM-dd')}.xlsx`,
+        'Visitors'
+      );
 
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'VISITOR_CSV_EXPORTED',
+        action: 'VISITOR_XLS_EXPORTED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
-          fileType: 'csv',
+          fileType: 'xlsx',
           recordCount: visitors.length,
           scope: 'all',
           timestamp: new Date().toISOString(),
@@ -795,19 +755,19 @@ export default function VisitorManagementPage() {
       });
 
       toast({
-        title: 'CSV Export Complete',
+        title: 'XLS Export Complete',
         description: `All visitors (${visitors.length} records) have been downloaded.`,
       });
       
     } catch (error: any) {
-      console.error('Error exporting CSV:', error);
+      console.error('Error exporting XLS:', error);
 
       await logActivity({
         user: (await getCurrentUser())?.name || 'System',
-        action: 'VISITOR_CSV_EXPORTED',
+        action: 'VISITOR_XLS_EXPORTED',
         status: 'failure',
         metadata: {
-          fileType: 'csv',
+          fileType: 'xlsx',
           scope: 'all',
           error: error.message,
           timestamp: new Date().toISOString(),
@@ -817,10 +777,10 @@ export default function VisitorManagementPage() {
       toast({
         variant: 'destructive',
         title: 'Export Failed',
-        description: 'Failed to generate CSV file. Please try again.',
+        description: 'Failed to generate XLS file. Please try again.',
       });
     } finally {
-      setIsExportingCSV(false);
+      setIsExportingXLS(false);
     }
   };
 
@@ -935,16 +895,16 @@ export default function VisitorManagementPage() {
                 </Button>
                 <Button 
                   variant="outline"
-                  onClick={exportAllVisitorsToCSV}
-                  disabled={visitors.length === 0 || isExportingCSV}
+                  onClick={exportAllVisitorsToXLSX}
+                  disabled={visitors.length === 0 || isExportingXLS}
                   className="gap-2"
                 >
-                  {isExportingCSV ? (
+                  {isExportingXLS ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Download className="h-4 w-4" />
                   )}
-                  Export All Visitors CSV
+                  Export All Visitors XLS
                 </Button>
                 <Button 
                   variant="default"
@@ -1256,16 +1216,16 @@ export default function VisitorManagementPage() {
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={exportHistoryToCSV}
-                            disabled={filteredHistoryVisitors.length === 0 || isExportingCSV}
+                            onClick={exportHistoryToXLSX}
+                            disabled={filteredHistoryVisitors.length === 0 || isExportingXLS}
                             className="gap-2"
                           >
-                            {isExportingCSV ? (
+                            {isExportingXLS ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <Download className="h-4 w-4" />
                             )}
-                            Export CSV
+                            Export XLS
                           </Button>
                         </div>
                       </div>
@@ -1465,7 +1425,7 @@ export default function VisitorManagementPage() {
       </SidebarProvider>
       
       {/* Hidden printable report */}
-      <div className="hidden">
+      <div style={{ position: 'absolute', left: '-9999px', top: 0, pointerEvents: 'none' }}>
         <div ref={printRef}>
           <PrintableVehicleReport visitors={visitors} shipments={[]} />
         </div>

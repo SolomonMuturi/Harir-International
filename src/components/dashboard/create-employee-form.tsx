@@ -26,7 +26,7 @@ import { format } from 'date-fns';
 
 const formSchema = z.object({
   name: z.string().min(2, {
-    message: 'Employee name must be at least 2 characters.',
+    message: 'Casual name must be at least 2 characters.',
   }),
   phone: z.string().min(10, {
     message: 'Please enter a valid phone number.',
@@ -122,7 +122,7 @@ export function CreateEmployeeForm({
       console.error('❌ Error saving employee:', error);
       
       // Show error message
-      setSubmitError(error instanceof Error ? error.message : 'Failed to save employee. Please try again.');
+      setSubmitError(error instanceof Error ? error.message : 'Failed to save casual. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -150,9 +150,9 @@ export function CreateEmployeeForm({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Employee Name *</FormLabel>
+                <FormLabel>Casual Name *</FormLabel>
                 <FormControl>
-                  <Input placeholder="Enter Employee Name" {...field} />
+                  <Input placeholder="Enter Casual Name" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -233,17 +233,17 @@ export function CreateEmployeeForm({
             name="contract"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Contract Type *</FormLabel>
+                <FormLabel>Casual Type *</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select contract type" />
+                      <SelectValue placeholder="Select casual type" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     <SelectItem value="Full-time">Full-time</SelectItem>
                     <SelectItem value="Part-time">Part-time</SelectItem>
-                    <SelectItem value="Contract">Contract</SelectItem>
+                    <SelectItem value="Contract">Casual</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -280,7 +280,7 @@ export function CreateEmployeeForm({
         
         <div className="flex justify-end pt-4 border-t">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Create Employee'}
+            {isSubmitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Create Casual'}
           </Button>
         </div>
       </form>

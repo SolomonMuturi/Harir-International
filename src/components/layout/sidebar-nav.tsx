@@ -58,8 +58,8 @@ const allNavItems: NavItem[] = [
   
   // HR - Employee Management
   { 
-    name: 'Employees', 
-    href: '/employees', 
+    name: 'Casuals',
+    href: '/employees',
     icon: Briefcase,
     // Check for ANY employee permission
     permissions: [

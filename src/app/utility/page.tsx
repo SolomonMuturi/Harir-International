@@ -1360,8 +1360,8 @@ export default function UtilityManagementPage() {
     }
   };
 
-  // Handle export to CSV
-  const handleExportCSV = async () => {
+  // Handle export to Excel
+  const handleExportXLS = async () => {
     try {
       const currentUser = await getCurrentUser();
       let url = '/api/utility-readings/export';
@@ -1397,7 +1397,7 @@ export default function UtilityManagementPage() {
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      const filename = `utility-readings-${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = `utility-readings-${new Date().toISOString().split('T')[0]}.xlsx`;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
@@ -1406,7 +1406,7 @@ export default function UtilityManagementPage() {
 
       toast({
         title: 'Export Successful',
-        description: 'Data exported to CSV file',
+        description: 'Data exported to Excel file',
       });
 
       await logActivity({
@@ -1415,7 +1415,7 @@ export default function UtilityManagementPage() {
         status: 'success',
         metadata: {
           userId: currentUser?.id,
-          fileType: 'CSV',
+          fileType: 'xlsx',
           filename,
           dateFilter,
           dateRange,
@@ -1430,7 +1430,7 @@ export default function UtilityManagementPage() {
         action: 'UTILITY_REPORT_DOWNLOADED',
         status: 'failure',
         metadata: {
-          fileType: 'CSV',
+          fileType: 'xlsx',
           dateFilter,
           error: error instanceof Error ? error.message : 'Unknown error',
           timestamp: new Date().toISOString(),
@@ -1510,11 +1510,11 @@ export default function UtilityManagementPage() {
                 Refresh
               </Button>
               <Button
-                onClick={handleExportCSV}
+                onClick={handleExportXLS}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Download className="h-4 w-4 mr-2" />
-                Export CSV
+                Export Excel
               </Button>
               <Button
                 onClick={clearAllFields}

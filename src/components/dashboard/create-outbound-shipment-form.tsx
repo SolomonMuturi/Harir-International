@@ -183,7 +183,7 @@ export function CreateOutboundShipmentForm({ shipments, onSubmit }: CreateOutbou
                 <FormLabel className="flex items-center gap-2">
                   <Truck className="h-4 w-4" /> Carrier
                 </FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select carrier" />
@@ -210,7 +210,7 @@ export function CreateOutboundShipmentForm({ shipments, onSubmit }: CreateOutbou
                 <FormLabel className="flex items-center gap-2">
                   <User className="h-4 w-4" /> Driver
                 </FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select driver" />
@@ -235,7 +235,7 @@ export function CreateOutboundShipmentForm({ shipments, onSubmit }: CreateOutbou
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Truck/Vehicle</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select truck (optional)" />
@@ -342,7 +342,7 @@ export function CreateOutboundShipmentForm({ shipments, onSubmit }: CreateOutbou
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                         className="flex gap-4"
                       >
                         <div className="flex items-center space-x-2">

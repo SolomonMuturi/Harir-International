@@ -37,6 +37,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logActivity } from '@/lib/activity-logger';
+import * as XLSX from 'xlsx';
 
 // Define types
 interface WeightEntry {
@@ -1417,11 +1418,22 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       .sort((a, b) => a.variety.localeCompare(b.variety));
   }, []);
 
-  // Generate CSV data - ONLY from weights, NO rejects
-  const generateCSVData = useCallback((weightsToExport: WeightEntry[]) => {
+  // Generate XLSX/PDF data - groups weights per delivery and appends
+  // rejected crates (from the counting module) and weight processed
+  // (Crates In - Crates Out / rejects).
+  const generateXLSXData = useCallback((weightsToExport: WeightEntry[], rejectsToUse: RejectionEntry[] = rejects) => {
     const supplierMap = new Map<string, any>();
 
-    // Only use weights, no rejects
+    // Build a map of rejected crates per delivery (date + supplier + vehicle)
+    const rejectMap = new Map<string, number>();
+    rejectsToUse.forEach(reject => {
+      const date = new Date(reject.rejected_at).toISOString().split('T')[0];
+      const rSupplier = (reject.supplier_name || '').trim().toLowerCase();
+      const rVehicle = (reject.vehicle_plate || '').trim().toLowerCase();
+      const key = `${date}_${rSupplier}_${rVehicle}`;
+      rejectMap.set(key, (rejectMap.get(key) || 0) + (reject.total_rejected_crates || 0));
+    });
+
     weightsToExport.forEach(entry => {
       const date = new Date(entry.created_at).toISOString().split('T')[0];
       const time = new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1432,6 +1444,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       const gateKey = entry.gate_entry_id || '';
 
       const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
+      const rejectKey = `${date}_${supplierKey.trim().toLowerCase()}_${vehicleKey.trim().toLowerCase()}`;
 
       if (!supplierMap.has(key)) {
         supplierMap.set(key, {
@@ -1447,6 +1460,8 @@ const fetchCheckedInSuppliers = useCallback(async () => {
           fuerte_crates_in: 0,
           hass_crates_in: 0,
           total_crates: 0,
+          rejected_crates: 0,
+          processed_crates: 0,
           region: regionKey,
         });
       }
@@ -1459,13 +1474,15 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       row.hass_crates_in += entry.hass_crates || 0;
       row.total_weight = row.fuerte_weight + row.hass_weight;
       row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
+      row.rejected_crates = rejectMap.get(rejectKey) || 0;
+      row.processed_crates = row.total_crates - row.rejected_crates;
     });
 
     return Array.from(supplierMap.values());
-  }, []);
+  }, [rejects]);
 
-  // Download CSV with totals row - UPDATED to only use weights
-  const downloadCSV = useCallback(async () => {
+  // Download XLSX with totals row - UPDATED to only use weights
+  const downloadXLSX = useCallback(async () => {
     const currentUser = await getCurrentUser();
     const filteredData = getFilteredHistoryWeights();
     
@@ -1478,9 +1495,9 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       return;
     }
     
-    const csvData = generateCSVData(filteredData);
+    const exportData = generateXLSXData(filteredData);
     
-    if (csvData.length === 0) {
+    if (exportData.length === 0) {
       toast({
         title: 'No Data',
         description: 'No data available to download for the selected filters.',
@@ -1489,14 +1506,16 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       return;
     }
     
-    const totals = csvData.reduce((acc, row) => {
+    const totals = exportData.reduce((acc, row) => {
       return {
         totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
         totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
         totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
         totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
         totalCrates: acc.totalCrates + (row.total_crates || 0),
-        totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0)
+        totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0),
+        totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
+        totalProcessedCrates: acc.totalProcessedCrates + (row.processed_crates || 0)
       };
     }, {
       totalFuerteWeight: 0,
@@ -1504,7 +1523,9 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       totalFuerteCrates: 0,
       totalHassCrates: 0,
       totalCrates: 0,
-      totalWeight: 0
+      totalWeight: 0,
+      totalRejectedCrates: 0,
+      totalProcessedCrates: 0
     });
     
     const headers = [
@@ -1519,31 +1540,32 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       'Fuerte Crates In',
       'Hass Crates In',
       'Total Crates',
+      'Rejected Crates',
+      'Weight Processed (Crates)',
       'Region'
     ];
     
-    const rows = csvData.map(row => {
-      // Format phone number to prevent scientific notation
-      const phoneNumber = row.phone_number ? `"\t${row.phone_number}"` : '""';
-      
+    const rows = exportData.map(row => {
       return [
         row.date,
         row.time,
-        `"${row.supplier_name}"`,
-        phoneNumber,
-        `"${row.vehicle_plate_number}"`,
-        `"${row.gate_entry_id}"`,
+        row.supplier_name,
+        row.phone_number || '',
+        row.vehicle_plate_number,
+        row.gate_entry_id,
         row.fuerte_weight.toFixed(2),
         row.hass_weight.toFixed(2),
         row.fuerte_crates_in,
         row.hass_crates_in,
         row.total_crates,
-        `"${row.region}"`
+        row.rejected_crates,
+        row.processed_crates,
+        row.region
       ];
     });
     
     // Add empty row for spacing
-    rows.push(['', '', '', '', '', '', '', '', '', '', '', '']);
+    rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '']);
     
     // Add totals row
     rows.push([
@@ -1558,6 +1580,8 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       totals.totalFuerteCrates,
       totals.totalHassCrates,
       totals.totalCrates,
+      totals.totalRejectedCrates,
+      totals.totalProcessedCrates,
       ''
     ]);
     
@@ -1574,20 +1598,16 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       '',
       '',
       '',
+      '',
+      '',
       ''
     ]);
     
-    // Create CSV content with BOM for Excel compatibility
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-    
-    // Add UTF-8 BOM for Excel to recognize UTF-8 encoding
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    worksheet['!cols'] = headers.map(header => ({ wch: Math.max(header.length + 2, 16) }));
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Weight Data');
     
     const { from, to } = dateRangeFilter;
     let filename = 'weight_data';
@@ -1596,30 +1616,272 @@ const fetchCheckedInSuppliers = useCallback(async () => {
     } else if (from) {
       filename += `_${format(from, 'yyyy-MM-dd')}`;
     }
-    link.setAttribute('download', `${filename}.csv`);
-    
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    XLSX.writeFile(workbook, `${filename}.xlsx`);
     
     await logActivity({
       user: currentUser?.name || 'System',
-      action: 'WEIGHT_CSV_EXPORTED',
+      action: 'WEIGHT_XLS_EXPORTED',
       status: 'success',
       metadata: {
         userId: currentUser?.id,
-        recordCount: csvData.length,
+        recordCount: exportData.length,
         filename: filename,
+        fileType: 'xlsx',
         timestamp: new Date().toISOString(),
       },
     });
     
     toast({
-      title: 'CSV Downloaded',
+      title: 'XLS Downloaded',
       description: `Weight data for selected period has been downloaded with totals.`,
     });
-  }, [getFilteredHistoryWeights, generateCSVData, dateRangeFilter, toast]);
+  }, [getFilteredHistoryWeights, generateXLSXData, dateRangeFilter, toast]);
+
+  // Download weight data as PDF
+  const downloadPDF = useCallback(async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+      const filteredData = getFilteredHistoryWeights();
+
+      if (filteredData.length === 0) {
+        toast({
+          title: 'No Data',
+          description: 'No data available to download for the selected filters.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const exportData = generateXLSXData(filteredData);
+
+      if (exportData.length === 0) {
+        toast({
+          title: 'No Data',
+          description: 'No data available to download for the selected filters.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const totals = exportData.reduce((acc, row) => {
+        return {
+          totalFuerteWeight: acc.totalFuerteWeight + (row.fuerte_weight || 0),
+          totalHassWeight: acc.totalHassWeight + (row.hass_weight || 0),
+          totalFuerteCrates: acc.totalFuerteCrates + (row.fuerte_crates_in || 0),
+          totalHassCrates: acc.totalHassCrates + (row.hass_crates_in || 0),
+          totalCrates: acc.totalCrates + (row.total_crates || 0),
+          totalWeight: acc.totalWeight + (row.fuerte_weight || 0) + (row.hass_weight || 0),
+          totalRejectedCrates: acc.totalRejectedCrates + (row.rejected_crates || 0),
+          totalProcessedCrates: acc.totalProcessedCrates + (row.processed_crates || 0)
+        };
+      }, {
+        totalFuerteWeight: 0,
+        totalHassWeight: 0,
+        totalFuerteCrates: 0,
+        totalHassCrates: 0,
+        totalCrates: 0,
+        totalWeight: 0,
+        totalRejectedCrates: 0,
+        totalProcessedCrates: 0
+      });
+
+      const headers = [
+        'Date',
+        'Time',
+        'Supplier Name',
+        'Phone Number',
+        'Vehicle',
+        'Gate ID',
+        'Fuerte (kg)',
+        'Hass (kg)',
+        'Fuerte Crates',
+        'Hass Crates',
+        'Total Crates',
+        'Rejected Crates',
+        'Processed',
+        'Region'
+      ];
+
+      const body = exportData.map(row => [
+        row.date,
+        row.time,
+        row.supplier_name,
+        row.phone_number || '',
+        row.vehicle_plate_number,
+        row.gate_entry_id,
+        Number(row.fuerte_weight).toFixed(2),
+        Number(row.hass_weight).toFixed(2),
+        row.fuerte_crates_in,
+        row.hass_crates_in,
+        row.total_crates,
+        row.rejected_crates,
+        row.processed_crates,
+        row.region
+      ]);
+
+      body.push([
+        'TOTALS',
+        '',
+        '',
+        '',
+        '',
+        '',
+        totals.totalFuerteWeight.toFixed(2),
+        totals.totalHassWeight.toFixed(2),
+        totals.totalFuerteCrates,
+        totals.totalHassCrates,
+        totals.totalCrates,
+        totals.totalRejectedCrates,
+        totals.totalProcessedCrates,
+        ''
+      ]);
+
+      const doc = new jsPDF('l', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const leftMargin = 10;
+
+      const logoPaths = [
+        '/images/HLogo.png',
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico',
+        '/public/favicon.ico'
+      ];
+
+      let hasLogo = false;
+
+      for (const path of logoPaths) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) {
+            const blob = await response.blob();
+            const base64String = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+            const logoWidth = 110;
+            const logoHeightRect = 18;
+            const x = (pageWidth - logoWidth) / 2;
+            doc.addImage(base64String as string, 'PNG', x, 4, logoWidth, logoHeightRect);
+            hasLogo = true;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      const titleY = hasLogo ? 28 : 13;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(120, 120, 120);
+      doc.text('Weight Capture Report', pageWidth / 2, titleY, { align: 'center' });
+
+      const dividerY = titleY + 5;
+      doc.setDrawColor(120, 120, 120);
+      doc.setLineWidth(0.4);
+      doc.line(leftMargin, dividerY, pageWidth - leftMargin, dividerY);
+
+      const { from, to } = dateRangeFilter;
+      let periodLabel = 'All time';
+      if (from && to) {
+        periodLabel = `${format(from, 'dd/MM/yyyy')} to ${format(to, 'dd/MM/yyyy')}`;
+      } else if (from) {
+        periodLabel = format(from, 'dd/MM/yyyy');
+      }
+
+      const infoBoxTop = dividerY + 5;
+      doc.setFillColor(248, 249, 250);
+      doc.rect(leftMargin, infoBoxTop, pageWidth - 2 * leftMargin, 9, 'F');
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Period: ${periodLabel}`, leftMargin + 2, infoBoxTop + 6);
+      doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth - leftMargin - 2, infoBoxTop + 6, { align: 'right' });
+
+      autoTable(doc, {
+        startY: infoBoxTop + 11,
+        head: [headers],
+        body,
+        theme: 'grid',
+        headStyles: { fillColor: [178, 235, 178], textColor: [33, 63, 33], fontSize: 7, fontStyle: 'bold' },
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        columnStyles: {
+          0: { cellWidth: 19 },
+          1: { cellWidth: 14 },
+          2: { cellWidth: 34 },
+          3: { cellWidth: 26 },
+          4: { cellWidth: 17 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 20, halign: 'right' },
+          7: { cellWidth: 20, halign: 'right' },
+          8: { cellWidth: 17, halign: 'center' },
+          9: { cellWidth: 17, halign: 'center' },
+          10: { cellWidth: 16, halign: 'center' },
+          11: { cellWidth: 18, halign: 'center' },
+          12: { cellWidth: 19, halign: 'center' },
+          13: { cellWidth: 18 }
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.row.index === body.length - 1) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [40, 167, 69];
+            data.cell.styles.textColor = 255;
+          }
+        }
+      });
+
+      let finalY = (doc as any).lastAutoTable.finalY + 6;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Total Fruits Weight: ${totals.totalWeight.toFixed(2)} kg`, leftMargin, finalY);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Crates In: ${totals.totalCrates} | Rejected Crates: ${totals.totalRejectedCrates} | Weight Processed: ${totals.totalProcessedCrates} crates`, leftMargin, finalY + 5);
+      doc.text('Generated by Harir International System', pageWidth / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
+
+      const { from: f, to: t } = dateRangeFilter;
+      let filename = 'weight_data';
+      if (f && t) {
+        filename += `_${format(f, 'yyyy-MM-dd')}_to_${format(t, 'yyyy-MM-dd')}`;
+      } else if (f) {
+        filename += `_${format(f, 'yyyy-MM-dd')}`;
+      }
+      doc.save(`${filename}.pdf`);
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'WEIGHT_PDF_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          recordCount: exportData.length,
+          filename: filename,
+          fileType: 'pdf',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'PDF Downloaded',
+        description: `Weight data for selected period has been downloaded as PDF.`,
+      });
+    } catch (error: any) {
+      console.error('Error downloading PDF:', error);
+      toast({
+        title: 'Error Downloading PDF',
+        description: error.message || 'Failed to download PDF. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  }, [getFilteredHistoryWeights, generateXLSXData, dateRangeFilter, toast]);
 
   const downloadSupplierGRN = useCallback(async (supplierId: string) => {
     try {
@@ -1714,14 +1976,14 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('GOODS RECEIVED NOTE - BOX COUNTING', pageWidth / 2, startY + 7, { align: 'center' });
+      doc.text('GOODS RECEIVED NOTE - CRATES RECEIVED', pageWidth / 2, startY + 7, { align: 'center' });
       let yPos = startY + 13;
       
       doc.setFillColor(248, 249, 250);
       doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.text(`GRN: GRN-${supplierId.slice(0, 8)}`, leftMargin + 2, yPos + 7);
+      doc.text(`GRN: GRN-${format(new Date(), 'yyyyMMdd')}`, leftMargin + 2, yPos + 7);
       doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, leftMargin + 35, yPos + 7);
       doc.text(`Time: ${format(new Date(), 'HH:mm')}`, leftMargin + 70, yPos + 7);
       yPos += 13;
@@ -1786,7 +2048,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
         doc.text('GRAND TOTAL', leftMargin + 2, yPos + 5);
         doc.text(totalWeight.toFixed(2), leftMargin + 70, yPos + 5);
         doc.text(totalCrates.toString(), leftMargin + 110, yPos + 5);
-        yPos += 10;
+        yPos += 13;
       }
       
       doc.setFontSize(7);
@@ -2932,15 +3194,26 @@ const fetchCheckedInSuppliers = useCallback(async () => {
                       <FileSpreadsheet className="w-5 h-5" />
                       Weight History & Export
                     </div>
-                    <Button
-                      onClick={downloadCSV}
-                      disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
-                      className="gap-2"
-                      variant="outline"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download CSV
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={downloadPDF}
+                        disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
+                        className="gap-2"
+                        variant="outline"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Download PDF
+                      </Button>
+                      <Button
+                        onClick={downloadXLSX}
+                        disabled={isHistoryLoading || filteredHistoryWeights.length === 0}
+                        className="gap-2"
+                        variant="outline"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Excel
+                      </Button>
+                    </div>
                   </CardTitle>
                   <CardDescription>
                     View weight history by date range, edit records, and export data
@@ -3157,15 +3430,27 @@ const fetchCheckedInSuppliers = useCallback(async () => {
                             {filteredHistoryWeights.length} entries
                           </Badge>
                         </div>
-                        <Button
-                          size="sm"
-                          className="gap-1"
-                          onClick={downloadCSV}
-                          disabled={filteredHistoryWeights.length === 0}
-                        >
-                          <Download className="w-3 h-3" />
-                          Download CSV
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            className="gap-1"
+                            variant="outline"
+                            onClick={downloadPDF}
+                            disabled={filteredHistoryWeights.length === 0}
+                          >
+                            <FileText className="w-3 h-3" />
+                            Download PDF
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="gap-1"
+                            onClick={downloadXLSX}
+                            disabled={filteredHistoryWeights.length === 0}
+                          >
+                            <Download className="w-3 h-3" />
+                            Download Excel
+                          </Button>
+                        </div>
                       </div>
                       <div className="text-sm text-gray-600 mt-2">
                         {filteredHistoryWeights.length > 0 ? (
@@ -3734,13 +4019,21 @@ const fetchCheckedInSuppliers = useCallback(async () => {
                             </div>
                           </div>
                           
-                          <div className="mt-4 flex justify-center">
+                          <div className="mt-4 flex justify-center gap-2">
                             <Button
-                              onClick={downloadCSV}
+                              onClick={downloadPDF}
+                              className="gap-2"
+                              variant="outline"
+                            >
+                              <FileText className="w-4 h-4" />
+                              Download PDF
+                            </Button>
+                            <Button
+                              onClick={downloadXLSX}
                               className="gap-2"
                             >
                               <Download className="w-4 h-4" />
-                              Download CSV with Totals
+                              Download Excel with Totals
                             </Button>
                           </div>
                         </CardContent>

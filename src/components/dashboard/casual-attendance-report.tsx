@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Download, Filter, Printer } from 'lucide-react';
 import type { Employee, TimeAttendance } from '@/lib/data';
 import { format, parseISO } from 'date-fns';
+import * as XLSX from 'xlsx';
 
 interface CasualAttendanceReportProps {
   employees: Employee[];
@@ -95,40 +96,8 @@ export function CasualAttendanceReport({ employees, attendance }: CasualAttendan
     return { totalEmployees, totalDays, totalAmount };
   }, [reportData]);
 
-  // Export to Excel/CSV
-  const exportToCSV = () => {
-    const headers = ['DATE', 'NAME', 'TELEPHONE NUMBER', 'ID NUMBER', 'DESIGNATION', 'RATE (KES)', 'SHIFT', 'CLOCK IN', 'CLOCK OUT'];
-    const csvRows = reportData.map(row => [
-      format(parseISO(row.date), 'yyyy-MM-dd'),
-      row.name,
-      row.phone,
-      row.idNumber,
-      row.designation,
-      row.rate,
-      row.shift,
-      row.clockIn,
-      row.clockOut
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...csvRows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const fileName = dateFilter !== 'all' ? `casuals-attendance-${dateFilter}.csv` : 'casuals-attendance-all-dates.csv';
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
-
-  // Export to Excel (using CSV with .xls extension for simplicity)
-  const exportToExcel = () => {
+  // Export to Excel
+  const exportToXLSX = () => {
     const headers = ['DATE', 'NAME', 'TELEPHONE NUMBER', 'ID NUMBER', 'DESIGNATION', 'RATE (KES)', 'SHIFT', 'CLOCK IN', 'CLOCK OUT'];
     const rows = reportData.map(row => [
       format(parseISO(row.date), 'yyyy-MM-dd'),
@@ -142,23 +111,11 @@ export function CasualAttendanceReport({ employees, attendance }: CasualAttendan
       row.clockOut
     ]);
 
-    const worksheet = [headers, ...rows];
-    let csvContent = '';
-    
-    worksheet.forEach(row => {
-      csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
-    });
-
-    const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const fileName = dateFilter !== 'all' ? `casuals-attendance-${dateFilter}.xls` : 'casuals-attendance-all-dates.xls';
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Casuals Attendance');
+    const fileName = dateFilter !== 'all' ? `casuals-attendance-${dateFilter}.xlsx` : 'casuals-attendance-all-dates.xlsx';
+    XLSX.writeFile(workbook, fileName);
   };
 
   // Get unique designations from casual attendance
@@ -186,11 +143,11 @@ export function CasualAttendanceReport({ employees, attendance }: CasualAttendan
                 <Printer className="mr-2 h-4 w-4" />
                 Print
               </Button>
-              <Button variant="outline" size="sm" onClick={exportToCSV}>
+              <Button variant="outline" size="sm" onClick={exportToXLSX}>
                 <Download className="mr-2 h-4 w-4" />
-                Export CSV
+                Export Excel
               </Button>
-              <Button size="sm" onClick={exportToExcel}>
+              <Button size="sm" onClick={exportToXLSX}>
                 <Download className="mr-2 h-4 w-4" />
                 Export Excel
               </Button>
@@ -363,10 +320,7 @@ export function CasualAttendanceReport({ employees, attendance }: CasualAttendan
                   <h4 className="font-semibold mb-2">Export Options</h4>
                   <p className="text-sm mb-2">Export this report for payroll processing</p>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={exportToCSV}>
-                      CSV
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={exportToExcel}>
+                    <Button size="sm" variant="outline" onClick={exportToXLSX}>
                       Excel
                     </Button>
                   </div>

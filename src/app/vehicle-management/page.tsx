@@ -1,7 +1,7 @@
 // app/vehicle-management/page.tsx
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -62,7 +62,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { PrintableVehicleReport } from '@/components/dashboard/printable-vehicle-report';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
@@ -91,6 +90,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import { downloadXlsx, type XlsxColumn } from '@/lib/xlsx-export';
 
 interface VehicleVisit {
   id: string;
@@ -151,6 +151,154 @@ const getCurrentUser = async () => {
   }
 };
 
+const loadImageAsBase64 = async (url: string): Promise<string | null> => {
+  try {
+    const response = await fetch(url);
+    if (response.ok) {
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (error) {
+    console.log('Logo loading failed:', error);
+  }
+  return null;
+};
+
+const formatDuration = (start?: string, end?: string): string => {
+  if (!start || !end) return 'N/A';
+  const diffMs = new Date(end).getTime() - new Date(start).getTime();
+  if (isNaN(diffMs) || diffMs < 0) return 'N/A';
+  const minutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+};
+
+// Generate a programmatic PDF report for vehicle visits
+const generateVisitsPdf = async (
+  visits: VehicleVisit[],
+  title: string,
+  filename: string
+) => {
+  const { default: jsPDF } = await import('jspdf');
+  const { default: autoTable } = await import('jspdf-autotable');
+
+  const doc = new jsPDF('l', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const center = pageWidth / 2;
+
+  // Try to load the company logo
+  let hasLogo = false;
+  const logoPaths = [
+    '/images/HLogo.png',
+    '/Harirlogo.svg',
+    '/Harirlogo.png',
+    '/Harirlogo.jpg',
+    '/logo.png',
+    '/logo.jpg',
+    '/favicon.ico',
+    '/public/favicon.ico'
+  ];
+
+  for (const path of logoPaths) {
+    const base64 = await loadImageAsBase64(path);
+    if (base64) {
+      const isPng = path.toLowerCase().includes('.png');
+      const logoWidth = 100;
+      const logoHeight = 18;
+      doc.addImage(base64, isPng ? 'PNG' : 'JPEG', (pageWidth - logoWidth) / 2, 6, logoWidth, logoHeight);
+      hasLogo = true;
+      break;
+    }
+  }
+
+  const titleY = hasLogo ? 31 : 13;
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(120, 120, 120);
+  doc.text(title.toUpperCase(), center, titleY, { align: 'center' });
+
+  doc.setDrawColor(120, 120, 120);
+  doc.setLineWidth(0.4);
+  const lineY = titleY + 5;
+  doc.line(14, lineY, pageWidth - 14, lineY);
+
+  // Report info
+  const infoY = lineY + 4;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}`, 14, infoY);
+  doc.text(`Total Visits: ${visits.length}`, pageWidth - 14, infoY, { align: 'right' });
+
+  const active = visits.filter(v => ['Pre-registered', 'Checked-in'].includes(v.status)).length;
+  const completed = visits.filter(v => v.status === 'Checked-out').length;
+  const returning = visits.filter(v => v.visitNumber > 1).length;
+
+  doc.text(`Active: ${active}`, 14, infoY + 6);
+  doc.text(`Completed: ${completed}`, 60, infoY + 6);
+  doc.text(`Returning: ${returning}`, 110, infoY + 6);
+
+  // Table
+  const tableData = visits.map(v => [
+    `#${v.visitNumber}`,
+    v.gateEntryId || 'Not checked in',
+    v.driverName || 'N/A',
+    v.phone || 'N/A',
+    v.vehiclePlate || 'N/A',
+    v.vehicleType || 'N/A',
+    v.status || 'N/A',
+    v.checkInTime ? format(parseISO(v.checkInTime), 'dd/MM/yyyy HH:mm') : 'N/A',
+    v.checkOutTime ? format(parseISO(v.checkOutTime), 'dd/MM/yyyy HH:mm') : 'N/A',
+    formatDuration(v.checkInTime, v.checkOutTime)
+  ]);
+
+  autoTable(doc, {
+    startY: infoY + 11,
+    head: [['Visit #', 'Gate Entry ID', 'Driver Name', 'Phone', 'Vehicle Plate', 'Vehicle Type', 'Status', 'Check-in', 'Check-out', 'Duration']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [178, 235, 178],
+      textColor: [33, 63, 33],
+      fontSize: 8,
+      fontStyle: 'bold'
+    },
+    styles: {
+      fontSize: 7,
+      cellPadding: 2,
+      textColor: [0, 0, 0],
+      overflow: 'linebreak'
+    },
+    columnStyles: {
+      0: { cellWidth: 12 },
+      1: { cellWidth: 30 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 24 },
+      4: { cellWidth: 22 },
+      5: { cellWidth: 22 },
+      6: { cellWidth: 22 },
+      7: { cellWidth: 28 },
+      8: { cellWidth: 28 },
+      9: { cellWidth: 16 }
+    },
+    alternateRowStyles: { fillColor: [245, 245, 245] }
+  });
+
+  const finalY = (doc as any).lastAutoTable.finalY + 10;
+  const footerY = Math.min(Math.max(finalY, 195), 202);
+
+  doc.setFontSize(7);
+  doc.setTextColor(128, 128, 128);
+  doc.text('This is a computer-generated document. No physical signature required.', center, footerY, { align: 'center' });
+  doc.text('Harir International © 2024 | Vehicle Management System v1.0', center, footerY + 4, { align: 'center' });
+
+  doc.save(filename);
+};
+
 export default function VehicleManagementPage() {
   const [vehicles, setVehicles] = useState<VehicleVisit[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<VehicleVisit[]>([]);
@@ -196,10 +344,9 @@ export default function VehicleManagementPage() {
   const [presetDateRange, setPresetDateRange] = useState<PresetDateRange>('custom');
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isMobileDatePickerOpen, setIsMobileDatePickerOpen] = useState(false);
-  const [isExportingCSV, setIsExportingCSV] = useState(false);
+  const [isExportingXLS, setIsExportingXLS] = useState(false);
   
   const { toast } = useToast();
-  const printRef = useRef<HTMLDivElement>(null);
 
   const getDateRangeFromPreset = (preset: PresetDateRange): DateRange => {
     const now = new Date();
@@ -353,7 +500,7 @@ export default function VehicleManagementPage() {
           idNumber: visit.driver_id_number || '',
           company: visit.company_name || 'Unknown Company',
           email: '',
-          phone: visit.contact_phone || '',
+          phone: visit.phone_number || visit.contact_phone || '',
           vehiclePlate: visit.vehicle_plate || '',
           vehicleType: visit.vehicle_type || 'Truck',
           cargoDescription: visit.cargo_description || 'Avocado Delivery',
@@ -811,42 +958,36 @@ export default function VehicleManagementPage() {
   const handlePrintReport = async () => {
     try {
       const currentUser = await getCurrentUser();
-      const element = printRef.current;
-      if (element) {
-        const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-          import('html2canvas'),
-          import('jspdf'),
-        ]);
-        const canvas = await html2canvas(element, { 
-          scale: 2,
-          useCORS: true,
-          logging: false
-        });
-        const data = canvas.toDataURL('image/jpeg', 0.95);
-        
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(data, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`vehicle-visits-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
-        
-        await logActivity({
-          user: currentUser?.name || 'System',
-          action: 'VEHICLE_PDF_REPORTED',
-          status: 'success',
-          metadata: {
-            userId: currentUser?.id,
-            vehicleCount: vehicles.length,
-            timestamp: new Date().toISOString(),
-          },
-        });
-        
+      if (vehicles.length === 0) {
         toast({
-          title: 'Report Generated',
-          description: 'Vehicle visits report has been downloaded as PDF.',
+          title: 'No Data',
+          description: 'No vehicle visits found to export.',
+          variant: 'destructive',
         });
+        return;
       }
+
+      await generateVisitsPdf(
+        vehicles,
+        'Vehicle Visits Report',
+        `vehicle-visits-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`
+      );
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_PDF_REPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleCount: vehicles.length,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'Report Generated',
+        description: 'Vehicle visits report has been downloaded as PDF.',
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast({
@@ -922,32 +1063,7 @@ export default function VehicleManagementPage() {
     [gateEntryVehicles, historyDateRange, historyTimeRange]
   );
 
-  const escapeCsvField = (field: any): string => {
-    if (field === null || field === undefined) return '';
-    const stringField = String(field);
-    if (/[",\n]/.test(stringField)) {
-      return `"${stringField.replace(/"/g, '""')}"`;
-    }
-    return stringField;
-  };
-
-  const convertToCsv = (data: any[], headers: string[]): string => {
-    const headerRow = headers.map(escapeCsvField).join(',');
-    const dataRows = data.map(row => 
-      headers.map(header => {
-        const headerKey = header.toLowerCase().replace(/\s+/g, '_');
-        return escapeCsvField(
-          row[headerKey as keyof typeof row] ?? 
-          (row as any)[header] ?? 
-          (row as any)[header.toLowerCase()] ?? 
-          ''
-        );
-      }).join(',')
-    );
-    return [headerRow, ...dataRows].join('\n');
-  };
-
-  const exportAllVehiclesToCSV = async () => {
+  const exportAllVehiclesToXLSX = async () => {
     if (vehicles.length === 0) {
       toast({
         title: 'No Data',
@@ -957,87 +1073,76 @@ export default function VehicleManagementPage() {
       return;
     }
 
-    setIsExportingCSV(true);
+    setIsExportingXLS(true);
     try {
       const currentUser = await getCurrentUser();
       
-      const headers = [
-        'Visit #',
-        'Gate Entry ID',
-        'Company Name',
-        'Driver Name',
-        'ID Number',
-        'Phone',
-        'Vehicle Plate',
-        'Vehicle Type',
-        'Cargo Description',
-        'Status',
-        'Registered At',
-        'Check-in Time',
-        'Check-out Time',
-        'Visit Type',
-        'Recheck-in',
-        'Previous Gate ID',
-        'Location'
+      const columns: XlsxColumn[] = [
+        { header: 'Visit #', key: 'visitNumber', text: true },
+        { header: 'Gate Entry ID', key: 'gateEntryId', text: true },
+        { header: 'Driver Name', key: 'driverName' },
+        { header: 'ID Number', key: 'idNumber', text: true },
+        { header: 'Phone', key: 'phone', text: true },
+        { header: 'Vehicle Plate', key: 'vehiclePlate' },
+        { header: 'Vehicle Type', key: 'vehicleType' },
+        { header: 'Cargo Description', key: 'cargoDescription' },
+        { header: 'Status', key: 'status' },
+        { header: 'Registered At', key: 'registeredAt' },
+        { header: 'Check-in Time', key: 'checkInTime' },
+        { header: 'Check-out Time', key: 'checkOutTime' },
+        { header: 'Duration', key: 'duration' },
+        { header: 'Visit Type', key: 'visitType' },
+        { header: 'Recheck-in', key: 'recheckIn' },
       ];
       
       const data = vehicles.map(vehicle => ({
-        'Visit #': `#${vehicle.visitNumber}`,
-        'Gate Entry ID': vehicle.gateEntryId || 'Not checked in',
-        'Company Name': vehicle.companyName,
-        'Driver Name': vehicle.driverName,
-        'ID Number': vehicle.idNumber,
-        'Phone': vehicle.phone,
-        'Vehicle Plate': vehicle.vehiclePlate || 'None',
-        'Vehicle Type': vehicle.vehicleType,
-        'Cargo Description': vehicle.cargoDescription,
-        'Status': vehicle.status,
-        'Registered At': format(parseISO(vehicle.registeredAt), 'yyyy-MM-dd HH:mm:ss'),
-        'Check-in Time': vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Check-out Time': vehicle.checkOutTime ? format(parseISO(vehicle.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
-        'Visit Type': vehicle.isReturningSupplier ? 'Returning' : 'New',
-        'Recheck-in': vehicle.isRecheckIn ? 'Yes' : 'No',
-        'Previous Gate ID': vehicle.previousGateEntryId || 'N/A',
-        'Location': vehicle.department || ''
+        visitNumber: `#${vehicle.visitNumber}`,
+        gateEntryId: vehicle.gateEntryId || 'Not checked in',
+        driverName: vehicle.driverName,
+        idNumber: vehicle.idNumber,
+        phone: vehicle.phone,
+        vehiclePlate: vehicle.vehiclePlate || 'None',
+        vehicleType: vehicle.vehicleType,
+        cargoDescription: vehicle.cargoDescription,
+        status: vehicle.status,
+        registeredAt: format(parseISO(vehicle.registeredAt), 'yyyy-MM-dd HH:mm:ss'),
+        checkInTime: vehicle.checkInTime ? format(parseISO(vehicle.checkInTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        checkOutTime: vehicle.checkOutTime ? format(parseISO(vehicle.checkOutTime), 'yyyy-MM-dd HH:mm:ss') : 'N/A',
+        duration: formatDuration(vehicle.checkInTime, vehicle.checkOutTime),
+        visitType: vehicle.isReturningSupplier ? 'Returning' : 'New',
+        recheckIn: vehicle.isRecheckIn ? 'Yes' : 'No',
       }));
 
-      const csvContent = convertToCsv(data, headers);
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      
-      const filename = `all_visits_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      
-      link.setAttribute("href", url);
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadXlsx(
+        data,
+        columns,
+        `all_visits_${format(new Date(), 'yyyy-MM-dd')}.xlsx`,
+        'Vehicle Visits'
+      );
 
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'VEHICLE_CSV_EXPORTED',
+        action: 'VEHICLE_XLS_EXPORTED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
           recordCount: vehicles.length,
-          filename: filename,
           timestamp: new Date().toISOString(),
         },
       });
 
       toast({
-        title: 'CSV Export Complete',
+        title: 'XLS Export Complete',
         description: `All visits (${vehicles.length} records) have been downloaded.`,
       });
       
     } catch (error) {
-      console.error('Error exporting CSV:', error);
+      console.error('Error exporting XLS:', error);
       
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'VEHICLE_CSV_EXPORTED',
+        action: 'VEHICLE_XLS_EXPORTED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -1049,10 +1154,10 @@ export default function VehicleManagementPage() {
       toast({
         variant: 'destructive',
         title: 'Export Failed',
-        description: 'Failed to generate CSV file. Please try again.',
+        description: 'Failed to generate XLS file. Please try again.',
       });
     } finally {
-      setIsExportingCSV(false);
+      setIsExportingXLS(false);
     }
   };
 
@@ -1077,12 +1182,12 @@ export default function VehicleManagementPage() {
       </Button>
       <Button
         variant="outline"
-        onClick={exportAllVehiclesToCSV}
-        disabled={vehicles.length === 0 || isExportingCSV}
+        onClick={exportAllVehiclesToXLSX}
+        disabled={vehicles.length === 0 || isExportingXLS}
         className="w-full justify-start gap-2"
       >
-        {isExportingCSV ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        Export All CSV ({vehicles.length})
+        {isExportingXLS ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        Export All XLS ({vehicles.length})
       </Button>
       <Separator className="my-2" />
       {selectedVehicle && (
@@ -1300,16 +1405,16 @@ export default function VehicleManagementPage() {
                   </Button>
                   <Button 
                     variant="outline"
-                    onClick={exportAllVehiclesToCSV}
-                    disabled={vehicles.length === 0 || isExportingCSV}
+                    onClick={exportAllVehiclesToXLSX}
+                    disabled={vehicles.length === 0 || isExportingXLS}
                     className="gap-2"
                   >
-                    {isExportingCSV ? (
+                    {isExportingXLS ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Download className="h-4 w-4" />
                     )}
-                    Export CSV
+                    Export XLS
                   </Button>
                   {selectedVehicle && (
                     <>
@@ -2220,39 +2325,84 @@ export default function VehicleManagementPage() {
                             onClick={() => {
                               if (filteredCompletedVehicles.length === 0) return;
                               
-                              const headers = [
-                                'Gate Entry ID',
-                                'Driver Name',
-                                'Company',
-                                'Vehicle Plate',
-                                'Check-in Time',
-                                'Check-out Time',
-                                'Status'
+                              const columns: XlsxColumn[] = [
+                                { header: 'Gate Entry ID', key: 'gateEntryId', text: true },
+                                { header: 'Driver Name', key: 'driverName' },
+                                { header: 'Vehicle Plate', key: 'vehiclePlate' },
+                                { header: 'Vehicle Type', key: 'vehicleType' },
+                                { header: 'Phone', key: 'phone', text: true },
+                                { header: 'Check-in Time', key: 'checkInTime' },
+                                { header: 'Check-out Time', key: 'checkOutTime' },
+                                { header: 'Duration', key: 'duration' },
+                                { header: 'Status', key: 'status' },
                               ];
                               
                               const data = filteredCompletedVehicles.map(v => ({
-                                'Gate Entry ID': v.gateEntryId || 'N/A',
-                                'Driver Name': v.driverName,
-                                'Company': v.company,
-                                'Vehicle Plate': v.vehiclePlate,
-                                'Check-in Time': v.checkInTime ? format(parseISO(v.checkInTime), 'yyyy-MM-dd HH:mm') : 'N/A',
-                                'Check-out Time': v.checkOutTime ? format(parseISO(v.checkOutTime), 'yyyy-MM-dd HH:mm') : 'N/A',
-                                'Status': v.status
+                                gateEntryId: v.gateEntryId || 'N/A',
+                                driverName: v.driverName,
+                                vehiclePlate: v.vehiclePlate,
+                                vehicleType: v.vehicleType || 'N/A',
+                                phone: v.phone || 'N/A',
+                                checkInTime: v.checkInTime ? format(parseISO(v.checkInTime), 'yyyy-MM-dd HH:mm') : 'N/A',
+                                checkOutTime: v.checkOutTime ? format(parseISO(v.checkOutTime), 'yyyy-MM-dd HH:mm') : 'N/A',
+                                duration: formatDuration(v.checkInTime, v.checkOutTime),
+                                status: v.status,
                               }));
                               
-                              const csvContent = convertToCsv(data, headers);
-                              const blob = new Blob([csvContent], { type: 'text/csv' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `completed_visits_${format(historyDateRange.from, 'yyyy-MM-dd')}_${historyTimeRange.from.replace(':', '')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}_${historyTimeRange.to.replace(':', '')}.csv`;
-                              a.click();
+                              downloadXlsx(
+                                data,
+                                columns,
+                                `completed_visits_${format(historyDateRange.from, 'yyyy-MM-dd')}_${historyTimeRange.from.replace(':', '')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}_${historyTimeRange.to.replace(':', '')}.xlsx`,
+                                'Completed Visits'
+                              );
                             }}
                             disabled={filteredCompletedVehicles.length === 0}
                             className="hidden sm:flex"
                           >
                             <Download className="h-4 w-4 mr-2" />
-                            Export CSV
+                            Export XLS
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={async () => {
+                              if (filteredCompletedVehicles.length === 0) return;
+                              try {
+                                const currentUser = await getCurrentUser();
+                                await generateVisitsPdf(
+                                  filteredCompletedVehicles,
+                                  'Completed Visits Report',
+                                  `completed_visits_${format(historyDateRange.from, 'yyyy-MM-dd')}_${historyTimeRange.from.replace(':', '')}_to_${format(historyDateRange.to, 'yyyy-MM-dd')}_${historyTimeRange.to.replace(':', '')}.pdf`
+                                );
+                                await logActivity({
+                                  user: currentUser?.name || 'System',
+                                  action: 'VEHICLE_PDF_REPORTED',
+                                  status: 'success',
+                                  metadata: {
+                                    userId: currentUser?.id,
+                                    vehicleCount: filteredCompletedVehicles.length,
+                                    scope: 'completed',
+                                    timestamp: new Date().toISOString(),
+                                  },
+                                });
+                                toast({
+                                  title: 'Report Generated',
+                                  description: 'Completed visits report has been downloaded as PDF.',
+                                });
+                              } catch (error) {
+                                console.error('Error generating completed visits PDF:', error);
+                                toast({
+                                  title: 'PDF Generation Failed',
+                                  description: 'Could not generate PDF report.',
+                                  variant: 'destructive',
+                                });
+                              }
+                            }}
+                            disabled={filteredCompletedVehicles.length === 0}
+                            className="hidden sm:flex"
+                          >
+                            <Printer className="h-4 w-4 mr-2" />
+                            Export PDF
                           </Button>
                         </div>
                       </div>
@@ -2401,7 +2551,7 @@ export default function VehicleManagementPage() {
                                     <tr>
                                       <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Gate ID</th>
                                       <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Driver</th>
-                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Company</th>
+                                      <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Phone</th>
                                       <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Vehicle</th>
                                       <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Date</th>
                                       <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Check-in</th>
@@ -2427,7 +2577,7 @@ export default function VehicleManagementPage() {
                                           {vehicle.driverName}
                                         </td>
                                         <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm truncate">
-                                          {vehicle.company}
+                                          {vehicle.phone || 'N/A'}
                                         </td>
                                         <td className="px-2 md:px-4 py-2 md:py-3 font-mono text-xs truncate">
                                           {vehicle.vehiclePlate}
@@ -2505,22 +2655,6 @@ export default function VehicleManagementPage() {
           </main>
         </SidebarInset>
       </SidebarProvider>
-      
-      <div className="hidden">
-        <div ref={printRef}>
-          <PrintableVehicleReport 
-            visitors={vehicles.map(v => ({
-              ...v,
-              name: v.driverName,
-              company: v.company,
-              vehicleRegNo: v.vehiclePlate,
-              phoneNumber: v.phone,
-              gateEntryId: v.gateEntryId
-            }))} 
-            shipments={[]} 
-          />
-        </div>
-      </div>
     </>
   );
 }

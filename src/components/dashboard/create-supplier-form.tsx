@@ -501,7 +501,7 @@ export function CreateSupplierForm({ supplier, onSubmit, existingSupplierCodes =
                 <FormField control={form.control} name="produceType" render={({ field }) => (
                   <FormItem>
                     <OptionalLabel>Produce Type</OptionalLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select produce type" />

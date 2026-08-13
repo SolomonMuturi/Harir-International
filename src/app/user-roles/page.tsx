@@ -113,7 +113,6 @@ type RoleUser = {
   id: string;
   email: string;
   name: string | null;
-  phone: string | null;
   lastLogin: Date | null;
   createdAt: Date;
 };
@@ -122,7 +121,6 @@ type UserWithRole = {
   id: string;
   email: string;
   name: string | null;
-  phone: string | null;
   role: {
     id: string;
     name: string;
@@ -515,7 +513,6 @@ export default function UserRolesPage() {
   // New user creation form states
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserName, setNewUserName] = useState('');
-  const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRoleId, setNewUserRoleId] = useState<string>('');
   const [showPassword, setShowPassword] = useState(false);
@@ -523,7 +520,6 @@ export default function UserRolesPage() {
   // Edit user form states
   const [editUserEmail, setEditUserEmail] = useState('');
   const [editUserName, setEditUserName] = useState('');
-  const [editUserPhone, setEditUserPhone] = useState('');
   const [editUserRoleId, setEditUserRoleId] = useState<string>('');
   const [editUserPassword, setEditUserPassword] = useState('');
   const [showEditPassword, setShowEditPassword] = useState(false);
@@ -758,7 +754,6 @@ export default function UserRolesPage() {
         body: JSON.stringify({
           email: newUserEmail,
           name: newUserName,
-          phone: newUserPhone || null,
           password: newUserPassword,
           roleId: roleIdToAssign,
         }),
@@ -838,7 +833,6 @@ export default function UserRolesPage() {
         body: JSON.stringify({
           email: editUserEmail,
           name: editUserName,
-          phone: editUserPhone || null,
           roleId: editUserRoleId === 'no-role' ? null : editUserRoleId || null,
           password: editUserPassword || null,
         }),
@@ -859,7 +853,6 @@ export default function UserRolesPage() {
             updatedUserId: editingUser.id,
             userEmail: editUserEmail,
             userName: editUserName,
-            phoneChanged: editUserPhone !== editingUser.phone,
             passwordChanged: !!editUserPassword,
             timestamp: new Date().toISOString(),
           },
@@ -1391,11 +1384,10 @@ export default function UserRolesPage() {
 
   // Export users as XLSX with logging
   const exportUsersAsXLSX = () => {
-    const headers = ['Name', 'Email', 'Phone', 'Role', 'Last Login', 'Status', 'Created At'];
+    const headers = ['Name', 'Email', 'Role', 'Last Login', 'Status', 'Created At'];
     const rows = users.map(user => [
       user.name || '',
       user.email,
-      user.phone || '',
       user.role?.name || 'Unassigned',
       user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never',
       user.loginAttempts > 3 ? 'Locked' : 'Active',
@@ -1475,7 +1467,6 @@ export default function UserRolesPage() {
   const resetNewUserForm = () => {
     setNewUserEmail('');
     setNewUserName('');
-    setNewUserPhone('');
     setNewUserPassword('');
     setNewUserRoleId('');
     setShowPassword(false);
@@ -1486,7 +1477,6 @@ export default function UserRolesPage() {
     setEditingUser(user);
     setEditUserEmail(user.email);
     setEditUserName(user.name || '');
-    setEditUserPhone(user.phone || '');
     setEditUserRoleId(user.role?.id || '');
     setEditUserPassword('');
     setShowEditPassword(false);
@@ -1602,8 +1592,7 @@ export default function UserRolesPage() {
   const filteredUsers = users.filter(user => {
     const matchesSearch = 
       user.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-      (user.name && user.name.toLowerCase().includes(userSearch.toLowerCase())) ||
-      (user.phone && user.phone.toLowerCase().includes(userSearch.toLowerCase()));
+      (user.name && user.name.toLowerCase().includes(userSearch.toLowerCase()));
     
     if (selectedRoleFilter === 'all') return matchesSearch;
     if (selectedRoleFilter === 'unassigned') return matchesSearch && !user.role;
@@ -2167,7 +2156,6 @@ export default function UserRolesPage() {
                                   </div>
                                 </TableHead>
                                 <TableHead>User</TableHead>
-                                <TableHead>Phone</TableHead>
                                 <TableHead>Current Role</TableHead>
                                 <TableHead>Assign Role</TableHead>
                                 <TableHead>Last Login</TableHead>
@@ -2193,13 +2181,6 @@ export default function UserRolesPage() {
                                         <div className="font-medium">{user.name || 'No name'}</div>
                                         <div className="text-sm text-muted-foreground">{user.email}</div>
                                       </div>
-                                    </TableCell>
-                                    <TableCell>
-                                      {user.phone ? (
-                                        <span className="text-sm">{user.phone}</span>
-                                      ) : (
-                                        <span className="text-sm text-muted-foreground">—</span>
-                                      )}
                                     </TableCell>
                                     <TableCell>
                                       {user.role ? (
@@ -2602,7 +2583,6 @@ export default function UserRolesPage() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Email</TableHead>
-                        <TableHead>Phone</TableHead>
                         <TableHead>Last Login</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2615,9 +2595,6 @@ export default function UserRolesPage() {
                             </TableCell>
                             <TableCell className="text-sm">{member.email}</TableCell>
                             <TableCell className="text-sm">
-                              {member.phone || '—'}
-                            </TableCell>
-                            <TableCell className="text-sm">
                               {member.lastLogin
                                 ? new Date(member.lastLogin).toLocaleString()
                                 : 'Never'}
@@ -2626,7 +2603,7 @@ export default function UserRolesPage() {
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                          <TableCell colSpan={3} className="text-center text-muted-foreground py-6">
                             No users assigned to this role yet.
                           </TableCell>
                         </TableRow>
@@ -2972,7 +2949,7 @@ export default function UserRolesPage() {
           <DialogHeader>
             <DialogTitle>Create New User</DialogTitle>
             <DialogDescription>
-              Add a new user account with email, phone and password
+              Add a new user account with email and password
             </DialogDescription>
           </DialogHeader>
           
@@ -2997,17 +2974,6 @@ export default function UserRolesPage() {
                 value={newUserName}
                 onChange={(e) => setNewUserName(e.target.value)}
                 required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="user-phone">Phone Number</Label>
-              <Input
-                id="user-phone"
-                type="tel"
-                placeholder="+254 712 345 678"
-                value={newUserPhone}
-                onChange={(e) => setNewUserPhone(e.target.value)}
               />
             </div>
             
@@ -3125,17 +3091,6 @@ export default function UserRolesPage() {
                 value={editUserName}
                 onChange={(e) => setEditUserName(e.target.value)}
                 required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-user-phone">Phone Number</Label>
-              <Input
-                id="edit-user-phone"
-                type="tel"
-                placeholder="+254 712 345 678"
-                value={editUserPhone}
-                onChange={(e) => setEditUserPhone(e.target.value)}
               />
             </div>
 

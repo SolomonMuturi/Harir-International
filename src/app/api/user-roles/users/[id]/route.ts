@@ -8,7 +8,6 @@ import { prisma } from '@/lib/db';
 const updateUserSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   email: z.string().email('Invalid email address').optional(),
-  phone: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional().nullable(),
   roleId: z.string().optional().nullable(),
   unlock: z.boolean().optional(),
@@ -69,7 +68,6 @@ export async function PATCH(
     const updateData: any = {};
     if (validatedData.name !== undefined) updateData.name = validatedData.name;
     if (validatedData.email !== undefined) updateData.email = validatedData.email;
-    if (validatedData.phone !== undefined) updateData.phone = validatedData.phone || null;
     if (validatedData.roleId !== undefined) updateData.roleId = validatedData.roleId || null;
     if (validatedData.password) {
       updateData.password = await bcrypt.hash(validatedData.password, 10);

@@ -221,10 +221,8 @@ function LoginFormContent({ callbackUrl }: { callbackUrl: string }) {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-2">
-            <div className="w-20 h-20 bg-primary rounded-lg flex items-center justify-center">
-              <FreshTraceLogo className="w-40 h-20 text-primary-foreground" />
-            </div>
+          <div className="flex items-center justify-center mb-4">
+            <FreshTraceLogo className="w-64 max-w-full h-auto object-contain" />
           </div>
           <CardTitle className="text-2xl font-bold text-center">Harir International</CardTitle>
           <CardDescription className="text-center">

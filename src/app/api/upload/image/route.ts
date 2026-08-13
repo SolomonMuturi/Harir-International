@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const file = (formData.get('file') || formData.get('image')) as File;
 
     if (!file) {
       return NextResponse.json(
@@ -24,11 +24,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (max 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+    // Validate file size (max 25MB) - keep the original full-size image
+    const maxSize = 25 * 1024 * 1024; // 25MB in bytes
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: 'File size too large. Maximum size is 5MB.' },
+        { error: 'File size too large. Maximum size is 25MB.' },
         { status: 400 }
       );
     }

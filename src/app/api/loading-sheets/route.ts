@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission } from '@/lib/api-auth';
+import * as XLSX from 'xlsx';
 
 // Helper functions
 function cleanString(input: string | null): string | null {
@@ -860,7 +861,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// GET: Download loading sheet as CSV
+// GET: Download loading sheet as Excel
 export async function GET_DOWNLOAD(request: NextRequest) {
   const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
   if (auth.error) return auth.error;
@@ -876,7 +877,7 @@ export async function GET_DOWNLOAD(request: NextRequest) {
       );
     }
 
-    console.log(`📥 Loading Sheets API: Downloading loading sheet ${id} as CSV...`);
+    console.log(`📥 Loading Sheets API: Downloading loading sheet ${id} as Excel...`);
 
     // Fetch loading sheet with pallets
     const loadingSheet = await prisma.loading_sheets.findUnique({
@@ -895,8 +896,8 @@ export async function GET_DOWNLOAD(request: NextRequest) {
       );
     }
 
-    // Format date for CSV
-    const formatDateForCSV = (date: Date | null) => {
+    // Format date for export
+    const formatDateForExport = (date: Date | null) => {
       if (!date) return '';
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
@@ -905,22 +906,23 @@ export async function GET_DOWNLOAD(request: NextRequest) {
       });
     };
 
-    // Generate CSV content
-    const headers = ['LOADING SHEET\n\n'];
+    // Generate AOA content
+    const aoa: (string | number)[][] = [
+      ['LOADING SHEET', '', '', ''],
+      ['EXPORTER', loadingSheet.exporter || '', 'LOADING DATE', formatDateForExport(loadingSheet.loading_date)],
+      ['CLIENT', loadingSheet.client || '', 'VESSEL', loadingSheet.vessel || ''],
+      ['SHIPPING LINE', loadingSheet.shipping_line || '', 'ETA MSA', formatDateForExport(loadingSheet.eta_msa)],
+      ['BILL NUMBER', loadingSheet.bill_number || '', 'ETD MSA', formatDateForExport(loadingSheet.etd_msa)],
+      ['CONTAINER', loadingSheet.container || '', 'PORT', loadingSheet.port || ''],
+      ['SEAL 1', loadingSheet.seal1 || '', 'ETA PORT', formatDateForExport(loadingSheet.eta_port)],
+      ['SEAL 2', loadingSheet.seal2 || '', 'TEMP REC 1', loadingSheet.temp_rec1 || ''],
+      ['TRUCK', loadingSheet.truck || '', 'TEMP REC 2', loadingSheet.temp_rec2 || ''],
+      []
+    ];
     
-    // Header information
-    headers.push(`EXPORTER,${loadingSheet.exporter || ''},LOADING DATE,${formatDateForCSV(loadingSheet.loading_date)}`);
-    headers.push(`CLIENT,${loadingSheet.client || ''},VESSEL,${loadingSheet.vessel || ''}`);
-    headers.push(`SHIPPING LINE,${loadingSheet.shipping_line || ''},ETA MSA,${formatDateForCSV(loadingSheet.eta_msa)}`);
-    headers.push(`BILL NUMBER,${loadingSheet.bill_number || ''},ETD MSA,${formatDateForCSV(loadingSheet.etd_msa)}`);
-    headers.push(`CONTAINER,${loadingSheet.container || ''},PORT,${loadingSheet.port || ''}`);
-    headers.push(`SEAL 1,${loadingSheet.seal1 || ''},ETA PORT,${formatDateForCSV(loadingSheet.eta_port)}`);
-    headers.push(`SEAL 2,${loadingSheet.seal2 || ''},TEMP REC 1,${loadingSheet.temp_rec1 || ''}`);
-    headers.push(`TRUCK,${loadingSheet.truck || ''},TEMP REC 2,${loadingSheet.temp_rec2 || ''}\n`);
-    
-    // Pallet headers
+    // Table header
     const tableHeaders = ['PALLET NO', 'VARIETY', 'BOX TYPE', 'QUANTITY', 'WEIGHT (kg)'];
-    headers.push(tableHeaders.join(','));
+    aoa.push(tableHeaders);
     
     // Pallet rows
     const rows = loadingSheet.loading_pallets.map((pallet) => {
@@ -934,10 +936,10 @@ export async function GET_DOWNLOAD(request: NextRequest) {
         boxType,
         quantity,
         weight
-      ].join(',');
+      ];
     });
     
-    headers.push(...rows);
+    aoa.push(...rows);
     
     // Totals
     const totals = loadingSheet.loading_pallets.reduce(
@@ -954,24 +956,30 @@ export async function GET_DOWNLOAD(request: NextRequest) {
       { totalBoxes: 0, totalWeight: 0, totalPallets: 0 }
     );
     
-    headers.push(`\nSUMMARY`);
-    headers.push(`Total Pallets,${totals.totalPallets}`);
-    headers.push(`Total Boxes,${totals.totalBoxes}`);
-    headers.push(`Total Weight,${totals.totalWeight} kg\n`);
+    aoa.push([]);
+    aoa.push(['SUMMARY']);
+    aoa.push(['Total Pallets', totals.totalPallets]);
+    aoa.push(['Total Boxes', totals.totalBoxes]);
+    aoa.push(['Total Weight', `${totals.totalWeight} kg`]);
     
     // Loading details
-    headers.push('LOADING DETAILS');
-    headers.push(`Loaded by,${loadingSheet.loaded_by || ''}`);
-    headers.push(`Checked by,${loadingSheet.checked_by || ''}`);
-    headers.push(`Remarks,${loadingSheet.remarks || ''}`);
+    aoa.push([]);
+    aoa.push(['LOADING DETAILS']);
+    aoa.push(['Loaded by', loadingSheet.loaded_by || '']);
+    aoa.push(['Checked by', loadingSheet.checked_by || '']);
+    aoa.push(['Remarks', loadingSheet.remarks || '']);
     
-    const csvContent = headers.join('\n');
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 16 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Loading Sheet');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     
-    // Return as CSV download
-    return new Response(csvContent, {
+    // Return as Excel download
+    return new NextResponse(buf, {
       headers: {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="loading-sheet-${loadingSheet.bill_number || loadingSheet.id}.csv"`
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="loading-sheet-${loadingSheet.bill_number || loadingSheet.id}.xlsx"`
       }
     });
 

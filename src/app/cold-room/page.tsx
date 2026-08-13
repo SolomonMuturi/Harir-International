@@ -71,6 +71,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import * as XLSX from 'xlsx';
 
 interface ColdRoomBox {
   id: string;
@@ -548,7 +549,7 @@ export default function ColdRoomPage() {
     return grade === 'class1' ? 'Class 1' : 'Class 2';
   };
 
-  const exportColdRoomBoxesToCSV = async (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
+  const exportColdRoomBoxesToXLSX = async (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
     if (!data || data.length === 0) {
       return;
     }
@@ -639,40 +640,26 @@ export default function ColdRoomPage() {
         }
         
         return [
-          `"${addedDate}"`,
-          `"${supplierName}"`,
-          `"${region}"`,
-          `"${varietyDisplay}"`,
-          `"${box.box_type}"`,
-          `"${formatSize(box.size)}"`,
-          `"${gradeDisplay}"`,
-          `"${box.totalQuantity}"`,
-          `"${boxWeight}"`,
-          `"${totalWeight}"`,
-          `"${box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}"`,
-          `"${status}"`,
-          `"${addedDate}"`
-        ].join(',');
+          addedDate,
+          supplierName,
+          region,
+          varietyDisplay,
+          box.box_type,
+          formatSize(box.size),
+          gradeDisplay,
+          box.totalQuantity,
+          boxWeight,
+          totalWeight,
+          box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
+          status,
+          addedDate
+        ];
       });
 
-      const csvContent = [
-        headers.join(','),
-        ...rows
-      ].join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      URL.revokeObjectURL(url);
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Cold Room Inventory');
+      XLSX.writeFile(workbook, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
 
       const currentUser = await getCurrentUser();
       await logActivity({
@@ -682,8 +669,8 @@ export default function ColdRoomPage() {
         metadata: {
           userId: currentUser?.id,
           recordCount: data.length,
-          filename: `${filename}_${new Date().toISOString().split('T')[0]}.csv`,
-          fileType: 'csv',
+          filename: `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`,
+          fileType: 'xlsx',
           timestamp: new Date().toISOString(),
         },
       });
@@ -697,7 +684,7 @@ export default function ColdRoomPage() {
           userId: currentUser?.id,
           error: error.message || 'Unknown error',
           filename: filename,
-          fileType: 'csv',
+          fileType: 'xlsx',
           timestamp: new Date().toISOString(),
         },
       });
@@ -4668,16 +4655,16 @@ const fetchRepackingRecords = async () => {
                             }
                             
                             try {
-                              await exportColdRoomBoxesToCSV(availableBoxes, 'cold-room-available-inventory');
+                              await exportColdRoomBoxesToXLSX(availableBoxes, 'cold-room-available-inventory');
                               
                               toast({
-                                title: 'CSV Export Started',
-                                description: `Downloading ${availableBoxes.length} available inventory records as CSV file`,
+                                title: 'XLS Export Started',
+                                description: `Downloading ${availableBoxes.length} available inventory records as XLS file`,
                               });
                             } catch (error) {
                               toast({
                                 title: 'Export Failed',
-                                description: 'Could not generate CSV file. Please try again.',
+                                description: 'Could not generate XLS file. Please try again.',
                                 variant: 'destructive',
                               });
                             }
@@ -4687,7 +4674,7 @@ const fetchRepackingRecords = async () => {
                           className="flex items-center gap-2"
                         >
                           <Download className="w-4 h-4" />
-                          Export Available to CSV
+                          Export Available to XLS
                         </Button>
                         <Button
                           onClick={() => {

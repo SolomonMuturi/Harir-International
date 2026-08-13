@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { format } from 'date-fns';
 import { requirePermission } from '@/lib/api-auth';
+import * as XLSX from 'xlsx';
 
 export async function GET(request: NextRequest) {
   const auth = await requirePermission(request, ['utilities.view', 'utilities.reports']);
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    const formatType = searchParams.get('format') || 'csv';
+    const formatType = searchParams.get('format') || 'xlsx';
 
     // Build where clause
     const where: any = {};
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(parsedReadings);
     }
 
-    // Convert to CSV
+    // Build XLSX workbook
     const headers = [
       'Date',
       'Recorded By',
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
       'Notes',
     ];
 
-    const csvRows = parsedReadings.map(reading => [
+    const dataRows = parsedReadings.map(reading => [
       reading.date,
       reading.recordedBy,
       reading.shift || '',
@@ -121,20 +122,18 @@ export async function GET(request: NextRequest) {
       reading.notes || '',
     ]);
 
-    const csvContent = [
-      headers.join(','),
-      ...csvRows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    ws['!cols'] = headers.map(header => ({ wch: Math.max(header.length + 2, 16) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Utility Readings');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-    // Create response with CSV file
-    const response = new Response(csvContent, {
+    return new NextResponse(buf, {
       headers: {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="utility-readings-${format(new Date(), 'yyyy-MM-dd')}.csv"`,
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="utility-readings-${format(new Date(), 'yyyy-MM-dd')}.xlsx"`,
       },
     });
-
-    return response;
 
   } catch (error) {
     console.error('Error exporting utility readings:', error);

@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { startOfDay, endOfDay } from 'date-fns'
+import * as XLSX from 'xlsx'
 
 // Helper function to generate small ID
 function generateTinyId() {
@@ -33,8 +34,8 @@ function formatPhoneNumber(phone) {
   return cleaned.startsWith('+') ? cleaned : '+' + cleaned
 }
 
-// Generate CSV
-function generateCSV(suppliers) {
+// Generate XLSX
+function generateXLSX(suppliers) {
   const headers = [
     'Supplier Code',
     'Supplier Name',
@@ -65,12 +66,11 @@ function generateCSV(suppliers) {
     new Date(supplier.created_at).toLocaleDateString()
   ])
 
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${cell?.toString().replace(/"/g, '""')}"`).join(','))
-  ].join('\n')
-
-  return csvContent
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  ws['!cols'] = headers.map(header => ({ wch: Math.max(header.length + 2, 16) }))
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Suppliers')
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
 }
 
 // Load the company logo as a base64 data URI for embedding in HTML reports
@@ -260,12 +260,12 @@ export async function GET(request) {
       console.log(`✅ Found ${suppliers.length} suppliers in date range`)
       
       // Handle export formats
-      if (formatType === 'csv') {
-        const csvContent = generateCSV(suppliers)
-        return new NextResponse(csvContent, {
+      if (formatType === 'xlsx') {
+        const xlsxBuf = generateXLSX(suppliers)
+        return new NextResponse(xlsxBuf, {
           headers: {
-            'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': `attachment; filename=suppliers_${startDate}_to_${endDate}.csv`
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename=suppliers_${startDate}_to_${endDate}.xlsx`
           }
         })
       } else if (formatType === 'html') {

@@ -549,7 +549,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// New endpoint for CSV export
 export async function DELETE(request: NextRequest) {
   const auth = await requirePermission(request, ['utilities.record']);
   if (auth.error) return auth.error;

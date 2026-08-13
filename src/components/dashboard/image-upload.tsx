@@ -25,9 +25,9 @@ export function ImageUpload({ onImageSelect, isLoading }: ImageUploadProps) {
         return;
       }
 
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
+      // Validate file size (max 25MB)
+      if (file.size > 25 * 1024 * 1024) {
+        alert('Image size should be less than 25MB');
         return;
       }
 
@@ -75,7 +75,7 @@ export function ImageUpload({ onImageSelect, isLoading }: ImageUploadProps) {
             <img
               src={preview}
               alt="Preview"
-              className="w-full h-48 object-cover rounded-lg border"
+              className="w-full h-48 object-contain rounded-lg border bg-black-50"
             />
             <Button
               type="button"
@@ -126,7 +126,7 @@ export function ImageUpload({ onImageSelect, isLoading }: ImageUploadProps) {
                 {isLoading ? 'Uploading...' : 'Click to upload image'}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                Upload pictorial evidence (Max 5MB)
+                Upload pictorial evidence (Max 25MB) - saved in full resolution
               </p>
             </div>
           </div>

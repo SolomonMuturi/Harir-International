@@ -101,18 +101,18 @@ export function VisitorDataTable({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow p-0">
-        <ScrollArea className="h-[400px]">
-          <Table>
+        <ScrollArea className="h-[calc(100vh-340px)] min-h-[320px]">
+          <Table className="min-w-[880px]">
             <TableHeader className="sticky top-0 bg-card border-b">
-              <TableRow>
-                <TableHead className="font-semibold">Visitor</TableHead>
-                <TableHead className="font-semibold">Host / Department</TableHead>
-                <TableHead className="font-semibold">Vehicle</TableHead>
-                <TableHead className="font-semibold">Expected</TableHead>
-                <TableHead className="font-semibold">Check-in</TableHead>
-                <TableHead className="font-semibold">Check-out</TableHead>
-                <TableHead className="font-semibold">Status</TableHead>
-                <TableHead className="font-semibold text-right">Actions</TableHead>
+              <TableRow className="hover:bg-transparent border-b">
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Visitor</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Host / Department</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Vehicle</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Expected</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Check-in</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Check-out</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Status</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -129,45 +129,45 @@ export function VisitorDataTable({
                         : ""
                     )}
                   >
-                    <TableCell>
-                      <div className="flex items-start gap-3">
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
                         <div className={cn(
-                          "w-2 h-2 rounded-full mt-2",
+                          "w-2 h-2 rounded-full shrink-0",
                           highlighted 
                             ? "bg-blue-500 animate-pulse" 
                             : "bg-gray-300"
                         )}></div>
                         <div>
                           <div className={cn(
-                            "font-medium",
+                            "font-medium text-sm leading-tight",
                             highlighted && "text-blue-700"
                           )}>
                             {visitor.name}
                           </div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="text-xs text-muted-foreground">
                             {visitor.company || 'Individual Visitor'}
                           </div>
-                          <div className="text-xs text-muted-foreground font-mono mt-1">
-                            ID: {visitor.visitorCode}
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {visitor.visitorCode}
                           </div>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="text-sm font-medium">{getHostName(visitor.hostId)}</div>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
+                      <div className="text-sm font-medium leading-tight">{getHostName(visitor.hostId)}</div>
                       {visitor.department && (
-                        <div className="text-xs text-muted-foreground mt-1">
+                        <div className="text-xs text-muted-foreground">
                           {visitor.department}
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       {visitor.vehiclePlate ? (
                         <div className="flex items-center gap-2">
-                          <Car className="h-4 w-4 text-gray-500" />
+                          <Car className="h-3.5 w-3.5 text-gray-500 shrink-0" />
                           <div>
-                            <div className="font-mono font-medium">{visitor.vehiclePlate}</div>
-                            <div className="text-sm text-muted-foreground">
+                            <div className="font-mono font-medium text-sm leading-tight">{visitor.vehiclePlate}</div>
+                            <div className="text-xs text-muted-foreground">
                               {visitor.vehicleType || 'Car'}
                             </div>
                           </div>
@@ -176,20 +176,20 @@ export function VisitorDataTable({
                         <span className="text-muted-foreground text-sm">No vehicle</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <div className="font-mono text-sm">{formatTimestamp(visitor.expectedCheckInTime)}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <div className="font-mono text-sm">{formatTimestamp(visitor.checkInTime)}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <div className="font-mono text-sm">{formatTimestamp(visitor.checkOutTime)}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <Badge
                         variant={statusVariant[visitor.status]}
                         className={cn(
-                          "capitalize flex items-center gap-1 px-2 py-1",
+                          "capitalize flex items-center gap-1 px-2 py-0.5 text-xs",
                           highlighted && "ring-2 ring-blue-200"
                         )}
                       >
@@ -197,13 +197,13 @@ export function VisitorDataTable({
                         {visitor.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                    <TableCell className="py-2 px-3 text-right whitespace-nowrap">
+                      <div className="flex justify-end gap-1.5">
                         <Button 
                           size="sm" 
                           variant="outline"
                           className={cn(
-                            "h-8 text-xs",
+                            "h-7 px-2 text-xs",
                             highlighted && "border-blue-300 text-blue-700 bg-blue-50"
                           )}
                           onClick={(e) => { 
@@ -220,7 +220,7 @@ export function VisitorDataTable({
                           <Button 
                             size="sm" 
                             variant="destructive"
-                            className="h-8 text-xs"
+                            className="h-7 px-2 text-xs"
                             onClick={(e) => { 
                               e.stopPropagation(); 
                               onCheckOut(visitor.id, true); 

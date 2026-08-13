@@ -679,12 +679,24 @@ export async function GET(request: NextRequest) {
       }
       
       } else {
-        // Return all counting records (default endpoint)
+        // Return counting records (default endpoint) with optional pagination
         try {
-          const countingRecords = await prisma.$queryRaw`
+          const limitParam = searchParams.get('limit');
+          const offsetParam = searchParams.get('offset');
+          const parsedLimit = limitParam !== null ? parseInt(limitParam, 10) : NaN;
+          const parsedOffset = offsetParam !== null ? parseInt(offsetParam, 10) : 0;
+          
+          const hasPagination = !isNaN(parsedLimit) && parsedLimit > 0;
+          const safeOffset = Math.max(0, isNaN(parsedOffset) ? 0 : parsedOffset);
+          const limitClause = hasPagination
+            ? `LIMIT ${Math.min(parsedLimit, 1000)} OFFSET ${safeOffset}`
+            : '';
+
+          const countingRecords = await prisma.$queryRawUnsafe(`
             SELECT * FROM counting_records 
             ORDER BY submitted_at DESC
-          `;
+            ${limitClause}
+          `);
 
         // Process the data
         const processedRecords = Array.isArray(countingRecords) ? countingRecords.map((record: any) => {
@@ -715,10 +727,18 @@ export async function GET(request: NextRequest) {
             kra_pin: record.kra_pin || ''
           };
         }) : [];
-        
+
+        const totalCountResult = limitParam !== null ? await prisma.$queryRaw`
+          SELECT COUNT(*) AS count FROM counting_records
+        ` : null;
+        const totalCount = Array.isArray(totalCountResult) && totalCountResult.length > 0
+          ? Number(totalCountResult[0].count)
+          : 0;
+
         return NextResponse.json({
           success: true,
-          data: processedRecords || []
+          data: processedRecords || [],
+          ...(limitParam !== null ? { total: totalCount } : {})
         });
       } catch (error) {
         console.error('Error fetching counting records:', error);

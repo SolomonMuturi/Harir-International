@@ -21,6 +21,7 @@ import { PlusCircle, Search, Edit, Trash2, Phone, Mail, Truck, Star, RefreshCw, 
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import * as XLSX from 'xlsx';
 
 interface Carrier {
   id: string;
@@ -44,8 +45,8 @@ interface Carrier {
   }>;
 }
 
-// CSV Export utility function with date filtering
-const exportCarriersToCSV = (carriers: Carrier[], filters: any, filename: string = 'carriers-list') => {
+// XLS Export utility function with date filtering
+const exportCarriersToXLSX = (carriers: Carrier[], filters: any, filename: string = 'carriers-list') => {
   if (!carriers || carriers.length === 0) {
     return;
   }
@@ -103,7 +104,7 @@ const exportCarriersToCSV = (carriers: Carrier[], filters: any, filename: string
     [''] // Empty line before headers
   ];
 
-  // Define CSV headers
+  // Define headers
   const headers = [
     'Carrier ID',
     'Name',
@@ -120,42 +121,30 @@ const exportCarriersToCSV = (carriers: Carrier[], filters: any, filename: string
     'Last Updated'
   ];
 
-  // Convert data to CSV rows
-  const rows = filteredCarriers.map((carrier) => {
+  // Convert data to rows
+  const rows: (string | number)[][] = filteredCarriers.map((carrier) => {
     const createdDate = carrier.created_at ? new Date(carrier.created_at) : null;
     const createdDateStr = createdDate ? createdDate.toLocaleDateString() : '';
     const createdTimeStr = createdDate ? createdDate.toLocaleTimeString() : '';
     const updatedDate = carrier.updated_at ? new Date(carrier.updated_at).toLocaleDateString() : '';
     
     return [
-      `"${carrier.id || ''}"`,
-      `"${carrier.name || ''}"`,
-      `"${carrier.contact_name || ''}"`,
-      `"${carrier.contact_email || ''}"`,
-      `"${carrier.contact_phone || ''}"`,
-      `"${carrier.id_number || ''}"`,
-      `"${carrier.vehicle_registration || ''}"`,
-      `"${carrier.rating || 0}"`,
-      `"${carrier.status || ''}"`,
-      `"${carrier._count?.shipments || 0}"`,
-      `"${createdDateStr}"`,
-      `"${createdTimeStr}"`,
-      `"${updatedDate}"`
-    ].join(',');
+      carrier.id || '',
+      carrier.name || '',
+      carrier.contact_name || '',
+      carrier.contact_email || '',
+      carrier.contact_phone || '',
+      carrier.id_number || '',
+      carrier.vehicle_registration || '',
+      carrier.rating || 0,
+      carrier.status || '',
+      carrier._count?.shipments || 0,
+      createdDateStr,
+      createdTimeStr,
+      updatedDate
+    ];
   });
 
-  // Combine all sections
-  const csvContent = [
-    ...summarySection.map(row => Array.isArray(row) ? row.join(',') : row),
-    headers.join(','),
-    ...rows
-  ].join('\n');
-
-  // Create blob and download link
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  
   // Generate filename with date range if specified
   let downloadFilename = filename;
   if (filters.dateFrom) {
@@ -165,17 +154,28 @@ const exportCarriersToCSV = (carriers: Carrier[], filters: any, filename: string
     downloadFilename += `_to_${filters.dateTo}`;
   }
   downloadFilename += `_${new Date().toISOString().split('T')[0]}`;
-  
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${downloadFilename}.csv`);
-  link.style.visibility = 'hidden';
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  URL.revokeObjectURL(url);
-  
+
+  const worksheet = XLSX.utils.aoa_to_sheet([...summarySection, headers, ...rows]);
+  worksheet['!cols'] = [
+    { wch: 14 },
+    { wch: 28 },
+    { wch: 24 },
+    { wch: 30 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 14 }
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Carriers');
+  XLSX.writeFile(workbook, `${downloadFilename}.xlsx`);
+
   return filteredCarriers.length;
 };
 
@@ -439,15 +439,15 @@ export default function CarriersPage() {
     }
   };
 
-  // Handle CSV download
-  const handleDownloadCSV = async () => {
+  // Handle XLS download
+  const handleDownloadXLS = async () => {
     if (carriers.length === 0) {
       alert('No carriers data to export');
       return;
     }
     
     try {
-      const count = exportCarriersToCSV(carriers, { 
+      const count = exportCarriersToXLSX(carriers, { 
         searchTerm, 
         statusFilter,
         dateFrom,
@@ -455,13 +455,13 @@ export default function CarriersPage() {
       }, 'carriers-list');
       
       if (count) {
-        alert(`Downloaded ${count} carriers as CSV file`);
+        alert(`Downloaded ${count} carriers as XLS file`);
       }
       
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'CARRIER_CSV_EXPORTED',
+        action: 'CARRIER_XLS_EXPORTED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
@@ -474,11 +474,11 @@ export default function CarriersPage() {
         },
       });
     } catch (error: any) {
-      console.error('Error exporting CSV:', error);
+      console.error('Error exporting XLS:', error);
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'CARRIER_CSV_EXPORTED',
+        action: 'CARRIER_XLS_EXPORTED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -487,7 +487,7 @@ export default function CarriersPage() {
           timestamp: new Date().toISOString(),
         },
       });
-      alert('Could not generate CSV file. Please try again.');
+      alert('Could not generate XLS file. Please try again.');
     }
   };
 
@@ -616,12 +616,12 @@ export default function CarriersPage() {
             <div className="flex items-center gap-2">
               <Button 
                 variant="outline" 
-                onClick={handleDownloadCSV}
+                onClick={handleDownloadXLS}
                 disabled={carriers.length === 0}
                 className="flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
-                Export CSV
+                Export XLS
               </Button>
               <Button variant="outline" onClick={fetchCarriers}>
                 <RefreshCw className="h-4 w-4 mr-2" />
@@ -943,7 +943,7 @@ export default function CarriersPage() {
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <Button
-                      onClick={handleDownloadCSV}
+                      onClick={handleDownloadXLS}
                       className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
                     >
                       <FileText className="h-4 w-4" />
@@ -954,7 +954,7 @@ export default function CarriersPage() {
                       onClick={async () => {
                         try {
                           const activeCarriers = carriers.filter(c => c.status === 'Active');
-                          const count = exportCarriersToCSV(
+                          const count = exportCarriersToXLSX(
                             activeCarriers, 
                             { searchTerm, statusFilter: 'Active', dateFrom, dateTo }, 
                             'active-carriers'
@@ -965,7 +965,7 @@ export default function CarriersPage() {
                           const currentUser = await getCurrentUser();
                           await logActivity({
                             user: currentUser?.name || 'System',
-                            action: 'CARRIER_CSV_EXPORTED',
+                            action: 'CARRIER_XLS_EXPORTED',
                             status: 'success',
                             metadata: {
                               userId: currentUser?.id,
@@ -975,11 +975,11 @@ export default function CarriersPage() {
                             },
                           });
                         } catch (error: any) {
-                          console.error('Error exporting active carriers CSV:', error);
+                          console.error('Error exporting active carriers XLS:', error);
                           const currentUser = await getCurrentUser();
                           await logActivity({
                             user: currentUser?.name || 'System',
-                            action: 'CARRIER_CSV_EXPORTED',
+                            action: 'CARRIER_XLS_EXPORTED',
                             status: 'failure',
                             metadata: {
                               userId: currentUser?.id,
@@ -1008,7 +1008,7 @@ export default function CarriersPage() {
                             return carrierDate >= startOfMonth && carrierDate <= endOfMonth;
                           });
                           
-                          const count = exportCarriersToCSV(
+                          const count = exportCarriersToXLSX(
                             monthCarriers,
                             { 
                               searchTerm, 
@@ -1026,7 +1026,7 @@ export default function CarriersPage() {
                           const currentUser = await getCurrentUser();
                           await logActivity({
                             user: currentUser?.name || 'System',
-                            action: 'CARRIER_CSV_EXPORTED',
+                            action: 'CARRIER_XLS_EXPORTED',
                             status: 'success',
                             metadata: {
                               userId: currentUser?.id,
@@ -1036,11 +1036,11 @@ export default function CarriersPage() {
                             },
                           });
                         } catch (error: any) {
-                          console.error('Error exporting this month carriers CSV:', error);
+                          console.error('Error exporting this month carriers XLS:', error);
                           const currentUser = await getCurrentUser();
                           await logActivity({
                             user: currentUser?.name || 'System',
-                            action: 'CARRIER_CSV_EXPORTED',
+                            action: 'CARRIER_XLS_EXPORTED',
                             status: 'failure',
                             metadata: {
                               userId: currentUser?.id,

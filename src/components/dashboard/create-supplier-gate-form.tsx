@@ -1,7 +1,7 @@
 // components/dashboard/create-supplier-gate-form.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Separator } from '../ui/separator';
-import { Printer, QrCode, User, Calendar, Truck, Phone } from 'lucide-react';
+import { Printer, QrCode, User, Calendar, Truck, Phone, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -59,8 +59,31 @@ interface CreateSupplierGateFormProps {
   onSubmit: (values: SupplierFormValues) => void;
 }
 
+interface DriverOption {
+  name: string;
+  phone: string;
+  id: string;
+}
+
 export function CreateSupplierGateForm({ onSubmit }: CreateSupplierGateFormProps) {
   const [isQrDialogOpen, setIsQrDialogOpen] = useState(false);
+  const [drivers, setDrivers] = useState<DriverOption[]>([]);
+  const [driverDropdownOpen, setDriverDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/vehicle-visits/drivers')
+      .then(res => (res.ok ? res.json() : { drivers: [] }))
+      .then(data => {
+        if (active) setDrivers(data.drivers || []);
+      })
+      .catch(() => {
+        if (active) setDrivers([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   
   const form = useForm<SupplierFormValues>({
     resolver: zodResolver(formSchema),
@@ -98,7 +121,58 @@ export function CreateSupplierGateForm({ onSubmit }: CreateSupplierGateFormProps
                       Driver's Name *
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. John Doe" {...field} />
+                      <div className="relative">
+                        <Input
+                          placeholder="e.g. John Doe"
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e.target.value);
+                            setDriverDropdownOpen(true);
+                            const exact = drivers.find(
+                              d => d.name.toLowerCase() === e.target.value.trim().toLowerCase()
+                            );
+                            if (exact) {
+                              if (exact.phone) form.setValue('phoneNumber', exact.phone);
+                              if (exact.id) form.setValue('idNumber', exact.id);
+                            }
+                          }}
+                          onFocus={() => setDriverDropdownOpen(true)}
+                          onBlur={() => setTimeout(() => setDriverDropdownOpen(false), 150)}
+                          className="pr-9"
+                          autoComplete="off"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
+                        {driverDropdownOpen && (
+                          <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md">
+                            {drivers
+                              .filter(d => d.name.toLowerCase().includes((field.value || '').toLowerCase()))
+                              .map(driver => (
+                                <button
+                                  type="button"
+                                  key={driver.name + driver.phone}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    field.onChange(driver.name);
+                                    if (driver.phone) form.setValue('phoneNumber', driver.phone);
+                                    if (driver.id) form.setValue('idNumber', driver.id);
+                                    setDriverDropdownOpen(false);
+                                  }}
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                                >
+                                  <span className="truncate">{driver.name}</span>
+                                  <span className="shrink-0 text-xs text-muted-foreground">
+                                    {driver.phone || ''}
+                                  </span>
+                                </button>
+                              ))}
+                            {drivers.filter(d => d.name.toLowerCase().includes((field.value || '').toLowerCase())).length === 0 && (
+                              <div className="px-3 py-2 text-sm text-muted-foreground">
+                                No matching drivers. Enter a new name.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -160,7 +234,7 @@ export function CreateSupplierGateForm({ onSubmit }: CreateSupplierGateFormProps
                       <Truck className="h-4 w-4" />
                       Vehicle Type *
                     </FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select vehicle type" />

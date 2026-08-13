@@ -29,7 +29,7 @@ import {
   PlusCircle, Users, CheckCircle, LogOut, TrendingUp, Printer, LogIn,
   Settings, XCircle, Clock, ChevronDown, ChevronUp, Calendar as CalendarIcon,
   AlertCircle, Search, RefreshCw, Eye, Edit, Trash2, User, Briefcase,
-  Phone, Mail, Building, BadgeCheck, Award, DollarSign, CalendarDays,
+  Phone, Building, BadgeCheck, Award, DollarSign, CalendarDays,
   Shield, FileText, Download, Filter, MoreVertical, UserPlus,
   ChevronLeft, ChevronRight, DownloadCloud, UploadCloud, BarChart,
   DoorOpen, DoorClosed, MapPin, ListChecks, Save, FileDown, Copy, Trash, MoreHorizontal
@@ -164,9 +164,9 @@ const statusInfo = {
 const designationLabels: Record<Designation, string> = {
   dipping: 'Dipping',
   intake: 'Intake',
-  qualityControl: 'Quality Control',
+  qualityControl: 'QC',
   qualityAssurance: 'Quality Assurance',
-  packing: 'Packing',
+  packing: 'Packer',
   loading: 'Loading',
   palletizing: 'Palletizing',
   porter: 'Porter',
@@ -626,7 +626,7 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
           </div>
           {!hasCheckedIn && (
             <p className="text-xs text-amber-600 mt-2 text-center">
-              Employee must check in first before assigning designation
+              Casual must check in first before assigning designation
             </p>
           )}
         </div>
@@ -806,6 +806,72 @@ const loadImageAsBase64 = async (url: string): Promise<string | null> => {
   return null;
 };
 
+// Add a centered, proportionally-scaled report header with the company logo
+const addReportHeader = async (
+  doc: jsPDF,
+  reportTitle: string
+): Promise<number> => {
+  // Try to load logo
+  let hasLogo = false;
+  let logoBottom = 0;
+  try {
+    const logoPaths = [
+      '/images/HLogo.png',
+      '/Harirlogo.svg',
+      '/Harirlogo.png',
+      '/Harirlogo.jpg',
+      '/logo.png',
+      '/logo.jpg',
+      '/favicon.ico'
+    ];
+    
+    for (const path of logoPaths) {
+      const base64 = await loadImageAsBase64(path);
+      if (base64) {
+        // Get intrinsic image dimensions to preserve aspect ratio
+        let aspect = 5.47;
+        try {
+          const props = doc.getImageProperties(base64) as { width: number; height: number };
+          if (props?.width && props?.height) {
+            aspect = props.width / props.height;
+          }
+        } catch (e) {
+          console.log('Image properties unavailable:', e);
+        }
+        
+        let width = 80;
+        let height = width / aspect;
+        if (height > 18) {
+          height = 18;
+          width = height * aspect;
+        }
+        
+        const x = (doc.internal.pageSize.getWidth() - width) / 2;
+        doc.addImage(base64, 'PNG', x, 6, width, height);
+        logoBottom = 6 + height;
+        hasLogo = true;
+        break;
+      }
+    }
+  } catch (error) {
+    console.log('Logo loading failed:', error);
+  }
+  
+  // Header
+  const titleY = hasLogo ? logoBottom + 7 : 13;
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(120, 120, 120);
+  doc.text(reportTitle, 148.5, titleY, { align: 'center' });
+  
+  doc.setDrawColor(120, 120, 120);
+  doc.setLineWidth(0.4);
+  const lineY = titleY + 5;
+  doc.line(10, lineY, 287, lineY);
+  
+  return lineY + 4;
+};
+
 // Generate Employee PDF Report
 const generateEmployeePDF = async (
   employees: Employee[], 
@@ -816,79 +882,32 @@ const generateEmployeePDF = async (
     const doc = new jsPDF('landscape', 'mm', 'a4');
     const today = new Date();
     
-    // Try to load logo
-    let hasLogo = false;
-    try {
-      const logoPaths = [
-        '/images/HLogo.png',
-        '/Harirlogo.svg',
-        '/Harirlogo.png',
-        '/Harirlogo.jpg',
-        '/logo.png',
-        '/logo.jpg',
-        '/favicon.ico'
-      ];
-      
-      for (const path of logoPaths) {
-        const base64 = await loadImageAsBase64(path);
-        if (base64) {
-          doc.addImage(base64, 'PNG', 130, 6, 18, 18);
-          hasLogo = true;
-          break;
-        }
-      }
-    } catch (error) {
-      console.log('Logo loading failed:', error);
-    }
-    
-    if (!hasLogo) {
-      doc.setFillColor(34, 139, 34);
-      doc.circle(139, 15, 8, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text('HI', 139, 18, { align: 'center' });
-    }
-    
-    // Header
-    doc.setTextColor(34, 139, 34);
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text('HARIR INTERNATIONAL', 148, 30, { align: 'center' });
-    
-    doc.setFontSize(12);
-    doc.text('EMPLOYEE DIRECTORY REPORT', 148, 38, { align: 'center' });
-    
-    doc.setDrawColor(34, 139, 34);
-    doc.setLineWidth(0.5);
-    doc.line(10, 42, 287, 42);
+    const infoY = await addReportHeader(doc, 'CASUAL DIRECTORY REPORT');
     
     // Report Info
     doc.setFontSize(9);
     doc.setTextColor(100, 100, 100);
-    doc.text(`Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 14, 50);
-    doc.text(`Period: ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`, 14, 56);
-    doc.text(`Total Employees: ${employees.length} | Filtered: ${filteredEmployees.length}`, 14, 62);
+    doc.text(`Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 14, infoY);
+    doc.text(`Period: ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`, 14, infoY + 6);
+    doc.text(`Total Casuals: ${employees.length} | Filtered: ${filteredEmployees.length}`, 14, infoY + 12);
     
     // Employee Table
-    const tableData = filteredEmployees.map(emp => [
-      emp.employeeId || 'N/A',
+    const tableData = filteredEmployees.map((emp, index) => [
+      index + 1,
       emp.name,
-      emp.role,
-      emp.contract,
       emp.status === 'active' ? 'Active' : 'Inactive',
       emp.phone || 'N/A',
       emp.id_number || 'N/A'
     ]);
     
     autoTable(doc, {
-      startY: 70,
-      head: [['ID', 'Name', 'Role', 'Contract', 'Status', 'Phone', 'ID Number']],
+      startY: infoY + 20,
+      head: [['#', 'Name', 'Status', 'Phone', 'ID Number']],
       body: tableData,
       theme: 'grid',
       headStyles: { 
-        fillColor: [34, 139, 34],
-        textColor: [255, 255, 255],
+        fillColor: [178, 235, 178],
+        textColor: [33, 63, 33],
         fontSize: 9,
         fontStyle: 'bold'
       },
@@ -900,11 +919,9 @@ const generateEmployeePDF = async (
       columnStyles: {
         0: { cellWidth: 25 },
         1: { cellWidth: 50 },
-        2: { cellWidth: 35 },
-        3: { cellWidth: 25 },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 35 },
-        6: { cellWidth: 30 }
+        2: { cellWidth: 20 },
+        3: { cellWidth: 35 },
+        4: { cellWidth: 30 }
       }
     });
     
@@ -923,18 +940,18 @@ const generateEmployeePDF = async (
     
     doc.text(`Full-time: ${fullTime}`, 14, finalY + 6);
     doc.text(`Part-time: ${partTime}`, 50, finalY + 6);
-    doc.text(`Contract: ${contract}`, 86, finalY + 6);
+    doc.text(`Casual: ${contract}`, 86, finalY + 6);
     doc.text(`Active: ${active}`, 122, finalY + 6);
     doc.text(`Inactive: ${employees.length - active}`, 158, finalY + 6);
     
     // Footer
     doc.setFontSize(7);
     doc.setTextColor(128, 128, 128);
-    doc.text('Harir International - Employee Management System', 148, 200, { align: 'center' });
+    doc.text('Harir International - Casual Management System', 148, 200, { align: 'center' });
     doc.text(`Document: EMP-DIR-${format(today, 'yyyyMMddHHmm')}`, 148, 205, { align: 'center' });
     doc.text('This is a computer-generated document', 148, 210, { align: 'center' });
     
-    doc.save(`Employee_Directory_${format(today, 'yyyy-MM-dd')}.pdf`);
+    doc.save(`Casual_Directory_${format(today, 'yyyy-MM-dd')}.pdf`);
     return true;
   } catch (error) {
     console.error('Error generating employee PDF:', error);
@@ -953,59 +970,14 @@ const generateAttendancePDF = async (
     const doc = new jsPDF('landscape', 'mm', 'a4');
     const today = new Date();
     
-    // Try to load logo
-    let hasLogo = false;
-    try {
-      const logoPaths = [
-        '/images/HLogo.png',
-        '/Harirlogo.svg',
-        '/Harirlogo.png',
-        '/Harirlogo.jpg',
-        '/logo.png',
-        '/logo.jpg',
-        '/favicon.ico'
-      ];
-      
-      for (const path of logoPaths) {
-        const base64 = await loadImageAsBase64(path);
-        if (base64) {
-          doc.addImage(base64, 'PNG', 130, 6, 18, 18);
-          hasLogo = true;
-          break;
-        }
-      }
-    } catch (error) {
-      console.log('Logo loading failed:', error);
-    }
-    
-    if (!hasLogo) {
-      doc.setFillColor(34, 139, 34);
-      doc.circle(139, 15, 8, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text('HI', 139, 18, { align: 'center' });
-    }
-    
-    // Header
-    doc.setTextColor(34, 139, 34);
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text('HARIR INTERNATIONAL', 148, 30, { align: 'center' });
-    
-    doc.setFontSize(12);
-    doc.text('ATTENDANCE REPORT', 148, 38, { align: 'center' });
-    
-    doc.setDrawColor(34, 139, 34);
-    doc.setLineWidth(0.5);
-    doc.line(10, 42, 287, 42);
+    const infoY = await addReportHeader(doc, 'ATTENDANCE REPORT');
     
     // Report Info
     doc.setFontSize(9);
     doc.setTextColor(100, 100, 100);
-    doc.text(`Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 14, 50);
-    doc.text(`Period: ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`, 14, 56);
-    doc.text(`Total Records: ${attendance.length} | Filtered: ${filteredAttendance.length}`, 14, 62);
+    doc.text(`Generated: ${format(today, 'dd/MM/yyyy HH:mm:ss')}`, 14, infoY);
+    doc.text(`Period: ${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`, 14, infoY + 6);
+    doc.text(`Total Records: ${attendance.length} | Filtered: ${filteredAttendance.length}`, 14, infoY + 12);
     
     // Attendance Table
     const tableData = filteredAttendance.map(record => {
@@ -1027,13 +999,13 @@ const generateAttendancePDF = async (
     });
     
     autoTable(doc, {
-      startY: 70,
-      head: [['Date', 'Employee', 'Type', 'Check In', 'Check Out', 'Designation', 'Status', 'Hours']],
+      startY: infoY + 20,
+      head: [['Date', 'Casual', 'Type', 'Check In', 'Check Out', 'Designation', 'Status', 'Hours']],
       body: tableData,
       theme: 'grid',
       headStyles: { 
-        fillColor: [34, 139, 34],
-        textColor: [255, 255, 255],
+        fillColor: [178, 235, 178],
+        textColor: [33, 63, 33],
         fontSize: 8,
         fontStyle: 'bold'
       },
@@ -1076,7 +1048,7 @@ const generateAttendancePDF = async (
     // Footer
     doc.setFontSize(7);
     doc.setTextColor(128, 128, 128);
-    doc.text('Harir International - Employee Management System', 148, 200, { align: 'center' });
+    doc.text('Harir International - Casual Management System', 148, 200, { align: 'center' });
     doc.text(`Document: ATT-${format(today, 'yyyyMMddHHmm')}`, 148, 205, { align: 'center' });
     doc.text('This is a computer-generated document', 148, 210, { align: 'center' });
     
@@ -1095,6 +1067,7 @@ export default function EmployeesPage() {
   
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [activeFilter, setActiveFilter] = useState<'All' | 'Full-time' | 'Part-time' | 'Contract'>('All');
@@ -1133,7 +1106,7 @@ export default function EmployeesPage() {
   const [newEmployee, setNewEmployee] = useState<EmployeeFormValues>({
     name: '',
     email: '',
-    role: 'Employee',
+    role: 'Casual',
     contract: 'Full-time',
     idNumber: '',
     phone: '',
@@ -1202,7 +1175,7 @@ export default function EmployeesPage() {
     } catch (error: any) {
       console.error('❌ Error fetching data:', error);
       
-      const errorMessage = error.message || 'Failed to load employee data';
+      const errorMessage = error.message || 'Failed to load casual data';
       setFetchError(errorMessage);
       
       toast({
@@ -1359,7 +1332,7 @@ export default function EmployeesPage() {
       if (!employee) {
         toast({
           title: 'Error',
-          description: 'Employee not found',
+          description: 'Casual not found',
           variant: 'destructive',
         });
         return;
@@ -1471,7 +1444,7 @@ export default function EmployeesPage() {
       if (!employee) {
         toast({
           title: 'Error',
-          description: 'Employee not found',
+          description: 'Casual not found',
           variant: 'destructive',
         });
         return;
@@ -1570,7 +1543,7 @@ export default function EmployeesPage() {
       if (!employee) {
         toast({
           title: 'Error',
-          description: 'Employee not found',
+          description: 'Casual not found',
           variant: 'destructive',
         });
         return;
@@ -1680,7 +1653,7 @@ export default function EmployeesPage() {
       if (!employee) {
         toast({
           title: 'Error',
-          description: 'Employee not found',
+          description: 'Casual not found',
           variant: 'destructive',
         });
         return;
@@ -1792,7 +1765,7 @@ export default function EmployeesPage() {
       if (!employee) {
         toast({
           title: 'Error',
-          description: 'Employee not found',
+          description: 'Casual not found',
           variant: 'destructive',
         });
         return;
@@ -1896,8 +1869,8 @@ export default function EmployeesPage() {
     
     if (employeesToCheckIn.length === 0) {
       toast({
-        title: 'No employees to check in',
-        description: 'All employees are already checked in for today',
+        title: 'No casuals to check in',
+        description: 'All casuals are already checked in for today',
         variant: 'default',
       });
       return;
@@ -1936,7 +1909,7 @@ export default function EmployeesPage() {
 
       toast({
         title: 'Bulk Check-in Complete',
-        description: `Successfully checked in ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
+        description: `Successfully checked in ${successCount} casuals. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
         variant: failedCount > 0 ? 'destructive' : 'default',
       });
     } catch (error: any) {
@@ -1967,8 +1940,8 @@ export default function EmployeesPage() {
     
     if (employeesToCheckOut.length === 0) {
       toast({
-        title: 'No employees to check out',
-        description: 'No employees are ready for check out',
+        title: 'No casuals to check out',
+        description: 'No casuals are ready for check out',
         variant: 'default',
       });
       return;
@@ -2004,7 +1977,7 @@ export default function EmployeesPage() {
 
       toast({
         title: 'Bulk Check-out Complete',
-        description: `Successfully checked out ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
+        description: `Successfully checked out ${successCount} casuals. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
         variant: failedCount > 0 ? 'destructive' : 'default',
       });
     } catch (error: any) {
@@ -2035,8 +2008,8 @@ export default function EmployeesPage() {
     
     if (employeesToAssign.length === 0) {
       toast({
-        title: 'No employees need designation',
-        description: 'All contract employees already have designations assigned',
+        title: 'No casuals need designation',
+        description: 'All casuals already have designations assigned',
         variant: 'default',
       });
       return;
@@ -2074,7 +2047,7 @@ export default function EmployeesPage() {
 
       toast({
         title: 'Bulk Designation Complete',
-        description: `Successfully assigned designations to ${successCount} employees. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
+        description: `Successfully assigned designations to ${successCount} casuals. ${failedCount > 0 ? `${failedCount} failed.` : ''}`,
         variant: failedCount > 0 ? 'destructive' : 'default',
       });
     } catch (error: any) {
@@ -2114,7 +2087,7 @@ export default function EmployeesPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create employee');
+        throw new Error(data.error || 'Failed to create casual');
       }
 
       await fetchData();
@@ -2141,7 +2114,7 @@ export default function EmployeesPage() {
       });
 
       toast({
-        title: 'Employee Created',
+        title: 'Casual Created',
         description: `${formData.name} has been successfully added.`,
       });
       
@@ -2164,7 +2137,7 @@ export default function EmployeesPage() {
       });
       toast({
         title: 'Error',
-        description: error.message || 'Failed to create employee',
+        description: error.message || 'Failed to create casual',
         variant: 'destructive',
       });
       throw error;
@@ -2187,7 +2160,7 @@ export default function EmployeesPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to update employee');
+        throw new Error(data.error || 'Failed to update casual');
       }
 
       await fetchData();
@@ -2214,7 +2187,7 @@ export default function EmployeesPage() {
       });
 
       toast({
-        title: 'Employee Updated',
+        title: 'Casual Updated',
         description: `${formData.name} has been successfully updated.`,
       });
       
@@ -2236,7 +2209,7 @@ export default function EmployeesPage() {
       });
       toast({
         title: 'Error',
-        description: error.message || 'Failed to update employee',
+        description: error.message || 'Failed to update casual',
         variant: 'destructive',
       });
       throw error;
@@ -2245,7 +2218,7 @@ export default function EmployeesPage() {
 
   // Handle delete employee
   const handleDeleteEmployee = async (employeeId: string) => {
-    if (!confirm('Are you sure you want to delete this employee? This action cannot be undone.')) return;
+    if (!confirm('Are you sure you want to delete this casual? This action cannot be undone.')) return;
     
     try {
       const employee = employees.find(emp => emp.id === employeeId);
@@ -2255,7 +2228,7 @@ export default function EmployeesPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete employee');
+        throw new Error('Failed to delete casual');
       }
 
       await fetchData();
@@ -2276,8 +2249,8 @@ export default function EmployeesPage() {
       });
 
       toast({
-        title: 'Employee Deleted',
-        description: 'Employee has been successfully deleted.',
+        title: 'Casual Deleted',
+        description: 'Casual has been successfully deleted.',
       });
     } catch (error: any) {
       const currentUser = await getCurrentUser();
@@ -2294,7 +2267,7 @@ export default function EmployeesPage() {
       });
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete employee',
+        description: error.message || 'Failed to delete casual',
         variant: 'destructive',
       });
     }
@@ -2309,7 +2282,7 @@ export default function EmployeesPage() {
         await generateEmployeePDF(employees, filteredEmployees, dateRange);
         toast({
           title: '✅ PDF Exported',
-          description: 'Employee directory has been downloaded as PDF.',
+          description: 'Casual directory has been downloaded as PDF.',
         });
       } else {
         await generateAttendancePDF(attendance, filteredAttendance, employees, dateRange);
@@ -2365,7 +2338,7 @@ export default function EmployeesPage() {
     
     return {
       totalEmployees: {
-        title: 'Total Employees',
+        title: 'Total Casuals',
         value: String(stats.totalEmployees),
         change: `${stats.presentToday} present today`,
         changeType: 'increase' as const,
@@ -2460,7 +2433,7 @@ export default function EmployeesPage() {
   }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees, attendanceStartTime, attendanceEndTime]);
 
   // Export attendance to XLS with enhanced headers
-  const exportToCSV = async () => {
+  const exportToXLSX = async () => {
     if (filteredAttendance.length === 0) {
       toast({
         title: 'No Data',
@@ -2591,11 +2564,11 @@ export default function EmployeesPage() {
   };
 
   // Export employee list to XLS with enhanced headers
-  const exportEmployeeCSV = async () => {
+  const exportEmployeeXLSX = async () => {
     if (employees.length === 0) {
       toast({
         title: 'No Data',
-        description: 'No employees found.',
+        description: 'No casuals found.',
         variant: 'destructive',
       });
       return;
@@ -2613,7 +2586,7 @@ export default function EmployeesPage() {
         { header: 'Tel Number', key: 'telNumber', text: true },
         { header: 'Designation', key: 'designation' },
         { header: 'Shift(Full/Half)', key: 'shift' },
-        { header: 'Contract Type', key: 'contract' },
+        { header: 'Casual Type', key: 'contract' },
         { header: 'Status', key: 'status' },
       ];
       
@@ -2623,12 +2596,21 @@ export default function EmployeesPage() {
         const shift = employee.contract === 'Full-time' ? 'Full' : 
                      employee.contract === 'Part-time' ? 'Half' : 'Varies';
         
+        // Get the latest assigned designation from attendance records
+        const latestAttendance = attendance
+          .filter(record => record.employeeId === employee.id && record.designation)
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        
+        const designation = latestAttendance?.designation
+          ? designationLabels[latestAttendance.designation]
+          : 'N/A';
+        
         return {
           reportDate: format(reportDate, 'yyyy-MM-dd'),
           name: employee.name || 'N/A',
           idNumber: employee.id_number || 'N/A',
           telNumber: employee.phone || 'N/A',
-          designation: employee.role || 'N/A',
+          designation,
           shift,
           contract: employee.contract,
           status: employee.status,
@@ -2638,8 +2620,8 @@ export default function EmployeesPage() {
       downloadXlsx(
         xlsData,
         columns,
-        `employee_directory_${format(new Date(), 'yyyy-MM-dd')}.xlsx`,
-        'Employees'
+        `casual_directory_${format(new Date(), 'yyyy-MM-dd')}.xlsx`,
+        'Casuals'
       );
 
       const currentUser = await getCurrentUser();
@@ -2658,7 +2640,7 @@ export default function EmployeesPage() {
 
       toast({
         title: 'XLS Exported',
-        description: 'Employee directory has been downloaded.',
+        description: 'Casual directory has been downloaded.',
       });
     } catch (error: any) {
       const currentUser = await getCurrentUser();
@@ -2747,9 +2729,9 @@ export default function EmployeesPage() {
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight">Employee Management</h2>
+              <h2 className="text-2xl font-bold tracking-tight">Casual Management</h2>
               <p className="text-muted-foreground">
-                Manage employee attendance, designations, and daily operations.
+                Manage casual attendance, designations, and daily operations.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2773,14 +2755,14 @@ export default function EmployeesPage() {
                 <DialogTrigger asChild>
                   <Button>
                     <UserPlus className="mr-2" />
-                    Add Employee
+                    Add Casual
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                   <DialogHeader>
-                    <DialogTitle>Create New Employee</DialogTitle>
+                    <DialogTitle>Create New Casual</DialogTitle>
                     <DialogDescription>
-                      Fill in the details below to add a new employee to the system.
+                      Fill in the details below to add a new casual to the system.
                     </DialogDescription>
                   </DialogHeader>
                   <CreateEmployeeForm onCreate={handleCreateEmployee} />
@@ -2810,7 +2792,7 @@ export default function EmployeesPage() {
               </TabsTrigger>
               <TabsTrigger value="employees" className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                <span className="hidden md:inline">Employees</span>
+                <span className="hidden md:inline">Casuals</span>
               </TabsTrigger>
               <TabsTrigger value="attendance" className="flex items-center gap-2">
                 <ListChecks className="w-4 h-4" />
@@ -2884,9 +2866,9 @@ export default function EmployeesPage() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Employee Distribution</CardTitle>
+                    <CardTitle>Casual Distribution</CardTitle>
                     <CardDescription>
-                      Breakdown by contract type
+                      Breakdown by casual type
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -2969,7 +2951,7 @@ export default function EmployeesPage() {
                         Gate In - Daily Check In
                       </CardTitle>
                       <CardDescription>
-                        Check in employees for today. Employees can be marked as Present, Late, Absent, or On Leave.
+                        Check in casuals for today. Casuals can be marked as Present, Late, Absent, or On Leave.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-4">
@@ -3095,7 +3077,7 @@ export default function EmployeesPage() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">Employees Pending Check-in ({gateInEmployees.length})</h3>
+                        <h3 className="font-semibold">Casuals Pending Check-in ({gateInEmployees.length})</h3>
                         <Badge variant="outline">
                           {format(selectedDate, 'MMM d, yyyy')}
                         </Badge>
@@ -3104,20 +3086,20 @@ export default function EmployeesPage() {
                       <div className="flex items-center gap-2">
                         <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
                           <SelectTrigger className="w-[150px] h-8 text-xs">
-                            <SelectValue placeholder="Filter by contract" />
+                            <SelectValue placeholder="Filter by casual" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="All">All Contracts</SelectItem>
+                            <SelectItem value="All">All Casuals</SelectItem>
                             <SelectItem value="Full-time">Full-time</SelectItem>
                             <SelectItem value="Part-time">Part-time</SelectItem>
-                            <SelectItem value="Contract">Contract</SelectItem>
+                            <SelectItem value="Contract">Casual</SelectItem>
                           </SelectContent>
                         </Select>
                         
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
                           <Input
-                            placeholder="Search employees..."
+                            placeholder="Search casuals..."
                             className="pl-8 h-8 text-sm w-[150px]"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -3129,8 +3111,8 @@ export default function EmployeesPage() {
                     {gateInEmployees.length === 0 ? (
                       <div className="text-center py-12 border rounded-lg">
                         <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
-                        <h3 className="text-lg font-semibold mb-2">All employees checked in!</h3>
-                        <p className="text-muted-foreground">All employees have been checked in for today.</p>
+                        <h3 className="text-lg font-semibold mb-2">All casuals checked in!</h3>
+                        <p className="text-muted-foreground">All casuals have been checked in for today.</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -3166,7 +3148,7 @@ export default function EmployeesPage() {
                         Assign Designation
                       </CardTitle>
                       <CardDescription>
-                        Assign work areas to contract employees who have checked in. Click Save to confirm designation and proceed to Gate Out.
+                        Assign work areas to casual employees who have checked in. Click Save to confirm designation and proceed to Gate Out.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-4">
@@ -3249,7 +3231,7 @@ export default function EmployeesPage() {
                           <div className="text-2xl font-bold text-amber-600">
                             {stats.contractCount}
                           </div>
-                          <div className="text-sm text-muted-foreground">Total Contract</div>
+                          <div className="text-sm text-muted-foreground">Total Casual</div>
                         </div>
                       </CardContent>
                     </Card>
@@ -3271,7 +3253,7 @@ export default function EmployeesPage() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">Contract Employees Needing Designation ({assignDesignationEmployees.length})</h3>
+                        <h3 className="font-semibold">Casuals Needing Designation ({assignDesignationEmployees.length})</h3>
                         <Badge variant="outline">
                           {format(selectedDate, 'MMM d, yyyy')}
                         </Badge>
@@ -3292,7 +3274,7 @@ export default function EmployeesPage() {
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
                           <Input
-                            placeholder="Search employees..."
+                            placeholder="Search casuals..."
                             className="pl-8 h-8 text-sm w-[150px]"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -3304,7 +3286,7 @@ export default function EmployeesPage() {
                       <div className="text-center py-12 border rounded-lg">
                         <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
                         <h3 className="text-lg font-semibold mb-2">All designations assigned!</h3>
-                        <p className="text-muted-foreground">All contract employees have been assigned work areas for today.</p>
+                        <p className="text-muted-foreground">All casuals have been assigned work areas for today.</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -3353,7 +3335,7 @@ export default function EmployeesPage() {
                         Gate Out - Daily Check Out
                       </CardTitle>
                       <CardDescription>
-                        Check out employees who have completed their work for the day. Contract employees must have designation assigned. Permanent employees (Full-time/Part-time) can check out without designation.
+                        Check out employees who have completed their work for the day. Casual employees must have designation assigned. Permanent employees (Full-time/Part-time) can check out without designation.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-4">
@@ -3457,7 +3439,7 @@ export default function EmployeesPage() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">Employees Ready for Check Out ({gateOutEmployees.length})</h3>
+                        <h3 className="font-semibold">Casuals Ready for Check Out ({gateOutEmployees.length})</h3>
                         <Badge variant="outline">
                           {format(selectedDate, 'MMM d, yyyy')}
                         </Badge>
@@ -3466,20 +3448,20 @@ export default function EmployeesPage() {
                       <div className="flex items-center gap-2">
                         <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
                           <SelectTrigger className="w-[150px] h-8 text-xs">
-                            <SelectValue placeholder="Filter by contract" />
+                            <SelectValue placeholder="Filter by casual" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="All">All Contracts</SelectItem>
+                            <SelectItem value="All">All Casuals</SelectItem>
                             <SelectItem value="Full-time">Full-time</SelectItem>
                             <SelectItem value="Part-time">Part-time</SelectItem>
-                            <SelectItem value="Contract">Contract</SelectItem>
+                            <SelectItem value="Contract">Casual</SelectItem>
                           </SelectContent>
                         </Select>
                         
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
                           <Input
-                            placeholder="Search employees..."
+                            placeholder="Search casuals..."
                             className="pl-8 h-8 text-sm w-[150px]"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -3491,9 +3473,9 @@ export default function EmployeesPage() {
                     {gateOutEmployees.length === 0 ? (
                       <div className="text-center py-12 border rounded-lg">
                         <Clock className="w-12 h-12 mx-auto mb-4 text-amber-500" />
-                        <h3 className="text-lg font-semibold mb-2">No employees ready for check out</h3>
+                        <h3 className="text-lg font-semibold mb-2">No casuals ready for check out</h3>
                         <p className="text-muted-foreground">
-                          Employees need to check in first. Contract employees also need designation assigned.
+                          Casuals need to check in first. Casual employees also need designation assigned.
                         </p>
                       </div>
                     ) : (
@@ -3523,16 +3505,16 @@ export default function EmployeesPage() {
                 <CardHeader>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                      <CardTitle>All Employees</CardTitle>
+                      <CardTitle>All Casuals ({employees.length})</CardTitle>
                       <CardDescription>
-                        Manage your employee directory. Total: {employees.length} employees
+                        Manage your casual directory. Total: {employees.length} casuals
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <div className="relative">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                          placeholder="Search employees..."
+                          placeholder="Search casuals..."
                           className="pl-8 w-full md:w-[250px]"
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
@@ -3540,16 +3522,16 @@ export default function EmployeesPage() {
                       </div>
                       <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
                         <SelectTrigger className="w-[150px]">
-                          <SelectValue placeholder="Filter by contract" />
+                          <SelectValue placeholder="Filter by casual" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="All">All Contracts</SelectItem>
+                          <SelectItem value="All">All Casuals</SelectItem>
                           <SelectItem value="Full-time">Full-time</SelectItem>
                           <SelectItem value="Part-time">Part-time</SelectItem>
-                          <SelectItem value="Contract">Contract</SelectItem>
+                          <SelectItem value="Contract">Casual</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Button onClick={exportEmployeeCSV} variant="outline">
+                      <Button onClick={exportEmployeeXLSX} variant="outline">
                         <Download className="mr-2 w-4 h-4" />
                         Export XLS
                       </Button>
@@ -3566,64 +3548,66 @@ export default function EmployeesPage() {
                 </CardHeader>
                 <CardContent>
                   {employees.length > 0 ? (
-                    <ScrollArea className="h-[500px]">
-                      <Table>
+                    <ScrollArea className="h-[calc(100vh-320px)] min-h-[320px]">
+                      <Table className="min-w-[760px]">
                         <TableHeader>
-                          <TableRow>
-                            <TableHead>Employee ID</TableHead>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>Actions</TableHead>
+                          <TableRow className="hover:bg-transparent border-b">
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Casual ID</TableHead>
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Name</TableHead>
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Type</TableHead>
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">ID Number</TableHead>
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Status</TableHead>
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredEmployees.map((employee) => (
                             <TableRow key={employee.id}>
-                              <TableCell className="font-medium">
+                              <TableCell className="py-2 px-3 whitespace-nowrap font-medium text-sm">
                                 {employee.employeeId || 'N/A'}
                               </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-8 w-8">
+                              <TableCell className="py-2 px-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-6 w-6">
                                     <AvatarImage src={employee.image} />
-                                    <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
+                                    <AvatarFallback className="text-xs">{getInitials(employee.name)}</AvatarFallback>
                                   </Avatar>
-                                  <span>{employee.name}</span>
+                                  <span className="text-sm font-medium">{employee.name}</span>
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="py-2 px-3 whitespace-nowrap">
                                 <Badge variant={
                                   employee.contract === 'Full-time' ? 'default' :
                                   employee.contract === 'Part-time' ? 'secondary' : 'outline'
-                                }>
+                                } className="text-xs">
                                   {employee.contract}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{employee.role}</TableCell>
-                              <TableCell>
-                                <Badge variant={employee.status === 'active' ? 'default' : 'secondary'}>
+                              <TableCell className="py-2 px-3 whitespace-nowrap text-sm">{employee.id_number || 'N/A'}</TableCell>
+                              <TableCell className="py-2 px-3 whitespace-nowrap">
+                                <Badge variant={employee.status === 'active' ? 'default' : 'secondary'} className="text-xs">
                                   {employee.status}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{employee.phone || '-'}</TableCell>
-                              <TableCell>
-                                <div className="flex gap-2">
+                              <TableCell className="py-2 px-3 whitespace-nowrap text-sm">{employee.phone || '-'}</TableCell>
+                              <TableCell className="py-2 px-3 whitespace-nowrap">
+                                <div className="flex gap-1 justify-end">
                                   <Button
                                     size="sm"
                                     variant="outline"
+                                    className="h-7 w-7 p-0"
                                     onClick={() => {
                                       setSelectedEmployee(employee);
-                                      setActiveTab('overview');
+                                      setIsViewDialogOpen(true);
                                     }}
                                   >
-                                    <Eye className="w-4 h-4" />
+                                    <Eye className="w-3.5 h-3.5" />
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"
+                                    className="h-7 w-7 p-0"
                                     onClick={() => {
                                       setEditingEmployee(employee);
                                       setNewEmployee({
@@ -3645,14 +3629,15 @@ export default function EmployeesPage() {
                                       setIsEditDialogOpen(true);
                                     }}
                                   >
-                                    <Edit className="w-4 h-4" />
+                                    <Edit className="w-3.5 h-3.5" />
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="destructive"
+                                    className="h-7 w-7 p-0"
                                     onClick={() => handleDeleteEmployee(employee.id)}
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </Button>
                                 </div>
                               </TableCell>
@@ -3664,11 +3649,11 @@ export default function EmployeesPage() {
                   ) : (
                     <div className="text-center py-12">
                       <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">No employees found</h3>
-                      <p className="text-muted-foreground mb-4">Add your first employee to get started</p>
+                      <h3 className="text-lg font-semibold mb-2">No casuals found</h3>
+                      <p className="text-muted-foreground mb-4">Add your first casual to get started</p>
                       <Button onClick={() => setIsCreateDialogOpen(true)}>
                         <PlusCircle className="mr-2" />
-                        Add Employee
+                        Add Casual
                       </Button>
                     </div>
                   )}
@@ -3682,7 +3667,7 @@ export default function EmployeesPage() {
                 <CardHeader>
                   <CardTitle>Attendance History</CardTitle>
                   <CardDescription>
-                    View and filter attendance records. Download reports as CSV or PDF.
+                    View and filter attendance records. Download reports as Excel or PDF.
                   </CardDescription>
                   <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1 flex flex-col gap-2 md:gap-0 md:flex-row md:items-center">
@@ -3768,13 +3753,13 @@ export default function EmployeesPage() {
                       
                       <Select value={attendanceEmployeeFilter} onValueChange={setAttendanceEmployeeFilter}>
                         <SelectTrigger className="w-[140px]">
-                          <SelectValue placeholder="Employee Type" />
+                          <SelectValue placeholder="Casual Type" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Types</SelectItem>
                           <SelectItem value="Full-time">Full-time</SelectItem>
                           <SelectItem value="Part-time">Part-time</SelectItem>
-                          <SelectItem value="Contract">Contract</SelectItem>
+                          <SelectItem value="Contract">Casual</SelectItem>
                         </SelectContent>
                       </Select>
                       
@@ -3791,7 +3776,7 @@ export default function EmployeesPage() {
                         </SelectContent>
                       </Select>
                       
-                      <Button onClick={exportToCSV}>
+                      <Button onClick={exportToXLSX}>
                         <Download className="w-4 h-4 mr-2" />
                         Export XLS
                       </Button>
@@ -3820,7 +3805,7 @@ export default function EmployeesPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Date</TableHead>
-                            <TableHead>Employee</TableHead>
+                            <TableHead>Casual</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Check In</TableHead>
                             <TableHead>Check Out</TableHead>
@@ -3909,11 +3894,92 @@ export default function EmployeesPage() {
             </TabsContent>
           </Tabs>
 
+          {/* View Casual Dialog */}
+          <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Casual Details</DialogTitle>
+              </DialogHeader>
+              {selectedEmployee && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-16 w-16">
+                      <AvatarImage src={selectedEmployee.image} />
+                      <AvatarFallback className="text-xl">{getInitials(selectedEmployee.name)}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-lg font-semibold">{selectedEmployee.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant={
+                          selectedEmployee.contract === 'Full-time' ? 'default' :
+                          selectedEmployee.contract === 'Part-time' ? 'secondary' : 'outline'
+                        }>
+                          {selectedEmployee.contract}
+                        </Badge>
+                        <Badge variant={selectedEmployee.status === 'active' ? 'default' : 'secondary'}>
+                          {selectedEmployee.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <BadgeCheck className="w-4 h-4" /> {selectedEmployee.employeeId || 'N/A'}
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Briefcase className="w-4 h-4" /> {selectedEmployee.role}
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Phone className="w-4 h-4" /> {selectedEmployee.phone || 'Not provided'}
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <User className="w-4 h-4" /> ID: {selectedEmployee.id_number || 'Not provided'}
+                    </div>
+                    {selectedEmployee.salary && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <DollarSign className="w-4 h-4" /> KES {selectedEmployee.salary}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>Close</Button>
+                <Button
+                  onClick={() => {
+                    if (!selectedEmployee) return;
+                    setIsViewDialogOpen(false);
+                    setEditingEmployee(selectedEmployee);
+                    setNewEmployee({
+                      name: selectedEmployee.name,
+                      email: selectedEmployee.email,
+                      role: selectedEmployee.role,
+                      contract: selectedEmployee.contract,
+                      idNumber: selectedEmployee.id_number || '',
+                      phone: selectedEmployee.phone || '',
+                      status: selectedEmployee.status,
+                      performance: selectedEmployee.performance,
+                      rating: selectedEmployee.rating,
+                      salary: selectedEmployee.salary || '',
+                      image: selectedEmployee.image || '',
+                      issueDate: selectedEmployee.issue_date || '',
+                      expiryDate: selectedEmployee.expiry_date || '',
+                      company: selectedEmployee.company || 'Harir International'
+                    });
+                    setIsEditDialogOpen(true);
+                  }}
+                >
+                  Edit
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Edit Employee Dialog */}
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Edit Employee</DialogTitle>
+                <DialogTitle>Edit Casual</DialogTitle>
                 <DialogDescription>
                   Update the details for {editingEmployee?.name}.
                 </DialogDescription>

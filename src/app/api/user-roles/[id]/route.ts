@@ -38,9 +38,12 @@ export async function GET(
             id: true,
             email: true,
             name: true,
+            phone: true,
+            lastLogin: true,
             createdAt: true,
           },
-          take: 50, // Limit to 50 users
+          orderBy: { createdAt: 'desc' },
+          take: 100, // Limit to 100 users
         } : false,
       },
     });

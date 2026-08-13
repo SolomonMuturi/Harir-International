@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 const createUserSchema = z.object({
   email: z.string().email('Invalid email address'),
   name: z.string().min(1, 'Name is required'),
+  phone: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   roleId: z.string().optional().nullable(),
 });
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
             OR: [
               { email: { contains: search, mode: 'insensitive' } },
               { name: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search, mode: 'insensitive' } },
             ]
           } : {},
           roleId ? roleId === 'unassigned' 
@@ -115,6 +117,7 @@ export async function POST(request: NextRequest) {
       data: {
         email: validatedData.email,
         name: validatedData.name,
+        phone: validatedData.phone || null,
         password: hashedPassword,
         roleId: validatedData.roleId || null,
       },

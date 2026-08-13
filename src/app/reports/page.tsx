@@ -1,10 +1,6 @@
 'use client';
 
-import * as React from 'react';
-import { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { useState } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -30,327 +26,71 @@ import {
   Download,
   Users,
   Truck,
-  Thermometer,
-  ShieldAlert,
   BarChart,
-  Warehouse,
   ListChecks,
   Weight,
-  Boxes,
   Calendar as CalendarIcon,
-  HandCoins,
-  Wallet,
-  FileSpreadsheet,
-  Zap,
-  Droplet,
-  Factory,
   UserCheck,
-  Clock // New icon for attendance
+  Clock,
+  Loader2,
+  Factory,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { 
-    visitorData, 
-    timeAttendanceData, 
-    employeeData, 
-    shipmentData, 
-    coldRoomInventoryData, 
-    packagingMaterialData,
-    weightData,
-    type Visitor, 
-    type TimeAttendance, 
-    type Employee, 
-    type Shipment, 
-    type ColdRoomInventory,
-    type PackagingMaterial,
-    type WeightEntry,
-    coldRoomStatusData,
-    dwellTimeData,
-    anomalyData,
-    operationalComplianceData,
-    incidentTrendData,
-    detailedIncidentData,
-    accountsReceivableData,
-    generalLedgerData,
-    pettyCashData,
-    type PettyCashTransaction,
-    type AdvanceRequest,
-    advanceRequestsData,
-    type AccountsReceivableEntry,
-    type GeneralLedgerEntry,
-    energyConsumptionData,
-    energyBreakdownData,
-    waterConsumptionData,
-    waterBreakdownData,
-    waterQualityData,
-    productionReportData,
-    type EnergyConsumptionEntry,
-    type WaterConsumptionEntry,
-} from '@/lib/data';
-import { PrintableVisitorReport } from '@/components/dashboard/printable-visitor-report';
-import { PrintableShipmentReport } from '@/components/dashboard/printable-shipment-report';
-import { PrintableColdRoomReport } from '@/components/dashboard/printable-cold-room-report';
-import { PrintableInventoryReport } from '@/components/dashboard/printable-inventory-report';
-import { PrintableQualityReport } from '@/components/dashboard/printable-quality-report';
-import { PrintableIncidentReport } from '@/components/dashboard/printable-incident-report';
-import { PrintablePackagingReport } from '@/components/dashboard/printable-packaging-report';
-import { PrintableWeightReport } from '@/components/dashboard/printable-weight-report';
-import { PrintableFinancialReport } from '@/components/dashboard/printable-financial-report';
-import { PrintablePayrollReport } from '@/components/dashboard/printable-payroll-report';
-import { PrintablePettyCashReport } from '@/components/dashboard/printable-petty-cash-report';
-import { PrintableEnergyReport } from '@/components/dashboard/printable-energy-report';
-import { PrintableWaterReport } from '@/components/dashboard/printable-water-report';
-import { PrintableProductionReport } from '@/components/dashboard/printable-production-report';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
-import { Loader2 } from 'lucide-react';
+import { downloadXlsx, type XlsxColumn } from '@/lib/xlsx-export';
 
 const pdfReportTypes = [
-  { id: 'visitorManifest', label: 'Visitor Manifest', icon: Users, href: '/visitor-management' },
-  { id: 'shipmentManifest', label: 'Shipment Manifest', icon: Truck, href: '/shipments' },
+  { id: 'supplierReport', label: 'Suppliers Report', icon: UserCheck, href: '/suppliers' },
+  { id: 'visitorLogReport', label: 'Visitor Log Report', icon: Users, href: '/visitor-management' },
+  { id: 'vehicleLogReport', label: 'Vehicle Log Report', icon: Truck, href: '/vehicle-management' },
+  { id: 'intakeReport', label: 'Intake Report', icon: Weight, href: '/weight-capture' },
+  { id: 'countingReport', label: 'Counting Report', icon: ListChecks, href: '/warehouse' },
+  { id: 'casualsReport', label: 'Casuals Attendance Report', icon: Clock, href: '/employees' },
   { id: 'productionReport', label: 'Production Report', icon: Factory, href: '/reports' },
-  { id: 'inventoryReport', label: 'Inventory Report', icon: Warehouse, href: '/inventory' },
-  { id: 'packagingReport', label: 'Packaging Inventory', icon: Boxes, href: '/inventory' },
-  { id: 'weightReconciliation', label: 'Weight Reconciliation', icon: Weight, href: '/weight-capture' },
-  { id: 'coldChainReport', label: 'Cold Chain Compliance', icon: Thermometer, href: '/cold-room' },
-  { id: 'energyReport', label: 'Energy Usage Summary', icon: Zap, href: '/utility' },
-  { id: 'waterReport', label: 'Water Usage & Quality', icon: Droplet, href: '/utility' },
-  { id: 'qualityReport', label: 'Quality Control Summary', icon: ListChecks, href: '/analytics' },
-  { id: 'incidentReport', label: 'High-Risk Incident Report', icon: ShieldAlert, isHighRisk: true, href: '/bi-features' },
-  { id: 'financialSummary', label: 'Financial Summary', icon: FileSpreadsheet, href: '/financials' },
-  { id: 'payrollReport', label: 'Payroll Report', icon: Wallet, href: '/payroll' },
-  { id: 'pettyCashReport', label: 'Petty Cash Report', icon: HandCoins, href: '/financials/petty-cash' },
 ];
 
-const csvReportTypes = [
-  { id: 'supplierReport', label: 'Supplier Report', icon: UserCheck },
-  { id: 'employeeAttendanceLog', label: 'Full Employee Attendance Log', icon: Clock }, // Updated with icon
-  { id: 'visitorEntryLog', label: 'Visitor & Vehicle Entry Log' },
-  { id: 'shipmentData', label: 'Complete Shipment Data' },
-  { id: 'inventoryData', label: 'Full Inventory Data' },
-  { id: 'packagingData', label: 'Packaging Stock Data' },
-  { id: 'energyData', label: 'Full Energy Consumption Data' },
-  { id: 'waterData', label: 'Full Water Consumption Data' },
-  { id: 'invoiceLog', label: 'Full Invoice Log' },
-  { id: 'generalLedger', label: 'General Ledger Entries' },
-  { id: 'pettyCashTransactions', label: 'Petty Cash Transactions' },
+const xlsReportTypes = [
+  { id: 'supplierReport', label: 'Suppliers Report', icon: UserCheck },
+  { id: 'visitorLogReport', label: 'Visitor Log Report', icon: Users },
+  { id: 'vehicleLogReport', label: 'Vehicle Log Report', icon: Truck },
+  { id: 'intakeReport', label: 'Intake Report', icon: Weight },
+  { id: 'countingReport', label: 'Counting Report', icon: ListChecks },
+  { id: 'casualsReport', label: 'Casuals Attendance Report', icon: Clock },
 ];
 
-// Helper function to escape CSV fields
-const escapeCsvField = (field: any): string => {
-    if (field === null || field === undefined) {
-        return '';
-    }
-    const stringField = String(field);
-    if (/[",\n]/.test(stringField)) {
-        return `"${stringField.replace(/"/g, '""')}"`;
-    }
-    return stringField;
+const designationLabelMap: Record<string, string> = {
+  packing: 'Packer',
+  dipping: 'Dipping',
+  palletizing: 'Palletizing',
+  qualityControl: 'Quality Control',
+  loading: 'Loading',
+  counting: 'Counting',
+  intake: 'Intake',
 };
 
-// Helper function to convert an array of objects to a CSV string
-const convertToCsv = (data: any[], headers: string[]): string => {
-    const headerRow = headers.map(escapeCsvField).join(',');
-    const dataRows = data.map(row => 
-        headers.map(header => {
-            // Handle nested object properties
-            const headerKey = header.toLowerCase().replace(/\s+/g, '_');
-            return escapeCsvField(
-                row[headerKey as keyof typeof row] ?? 
-                (row as any)[header] ?? 
-                (row as any)[header.toLowerCase()] ?? 
-                ''
-            );
-        }).join(',')
-    );
-    return [headerRow, ...dataRows].join('\n');
+const casualDesignationOrder = ['Packer', 'Dipping', 'Palletizing', 'Quality Control', 'Loading', 'Counting', 'Intake'];
+
+const formatDesignationLabel = (value: string) => {
+  if (!value) return 'N/A';
+  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  for (const [key, label] of Object.entries(designationLabelMap)) {
+    if (key.replace(/[\s_-]+/g, '').toLowerCase() === normalized) return label;
+  }
+  return value;
 };
-
-// Supplier data type
-interface Supplier {
-  id: string;
-  name: string;
-  location: string;
-  contact_name: string;
-  contact_email: string;
-  contact_phone: string;
-  supplier_code: string;
-  status: string;
-  kra_pin: string;
-  bank_name: string;
-  bank_account_number: string;
-  mpesa_paybill: string;
-  mpesa_account_number: string;
-  created_at: string;
-}
-
-// Employee Attendance data type
-interface EmployeeAttendance {
-  id: string;
-  employeeId: string;
-  employee_name: string;
-  id_number: string;
-  phone: string;
-  designation: string;
-  date: string;
-  status: string;
-  clock_in_time: string;
-  clock_out_time: string;
-}
 
 export default function ReportsPage() {
-  const router = useRouter();
   const { toast } = useToast();
-  const printRef = useRef<HTMLDivElement>(null);
   const [selectedPdfReport, setSelectedPdfReport] = useState<string>('');
-  const [selectedCsvReport, setSelectedCsvReport] = useState<string>('supplierReport');
+  const [selectedXlsReport, setSelectedXlsReport] = useState<string>('supplierReport');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [timeRange, setTimeRange] = useState({ from: '00:00', to: '23:59' });
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [supplierData, setSupplierData] = useState<Supplier[]>([]);
-  const [employeeAttendanceData, setEmployeeAttendanceData] = useState<EmployeeAttendance[]>([]);
-  const [productionReportData, setProductionReportData] = useState<any>(null);
-
-  // Fetch supplier data on component mount
-  React.useEffect(() => {
-    fetchSupplierData();
-    fetchEmployeeAttendanceData();
-  }, []);
-
-  const fetchSupplierData = async () => {
-    try {
-      const response = await fetch('/api/suppliers');
-      if (response.ok) {
-        const data = await response.json();
-        setSupplierData(data);
-      } else {
-        console.error('Failed to fetch supplier data');
-      }
-    } catch (error) {
-      console.error('Error fetching supplier data:', error);
-    }
-  };
-
-  const fetchEmployeeAttendanceData = async () => {
-    try {
-      const response = await fetch('/api/attendance?format=csv');
-      if (response.ok) {
-        const data = await response.json();
-        setEmployeeAttendanceData(data);
-      } else {
-        console.error('Failed to fetch employee attendance data');
-      }
-    } catch (error) {
-      console.error('Error fetching employee attendance data:', error);
-    }
-  };
-
-  const fetchProductionReportData = async (startDate: Date, endDate: Date, startTime: string = '00:00', endTime: string = '23:59') => {
-    try {
-      const startDateStr = format(startDate, 'yyyy-MM-dd');
-      const endDateStr = format(endDate, 'yyyy-MM-dd');
-      
-      // Fetch suppliers count from weights
-      const suppliersResponse = await fetch(`/api/weights?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&count=true`);
-      const suppliersCount = suppliersResponse.ok ? (await suppliersResponse.json()).count || 0 : 0;
-      
-      // Fetch total crates received
-      const cratesResponse = await fetch(`/api/weights?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&crates=true`);
-      const totalCratesReceived = cratesResponse.ok ? (await cratesResponse.json()).totalCrates || 0 : 0;
-
-      // Fetch box counts by variety from warehouse weights
-      const varietyBoxesResponse = await fetch(`/api/weights?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&varietyCrates=true`);
-      const varietyBoxesData = varietyBoxesResponse.ok ? await varietyBoxesResponse.json() : { fuerteBoxes: 0, hassBoxes: 0, totalBoxes: 0 };
-      const fuerteBoxes = Number(varietyBoxesData.fuerteBoxes || 0);
-      const hassBoxes = Number(varietyBoxesData.hassBoxes || 0);
-      const totalBoxesByVariety = Number(varietyBoxesData.totalBoxes || 0);
-      
-      // Fetch rejects count
-      const rejectsResponse = await fetch(`/api/rejects?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&count=true`);
-      const totalRejects = rejectsResponse.ok ? (await rejectsResponse.json()).count || 0 : 0;
-      
-      // Fetch employees
-      const employeesResponse = await fetch('/api/employees');
-      const employeesData = employeesResponse.ok ? await employeesResponse.json() : [];
-      const employees = Array.isArray(employeesData) ? employeesData.map((emp: any) => ({
-        name: emp.name || emp.first_name + ' ' + emp.last_name,
-        designation: emp.position || emp.designation || 'Staff'
-      })) : [];
-      
-      // Fetch total boxes counted from warehouse
-      const countingResponse = await fetch(`/api/counting?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&boxes=true`);
-      const totalBoxesCounted = countingResponse.ok ? (await countingResponse.json()).totalBoxes || 0 : 0;
-      
-      // Fetch utility readings
-      const utilityResponse = await fetch(`/api/utility-readings?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTime}&endTime=${endTime}&summary=true`);
-      const utilityData = utilityResponse.ok ? await utilityResponse.json() : {
-        electricity: { initial: 0, final: 0, units: 0 },
-        water: { initial: 0, final: 0, units: 0 }
-      };
-
-      // Fetch attendance for the selected date range and count labour by role
-      const attendanceResponse = await fetch(`/api/attendance?startDate=${startDateStr}&endDate=${endDateStr}`);
-      const attendanceData = attendanceResponse.ok ? await attendanceResponse.json() : [];
-      const presentStatuses = ['present', 'on duty', 'working', 'in'];
-      const normalizeText = (text: string | undefined | null) => String(text || '').toLowerCase();
-
-      const labourCounts = Array.isArray(attendanceData)
-        ? attendanceData.reduce((counts, record: any) => {
-            const status = normalizeText(record.status);
-            const isPresent = presentStatuses.some(s => status.includes(s));
-            if (!isPresent) return counts;
-
-            const designationText = normalizeText(record.designation || record.employee?.designation || record.employee?.role || record.employee?.position);
-            if (designationText.includes('qc') || designationText.includes('quality')) {
-              counts.QC += 1;
-            } else if (designationText.includes('pack') || designationText.includes('packing')) {
-              counts.Packers += 1;
-            } else if (designationText.includes('dip')) {
-              counts.Dipping += 1;
-            } else if (designationText.includes('porter')) {
-              counts.Porters += 1;
-            } else if (designationText.includes('pallet') || designationText.includes('load')) {
-              counts.Palletizers += 1;
-            }
-
-            return counts;
-          }, {
-            QC: 0,
-            Packers: 0,
-            Dipping: 0,
-            Porters: 0,
-            Palletizers: 0
-          })
-        : {
-            QC: 0,
-            Packers: 0,
-            Dipping: 0,
-            Porters: 0,
-            Palletizers: 0
-          };
-      
-      return {
-        dateRange: { from: startDate, to: endDate },
-        timeRange: { from: startTime, to: endTime },
-        suppliersCount,
-        totalCratesReceived,
-        fuerteBoxes,
-        hassBoxes,
-        totalBoxesByVariety,
-        totalRejects,
-        employees,
-        totalBoxesCounted,
-        labourCounts,
-        utilityData: utilityData.utilityData || utilityData
-      };
-    } catch (error) {
-      console.error('Error fetching production report data:', error);
-      throw error;
-    }
-  };
 
   const getDateTimeBounds = (range: DateRange | undefined, currentTimeRange: { from: string; to: string }) => {
     if (!range?.from) return null;
@@ -377,10 +117,18 @@ export default function ReportsPage() {
     }
   };
 
-  const generateProductionReportPDF = async (data: any) => {
-    const pdf = new jsPDF('p', 'mm', 'a4');
+  const generateSupplierReportPDF = async (suppliers: any[], range: DateRange | undefined) => {
+    const [{ default: jsPDFLandscape }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+
+    const pdf = new jsPDFLandscape('l', 'mm', 'a4');
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const topMargin = 15;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const leftMargin = 10;
+    const contentWidth = pageWidth - 2 * leftMargin;
+
     const logoPaths = [
       '/images/HLogo.png',
       '/Harirlogo.svg',
@@ -392,6 +140,7 @@ export default function ReportsPage() {
       '/public/favicon.ico'
     ];
 
+    let hasLogo = false;
     for (const path of logoPaths) {
       try {
         const response = await fetch(path);
@@ -402,89 +151,745 @@ export default function ReportsPage() {
           reader.onloadend = () => resolve(reader.result as string);
           reader.readAsDataURL(blob);
         });
-        const logoWidth = 150;
-        const logoHeight = 25;
-        const x = (pageWidth - logoWidth) / 2;
-        pdf.addImage(base64String, 'PNG', x, topMargin, logoWidth, logoHeight);
+        const logoWidth = 110;
+        const logoHeight = 18;
+        pdf.addImage(base64String, 'PNG', (pageWidth - logoWidth) / 2, 4, logoWidth, logoHeight);
+        hasLogo = true;
         break;
       } catch (error) {
         continue;
       }
     }
 
-    const headingY = topMargin + 40;
-    pdf.setFontSize(18);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('SHIFT PRODUCTION REPORT', pageWidth / 2, headingY, { align: 'center' });
+    let yPos = hasLogo ? 28 : 15;
 
-    pdf.setFontSize(11);
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(120, 120, 120);
+    pdf.text('SUPPLIERS REPORT', pageWidth / 2, yPos, { align: 'center' });
+
+    pdf.setDrawColor(120, 120, 120);
+    pdf.setLineWidth(0.4);
+    pdf.line(leftMargin, yPos + 3, pageWidth - leftMargin, yPos + 3);
+
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(0, 0, 0);
+    const rangeLabel = range?.from
+      ? `${format(range.from, 'MMM dd, yyyy')} - ${format(range.to || range.from, 'MMM dd, yyyy')}`
+      : 'All time';
+    pdf.text(`Period: ${rangeLabel}`, pageWidth / 2, yPos + 9, { align: 'center' });
+
+    yPos += 14;
+
+    const active = suppliers.filter(s => s.status === 'Active').length;
+    const inactive = suppliers.filter(s => s.status === 'Inactive').length;
+    const onboarding = suppliers.filter(s => s.status === 'Onboarding').length;
+    const withBank = suppliers.filter(s => s.bank_name && s.bank_account_number).length;
+    const withMpesa = suppliers.filter(s => s.mpesa_paybill && s.mpesa_account_number).length;
+
+    pdf.setFillColor(248, 249, 250);
+    pdf.rect(leftMargin, yPos, contentWidth, 12, 'F');
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SUMMARY', leftMargin + 2, yPos + 4);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Total Suppliers: ${suppliers.length}`, leftMargin + 2, yPos + 9);
+    pdf.text(`Active: ${active}`, leftMargin + 45, yPos + 9);
+    pdf.text(`Inactive: ${inactive}`, leftMargin + 90, yPos + 9);
+    pdf.text(`Onboarding: ${onboarding}`, leftMargin + 135, yPos + 9);
+    pdf.text(`Bank Details: ${withBank}`, leftMargin + 190, yPos + 9);
+    pdf.text(`M-PESA Details: ${withMpesa}`, leftMargin + 240, yPos + 9);
+
+    yPos += 16;
+
+    autoTable(pdf, {
+      startY: yPos,
+      head: [[
+        'Supplier Code', 'Supplier Name', 'Phone Number', 'Email', 'Location', 'Status',
+        'KRA PIN', 'Bank Name', 'Bank Account', 'M-PESA Paybill', 'M-PESA Account', 'Created At'
+      ]],
+      body: suppliers.map((s: any) => [
+        s.supplier_code || 'N/A',
+        s.name || 'N/A',
+        s.contact_phone || 'N/A',
+        s.contact_email || 'N/A',
+        s.location || 'N/A',
+        s.status || 'N/A',
+        s.kra_pin || 'N/A',
+        s.bank_name || 'N/A',
+        s.bank_account_number || 'N/A',
+        s.mpesa_paybill || 'N/A',
+        s.mpesa_account_number || 'N/A',
+        s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [178, 235, 178], textColor: [33, 63, 33], fontSize: 6.5, fontStyle: 'bold' },
+      styles: { fontSize: 6.5, cellPadding: 1.5 },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 36 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 34 },
+        4: { cellWidth: 24 },
+        5: { cellWidth: 16 },
+        6: { cellWidth: 18 },
+        7: { cellWidth: 22 },
+        8: { cellWidth: 22 },
+        9: { cellWidth: 18 },
+        10: { cellWidth: 18 },
+        11: { cellWidth: 20 },
+      },
+    });
+
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(128, 128, 128);
+    pdf.text(`Generated on ${format(new Date(), 'MMM dd, yyyy HH:mm')} by Harir International System`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+
+    pdf.save(`suppliers_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+
+  const generateModuleReportPdf = async (options: {
+    title: string;
+    headers: string[];
+    body: (string | number)[][];
+    columnStyles?: Record<number, Record<string, unknown>>;
+    summary?: string[];
+    filename: string;
+    totalsRow?: boolean;
+  }) => {
+    const { title, headers, body, columnStyles, summary, filename, totalsRow } = options;
+    const [{ default: jsPDFLandscape }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+
+    const pdf = new jsPDFLandscape('l', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const leftMargin = 10;
+    const contentWidth = pageWidth - 2 * leftMargin;
+
+    const logoPaths = [
+      '/images/HLogo.png',
+      '/Harirlogo.svg',
+      '/Harirlogo.png',
+      '/Harirlogo.jpg',
+      '/logo.png',
+      '/logo.jpg',
+      '/favicon.ico',
+      '/public/favicon.ico'
+    ];
+
+    let hasLogo = false;
+    for (const path of logoPaths) {
+      try {
+        const response = await fetch(path);
+        if (!response.ok) continue;
+        const blob = await response.blob();
+        const base64String = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        pdf.addImage(base64String, 'PNG', (pageWidth - 110) / 2, 4, 110, 18);
+        hasLogo = true;
+        break;
+      } catch (error) {
+        continue;
+      }
+    }
+
+    let yPos = hasLogo ? 28 : 15;
+
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(120, 120, 120);
+    pdf.text(title, pageWidth / 2, yPos, { align: 'center' });
+
+    pdf.setDrawColor(120, 120, 120);
+    pdf.setLineWidth(0.4);
+    pdf.line(leftMargin, yPos + 3, pageWidth - leftMargin, yPos + 3);
+
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(0, 0, 0);
+    const periodLabel = dateRange?.from
+      ? `${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to || dateRange.from, 'MMM dd, yyyy')}`
+      : 'All time';
+    pdf.text(`Period: ${periodLabel}`, pageWidth / 2, yPos + 9, { align: 'center' });
+
+    yPos += 14;
+
+    if (summary && summary.length > 0) {
+      pdf.setFillColor(248, 249, 250);
+      pdf.rect(leftMargin, yPos, contentWidth, 12, 'F');
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SUMMARY', leftMargin + 2, yPos + 4);
+      pdf.setFont('helvetica', 'normal');
+      summary.forEach((line, i) => {
+        pdf.text(line, leftMargin + 2 + i * 46, yPos + 9);
+      });
+      yPos += 16;
+    }
+
+    autoTable(pdf, {
+      startY: yPos,
+      head: [headers],
+      body,
+      theme: 'grid',
+      headStyles: { fillColor: [178, 235, 178], textColor: [33, 63, 33], fontSize: 6.5, fontStyle: 'bold' },
+      styles: { fontSize: 6.5, cellPadding: 1.5 },
+      ...(columnStyles ? { columnStyles } : {}),
+      ...(totalsRow
+        ? {
+            didParseCell: (data: any) => {
+              if (data.section === 'body' && data.row.index === body.length - 1) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.fillColor = [40, 167, 69];
+                data.cell.styles.textColor = 255;
+              }
+            },
+          }
+        : {}),
+    });
+
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(128, 128, 128);
+    pdf.text(`Generated on ${format(new Date(), 'MMM dd, yyyy HH:mm')} by Harir International System`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+
+    pdf.save(filename);
+  };
+
+  const safeDateTime = (value?: string | null) => {
+    if (!value) return 'N/A';
+    try {
+      return format(parseISO(value), 'yyyy-MM-dd HH:mm');
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const buildVisitorRows = async () => {
+    const res = await fetch('/api/visitors');
+    if (!res.ok) throw new Error('Failed to fetch visitor data');
+    const visitors = await res.json();
+    const bounds = getDateTimeBounds(dateRange, timeRange);
+    const list = Array.isArray(visitors) ? visitors : [];
+    const filtered = bounds
+      ? list.filter((v: any) =>
+          isWithinInterval(parseISO(v.check_in_time || v.created_at), { start: bounds.start, end: bounds.end })
+        )
+      : list;
+    return filtered.map((v: any) => ({
+      date: v.check_in_time ? format(parseISO(v.check_in_time), 'yyyy-MM-dd') : '',
+      visitorId: v.visitor_code || '',
+      name: v.name || '',
+      idNumber: v.id_number || '',
+      phone: v.phone || '',
+      company: v.company || '',
+      vehiclePlate: v.vehicle_plate || '',
+      status: v.status || '',
+      checkInTime: v.check_in_time ? safeDateTime(v.check_in_time) : 'N/A',
+      checkOutTime: v.check_out_time ? safeDateTime(v.check_out_time) : 'N/A',
+      expectedCheckInTime: v.expected_check_in_time ? safeDateTime(v.expected_check_in_time) : 'N/A',
+      department: v.department || '',
+      purpose: v.cargo_description || '',
+      visitorType: v.visitor_type || '',
+      hostName: v.host_id || v.company || '',
+    }));
+  };
+
+  const buildVehicleRows = async () => {
+    const params = new URLSearchParams({ limit: '1000' });
+    if (dateRange?.from && dateRange?.to) {
+      params.set('startDate', format(dateRange.from, 'yyyy-MM-dd'));
+      params.set('endDate', format(dateRange.to, 'yyyy-MM-dd'));
+    }
+    const res = await fetch(`/api/vehicle-visits?${params}`);
+    if (!res.ok) throw new Error('Failed to fetch vehicle visit data');
+    const data = await res.json();
+    const visits = Array.isArray(data) ? data : (data.visits || []);
+    return visits.map((v: any) => {
+      const checkIn = v.check_in_time ? new Date(v.check_in_time) : null;
+      const checkOut = v.check_out_time ? new Date(v.check_out_time) : null;
+      let duration = '';
+      if (checkIn && checkOut && checkOut > checkIn) {
+        const mins = Math.round((checkOut.getTime() - checkIn.getTime()) / 60000);
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
+      }
+      return {
+        visitNumber: `#${v.visit_number || 1}`,
+        gateEntryId: v.gate_entry_id || 'Not checked in',
+        driverName: v.driver_name || 'Unknown Driver',
+        idNumber: v.driver_id_number || '',
+        phone: v.phone_number || v.contact_phone || '',
+        vehiclePlate: v.vehicle_plate || 'None',
+        vehicleType: v.vehicle_type || 'Truck',
+        cargoDescription: v.cargo_description || 'Avocado Delivery',
+        status: v.status || 'Pre-registered',
+        registeredAt: safeDateTime(v.registered_at || v.created_at),
+        checkInTime: v.check_in_time ? safeDateTime(v.check_in_time) : 'N/A',
+        checkOutTime: v.check_out_time ? safeDateTime(v.check_out_time) : 'N/A',
+        duration,
+        visitType: (v.visit_number || 1) > 1 ? 'Returning' : 'New',
+        recheckIn: v.is_recheck_in ? 'Yes' : 'No',
+      };
+    });
+  };
+
+  const buildIntakeRows = async () => {
+    const params = new URLSearchParams({ limit: '1000' });
+    if (dateRange?.from && dateRange?.to) {
+      params.set('startDate', format(dateRange.from, 'yyyy-MM-dd'));
+      params.set('endDate', format(dateRange.to, 'yyyy-MM-dd'));
+      params.set('startTime', timeRange.from);
+      params.set('endTime', timeRange.to);
+    }
+    const [weightsRes, rejectsRes] = await Promise.all([
+      fetch(`/api/weights?${params}`),
+      fetch(`/api/rejects?${params}`),
+    ]);
+    if (!weightsRes.ok) throw new Error('Failed to fetch intake data');
+    const weightsData = await weightsRes.json();
+    const weights = Array.isArray(weightsData) ? weightsData : (weightsData.weights || []);
+    const rejectsData = rejectsRes.ok ? await rejectsRes.json() : [];
+    const rejectList = Array.isArray(rejectsData) ? rejectsData : [];
+
+    const rejectMap = new Map<string, number>();
+    rejectList.forEach((reject: any) => {
+      const date = new Date(reject.rejected_at).toISOString().split('T')[0];
+      const rSupplier = (reject.supplier_name || '').trim().toLowerCase();
+      const rVehicle = (reject.vehicle_plate || '').trim().toLowerCase();
+      const key = `${date}_${rSupplier}_${rVehicle}`;
+      rejectMap.set(key, (rejectMap.get(key) || 0) + (reject.total_rejected_crates || 0));
+    });
+
+    const supplierMap = new Map<string, any>();
+    weights.forEach((entry: any) => {
+      const entryDate = new Date(entry.created_at || entry.timestamp);
+      const date = entryDate.toISOString().split('T')[0];
+      const time = entryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const supplierKey = entry.supplier || entry.driver_name || 'Enter Supplier Name';
+      const phoneKey = entry.supplier_phone || entry.driver_phone || '';
+      const vehicleKey = entry.vehicle_plate || '';
+      const regionKey = entry.region || '';
+      const gateKey = entry.gate_entry_id || '';
+      const key = `${date}_${time}_${supplierKey}_${vehicleKey}`;
+      const rejectKey = `${date}_${supplierKey.trim().toLowerCase()}_${vehicleKey.trim().toLowerCase()}`;
+
+      if (!supplierMap.has(key)) {
+        supplierMap.set(key, {
+          date,
+          time,
+          supplier_name: supplierKey,
+          phone_number: phoneKey,
+          vehicle_plate_number: vehicleKey,
+          gate_entry_id: gateKey,
+          fuerte_weight: 0,
+          hass_weight: 0,
+          fuerte_crates_in: 0,
+          hass_crates_in: 0,
+          total_crates: 0,
+          rejected_crates: 0,
+          processed_crates: 0,
+          region: regionKey,
+        });
+      }
+
+      const row = supplierMap.get(key);
+      row.fuerte_weight += entry.fuerte_weight || 0;
+      row.hass_weight += entry.hass_weight || 0;
+      row.fuerte_crates_in += entry.fuerte_crates || 0;
+      row.hass_crates_in += entry.hass_crates || 0;
+      row.total_crates = row.fuerte_crates_in + row.hass_crates_in;
+      row.rejected_crates = rejectMap.get(rejectKey) || 0;
+      row.processed_crates = row.total_crates - row.rejected_crates;
+    });
+
+    return Array.from(supplierMap.values());
+  };
+
+  const buildCountingRows = async () => {
+    const [historyRes, weightsRes, rejectsRes] = await Promise.all([
+      fetch('/api/counting?action=history&limit=1000'),
+      fetch('/api/weights?limit=1000'),
+      fetch('/api/rejects?limit=1000'),
+    ]);
+    if (!historyRes.ok) throw new Error('Failed to fetch counting data');
+    const result = await historyRes.json();
+    const records = result.success ? (result.data || []) : [];
+    const weightsData = weightsRes.ok ? await weightsRes.json() : [];
+    const weightEntries = Array.isArray(weightsData) ? weightsData : (weightsData.weights || []);
+    const rejectsData = rejectsRes.ok ? await rejectsRes.json() : [];
+    const rejectList = Array.isArray(rejectsData) ? rejectsData : [];
+
+    const weightMap = new Map();
+    weightEntries.forEach((weight: any) => {
+      weightMap.set(weight.id, weight);
+      weightMap.set(weight.pallet_id, weight);
+      if (weight.supplier) weightMap.set(weight.supplier.toLowerCase(), weight);
+    });
+
+    const bounds = getDateTimeBounds(dateRange, timeRange);
+    return records
+      .filter((record: any) => {
+        if (!bounds) return true;
+        return isWithinInterval(parseISO(record.submitted_at), { start: bounds.start, end: bounds.end });
+      })
+      .map((record: any) => {
+        let countingData = record.counting_data;
+        if (typeof countingData === 'string') {
+          try {
+            countingData = JSON.parse(countingData);
+          } catch {
+            countingData = {};
+          }
+        }
+
+        let intakeTotalCrates = 0;
+        const weightEntry = weightMap.get(record.supplier_id) ||
+          weightMap.get(record.pallet_id) ||
+          weightMap.get(record.supplier_name?.toLowerCase());
+        if (weightEntry) {
+          intakeTotalCrates = (weightEntry.fuerte_crates || 0) + (weightEntry.hass_crates || 0);
+        } else {
+          intakeTotalCrates = (countingData.fuerte_crates || 0) + (countingData.hass_crates || 0);
+        }
+
+        const rejection = rejectList.find((r: any) =>
+          r.weight_entry_id === record.id ||
+          r.pallet_id === record.pallet_id ||
+          r.supplier_id === record.supplier_id
+        );
+        const rejectedCrates = rejection ? (rejection.total_rejected_crates || 0) : 0;
+        const submitted = new Date(record.submitted_at);
+
+        return {
+          date: format(submitted, 'yyyy-MM-dd'),
+          time: format(submitted, 'HH:mm'),
+          supplier_name: record.supplier_name || '',
+          region: record.region || '',
+          fuerte_4kg: record.fuerte_4kg_total || 0,
+          fuerte_10kg: record.fuerte_10kg_total || 0,
+          hass_4kg: record.hass_4kg_total || 0,
+          hass_10kg: record.hass_10kg_total || 0,
+          fuerte_4kg_class1: record.fuerte_4kg_class1 ?? record.totals?.fuerte_4kg_class1 ?? 0,
+          fuerte_4kg_class2: record.fuerte_4kg_class2 ?? record.totals?.fuerte_4kg_class2 ?? 0,
+          fuerte_10kg_class1: record.fuerte_10kg_class1 ?? record.totals?.fuerte_10kg_class1 ?? 0,
+          fuerte_10kg_class2: record.fuerte_10kg_class2 ?? record.totals?.fuerte_10kg_class2 ?? 0,
+          hass_4kg_class1: record.hass_4kg_class1 ?? record.totals?.hass_4kg_class1 ?? 0,
+          hass_4kg_class2: record.hass_4kg_class2 ?? record.totals?.hass_4kg_class2 ?? 0,
+          hass_10kg_class1: record.hass_10kg_class1 ?? record.totals?.hass_10kg_class1 ?? 0,
+          hass_10kg_class2: record.hass_10kg_class2 ?? record.totals?.hass_10kg_class2 ?? 0,
+          intake_total_crates: intakeTotalCrates,
+          rejected_crates: rejectedCrates,
+          processed_crates: intakeTotalCrates - rejectedCrates,
+        };
+      });
+  };
+
+  const buildCasualRows = async () => {
+    const params = new URLSearchParams();
+    if (dateRange?.from && dateRange?.to) {
+      params.set('startDate', format(dateRange.from, 'yyyy-MM-dd'));
+      params.set('endDate', format(dateRange.to, 'yyyy-MM-dd'));
+    }
+    const [attendanceRes, employeesRes] = await Promise.all([
+      fetch(`/api/attendance?${params}`),
+      fetch('/api/employees'),
+    ]);
+    if (!attendanceRes.ok) throw new Error('Failed to fetch attendance data');
+    const attendance = await attendanceRes.json();
+    const employeesData = employeesRes.ok ? await employeesRes.json() : [];
+    const empMap = new Map<string, any>();
+    (Array.isArray(employeesData) ? employeesData : []).forEach((e: any) => empMap.set(e.id, e));
+
+    const list = Array.isArray(attendance) ? attendance : [];
+    return list.map((record: any) => {
+      const emp = empMap.get(record.employeeId) || record.employee || {};
+      return {
+        date: record.date || '',
+        name: emp.name || record.employee_name || '',
+        idNumber: emp.id_number || record.id_number || '',
+        phone: emp.phone || record.phone || '',
+        designation: record.designation || emp.position || emp.role || emp.designation || 'N/A',
+        status: record.status || '',
+        checkIn: record.clockInTime ? format(new Date(record.clockInTime), 'HH:mm:ss') : '',
+        checkOut: record.clockOutTime ? format(new Date(record.clockOutTime), 'HH:mm:ss') : '',
+      };
+    });
+  };
+
+  const statusBreakdownRows = (counts: Record<string, number>) =>
+    Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, value]) => [key || 'Unknown', String(value)] as [string, string]);
+
+  const buildProductionSummary = async () => {
+    const [vehicleRows, intakeRows, countingRows, casualRows, utilityRes] = await Promise.all([
+      buildVehicleRows(),
+      buildIntakeRows(),
+      buildCountingRows(),
+      buildCasualRows(),
+      (async () => {
+        if (!dateRange?.from || !dateRange?.to) return null;
+        const params = new URLSearchParams({
+          startDate: format(dateRange.from, 'yyyy-MM-dd'),
+          endDate: format(dateRange.to, 'yyyy-MM-dd'),
+        });
+        const res = await fetch(`/api/utility-readings?${params}`);
+        return res.ok ? res.json() : null;
+      })(),
+    ]);
+
+    const vehicleStatusCounts: Record<string, number> = {};
+    vehicleRows.forEach((v: any) => {
+      const key = v.status || 'Unknown';
+      vehicleStatusCounts[key] = (vehicleStatusCounts[key] || 0) + 1;
+    });
+
+    const intakeTotals = intakeRows.reduce(
+      (acc, row: any) => {
+        acc.fuerteWeight += row.fuerte_weight || 0;
+        acc.hassWeight += row.hass_weight || 0;
+        acc.fuerteCrates += row.fuerte_crates_in || 0;
+        acc.hassCrates += row.hass_crates_in || 0;
+        acc.totalCrates += row.total_crates || 0;
+        acc.rejectedCrates += row.rejected_crates || 0;
+        acc.processedCrates += row.processed_crates || 0;
+        return acc;
+      },
+      { fuerteWeight: 0, hassWeight: 0, fuerteCrates: 0, hassCrates: 0, totalCrates: 0, rejectedCrates: 0, processedCrates: 0 }
+    );
+
+    const countingTotals = countingRows.reduce(
+      (acc, row: any) => {
+        acc.fuerte4 += row.fuerte_4kg || 0;
+        acc.fuerte10 += row.fuerte_10kg || 0;
+        acc.hass4 += row.hass_4kg || 0;
+        acc.hass10 += row.hass_10kg || 0;
+        acc.fuerte4c1 += row.fuerte_4kg_class1 || 0;
+        acc.fuerte4c2 += row.fuerte_4kg_class2 || 0;
+        acc.fuerte10c1 += row.fuerte_10kg_class1 || 0;
+        acc.fuerte10c2 += row.fuerte_10kg_class2 || 0;
+        acc.hass4c1 += row.hass_4kg_class1 || 0;
+        acc.hass4c2 += row.hass_4kg_class2 || 0;
+        acc.hass10c1 += row.hass_10kg_class1 || 0;
+        acc.hass10c2 += row.hass_10kg_class2 || 0;
+        acc.intake += row.intake_total_crates || 0;
+        acc.rejected += row.rejected_crates || 0;
+        acc.processed += row.processed_crates || 0;
+        return acc;
+      },
+      { fuerte4: 0, fuerte10: 0, hass4: 0, hass10: 0, fuerte4c1: 0, fuerte4c2: 0, fuerte10c1: 0, fuerte10c2: 0, hass4c1: 0, hass4c2: 0, hass10c1: 0, hass10c2: 0, intake: 0, rejected: 0, processed: 0 }
+    );
+
+    const attendanceStatusCounts: Record<string, number> = {};
+    casualRows.forEach((r: any) => {
+      const key = r.status || 'Unknown';
+      attendanceStatusCounts[key] = (attendanceStatusCounts[key] || 0) + 1;
+    });
+
+    const attendanceDesignationCounts: Record<string, number> = {};
+    casualRows.forEach((r: any) => {
+      const key = formatDesignationLabel(r.designation);
+      attendanceDesignationCounts[key] = (attendanceDesignationCounts[key] || 0) + 1;
+    });
+
+    const utilities = utilityRes
+      ? {
+          power: Number(utilityRes.totals?.power || 0),
+          water: Number(utilityRes.totals?.water || 0),
+          diesel: Number(utilityRes.totals?.diesel || 0),
+          internet: Number(utilityRes.totals?.internet || 0),
+          readings: Number(utilityRes.meta?.count || 0),
+        }
+      : { power: 0, water: 0, diesel: 0, internet: 0, readings: 0 };
+
+    return {
+      vehicle: { total: vehicleRows.length, byStatus: vehicleStatusCounts, rows: vehicleRows },
+      intake: { deliveries: intakeRows.length, ...intakeTotals, rows: intakeRows },
+      counting: { records: countingRows.length, ...countingTotals, rows: countingRows },
+      attendance: { total: casualRows.length, byStatus: attendanceStatusCounts, byDesignation: attendanceDesignationCounts, rows: casualRows },
+      utilities,
+    };
+  };
+
+  const generateProductionReportPDF = async (summary: any, range: DateRange | undefined) => {
+    const [{ default: jsPDFLandscape }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+
+    const pdf = new jsPDFLandscape('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const leftMargin = 15;
+    const contentWidth = pageWidth - 2 * leftMargin;
+
+    const logoPaths = [
+      '/images/HLogo.png',
+      '/Harirlogo.svg',
+      '/Harirlogo.png',
+      '/Harirlogo.jpg',
+      '/logo.png',
+      '/logo.jpg',
+      '/favicon.ico',
+      '/public/favicon.ico'
+    ];
+
+    let hasLogo = false;
+    for (const path of logoPaths) {
+      try {
+        const response = await fetch(path);
+        if (!response.ok) continue;
+        const blob = await response.blob();
+        const base64String = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        pdf.addImage(base64String, 'PNG', (pageWidth - 110) / 2, 4, 110, 18);
+        hasLogo = true;
+        break;
+      } catch (error) {
+        continue;
+      }
+    }
+
+    let yPos = hasLogo ? 28 : 15;
+
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(120, 120, 120);
+    pdf.text('PRODUCTION REPORT', pageWidth / 2, yPos, { align: 'center' });
+
+    pdf.setDrawColor(120, 120, 120);
+    pdf.setLineWidth(0.4);
+    pdf.line(leftMargin, yPos + 3, pageWidth - leftMargin, yPos + 3);
+
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(0, 0, 0);
+    const periodLabel =
+      range?.from
+        ? `${format(range.from, 'MMM dd, yyyy')} - ${format(range.to || range.from, 'MMM dd, yyyy')}`
+        : 'All time';
+    pdf.text(`Period: ${periodLabel}`, pageWidth / 2, yPos + 9, { align: 'center' });
+
+    const sections: { title: string; rows: [string, string][] }[] = [
+      {
+        title: 'VEHICLE LOG SUMMARY',
+        rows: [
+          ['Total Visits', String(summary.vehicle.total)],
+          ...statusBreakdownRows(summary.vehicle.byStatus),
+        ],
+      },
+      {
+        title: 'INTAKE SUMMARY',
+        rows: [
+          ['Total Deliveries', String(summary.intake.deliveries)],
+          ['Fuerte Crates In', summary.intake.fuerteCrates.toLocaleString()],
+          ['Hass Crates In', summary.intake.hassCrates.toLocaleString()],
+          ['Total Crates In', summary.intake.totalCrates.toLocaleString()],
+          ['Rejected Crates', summary.intake.rejectedCrates.toLocaleString()],
+          ['Processed Crates', summary.intake.processedCrates.toLocaleString()],
+        ],
+      },
+      {
+        title: 'COUNTING SUMMARY',
+        rows: [
+          ['Records', String(summary.counting.records)],
+          ['Fuerte 4kg Boxes Class 1', summary.counting.fuerte4c1.toLocaleString()],
+          ['Fuerte 4kg Boxes Class 2', summary.counting.fuerte4c2.toLocaleString()],
+          ['  Fuerte 4kg Subtotal', summary.counting.fuerte4.toLocaleString()],
+          ['Fuerte 10kg Crates Class 1', summary.counting.fuerte10c1.toLocaleString()],
+          ['Fuerte 10kg Crates Class 2', summary.counting.fuerte10c2.toLocaleString()],
+          ['  Fuerte 10kg Subtotal', summary.counting.fuerte10.toLocaleString()],
+          ['Hass 4kg Boxes Class 1', summary.counting.hass4c1.toLocaleString()],
+          ['Hass 4kg Boxes Class 2', summary.counting.hass4c2.toLocaleString()],
+          ['  Hass 4kg Subtotal', summary.counting.hass4.toLocaleString()],
+          ['Hass 10kg Crates Class 1', summary.counting.hass10c1.toLocaleString()],
+          ['Hass 10kg Crates Class 2', summary.counting.hass10c2.toLocaleString()],
+          ['  Hass 10kg Subtotal', summary.counting.hass10.toLocaleString()],
+          ['Intake Crates', summary.counting.intake.toLocaleString()],
+          ['Rejected Crates', summary.counting.rejected.toLocaleString()],
+          ['Processed Crates', summary.counting.processed.toLocaleString()],
+        ],
+      },
+      {
+        title: 'CASUALS ATTENDANCE SUMMARY',
+        rows: [
+          ['Total Records', String(summary.attendance.total)],
+          ...casualDesignationOrder.map(label => [`  ${label}`, String(summary.attendance.byDesignation[label] || 0)]),
+        ],
+      },
+      {
+        title: 'UTILITY MANAGEMENT SUMMARY',
+        rows: [
+          ['Electricity Consumed (kWh)', summary.utilities.power.toLocaleString()],
+          ['Water Consumed (m³)', summary.utilities.water.toLocaleString()],
+          ['Diesel Consumed (L)', summary.utilities.diesel.toLocaleString()],
+          ['Internet Cost (KES)', summary.utilities.internet.toLocaleString()],
+          ['Utility Readings', String(summary.utilities.readings)],
+        ],
+      },
+    ];
+
+    let cursor = yPos + 14;
+    const pageBottom = pageHeight - 25;
+
+    sections.forEach(section => {
+      if (cursor > pageBottom) {
+        pdf.addPage();
+        cursor = 18;
+      }
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(33, 63, 33);
+      pdf.text(section.title, leftMargin, cursor);
+      autoTable(pdf, {
+        startY: cursor + 3,
+        head: [['Metric', 'Value']],
+        body: section.rows,
+        theme: 'grid',
+        headStyles: { fillColor: [178, 235, 178], textColor: [33, 63, 33], fontSize: 8, fontStyle: 'bold' },
+        styles: { fontSize: 8, cellPadding: 1.8 },
+        columnStyles: {
+          0: { cellWidth: contentWidth * 0.55 },
+          1: { cellWidth: contentWidth * 0.45 },
+        },
+        margin: { left: leftMargin, right: leftMargin },
+        didParseCell: (data: any) => {
+          if (data.section === 'body') {
+            const label = String(data.row.cells[0]?.raw ?? '');
+            if (label.startsWith('  ') && label.includes('Subtotal')) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [249, 115, 22];
+            }
+          }
+        },
+      });
+      cursor = (pdf as any).lastAutoTable.finalY + 8;
+    });
+
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(128, 128, 128);
     pdf.text(
-      `Date and Time: ${format(data.dateRange.from, 'MMM dd, yyyy')} ${data.timeRange.from} - ${format(data.dateRange.to, 'MMM dd, yyyy')} ${data.timeRange.to}`,
+      `Generated on ${format(new Date(), 'MMM dd, yyyy HH:mm')} by Harir International System`,
       pageWidth / 2,
-      headingY + 10,
+      pageHeight - 8,
       { align: 'center' }
     );
 
-    const sectionStartY = headingY + 22;
-    pdf.setFontSize(13);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Production Details', 20, sectionStartY);
-
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'normal');
-    const detailLines = [
-      `Fuerte Boxes: ${data.fuerteBoxes ?? 0}`,
-      `Hass Boxes: ${data.hassBoxes ?? 0}`,
-      `Total Boxes: ${data.totalBoxesByVariety ?? 0}`
-    ];
-
-    detailLines.forEach((line, index) => {
-      pdf.text(line, 25, sectionStartY + 10 + index * 7);
-    });
-
-    const labourSectionStartY = sectionStartY + 10 + detailLines.length * 7 + 12;
-    pdf.setFontSize(13);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Labour Used', 20, labourSectionStartY);
-
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'normal');
-    const labourLines = [
-      `QC: ${data.labourCounts?.QC ?? 0}`,
-      `Packers: ${data.labourCounts?.Packers ?? 0}`,
-      `Dipping: ${data.labourCounts?.Dipping ?? 0}`,
-      `Porters: ${data.labourCounts?.Porters ?? 0}`,
-      `Palletizers: ${data.labourCounts?.Palletizers ?? 0}`
-    ];
-
-    labourLines.forEach((line, index) => {
-      pdf.text(line, 25, labourSectionStartY + 10 + index * 7);
-    });
-
-    const utilitySectionStartY = labourSectionStartY + 10 + labourLines.length * 7 + 12;
-    const utilityData = data.utilityData || { electricity: { initial: 0, final: 0, units: 0 }, water: { initial: 0, final: 0, units: 0 } };
-
-    pdf.setFontSize(13);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Utility Readings', 20, utilitySectionStartY);
-
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'normal');
-    const utilityLines = [
-      `Water Initial: ${utilityData.water.initial}`,
-      `Water Final: ${utilityData.water.final}`,
-      `Water Units Consumed: ${utilityData.water.units}`,
-      `Electricity Initial: ${utilityData.electricity.initial}`,
-      `Electricity Final: ${utilityData.electricity.final}`,
-      `Electricity Units Consumed: ${utilityData.electricity.units}`
-    ];
-
-    utilityLines.forEach((line, index) => {
-      pdf.text(line, 25, utilitySectionStartY + 10 + index * 7);
-    });
-
-    pdf.save(`production-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    pdf.save(`production_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleGeneratePdf = async () => {
@@ -492,379 +897,631 @@ export default function ReportsPage() {
       toast({ variant: 'destructive', title: 'No Report Selected', description: 'Please select a PDF report to generate.' });
       return;
     }
-    
+
     const reportType = pdfReportTypes.find(r => r.id === selectedPdfReport);
     if (!reportType) return;
-    
-    // Special handling for production report - requires date range
-    if (selectedPdfReport === 'productionReport') {
-      if (!dateRange?.from || !dateRange?.to) {
-        toast({
-          variant: 'destructive',
-          title: 'Date Range Required',
-          description: 'Please select a date range to generate the Production Report.',
-        });
-        return;
-      }
-      
-      setIsGenerating(true);
-      toast({ title: 'Generating Production Report...', description: 'Fetching data and generating comprehensive production report.' });
-      
-      try {
-        // Fetch production report data with date+time bounds
-        const productionData = await fetchProductionReportData(dateRange.from, dateRange.to, timeRange.from, timeRange.to);
-        setProductionReportData(productionData);
-        
-        // Generate PDF directly with the data
-        await generateProductionReportPDF(productionData);
-        
-        toast({
-          title: 'Production Report Generated',
-          description: `Production report for ${format(dateRange.from, 'MMM dd, yyyy')} ${timeRange.from} to ${format(dateRange.to, 'MMM dd, yyyy')} ${timeRange.to} has been downloaded.`,
-        });
-      } catch (error) {
-        console.error('Error generating production report:', error);
-        toast({
-          variant: 'destructive',
-          title: 'Generation Failed',
-          description: 'Failed to generate production report. Please try again.',
-        });
-      } finally {
-        setIsGenerating(false);
-      }
-      return;
-    }
-    
-    setIsGenerating(true);
-    toast({ title: 'Generating PDF Report...', description: `Please wait while we generate the ${reportType.label} report.` });
 
-    // A short delay to allow the correct printable component to render with new data before capturing
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await generateAndDownloadPdf(reportType);
-    setIsGenerating(false);
-  };
-
-  const handleGenerateCsv = async () => {
-    const report = csvReportTypes.find(r => r.id === selectedCsvReport);
-    if (!report) return;
-
-    setIsGenerating(true);
-    toast({ 
-      title: 'Generating CSV Report...', 
-      description: `Please wait while we generate the ${report.label} report.` 
-    });
-
-    try {
-      let csvContent = '';
-      let headers: string[] = [];
-      let data: any[] = [];
-      let filename = '';
-      
-      switch (report.id) {
-        case 'supplierReport':
-          if (!dateRange?.from || !dateRange?.to) {
-            toast({
-              variant: 'destructive',
-              title: 'Date Range Required',
-              description: 'Please select a date range to generate the Supplier Report.',
-            });
-            setIsGenerating(false);
-            return;
-          }
-
-          const startDateStr = format(dateRange.from, 'yyyy-MM-dd');
-          const endDateStr = format(dateRange.to, 'yyyy-MM-dd');
-          const startTimeStr = timeRange.from;
-          const endTimeStr = timeRange.to;
-          
-          try {
-            const response = await fetch(`/api/suppliers?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTimeStr}&endTime=${endTimeStr}&format=csv`);
-            
-            if (!response.ok) {
-              throw new Error(`Failed to fetch supplier data: ${response.statusText}`);
-            }
-
-            // Directly use the CSV content from the API
-            csvContent = await response.text();
-            
-            // Extract filename from Content-Disposition header or create one
-            const contentDisposition = response.headers.get('Content-Disposition');
-            if (contentDisposition) {
-              const match = contentDisposition.match(/filename="(.+)"/);
-              if (match) {
-                filename = match[1];
-              }
-            }
-            
-            if (!filename) {
-              filename = `suppliers_${startDateStr}_to_${endDateStr}.csv`;
-            }
-
-            // Download the CSV file
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", filename);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            toast({
-              title: 'CSV Export Complete',
-              description: `Supplier report for ${startDateStr} to ${endDateStr} has been downloaded.`,
-            });
-            setIsGenerating(false);
-            return;
-            
-          } catch (error) {
-            console.error('Error generating supplier CSV:', error);
-            toast({
-              variant: 'destructive',
-              title: 'Export Failed',
-              description: 'Failed to generate supplier report. Please try again.',
-            });
-            setIsGenerating(false);
-            return;
-          }
-          
-        case 'employeeAttendanceLog':
-          if (!dateRange?.from || !dateRange?.to) {
-            toast({
-              variant: 'destructive',
-              title: 'Date Range Required',
-              description: 'Please select a date range to generate the Employee Attendance Log.',
-            });
-            setIsGenerating(false);
-            return;
-          }
-
-          const attendanceStartDateStr = format(dateRange.from, 'yyyy-MM-dd');
-          const attendanceEndDateStr = format(dateRange.to, 'yyyy-MM-dd');
-          const attendanceStartTimeStr = timeRange.from;
-          const attendanceEndTimeStr = timeRange.to;
-          
-          try {
-            const response = await fetch(`/api/attendance?startDate=${attendanceStartDateStr}&endDate=${attendanceEndDateStr}&startTime=${attendanceStartTimeStr}&endTime=${attendanceEndTimeStr}&format=csv`);
-            
-            if (!response.ok) {
-              throw new Error(`Failed to fetch attendance data: ${response.statusText}`);
-            }
-
-            // Directly use the CSV content from the API
-            csvContent = await response.text();
-            
-            // Extract filename from Content-Disposition header or create one
-            const contentDisposition = response.headers.get('Content-Disposition');
-            if (contentDisposition) {
-              const match = contentDisposition.match(/filename="(.+)"/);
-              if (match) {
-                filename = match[1];
-              }
-            }
-            
-            if (!filename) {
-              filename = `employee_attendance_${attendanceStartDateStr}_to_${attendanceEndDateStr}.csv`;
-            }
-
-            // Download the CSV file
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", filename);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            toast({
-              title: 'CSV Export Complete',
-              description: `Employee attendance report for ${attendanceStartDateStr} to ${attendanceEndDateStr} has been downloaded.`,
-            });
-            setIsGenerating(false);
-            return;
-            
-          } catch (error) {
-            console.error('Error generating attendance CSV:', error);
-            // Fallback to using local data
-            console.log('Falling back to local data...');
-            
-            // Use the locally fetched attendance data
-            const bounds = getDateTimeBounds(dateRange, timeRange);
-            const filteredData = employeeAttendanceData.filter(item => {
-              if (!bounds) return true;
-              const itemDate = parseISO(item.date);
-              return isWithinInterval(itemDate, { 
-                start: bounds.start, 
-                end: bounds.end 
-              });
-            });
-
-            if (filteredData.length === 0) {
-              toast({
-                variant: 'destructive',
-                title: 'No Data Found',
-                description: 'No attendance records found for the selected date range.',
-              });
-              setIsGenerating(false);
-              return;
-            }
-
-            // Use specific headers for attendance data
-            headers = ['Employee ID', 'Employee Name', 'ID Number', 'Phone', 'Designation', 'Date', 'Status', 'Check In Time', 'Check Out Time'];
-            
-            data = filteredData.map(item => ({
-              'Employee ID': item.employeeId,
-              'Employee Name': item.employee_name,
-              'ID Number': item.id_number,
-              'Phone': item.phone,
-              'Designation': item.designation,
-              'Date': format(parseISO(item.date), 'yyyy-MM-dd'),
-              'Status': item.status,
-              'Check In Time': item.clock_in_time ? format(parseISO(item.clock_in_time), 'HH:mm:ss') : '',
-              'Check Out Time': item.clock_out_time ? format(parseISO(item.clock_out_time), 'HH:mm:ss') : ''
-            }));
-
-            filename = `employee_attendance_${attendanceStartDateStr}_to_${attendanceEndDateStr}.csv`;
-            
-            // Continue with CSV generation below
-            csvContent = convertToCsv(data, headers);
-          }
-          break;
-          
-        case 'visitorEntryLog':
-          headers = ['ID', 'Name', 'Company', 'VehiclePlate', 'Status', 'CheckInTime', 'CheckOutTime'];
-          data = visitorData.map(v => ({
-            ...v, 
-            CheckInTime: v.checkInTime ? format(new Date(v.checkInTime), 'Pp') : '', 
-            CheckOutTime: v.checkOutTime ? format(new Date(v.checkOutTime), 'Pp') : ''
-          }));
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'shipmentData':
-          headers = ['ShipmentID', 'Customer', 'Origin', 'Destination', 'Status', 'Product', 'Weight', 'ExpectedArrival'];
-          data = shipmentData.map(s => ({
-            ...s, 
-            ExpectedArrival: s.expectedArrival ? format(new Date(s.expectedArrival), 'Pp') : ''
-          }));
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'inventoryData':
-          headers = ['ID', 'Product', 'Category', 'Quantity', 'Unit', 'Location', 'EntryDate'];
-          data = coldRoomInventoryData.map(i => ({
-            ...i, 
-            EntryDate: format(new Date(i.entryDate), 'Pp')
-          }));
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'packagingData':
-          headers = ['ID', 'Name', 'CurrentStock', 'Unit', 'ReorderLevel', 'Dimensions'];
-          data = packagingMaterialData;
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'energyData':
-          headers = ['Time', 'Usage (kWh)'];
-          data = energyConsumptionData.map(d => ({
-            Time: d.hour, 
-            'Usage (kWh)': d.usage
-          }));
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'waterData':
-          headers = ['Date', 'Consumption (m³)', 'pH', 'Turbidity (NTU)', 'Conductivity (µS/cm)', 'Status'];
-          // Combining water consumption and quality data for a comprehensive export
-          const combinedWaterData = waterConsumptionData.map((cons, index) => {
-              const quality = waterQualityData[index] || {};
-              return {
-                  Date: cons.date,
-                  'Consumption (m³)': cons.consumption,
-                  pH: quality.pH,
-                  'Turbidity (NTU)': quality.turbidity,
-                  'Conductivity (µS/cm)': quality.conductivity,
-                  Status: quality.status,
-              };
-          });
-          data = combinedWaterData;
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'invoiceLog':
-          headers = ['ID', 'Customer', 'InvoiceID', 'Amount', 'DueDate', 'AgingStatus'];
-          data = accountsReceivableData;
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'generalLedger':
-          headers = ['ID', 'Date', 'Account', 'Debit', 'Credit', 'Description'];
-          data = generalLedgerData;
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        case 'pettyCashTransactions':
-          headers = ['ID', 'Type', 'Amount', 'Description', 'Timestamp', 'Recipient', 'Phone'];
-          data = pettyCashData;
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-          break;
-          
-        default:
-          csvContent = 'Header1,Header2\nValue1,Value2';
-          filename = `${report.id}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      }
-
-      // Generate CSV for non-API-based reports
-      if (data.length > 0 && !['supplierReport', 'employeeAttendanceLog'].includes(report.id)) {
-        csvContent = convertToCsv(data, headers);
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        toast({
-          title: 'CSV Export Complete',
-          description: `Your data export for "${report.label}" has been downloaded.`,
-        });
-      }
-
-    } catch (error) {
-      console.error('Error generating CSV:', error);
+    if (!dateRange?.from || !dateRange?.to) {
       toast({
         variant: 'destructive',
-        title: 'Export Failed',
-        description: 'Failed to generate CSV report. Please try again.',
+        title: 'Date Range Required',
+        description: 'Please select a date range to generate this report.',
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    toast({ title: `Generating ${reportType.label}...`, description: 'Fetching module data and generating report.' });
+
+    try {
+      switch (selectedPdfReport) {
+        case 'supplierReport': {
+          const startDateStr = format(dateRange.from, 'yyyy-MM-dd');
+          const endDateStr = format(dateRange.to, 'yyyy-MM-dd');
+          const response = await fetch(`/api/suppliers?startDate=${startDateStr}&endDate=${endDateStr}`);
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch supplier data: ${response.statusText}`);
+          }
+
+          const suppliers = await response.json();
+
+          if (suppliers.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No suppliers found for the selected date range.',
+            });
+            break;
+          }
+
+          await generateSupplierReportPDF(suppliers, dateRange);
+          toast({
+            title: 'Suppliers Report Generated',
+            description: `Suppliers report for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'visitorLogReport': {
+          const rows = await buildVisitorRows();
+          if (rows.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No visitor records found for the selected date range.',
+            });
+            break;
+          }
+          await generateModuleReportPdf({
+            title: 'VISITOR LOG REPORT',
+            headers: ['Date', 'Visitor ID', 'Name', 'ID Number', 'Phone', 'Company', 'Vehicle Plate', 'Status', 'Check-in', 'Check-out', 'Department', 'Visitor Type'],
+            body: rows.map(r => [
+              r.date, r.visitorId, r.name, r.idNumber, r.phone, r.company, r.vehiclePlate,
+              r.status, r.checkInTime, r.checkOutTime, r.department, r.visitorType
+            ]),
+            summary: [`Total Visitors: ${rows.length}`],
+            columnStyles: {
+              0: { cellWidth: 22 },
+              1: { cellWidth: 22 },
+              2: { cellWidth: 28 },
+              3: { cellWidth: 24 },
+              4: { cellWidth: 24 },
+              5: { cellWidth: 26 },
+              6: { cellWidth: 18 },
+              7: { cellWidth: 18 },
+              8: { cellWidth: 25 },
+              9: { cellWidth: 25 },
+              10: { cellWidth: 22 },
+              11: { cellWidth: 20 },
+            },
+            filename: `visitor_log_${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+          });
+          toast({
+            title: 'Visitor Log Report Generated',
+            description: `Visitor log for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'vehicleLogReport': {
+          const rows = await buildVehicleRows();
+          if (rows.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No vehicle visits found for the selected date range.',
+            });
+            break;
+          }
+          await generateModuleReportPdf({
+            title: 'VEHICLE VISITS REPORT',
+            headers: ['Visit #', 'Gate Entry ID', 'Driver Name', 'ID Number', 'Phone', 'Vehicle Plate', 'Vehicle Type', 'Cargo Description', 'Status', 'Registered', 'Check-in', 'Check-out', 'Duration'],
+            body: rows.map(r => [
+              r.visitNumber, r.gateEntryId, r.driverName, r.idNumber, r.phone, r.vehiclePlate,
+              r.vehicleType, r.cargoDescription, r.status, r.registeredAt, r.checkInTime,
+              r.checkOutTime, r.duration
+            ]),
+            summary: [`Total Visits: ${rows.length}`],
+            columnStyles: {
+              0: { cellWidth: 13 },
+              1: { cellWidth: 22 },
+              2: { cellWidth: 24 },
+              3: { cellWidth: 20 },
+              4: { cellWidth: 20 },
+              5: { cellWidth: 16 },
+              6: { cellWidth: 16 },
+              7: { cellWidth: 24 },
+              8: { cellWidth: 18 },
+              9: { cellWidth: 24 },
+              10: { cellWidth: 24 },
+              11: { cellWidth: 24 },
+              12: { cellWidth: 14 },
+            },
+            filename: `vehicle_log_${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+          });
+          toast({
+            title: 'Vehicle Log Report Generated',
+            description: `Vehicle log for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'intakeReport': {
+          const rows = await buildIntakeRows();
+          if (rows.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No intake records found for the selected date range.',
+            });
+            break;
+          }
+          const totals = rows.reduce((acc, row) => {
+            acc.fuerteWeight += row.fuerte_weight || 0;
+            acc.hassWeight += row.hass_weight || 0;
+            acc.fuerteCrates += row.fuerte_crates_in || 0;
+            acc.hassCrates += row.hass_crates_in || 0;
+            acc.totalCrates += row.total_crates || 0;
+            acc.rejectedCrates += row.rejected_crates || 0;
+            acc.processedCrates += row.processed_crates || 0;
+            return acc;
+          }, { fuerteWeight: 0, hassWeight: 0, fuerteCrates: 0, hassCrates: 0, totalCrates: 0, rejectedCrates: 0, processedCrates: 0 });
+
+          const body = rows.map(r => [
+            r.date, r.time, r.supplier_name, r.phone_number, r.vehicle_plate_number, r.gate_entry_id,
+            Number(r.fuerte_weight).toFixed(2), Number(r.hass_weight).toFixed(2),
+            r.fuerte_crates_in, r.hass_crates_in, r.total_crates, r.rejected_crates, r.processed_crates, r.region
+          ]);
+          body.push([
+            'TOTALS', '', '', '', '', '',
+            totals.fuerteWeight.toFixed(2), totals.hassWeight.toFixed(2),
+            totals.fuerteCrates, totals.hassCrates, totals.totalCrates, totals.rejectedCrates, totals.processedCrates, ''
+          ]);
+
+          await generateModuleReportPdf({
+            title: 'WEIGHT CAPTURE REPORT',
+            headers: ['Date', 'Time', 'Supplier Name', 'Phone Number', 'Vehicle', 'Gate ID', 'Fuerte (kg)', 'Hass (kg)', 'Fuerte Crates', 'Hass Crates', 'Total Crates', 'Rejected Crates', 'Processed', 'Region'],
+            body,
+            summary: [`Total Records: ${rows.length}`],
+            columnStyles: {
+              0: { cellWidth: 22 },
+              1: { cellWidth: 13 },
+              2: { cellWidth: 33 },
+              3: { cellWidth: 24 },
+              4: { cellWidth: 16 },
+              5: { cellWidth: 19 },
+              6: { cellWidth: 19, halign: 'right' },
+              7: { cellWidth: 19, halign: 'right' },
+              8: { cellWidth: 16, halign: 'center' },
+              9: { cellWidth: 16, halign: 'center' },
+              10: { cellWidth: 15, halign: 'center' },
+              11: { cellWidth: 17, halign: 'center' },
+              12: { cellWidth: 18, halign: 'center' },
+              13: { cellWidth: 17 },
+            },
+            filename: `intake_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+            totalsRow: true,
+          });
+          toast({
+            title: 'Intake Report Generated',
+            description: `Intake report for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'countingReport': {
+          const rows = await buildCountingRows();
+          if (rows.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No counting records found for the selected date range.',
+            });
+            break;
+          }
+          const totals = rows.reduce((acc, row) => {
+            acc.fuerte4 += row.fuerte_4kg || 0;
+            acc.fuerte10 += row.fuerte_10kg || 0;
+            acc.hass4 += row.hass_4kg || 0;
+            acc.hass10 += row.hass_10kg || 0;
+            acc.intake += row.intake_total_crates || 0;
+            acc.rejected += row.rejected_crates || 0;
+            acc.processed += row.processed_crates || 0;
+            return acc;
+          }, { fuerte4: 0, fuerte10: 0, hass4: 0, hass10: 0, intake: 0, rejected: 0, processed: 0 });
+
+          const body = rows.map(r => [
+            r.date, r.time, r.supplier_name, r.region,
+            r.fuerte_4kg, r.fuerte_10kg, r.hass_4kg, r.hass_10kg,
+            r.intake_total_crates, r.rejected_crates, r.processed_crates
+          ]);
+          body.push([
+            'TOTALS', '', '', '',
+            totals.fuerte4, totals.fuerte10, totals.hass4, totals.hass10,
+            totals.intake, totals.rejected, totals.processed
+          ]);
+
+          await generateModuleReportPdf({
+            title: 'COUNTING REPORT',
+            headers: ['Date', 'Time', 'Supplier Name', 'Region', 'Fuerte 4kg', 'Fuerte 10kg', 'Hass 4kg', 'Hass 10kg', 'Intake Crates', 'Rejected Crates', 'Processed Crates'],
+            body,
+            summary: [`Total Records: ${rows.length}`],
+            columnStyles: {
+              0: { cellWidth: 24 },
+              1: { cellWidth: 15 },
+              2: { cellWidth: 44 },
+              3: { cellWidth: 22 },
+              4: { cellWidth: 16, halign: 'center' },
+              5: { cellWidth: 16, halign: 'center' },
+              6: { cellWidth: 16, halign: 'center' },
+              7: { cellWidth: 16, halign: 'center' },
+              8: { cellWidth: 20, halign: 'center' },
+              9: { cellWidth: 20, halign: 'center' },
+              10: { cellWidth: 24, halign: 'center' },
+            },
+            filename: `counting_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+            totalsRow: true,
+          });
+          toast({
+            title: 'Counting Report Generated',
+            description: `Counting report for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'casualsReport': {
+          const rows = await buildCasualRows();
+          if (rows.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No attendance records found for the selected date range.',
+            });
+            break;
+          }
+          await generateModuleReportPdf({
+            title: 'CASUALS ATTENDANCE REPORT',
+            headers: ['Date', 'Name', 'ID Number', 'Phone', 'Designation', 'Status', 'Check In', 'Check Out'],
+            body: rows.map(r => [
+              r.date, r.name, r.idNumber, r.phone, r.designation, r.status, r.checkIn, r.checkOut
+            ]),
+            summary: [`Total Records: ${rows.length}`],
+            columnStyles: {
+              0: { cellWidth: 34 },
+              1: { cellWidth: 44 },
+              2: { cellWidth: 34 },
+              3: { cellWidth: 34 },
+              4: { cellWidth: 40 },
+              5: { cellWidth: 30 },
+              6: { cellWidth: 30 },
+              7: { cellWidth: 30 },
+            },
+            filename: `casuals_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+          });
+          toast({
+            title: 'Casuals Report Generated',
+            description: `Casuals report for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'productionReport': {
+          const summary = await buildProductionSummary();
+          if (
+            summary.vehicle.total === 0 &&
+            summary.intake.deliveries === 0 &&
+            summary.counting.records === 0 &&
+            summary.attendance.total === 0
+          ) {
+            toast({
+              variant: 'destructive',
+              title: 'No Data Found',
+              description: 'No production data found for the selected date range.',
+            });
+            break;
+          }
+          await generateProductionReportPDF(summary, dateRange);
+          toast({
+            title: 'Production Report Generated',
+            description: `Production summary for ${format(dateRange.from, 'MMM dd, yyyy')} to ${format(dateRange.to, 'MMM dd, yyyy')} has been downloaded.`,
+          });
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('Error generating PDF report:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Generation Failed',
+        description: 'Failed to generate the report. Please try again.',
       });
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const filterByDateRange = (items: any[], dateKey: string) => {
-    const bounds = getDateTimeBounds(dateRange, timeRange);
-    if (!bounds) return items;
-    return items.filter(item => {
-        const itemDate = parseISO(item[dateKey]);
-        return isWithinInterval(itemDate, { start: bounds.start, end: bounds.end });
+  const handleGenerateXLS = async () => {
+    const report = xlsReportTypes.find(r => r.id === selectedXlsReport);
+    if (!report) return;
+
+    if (!dateRange?.from || !dateRange?.to) {
+      toast({
+        variant: 'destructive',
+        title: 'Date Range Required',
+        description: 'Please select a date range to generate this report.',
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    toast({
+      title: 'Generating Excel Report...',
+      description: `Please wait while we generate the ${report.label} report.`
     });
-  };
 
-  const filteredAccountsReceivable = filterByDateRange(accountsReceivableData, 'dueDate');
-  const filteredGeneralLedger = filterByDateRange(generalLedgerData, 'date');
-  
-  const simplifiedPayrollKpis = {
-      totalPayroll: { title: 'Total Payroll', value: 'KES 475,000' },
-      advancesPaid: { title: 'Advances Paid', value: 'KES 15,500' },
-      netPay: { title: 'Net Pay (Est.)', value: 'KES 387,250' }
-  };
+    try {
+      const startDateStr = format(dateRange.from, 'yyyy-MM-dd');
+      const endDateStr = format(dateRange.to, 'yyyy-MM-dd');
+      const dateLabel = `${startDateStr}_to_${endDateStr}`;
+      const noData = (label: string) => {
+        toast({
+          variant: 'destructive',
+          title: 'No Data Found',
+          description: `No ${label} found for the selected date range.`,
+        });
+      };
 
+      switch (report.id) {
+        case 'supplierReport': {
+          const startTimeStr = timeRange.from;
+          const endTimeStr = timeRange.to;
+          const response = await fetch(`/api/suppliers?startDate=${startDateStr}&endDate=${endDateStr}&startTime=${startTimeStr}&endTime=${endTimeStr}&format=xlsx`);
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch supplier data: ${response.statusText}`);
+          }
+
+          const blob = await response.blob();
+          let downloadFilename = `suppliers_${dateLabel}.xlsx`;
+          const contentDisposition = response.headers.get('Content-Disposition');
+          if (contentDisposition) {
+            const match = contentDisposition.match(/filename="?([^";]+)"?/);
+            if (match) {
+              downloadFilename = match[1];
+            }
+          }
+
+          const link = document.createElement("a");
+          const url = URL.createObjectURL(blob);
+          link.setAttribute("href", url);
+          link.setAttribute("download", downloadFilename);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          toast({
+            title: 'Excel Export Complete',
+            description: `Supplier report for ${startDateStr} to ${endDateStr} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'visitorLogReport': {
+          const rows = await buildVisitorRows();
+          if (rows.length === 0) {
+            noData('visitor records');
+            break;
+          }
+          const columns: XlsxColumn[] = [
+            { header: 'Date', key: 'date' },
+            { header: 'Visitor ID', key: 'visitorId', text: true },
+            { header: 'Name', key: 'name' },
+            { header: 'ID Number', key: 'idNumber', text: true },
+            { header: 'Phone', key: 'phone', text: true },
+            { header: 'Company', key: 'company' },
+            { header: 'Vehicle Plate', key: 'vehiclePlate' },
+            { header: 'Status', key: 'status' },
+            { header: 'Check-in Time', key: 'checkInTime' },
+            { header: 'Check-out Time', key: 'checkOutTime' },
+            { header: 'Expected Check-in Time', key: 'expectedCheckInTime' },
+            { header: 'Department', key: 'department' },
+            { header: 'Purpose', key: 'purpose' },
+            { header: 'Visitor Type', key: 'visitorType' },
+            { header: 'Host Name', key: 'hostName' },
+          ];
+          downloadXlsx(rows as Record<string, unknown>[], columns, `visitor_log_${dateLabel}.xlsx`, 'Visitors');
+          toast({
+            title: 'Excel Export Complete',
+            description: `Visitor log for ${startDateStr} to ${endDateStr} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'vehicleLogReport': {
+          const rows = await buildVehicleRows();
+          if (rows.length === 0) {
+            noData('vehicle visits');
+            break;
+          }
+          const columns: XlsxColumn[] = [
+            { header: 'Visit #', key: 'visitNumber', text: true },
+            { header: 'Gate Entry ID', key: 'gateEntryId', text: true },
+            { header: 'Driver Name', key: 'driverName' },
+            { header: 'ID Number', key: 'idNumber', text: true },
+            { header: 'Phone', key: 'phone', text: true },
+            { header: 'Vehicle Plate', key: 'vehiclePlate' },
+            { header: 'Vehicle Type', key: 'vehicleType' },
+            { header: 'Cargo Description', key: 'cargoDescription' },
+            { header: 'Status', key: 'status' },
+            { header: 'Registered At', key: 'registeredAt' },
+            { header: 'Check-in Time', key: 'checkInTime' },
+            { header: 'Check-out Time', key: 'checkOutTime' },
+            { header: 'Duration', key: 'duration' },
+            { header: 'Visit Type', key: 'visitType' },
+            { header: 'Recheck-in', key: 'recheckIn' },
+          ];
+          downloadXlsx(rows as Record<string, unknown>[], columns, `vehicle_log_${dateLabel}.xlsx`, 'Vehicle Visits');
+          toast({
+            title: 'Excel Export Complete',
+            description: `Vehicle log for ${startDateStr} to ${endDateStr} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'intakeReport': {
+          const rows = await buildIntakeRows();
+          if (rows.length === 0) {
+            noData('intake records');
+            break;
+          }
+          const totals = rows.reduce((acc, row) => {
+            acc.fuerteWeight += row.fuerte_weight || 0;
+            acc.hassWeight += row.hass_weight || 0;
+            acc.fuerteCrates += row.fuerte_crates_in || 0;
+            acc.hassCrates += row.hass_crates_in || 0;
+            acc.totalCrates += row.total_crates || 0;
+            acc.rejectedCrates += row.rejected_crates || 0;
+            acc.processedCrates += row.processed_crates || 0;
+            return acc;
+          }, { fuerteWeight: 0, hassWeight: 0, fuerteCrates: 0, hassCrates: 0, totalCrates: 0, rejectedCrates: 0, processedCrates: 0 });
+
+          const columns: XlsxColumn[] = [
+            { header: 'Date', key: 'date' },
+            { header: 'Time', key: 'time' },
+            { header: 'Supplier Name', key: 'supplier_name' },
+            { header: 'Phone Number', key: 'phone_number', text: true },
+            { header: 'Vehicle', key: 'vehicle_plate_number' },
+            { header: 'Gate ID', key: 'gate_entry_id' },
+            { header: 'Fuerte (kg)', key: 'fuerte_weight' },
+            { header: 'Hass (kg)', key: 'hass_weight' },
+            { header: 'Fuerte Crates', key: 'fuerte_crates_in' },
+            { header: 'Hass Crates', key: 'hass_crates_in' },
+            { header: 'Total Crates', key: 'total_crates' },
+            { header: 'Rejected Crates', key: 'rejected_crates' },
+            { header: 'Processed', key: 'processed_crates' },
+            { header: 'Region', key: 'region' },
+          ];
+          const exportRows: Record<string, unknown>[] = rows.map(r => ({
+            date: r.date,
+            time: r.time,
+            supplier_name: r.supplier_name,
+            phone_number: r.phone_number,
+            vehicle_plate_number: r.vehicle_plate_number,
+            gate_entry_id: r.gate_entry_id,
+            fuerte_weight: Number(r.fuerte_weight).toFixed(2),
+            hass_weight: Number(r.hass_weight).toFixed(2),
+            fuerte_crates_in: r.fuerte_crates_in,
+            hass_crates_in: r.hass_crates_in,
+            total_crates: r.total_crates,
+            rejected_crates: r.rejected_crates,
+            processed_crates: r.processed_crates,
+            region: r.region,
+          }));
+          exportRows.push({
+            date: 'TOTALS',
+            time: '',
+            supplier_name: '',
+            phone_number: '',
+            vehicle_plate_number: '',
+            gate_entry_id: '',
+            fuerte_weight: totals.fuerteWeight.toFixed(2),
+            hass_weight: totals.hassWeight.toFixed(2),
+            fuerte_crates_in: totals.fuerteCrates,
+            hass_crates_in: totals.hassCrates,
+            total_crates: totals.totalCrates,
+            rejected_crates: totals.rejectedCrates,
+            processed_crates: totals.processedCrates,
+            region: '',
+          });
+          downloadXlsx(exportRows, columns, `intake_report_${dateLabel}.xlsx`, 'Intake');
+          toast({
+            title: 'Excel Export Complete',
+            description: `Intake report for ${startDateStr} to ${endDateStr} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'countingReport': {
+          const rows = await buildCountingRows();
+          if (rows.length === 0) {
+            noData('counting records');
+            break;
+          }
+          const totals = rows.reduce((acc, row) => {
+            acc.fuerte4 += row.fuerte_4kg || 0;
+            acc.fuerte10 += row.fuerte_10kg || 0;
+            acc.hass4 += row.hass_4kg || 0;
+            acc.hass10 += row.hass_10kg || 0;
+            acc.intake += row.intake_total_crates || 0;
+            acc.rejected += row.rejected_crates || 0;
+            acc.processed += row.processed_crates || 0;
+            return acc;
+          }, { fuerte4: 0, fuerte10: 0, hass4: 0, hass10: 0, intake: 0, rejected: 0, processed: 0 });
+
+          const columns: XlsxColumn[] = [
+            { header: 'Date', key: 'date' },
+            { header: 'Time', key: 'time' },
+            { header: 'Supplier Name', key: 'supplier_name' },
+            { header: 'Region', key: 'region' },
+            { header: 'Fuerte 4kg', key: 'fuerte_4kg' },
+            { header: 'Fuerte 10kg', key: 'fuerte_10kg' },
+            { header: 'Hass 4kg', key: 'hass_4kg' },
+            { header: 'Hass 10kg', key: 'hass_10kg' },
+            { header: 'Intake Crates', key: 'intake_total_crates' },
+            { header: 'Rejected Crates', key: 'rejected_crates' },
+            { header: 'Processed Crates', key: 'processed_crates' },
+          ];
+          const exportRows: Record<string, unknown>[] = rows.map(r => ({
+            date: r.date,
+            time: r.time,
+            supplier_name: r.supplier_name,
+            region: r.region,
+            fuerte_4kg: r.fuerte_4kg,
+            fuerte_10kg: r.fuerte_10kg,
+            hass_4kg: r.hass_4kg,
+            hass_10kg: r.hass_10kg,
+            intake_total_crates: r.intake_total_crates,
+            rejected_crates: r.rejected_crates,
+            processed_crates: r.processed_crates,
+          }));
+          exportRows.push({
+            date: 'TOTALS',
+            time: '',
+            supplier_name: '',
+            region: '',
+            fuerte_4kg: totals.fuerte4,
+            fuerte_10kg: totals.fuerte10,
+            hass_4kg: totals.hass4,
+            hass_10kg: totals.hass10,
+            intake_total_crates: totals.intake,
+            rejected_crates: totals.rejected,
+            processed_crates: totals.processed,
+          });
+          downloadXlsx(exportRows, columns, `counting_report_${dateLabel}.xlsx`, 'Counting');
+          toast({
+            title: 'Excel Export Complete',
+            description: `Counting report for ${startDateStr} to ${endDateStr} has been downloaded.`,
+          });
+          break;
+        }
+
+        case 'casualsReport': {
+          const rows = await buildCasualRows();
+          if (rows.length === 0) {
+            noData('attendance records');
+            break;
+          }
+          const columns: XlsxColumn[] = [
+            { header: 'Date', key: 'date' },
+            { header: 'Name', key: 'name' },
+            { header: 'ID Number', key: 'idNumber', text: true },
+            { header: 'Phone', key: 'phone', text: true },
+            { header: 'Designation', key: 'designation' },
+            { header: 'Status', key: 'status' },
+            { header: 'Check In', key: 'checkIn' },
+            { header: 'Check Out', key: 'checkOut' },
+          ];
+          downloadXlsx(rows as Record<string, unknown>[], columns, `casuals_report_${dateLabel}.xlsx`, 'Casuals');
+          toast({
+            title: 'Excel Export Complete',
+            description: `Casuals report for ${startDateStr} to ${endDateStr} has been downloaded.`,
+          });
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Failed to generate Excel report. Please try again.',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   return (
     <>
@@ -888,7 +1545,7 @@ export default function ReportsPage() {
 
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-                 <p className="text-muted-foreground">Generate custom PDF reports or export raw data as CSV.</p>
+                 <p className="text-muted-foreground">Generate custom PDF reports or export raw data as Excel.</p>
             </div>
              <div className="grid gap-4 p-4 border rounded-lg bg-muted/50 md:grid-cols-[minmax(0,1fr)_minmax(0,280px)]">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
@@ -946,7 +1603,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground md:col-span-2">
-                  Applies to all generated reports and exports. Required for Supplier and Employee Attendance reports.
+                  Applies to all generated reports and exports. Required to generate any module report.
                 </p>
             </div>
 
@@ -976,10 +1633,7 @@ export default function ReportsPage() {
                         />
                         <Label
                           htmlFor={report.id}
-                          className={cn(
-                            'flex items-center gap-2 font-normal',
-                            report.isHighRisk && 'text-destructive'
-                          )}
+                          className="flex items-center gap-2 font-normal"
                         >
                           <report.icon className="w-4 h-4" />
                           {report.label}
@@ -987,11 +1641,6 @@ export default function ReportsPage() {
                       </div>
                     ))}
                   </div>
-                  {selectedPdfReport === 'productionReport' && (!dateRange?.from || !dateRange?.to) && (
-                    <p className="text-sm text-muted-foreground mt-2 text-amber-600">
-                      📅 Production Report requires a date range selection above to generate comprehensive operational data.
-                    </p>
-                  )}
                   <Button className="w-full mt-4" onClick={handleGeneratePdf} disabled={!selectedPdfReport || isGenerating}>
                     {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Download className="mr-2" />}
                     {isGenerating ? 'Generating...' : 'Generate PDF Report'}
@@ -1003,23 +1652,23 @@ export default function ReportsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <BarChart />
-                    Data Exports (CSV)
+                    Data Exports (Excel)
                   </CardTitle>
                   <CardDescription>
-                    Generate CSV exports for general operational data.
+                    Generate Excel exports for general operational data.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <h3 className="text-sm font-medium">Report Type</h3>
                   <div className="space-y-3">
-                    {csvReportTypes.map((report) => (
+                    {xlsReportTypes.map((report) => (
                       <div key={report.id} className="flex items-center space-x-2">
                         <Checkbox
-                          id={`csv-${report.id}`}
-                          checked={selectedCsvReport === report.id}
-                          onCheckedChange={() => setSelectedCsvReport(report.id)}
+                          id={`xls-${report.id}`}
+                          checked={selectedXlsReport === report.id}
+                          onCheckedChange={() => setSelectedXlsReport(report.id)}
                         />
-                        <Label htmlFor={`csv-${report.id}`} className="font-normal">
+                        <Label htmlFor={`xls-${report.id}`} className="font-normal">
                           {report.icon && <report.icon className="w-4 h-4 mr-2 inline" />}
                           {report.label}
                         </Label>
@@ -1028,20 +1677,15 @@ export default function ReportsPage() {
                   </div>
                   <Button 
                     className="w-full mt-4" 
-                    onClick={handleGenerateCsv} 
+                    onClick={handleGenerateXLS} 
                     disabled={isGenerating}
                   >
                     {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Download className="mr-2" />}
-                    {isGenerating ? 'Generating...' : 'Generate & Download CSV'}
+                    {isGenerating ? 'Generating...' : 'Generate & Download Excel'}
                   </Button>
-                  {selectedCsvReport === 'employeeAttendanceLog' && dateRange?.from && dateRange?.to && (
+                  {dateRange?.from && dateRange?.to && (
                     <p className="text-sm text-muted-foreground mt-2">
-                      Generating employee attendance report for: {format(dateRange.from, 'MMM dd, yyyy')} {timeRange.from} to {format(dateRange.to, 'MMM dd, yyyy')} {timeRange.to}
-                    </p>
-                  )}
-                  {selectedCsvReport === 'supplierReport' && dateRange?.from && dateRange?.to && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Generating supplier report for: {format(dateRange.from, 'MMM dd, yyyy')} {timeRange.from} to {format(dateRange.to, 'MMM dd, yyyy')} {timeRange.to}
+                      Generating report for: {format(dateRange.from, 'MMM dd, yyyy')} {timeRange.from} to {format(dateRange.to, 'MMM dd, yyyy')} {timeRange.to}
                     </p>
                   )}
                 </CardContent>
@@ -1050,24 +1694,6 @@ export default function ReportsPage() {
           </main>
         </SidebarInset>
       </SidebarProvider>
-      <div style={{ position: 'absolute', left: '-9999px', top: 0, pointerEvents: 'none' }}>
-        <div ref={printRef}>
-          {selectedPdfReport === 'visitorManifest' && <PrintableVisitorReport visitors={visitorData} employees={employeeData} attendance={timeAttendanceData} />}
-          {selectedPdfReport === 'shipmentManifest' && <PrintableShipmentReport shipments={shipmentData} />}
-          {selectedPdfReport === 'productionReport' && productionReportData && <PrintableProductionReport reportData={productionReportData} />}
-          {selectedPdfReport === 'inventoryReport' && <PrintableInventoryReport inventory={coldRoomInventoryData} />}
-          {selectedPdfReport === 'packagingReport' && <PrintablePackagingReport materials={packagingMaterialData} />}
-          {selectedPdfReport === 'weightReconciliation' && <PrintableWeightReport weights={weightData} />}
-          {selectedPdfReport === 'coldChainReport' && <PrintableColdRoomReport rooms={coldRoomStatusData} inventory={dwellTimeData} alerts={anomalyData} />}
-          {selectedPdfReport === 'energyReport' && <PrintableEnergyReport consumptionData={energyConsumptionData} breakdownData={energyBreakdownData} />}
-          {selectedPdfReport === 'waterReport' && <PrintableWaterReport consumptionData={waterConsumptionData} breakdownData={waterBreakdownData} qualityData={waterQualityData} />}
-          {selectedPdfReport === 'qualityReport' && <PrintableQualityReport qcData={operationalComplianceData} />}
-          {selectedPdfReport === 'incidentReport' && <PrintableIncidentReport incidentTrendData={incidentTrendData} detailedIncidentData={detailedIncidentData} />}
-          {selectedPdfReport === 'financialSummary' && <PrintableFinancialReport accountsReceivableData={filteredAccountsReceivable} generalLedgerData={filteredGeneralLedger} />}
-          {selectedPdfReport === 'payrollReport' && <PrintablePayrollReport employees={employeeData} requests={advanceRequestsData} kpis={simplifiedPayrollKpis} />}
-          {selectedPdfReport === 'pettyCashReport' && <PrintablePettyCashReport transactions={pettyCashData} />}
-        </div>
-      </div>
     </>
   );
 }

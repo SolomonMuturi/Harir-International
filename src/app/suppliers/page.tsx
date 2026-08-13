@@ -49,6 +49,7 @@ import {
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { format, subDays, startOfDay, endOfDay } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { downloadXlsx, type XlsxColumn } from '@/lib/xlsx-export'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -271,7 +272,7 @@ export default function SuppliersPage() {
   const existingSupplierCodes = suppliers.map(s => s.supplierCode)
 
   // Handle download report
-  const handleDownloadReport = async (formatType: 'csv' | 'html') => {
+  const handleDownloadReport = async (formatType: 'xls' | 'html') => {
     if (filteredSuppliers.length === 0) {
       toast({
         title: 'No Data',
@@ -287,35 +288,66 @@ export default function SuppliersPage() {
       const params = new URLSearchParams({
         startDate: format(dateRange.from, 'yyyy-MM-dd'),
         endDate: format(dateRange.to, 'yyyy-MM-dd'),
-        format: formatType
       })
-      
-      const url = `/api/suppliers?${params.toString()}`
-      
-      const response = await fetch(url)
-      
-      if (!response.ok) {
-        throw new Error(`Failed to generate ${formatType.toUpperCase()} report`)
-      }
-      
-      if (formatType === 'html') {
+
+      if (formatType === 'xls') {
+        const response = await fetch(`/api/suppliers?${params.toString()}`)
+        if (!response.ok) {
+          throw new Error('Failed to generate XLS report')
+        }
+
+        const suppliers = await response.json()
+        const columns: XlsxColumn[] = [
+          { header: 'Supplier Code', key: 'supplier_code', text: true },
+          { header: 'Supplier Name', key: 'name' },
+          { header: 'Phone Number', key: 'contact_phone', text: true },
+          { header: 'Email', key: 'contact_email' },
+          { header: 'Location', key: 'location' },
+          { header: 'Status', key: 'status' },
+          { header: 'KRA PIN', key: 'kra_pin', text: true },
+          { header: 'Bank Name', key: 'bank_name' },
+          { header: 'Bank Account', key: 'bank_account_number', text: true },
+          { header: 'M-PESA Paybill', key: 'mpesa_paybill', text: true },
+          { header: 'M-PESA Account', key: 'mpesa_account_number', text: true },
+          { header: 'Created At', key: 'created_at' },
+        ]
+
+        const rows = (suppliers as any[]).map((supplier) => ({
+          supplier_code: supplier.supplier_code || 'N/A',
+          name: supplier.name || 'N/A',
+          contact_phone: supplier.contact_phone || 'N/A',
+          contact_email: supplier.contact_email || 'N/A',
+          location: supplier.location || 'N/A',
+          status: supplier.status || 'N/A',
+          kra_pin: supplier.kra_pin || 'N/A',
+          bank_name: supplier.bank_name || 'N/A',
+          bank_account_number: supplier.bank_account_number || 'N/A',
+          mpesa_paybill: supplier.mpesa_paybill || 'N/A',
+          mpesa_account_number: supplier.mpesa_account_number || 'N/A',
+          created_at: new Date(supplier.created_at).toLocaleDateString(),
+        }))
+
+        downloadXlsx(
+          rows,
+          columns,
+          `suppliers_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.xlsx`,
+          'Suppliers'
+        )
+      } else if (formatType === 'html') {
+        params.set('format', 'html')
+        const url = `/api/suppliers?${params.toString()}`
+        const response = await fetch(url)
+
+        if (!response.ok) {
+          throw new Error('Failed to generate HTML report')
+        }
+
         const html = await response.text()
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
         const urlObj = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = urlObj
         link.setAttribute('download', `suppliers_report_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.html`)
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(urlObj)
-      } else {
-        const csv = await response.text()
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-        const urlObj = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = urlObj
-        link.setAttribute('download', `suppliers_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}.csv`)
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
@@ -330,7 +362,7 @@ export default function SuppliersPage() {
       const currentUser = await getCurrentUser()
       await logActivity({
         user: currentUser?.name || 'System',
-        action: formatType === 'csv' ? 'SUPPLIER_CSV_EXPORTED' : 'SUPPLIER_REPORT_DOWNLOADED',
+        action: formatType === 'xls' ? 'SUPPLIER_XLS_EXPORTED' : 'SUPPLIER_REPORT_DOWNLOADED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
@@ -347,7 +379,7 @@ export default function SuppliersPage() {
       const currentUser = await getCurrentUser()
       await logActivity({
         user: currentUser?.name || 'System',
-        action: formatType === 'csv' ? 'SUPPLIER_CSV_EXPORTED' : 'SUPPLIER_REPORT_DOWNLOADED',
+        action: formatType === 'xls' ? 'SUPPLIER_XLS_EXPORTED' : 'SUPPLIER_REPORT_DOWNLOADED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -838,13 +870,13 @@ export default function SuppliersPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleDownloadReport('csv')}>
+                  <DropdownMenuItem onClick={() => handleDownloadReport('xls')}>
                     <FileDown className="mr-2 h-4 w-4" />
-                    Download as CSV
+                    Download as XLS
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleDownloadReport('html')}>
                     <FileDown className="mr-2 h-4 w-4" />
-                    Download as HTML
+                    Download as HTML (PDF)
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

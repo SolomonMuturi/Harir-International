@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Truck, Eye, ShieldAlert, CheckCircle, Clock, Calendar, Package, Fuel } from 'lucide-react';
+import { Truck, Eye, ShieldAlert, CheckCircle, Clock, Calendar } from 'lucide-react';
 import type { Vehicle } from '@/lib/types';
 import { format } from 'date-fns';
 import { ScrollArea } from '../ui/scroll-area';
@@ -61,25 +61,17 @@ export function VehicleDataTable({
     }
     return ts ? format(new Date(ts), 'dd MMM HH:mm') : '-';
   };
-  
-  const getCargoIcon = (cargoDescription?: string) => {
-    if (!cargoDescription) return <Package className="h-4 w-4 text-gray-400" />;
-    
-    if (cargoDescription.toLowerCase().includes('fuel') || 
-        cargoDescription.toLowerCase().includes('oil') ||
-        cargoDescription.toLowerCase().includes('gas')) {
-      return <Fuel className="h-4 w-4 text-amber-600" />;
-    }
-    
-    if (cargoDescription.toLowerCase().includes('food') ||
-        cargoDescription.toLowerCase().includes('produce')) {
-      return <Package className="h-4 w-4 text-green-600" />;
-    }
-    
-    return <Package className="h-4 w-4 text-blue-600" />;
-  };
 
-  // Get status icon
+  const formatDuration = (checkIn?: string, checkOut?: string) => {
+    if (!checkIn || !checkOut) return '-';
+    const diffMs = new Date(checkOut).getTime() - new Date(checkIn).getTime();
+    if (isNaN(diffMs) || diffMs < 0) return '-';
+    const minutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  };
+  
   const getStatusIcon = (status: Vehicle['status']) => {
     switch (status) {
       case 'Checked-in':
@@ -132,17 +124,19 @@ export function VehicleDataTable({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow p-0">
-        <ScrollArea className="h-[400px]">
-          <Table>
+        <ScrollArea className="h-[calc(100vh-340px)] min-h-[320px]">
+          <Table className="min-w-[960px]">
             <TableHeader className="sticky top-0 bg-card border-b">
-              <TableRow>
-                <TableHead className="font-semibold">Driver & Vehicle</TableHead>
-                <TableHead className="font-semibold"> Supplier</TableHead>
-                <TableHead className="font-semibold">Registration</TableHead>
-                <TableHead className="font-semibold">Check-in</TableHead>
-                <TableHead className="font-semibold">Check-out</TableHead>
-                <TableHead className="font-semibold">Status</TableHead>
-                <TableHead className="font-semibold text-right">Actions</TableHead>
+              <TableRow className="hover:bg-transparent border-b">
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Driver & Vehicle</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Registration</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Vehicle Type</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Check-in</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Check-out</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Duration</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Status</TableHead>
+                <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -159,69 +153,61 @@ export function VehicleDataTable({
                         : ""
                     )}
                   >
-                    <TableCell>
-                      <div className="flex items-start gap-3">
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
                         <div className={cn(
-                          "w-2 h-2 rounded-full mt-2",
+                          "w-2 h-2 rounded-full shrink-0",
                           highlighted 
                             ? "bg-blue-500 animate-pulse" 
                             : "bg-gray-300"
                         )}></div>
                         <div>
                           <div className={cn(
-                            "font-medium",
+                            "font-medium text-sm leading-tight",
                             highlighted && "text-blue-700"
                           )}>
                             {vehicle.driverName}
                           </div>
-                          <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                            <Truck className="h-3 w-3" />
-                            {getVehicleTypeBadge(vehicle.vehicleType)}
-                          </div>
-                          <div className="text-xs text-muted-foreground font-mono mt-1">
-                            ID: {vehicle.vehicleCode}
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {vehicle.vehicleCode}
                           </div>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-start gap-2">
-                        {getCargoIcon(vehicle.cargoDescription)}
-                        <div>
-                          <div className="text-sm font-medium">{vehicle.company}</div>
-                          {vehicle.cargoDescription && (
-                            <div className="text-xs text-muted-foreground mt-1 max-w-[150px] truncate">
-                              {vehicle.cargoDescription}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                    <TableCell className="py-2 px-3 whitespace-nowrap text-sm">
+                      {vehicle.phone || 'N/A'}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       {vehicle.vehiclePlate ? (
-                        <div className="flex flex-col gap-1">
-                          <div className="font-mono font-medium bg-black-100 px-2 py-1 rounded text-center">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-medium text-sm bg-gray-100 px-2 py-0.5 rounded">
                             {vehicle.vehiclePlate}
-                          </div>
-                          <div className="text-xs text-muted-foreground text-center">
-                            ID: {vehicle.idNumber}
-                          </div>
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {vehicle.idNumber}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-sm">No vehicle</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
+                      {getVehicleTypeBadge(vehicle.vehicleType)}
+                    </TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <div className="font-mono text-sm">{formatTimestamp(vehicle.checkInTime)}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <div className="font-mono text-sm">{formatTimestamp(vehicle.checkOutTime)}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
+                      <div className="font-mono text-sm">{formatDuration(vehicle.checkInTime, vehicle.checkOutTime)}</div>
+                    </TableCell>
+                    <TableCell className="py-2 px-3 whitespace-nowrap">
                       <Badge
                         variant={statusVariant[vehicle.status]}
                         className={cn(
-                          "capitalize flex items-center gap-1 px-2 py-1",
+                          "capitalize flex items-center gap-1 px-2 py-0.5 text-xs",
                           highlighted && "ring-2 ring-blue-200"
                         )}
                       >
@@ -229,13 +215,13 @@ export function VehicleDataTable({
                         {vehicle.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                    <TableCell className="py-2 px-3 text-right whitespace-nowrap">
+                      <div className="flex justify-end gap-1.5">
                         <Button 
                           size="sm" 
                           variant="outline"
                           className={cn(
-                            "h-8 text-xs",
+                            "h-7 px-2 text-xs",
                             highlighted && "border-blue-300 text-blue-700 bg-blue-50"
                           )}
                           onClick={(e) => { 
@@ -252,7 +238,7 @@ export function VehicleDataTable({
                           <Button 
                             size="sm" 
                             variant="destructive"
-                            className="h-8 text-xs"
+                            className="h-7 px-2 text-xs"
                             onClick={(e) => { 
                               e.stopPropagation(); 
                               onCheckOut(vehicle.id, true); 
@@ -270,7 +256,7 @@ export function VehicleDataTable({
               
               {vehicles.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12">
+                  <TableCell colSpan={10} className="text-center py-12">
                     <div className="flex flex-col items-center gap-3">
                       <div className="p-3 bg-gray-100 rounded-full">
                         <Truck className="h-8 w-8 text-gray-400" />

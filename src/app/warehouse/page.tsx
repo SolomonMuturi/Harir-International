@@ -29,16 +29,16 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { 
   HardHat, Scale, Package, Truck, ChevronDown, CheckCircle, 
   RefreshCw, Calculator, Box, History, Search, Calendar, Filter, X, 
-  BarChart3, Users, PackageOpen, TrendingUp, AlertTriangle, Check,
+  Users, PackageOpen, TrendingUp, AlertTriangle, Check,
   Download, FileSpreadsheet, ChevronRight, Phone, Banknote, CreditCard,
   FileText, ClipboardList, Printer, FileDown, Eye, EyeOff, Info,
   Wallet, Smartphone, Building, Fingerprint, Apple, PieChart,
-  Grid3x3, Layers, BarChart, Table as TableIcon, Edit, Clock, Boxes
+  Grid3x3, Layers, BarChart, Table as TableIcon, Edit, Clock, Boxes, MessageCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CountingFormData } from '@/lib/types/counting';
-import { format, isSameDay, parseISO, isWithinInterval } from 'date-fns';
+import { format, parseISO, isWithinInterval } from 'date-fns';
 import {
   Select,
   SelectContent,
@@ -47,6 +47,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import * as XLSX from 'xlsx';
+
+const COUNTING_PAGE_SIZE = 30;
 
 interface SupplierIntakeRecord {
   id: string;
@@ -88,29 +91,6 @@ interface QualityCheck {
   hass_class2: number;
   hass_overall: number;
   rejected_weight?: number;
-}
-
-interface CountingStats {
-  total_processed: number;
-  pending_coldroom: number;
-  total_suppliers: number;
-  fuerte_4kg: number;
-  fuerte_10kg: number;
-  hass_4kg: number;
-  hass_10kg: number;
-  recent_activity: {
-    last_7_days: number;
-    last_30_days: number;
-  };
-  weight_summary?: {
-    total_intake_weight: number;
-    total_counted_weight: number;
-    total_rejected_weight: number;
-    fuerte_total_weight: number;
-    hass_total_weight: number;
-    total_intake_crates: number;
-    total_rejected_crates: number;
-  };
 }
 
 interface CountingRecord {
@@ -155,7 +135,7 @@ interface CountingRecord {
   intake_total_crates?: number;
 }
 
-interface CSVRow {
+interface XLSRow {
   date: string;
   supplier_name: string;
   telephone_number: string;
@@ -680,7 +660,7 @@ const getCurrentUser = async () => {
   }
 };
 
-const generateWarehouseGRN = async (record: CountingRecord) => {
+const generateWarehouseGRN = async (record: CountingRecord, opts?: { save?: boolean }) => {
   try {
     const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
       import('jspdf'),
@@ -712,18 +692,24 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
       }
       
-      if (rejectResult.length === 0) {
+      // Only use a reject that belongs to this exact pallet/delivery.
+      rejectionData = rejectResult.find((r: any) => r.pallet_id === record.pallet_id) || null;
+      
+      if (!rejectionData) {
+        // Fall back to supplier lookup but only for the same delivery day
+        // so a previous delivery's reject is not shown for this GRN.
         rejectResponse = await fetch(`/api/rejects?supplier_name=${encodeURIComponent(record.supplier_name)}`);
         if (rejectResponse.ok) {
           rejectResult = await rejectResponse.json();
           rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
         }
+        
+        const submittedDay = format(new Date(record.submitted_at), 'yyyy-MM-dd');
+        rejectionData = rejectResult.find((r: any) =>
+          r.pallet_id === record.pallet_id ||
+          format(new Date(r.rejected_at), 'yyyy-MM-dd') === submittedDay
+        ) || null;
       }
-      
-      rejectionData = rejectResult.find((r: any) => 
-        r.pallet_id === record.pallet_id || 
-        r.supplier_name === record.supplier_name
-      );
       
       if (rejectionData) {
         rejectedFuerteCrates = rejectionData.fuerte_crates || 0;
@@ -910,21 +896,21 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         doc.text(`Rejected: ${rejectedTotalCrates} crates`, leftMargin + 95, yPos + 9);
       }
     } else {
-      doc.text(`Rejected: 0 crates`, leftMargin + 95, yPos + 9);
+      doc.text(`Rejected: None`, leftMargin + 95, yPos + 9);
     }
     yPos += 13;
     
+    doc.setFillColor(255, 243, 243);
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(220, 38, 38);
+    doc.text('REJECTED MATERIAL', leftMargin + 2, yPos + 5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(6);
+    
     if (rejectedTotalCrates > 0) {
-      doc.setFillColor(255, 243, 243);
-      doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(220, 38, 38);
-      doc.text('REJECTED MATERIAL', leftMargin + 2, yPos + 5);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(6);
-      
       const rejectionPercentage = intakeTotalCrates > 0 ? ((rejectedTotalCrates / intakeTotalCrates) * 100).toFixed(1) : '0';
       
       if (rejectedFuerteCrates > 0 && rejectedHassCrates > 0) {
@@ -947,6 +933,10 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         extraY += 3;
       }
       yPos += extraY;
+    } else {
+      doc.setFont('helvetica', 'italic');
+      doc.text('No reject has been added for this delivery.', leftMargin + 2, yPos + 8.5);
+      yPos += 11;
     }
     
     // DETAILED BOX SIZE COUNTS - Reduced spacing
@@ -1054,7 +1044,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
         styles: { 
           fontSize: 6,
           cellPadding,
-          textColor: [0, 0, 0]
+          textColor: [90, 90, 90]
         },
         columnStyles: {
           0: { cellWidth: splitColumns ? 27 : 30, fontStyle: 'bold' },
@@ -1066,7 +1056,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
           [tableBody.length - 1]: { 
             fillColor: [173, 216, 230],
             fontStyle: 'bold',
-            textColor: [0, 0, 0],
+            textColor: [70, 70, 70],
             lineWidth: 0
           }
         },
@@ -1083,7 +1073,7 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
             
             doc.setFontSize(6);
             doc.setFont('helvetica', 'bold');
-            doc.setTextColor(0, 0, 0);
+            doc.setTextColor(70, 70, 70);
             
             if (data.column.index === 0) {
               doc.text('Subtotal', x + 2, cy + h / 2 + 1.5);
@@ -1270,6 +1260,11 @@ const generateWarehouseGRN = async (record: CountingRecord) => {
     doc.text(docInfo2, pageWidth / 2, yPos + 2.5, { align: 'center' });
 
     const fileName = `Warehouse_GRN_${record.supplier_name.replace(/\s+/g, '_')}.pdf`;
+
+    if (opts?.save === false) {
+      return { doc, fileName };
+    }
+
     doc.save(fileName);
 
     return true;
@@ -1287,19 +1282,8 @@ export default function WarehousePage() {
   const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
   const [rejects, setRejects] = useState<RejectionEntry[]>([]);
   const [supplierRejectionDrafts, setSupplierRejectionDrafts] = useState<Record<string, SupplierRejectionDraft>>({});
-  const [stats, setStats] = useState<CountingStats>({
-    total_processed: 0,
-    pending_coldroom: 0,
-    total_suppliers: 0,
-    fuerte_4kg: 0,
-    fuerte_10kg: 0,
-    hass_4kg: 0,
-    hass_10kg: 0,
-    recent_activity: {
-      last_7_days: 0,
-      last_30_days: 0,
-    },
-  });
+  const [countingTotal, setCountingTotal] = useState<number>(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isLoading, setIsLoading] = useState({ 
     intake: true, 
     quality: true, 
@@ -1530,87 +1514,6 @@ export default function WarehousePage() {
       }
     }
   });
-
-  const calculateStatsFromRecords = useCallback((records: CountingRecord[], rejections: RejectionEntry[]): CountingStats => {
-    const today = new Date();
-    const last7Days = new Date();
-    last7Days.setDate(today.getDate() - 7);
-    const last30Days = new Date();
-    last30Days.setDate(today.getDate() - 30);
-
-    const filteredRecords = records.filter(record => 
-      record.status === 'pending_coldroom' || record.status === 'completed'
-    );
-
-    const rejectionMap = new Map<string, number>();
-    rejections.forEach(reject => {
-      if (reject.weight_entry_id) {
-        rejectionMap.set(reject.weight_entry_id, reject.total_rejected_weight || 0);
-      }
-    });
-
-    const recentRecords = filteredRecords.filter(record => {
-      const recordDate = new Date(record.submitted_at);
-      return recordDate >= last30Days;
-    });
-
-    const last7DaysRecords = recentRecords.filter(record => {
-      const recordDate = new Date(record.submitted_at);
-      return recordDate >= last7Days;
-    });
-
-    const totalFuerte4kg = filteredRecords.reduce((sum, record) => sum + (record.fuerte_4kg_total || 0), 0);
-    const totalFuerte10kg = filteredRecords.reduce((sum, record) => sum + (record.fuerte_10kg_total || 0), 0);
-    const totalHass4kg = filteredRecords.reduce((sum, record) => sum + (record.hass_4kg_total || 0), 0);
-    const totalHass10kg = filteredRecords.reduce((sum, record) => sum + (record.hass_10kg_total || 0), 0);
-
-    const totalIntakeWeight = filteredRecords.reduce((sum, record) => sum + (record.total_weight || 0), 0);
-    const totalCountedWeight = filteredRecords.reduce((sum, record) => sum + (record.total_counted_weight || 0), 0);
-    
-    let totalRejectedWeight = filteredRecords.reduce((sum, record) => sum + (record.rejected_weight || 0), 0);
-    
-    filteredRecords.forEach(record => {
-      const rejection = rejectionMap.get(record.id);
-      if (rejection && (!record.rejected_weight || record.rejected_weight === 0)) {
-        totalRejectedWeight += rejection;
-      }
-    });
-    
-    const fuerteTotalWeight = totalFuerte4kg * 4 + totalFuerte10kg * 10;
-    const hassTotalWeight = totalHass4kg * 4 + totalHass10kg * 10;
-
-    const totalIntakeCrates = filteredRecords.reduce((sum, record) => sum + (record.intake_total_crates || 0), 0);
-    const totalRejectedCrates = rejections.reduce((sum, reject) => sum + (reject.total_rejected_crates || 0), 0);
-
-    const uniqueSuppliers = new Set(filteredRecords.map(record => record.supplier_name));
-    
-    const pendingColdroom = records.filter(record => 
-      record.status === 'pending_coldroom' && record.for_coldroom
-    ).length;
-
-    return {
-      total_processed: filteredRecords.length,
-      pending_coldroom: pendingColdroom,
-      total_suppliers: uniqueSuppliers.size,
-      fuerte_4kg: totalFuerte4kg,
-      fuerte_10kg: totalFuerte10kg,
-      hass_4kg: totalHass4kg,
-      hass_10kg: totalHass10kg,
-      recent_activity: {
-        last_7_days: last7DaysRecords.length,
-        last_30_days: recentRecords.length,
-      },
-      weight_summary: {
-        total_intake_weight: totalIntakeWeight,
-        total_counted_weight: totalCountedWeight,
-        total_rejected_weight: totalRejectedWeight,
-        fuerte_total_weight: fuerteTotalWeight,
-        hass_total_weight: hassTotalWeight,
-        total_intake_crates: totalIntakeCrates,
-        total_rejected_crates: totalRejectedCrates,
-      }
-    };
-  }, []);
 
   const fetchRejects = async () => {
     try {
@@ -1862,11 +1765,16 @@ export default function WarehousePage() {
     }
   };
 
-  const fetchCountingRecords = async () => {
+  const fetchCountingRecords = async (options?: { limit?: number; offset?: number; append?: boolean }) => {
     try {
-      setIsLoading(prev => ({ ...prev, counting: true }));
+      const { limit, offset, append } = options || {};
+      setIsLoading(prev => ({ ...prev, counting: !append }));
+      setIsLoadingMore(!!append);
+      const historyUrl = typeof limit === 'number' && limit > 0
+        ? `/api/counting?action=history&limit=${limit}&offset=${offset || 0}`
+        : '/api/counting?action=history';
       const [historyResponse, weightsResponse, rejectionsResponse] = await Promise.all([
-        fetch('/api/counting?action=history'),
+        fetch(historyUrl),
         fetch('/api/weights'),
         fetch('/api/rejects'),
       ]);
@@ -1967,12 +1875,10 @@ export default function WarehousePage() {
             return record;
           });
           
-          setCountingRecords(recordsWithRejects);
-          
-          const calculatedStats = calculateStatsFromRecords(recordsWithRejects, rejections);
-          setStats(calculatedStats);
-          
-          calculateSizeStatistics(recordsWithRejects);
+          setCountingRecords(prev => append ? [...prev, ...recordsWithRejects] : recordsWithRejects);
+          if (typeof result.total === 'number') {
+            setCountingTotal(result.total);
+          }
           
           return recordsWithRejects;
         }
@@ -1983,7 +1889,16 @@ export default function WarehousePage() {
       return [];
     } finally {
       setIsLoading(prev => ({ ...prev, counting: false }));
+      setIsLoadingMore(false);
     }
+  };
+
+  const loadMoreCountingRecords = async () => {
+    await fetchCountingRecords({
+      limit: COUNTING_PAGE_SIZE,
+      offset: countingRecords.length,
+      append: true,
+    });
   };
 
   const calculateSizeStatistics = useCallback((records: CountingRecord[]) => {
@@ -2190,20 +2105,12 @@ export default function WarehousePage() {
         if (result.success && result.data) {
           if (result.data.fuerte && result.data.hass) {
             setSizeStatistics(result.data);
-          } else {
-            console.log('Data structure mismatch, calculating from records');
-            await fetchCountingRecords();
           }
-        } else {
-          calculateSizeStatistics(countingRecords);
         }
-      } else {
-        calculateSizeStatistics(countingRecords);
       }
       return sizeStatistics;
     } catch (err: any) {
       console.error('Error fetching size statistics:', err);
-      calculateSizeStatistics(countingRecords);
       return sizeStatistics;
     } finally {
       setIsLoading(prev => ({ ...prev, stats: false }));
@@ -2249,7 +2156,7 @@ export default function WarehousePage() {
     await Promise.all([
       fetchIntakeRecords(),
       fetchQualityChecks(),
-      fetchCountingRecords(),
+      fetchCountingRecords({ limit: COUNTING_PAGE_SIZE, offset: 0 }),
       fetchSizeStatistics(),
       fetchRejects()
     ]);
@@ -2271,7 +2178,7 @@ useEffect(() => {
   // Load all data in the background
   fetchIntakeRecords();
   fetchQualityChecks();
-  fetchCountingRecords();
+  fetchCountingRecords({ limit: COUNTING_PAGE_SIZE, offset: 0 });
   fetchSizeStatistics();
   fetchRejects();
 }, []);
@@ -3072,7 +2979,7 @@ useEffect(() => {
     }
   };
 
-  const filteredHistory = countingRecords.filter(record => {
+  const filterHistoryRecords = (records: CountingRecord[]) => records.filter(record => {
     const matchesSearch = searchTerm === '' || 
       record.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       record.pallet_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -3094,6 +3001,8 @@ useEffect(() => {
     
     return matchesSearch && matchesDate;
   });
+
+  const filteredHistory = filterHistoryRecords(countingRecords);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -3194,7 +3103,7 @@ useEffect(() => {
     | 'hass_10kg_class2_size30'
     | 'hass_10kg_class2_size32';
 
-const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
+const generateXLSXData = (records: CountingRecord[]): XLSRow[] => {
   const sizes4kg = ['14', '16', '18', '20', '22', '24', '26'];
   const sizes10kg = ['14', '16', '18', '20', '22', '24', '26', '28', '30'];
   const varieties: Array<'fuerte' | 'hass'> = ['fuerte', 'hass'];
@@ -3205,7 +3114,7 @@ const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
 
     return varieties.flatMap(variety =>
       classTypes.map(classType => {
-        const row: CSVRow = {
+        const row: XLSRow = {
           date: format(new Date(record.submitted_at), 'yyyy-MM-dd'),
           supplier_name: record.supplier_name,
           telephone_number: record.supplier_phone || '',
@@ -3238,24 +3147,24 @@ const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
 
         // 4kg sizes (14-26)
         sizes4kg.forEach(size => {
-          const field = `size_${size}_4kg` as keyof CSVRow;
+          const field = `size_${size}_4kg` as keyof XLSRow;
           row[field] = Number(countingData[`${variety}_4kg_${classType}_size${size}`]) || 0;
         });
 
         // 10kg sizes (14-30)
         sizes10kg.forEach(size => {
-          const field = `size_${size}_10kg` as keyof CSVRow;
+          const field = `size_${size}_10kg` as keyof XLSRow;
           row[field] = Number(countingData[`${variety}_10kg_${classType}_size${size}`]) || 0;
         });
 
         // Calculate totals at the end
         row.total_4kg = sizes4kg.reduce((sum, size) => {
-          const field = `size_${size}_4kg` as keyof CSVRow;
+          const field = `size_${size}_4kg` as keyof XLSRow;
           return sum + (row[field] as number);
         }, 0);
 
         row.total_10kg = sizes10kg.reduce((sum, size) => {
-          const field = `size_${size}_10kg` as keyof CSVRow;
+          const field = `size_${size}_10kg` as keyof XLSRow;
           return sum + (row[field] as number);
         }, 0);
 
@@ -3266,12 +3175,12 @@ const generateCSVData = (records: CountingRecord[]): CSVRow[] => {
         }
 
         return row;
-      }).filter((row): row is CSVRow => row !== null)
+      }).filter((row): row is XLSRow => row !== null)
     );
   });
 };
 
-const downloadCSV = (records: CountingRecord[]) => {
+const downloadXLSX = (records: CountingRecord[]) => {
   if (records.length === 0) {
     toast({
       title: 'No Data',
@@ -3281,7 +3190,7 @@ const downloadCSV = (records: CountingRecord[]) => {
     return;
   }
 
-  const csvData = generateCSVData(records);
+  const xlsxData = generateXLSXData(records);
 
   const headers = [
     'Date',
@@ -3323,7 +3232,7 @@ const downloadCSV = (records: CountingRecord[]) => {
   };
 
   // Calculate totals for each class
-  csvData.forEach(row => {
+  xlsxData.forEach(row => {
     const className = row.rowClass; // e.g., "Fuerte Class 1"
     if (summaryTotals[className]) {
       summaryTotals[className].total_4kg += row.total_4kg;
@@ -3338,17 +3247,17 @@ const downloadCSV = (records: CountingRecord[]) => {
     summaryTotals['Hass Class 1'].grand_total + 
     summaryTotals['Hass Class 2'].grand_total;
 
-  const rows = csvData.map((row, index) => {
+  const rows = xlsxData.map((row, index) => {
     const rowNumber = index + 2;
     const totalPriceFormula = `=L${rowNumber}*K${rowNumber}`;
 
-    const telephoneNumber = row.telephone_number ? `"${row.telephone_number}\t"` : '""';
+    const telephoneNumber = row.telephone_number || '';
 
     return [
       row.date,
-      `"${row.supplier_name}"`,
+      row.supplier_name,
       telephoneNumber,
-      `"${row.rowClass}"`,
+      row.rowClass,
       // 4kg sizes (14-26)
       row.size_14_4kg,
       row.size_16_4kg,
@@ -3446,35 +3355,224 @@ const downloadCSV = (records: CountingRecord[]) => {
   ];
 
   // Combine data rows with summary rows
-  const allRows = [...rows, ...summaryRows];
+  const aoa = [headers, ...rows, ...summaryRows];
 
-  const csvContent = [
-    headers.join(','),
-    ...allRows.map(row => row.join(','))
-  ].join('\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.setAttribute('href', url);
-  link.setAttribute('download', `warehouse_export_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Warehouse Export');
+  XLSX.writeFile(workbook, `warehouse_export_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
 
   toast({
-    title: 'CSV Downloaded',
-    description: `${csvData.length} records exported successfully`,
+    title: 'XLS Downloaded',
+    description: `${xlsxData.length} records exported successfully`,
   });
 };
 
-  const downloadAllHistory = () => {
-    downloadCSV(countingRecords);
+  const downloadAllHistory = async () => {
+    const allRecords = await fetchCountingRecords({ limit: 0, offset: 0 });
+    downloadXLSX(allRecords);
   };
 
-  const downloadFilteredHistory = () => {
-    downloadCSV(filteredHistory);
+  const downloadFilteredHistory = async () => {
+    const allRecords = await fetchCountingRecords({ limit: 0, offset: 0 });
+    downloadXLSX(filterHistoryRecords(allRecords));
+  };
+
+  const downloadHistoryPDF = async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+      const allRecords = await fetchCountingRecords({ limit: 0, offset: 0 });
+      const records = filterHistoryRecords(allRecords);
+
+      if (records.length === 0) {
+        toast({
+          title: 'No Data',
+          description: 'No counting history available to download for the selected filters.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const totals = records.reduce((acc, r) => {
+        return {
+          fuerte4kg: acc.fuerte4kg + (r.fuerte_4kg_total || 0),
+          fuerte10kg: acc.fuerte10kg + (r.fuerte_10kg_total || 0),
+          hass4kg: acc.hass4kg + (r.hass_4kg_total || 0),
+          hass10kg: acc.hass10kg + (r.hass_10kg_total || 0),
+          intakeCrates: acc.intakeCrates + (r.intake_total_crates || 0),
+          rejectedCrates: acc.rejectedCrates + (r.rejected_crates || 0),
+          processedCrates: acc.processedCrates + ((r.intake_total_crates || 0) - (r.rejected_crates || 0)),
+        };
+      }, { fuerte4kg: 0, fuerte10kg: 0, hass4kg: 0, hass10kg: 0, intakeCrates: 0, rejectedCrates: 0, processedCrates: 0 });
+
+      const headers = [
+        'Date', 'Time', 'Supplier Name', 'Region',
+        'Fuerte 4kg', 'Fuerte 10kg', 'Hass 4kg', 'Hass 10kg',
+        'Intake Crates', 'Rejected Crates', 'Processed Crates'
+      ];
+
+      const body = records.map(r => [
+        format(new Date(r.submitted_at), 'dd/MM/yyyy'),
+        format(new Date(r.submitted_at), 'HH:mm'),
+        r.supplier_name,
+        r.region,
+        r.fuerte_4kg_total || 0,
+        r.fuerte_10kg_total || 0,
+        r.hass_4kg_total || 0,
+        r.hass_10kg_total || 0,
+        r.intake_total_crates || 0,
+        r.rejected_crates || 0,
+        (r.intake_total_crates || 0) - (r.rejected_crates || 0),
+      ]);
+
+      body.push([
+        'TOTALS', '', '', '',
+        totals.fuerte4kg, totals.fuerte10kg, totals.hass4kg, totals.hass10kg,
+        totals.intakeCrates, totals.rejectedCrates, totals.processedCrates,
+      ]);
+
+      const doc = new jsPDF('l', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const leftMargin = 10;
+
+      const logoPaths = [
+        '/images/HLogo.png',
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico',
+        '/public/favicon.ico'
+      ];
+
+      let hasLogo = false;
+
+      for (const path of logoPaths) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) {
+            const blob = await response.blob();
+            const base64String = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+            const logoWidth = 110;
+            const logoHeightRect = 18;
+            const x = (pageWidth - logoWidth) / 2;
+            doc.addImage(base64String as string, 'PNG', x, 4, logoWidth, logoHeightRect);
+            hasLogo = true;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      const titleY = hasLogo ? 28 : 13;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(120, 120, 120);
+      doc.text('Counting History Report', pageWidth / 2, titleY, { align: 'center' });
+
+      const dividerY = titleY + 5;
+      doc.setDrawColor(120, 120, 120);
+      doc.setLineWidth(0.4);
+      doc.line(leftMargin, dividerY, pageWidth - leftMargin, dividerY);
+
+      let periodLabel = 'All time';
+      if (startDate && endDate) {
+        periodLabel = `${startDate} to ${endDate}`;
+      } else if (startDate) {
+        periodLabel = startDate;
+      }
+
+      const infoBoxTop = dividerY + 5;
+      doc.setFillColor(248, 249, 250);
+      doc.rect(leftMargin, infoBoxTop, pageWidth - 2 * leftMargin, 9, 'F');
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Period: ${periodLabel}`, leftMargin + 2, infoBoxTop + 6);
+      doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth - leftMargin - 2, infoBoxTop + 6, { align: 'right' });
+
+      autoTable(doc, {
+        startY: infoBoxTop + 11,
+        head: [headers],
+        body,
+        theme: 'grid',
+        headStyles: { fillColor: [178, 235, 178], textColor: [33, 63, 33], fontSize: 7, fontStyle: 'bold' },
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 14 },
+          2: { cellWidth: 44 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 16, halign: 'center' },
+          5: { cellWidth: 16, halign: 'center' },
+          6: { cellWidth: 16, halign: 'center' },
+          7: { cellWidth: 16, halign: 'center' },
+          8: { cellWidth: 20, halign: 'center' },
+          9: { cellWidth: 20, halign: 'center' },
+          10: { cellWidth: 22, halign: 'center' },
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.row.index === body.length - 1) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [40, 167, 69];
+            data.cell.styles.textColor = 255;
+          }
+          if (data.column.index === 4 || data.column.index === 8) {
+            doc.setDrawColor(249, 115, 22);
+            doc.setLineWidth(0.8);
+            doc.line(data.cell.x, data.cell.y, data.cell.x, data.cell.y + data.cell.height);
+          }
+        }
+      });
+
+      let finalY = (doc as any).lastAutoTable.finalY + 6;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Total Boxes: ${totals.fuerte4kg + totals.fuerte10kg + totals.hass4kg + totals.hass10kg}`, leftMargin, finalY);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Intake Crates: ${totals.intakeCrates} | Rejected Crates: ${totals.rejectedCrates} | Processed Crates: ${totals.processedCrates}`, leftMargin, finalY + 5);
+      doc.text('Generated by Harir International System', pageWidth / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
+
+      let filename = 'counting_history';
+      if (startDate && endDate) filename += `_${startDate}_to_${endDate}`;
+      else if (startDate) filename += `_${startDate}`;
+      doc.save(`${filename}.pdf`);
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'COUNTING_PDF_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          recordCount: records.length,
+          filename,
+          fileType: 'pdf',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'PDF Downloaded',
+        description: `Counting history has been downloaded as PDF.`,
+      });
+    } catch (error: any) {
+      console.error('Error downloading counting history PDF:', error);
+      toast({
+        title: 'Error Downloading PDF',
+        description: error.message || 'Failed to download PDF. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const downloadWarehouseGRN = async (record: CountingRecord) => {
@@ -3508,6 +3606,97 @@ const downloadCSV = (records: CountingRecord[]) => {
       toast({
         title: 'Error Downloading GRN',
         description: error.message || 'Failed to generate GRN. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const sendGRNToWhatsApp = async (record: CountingRecord) => {
+    try {
+      const phone = record.supplier_phone || '';
+      if (!phone) {
+        toast({
+          title: 'No Phone Number',
+          description: `No WhatsApp number found for ${record.supplier_name}.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const fuerte4kgWeight = (record.fuerte_4kg_total || 0) * 4;
+      const fuerte10kgWeight = (record.fuerte_10kg_total || 0) * 10;
+      const hass4kgWeight = (record.hass_4kg_total || 0) * 4;
+      const hass10kgWeight = (record.hass_10kg_total || 0) * 10;
+      const totalCountedWeight = fuerte4kgWeight + fuerte10kgWeight + hass4kgWeight + hass10kgWeight;
+
+      const caption = [
+        '*GOODS RECEIVED NOTE - BOX COUNTING*',
+        `GRN: WH-${record.id.slice(0, 8).toUpperCase()}`,
+        `Supplier: ${record.supplier_name}`,
+        `Date: ${format(new Date(record.submitted_at), 'dd/MM/yyyy')}  Time: ${format(new Date(record.submitted_at), 'HH:mm')}`,
+        `Region: ${record.region}`,
+        '',
+        `Intake: ${record.intake_total_crates || 0} crates`,
+        `Rejected: ${record.rejected_crates || 0} crates`,
+        `Counted Weight: ${safeToFixed(totalCountedWeight, 2)} kg`,
+        '',
+        `Boxes - Fuerte 4kg: ${record.fuerte_4kg_total || 0} | Fuerte 10kg: ${record.fuerte_10kg_total || 0}`,
+        `Boxes - Hass 4kg: ${record.hass_4kg_total || 0} | Hass 10kg: ${record.hass_10kg_total || 0}`,
+        '',
+        'Generated by Harir International System',
+      ].join('\n');
+
+      const result = (await generateWarehouseGRN(record, { save: false })) as { doc: any; fileName: string };
+      const blob = result.doc.output('blob');
+      const file = new File([blob], result.fileName, { type: 'application/pdf' });
+
+      const formData = new FormData();
+      formData.append('file', file, result.fileName);
+      formData.append('supplierPhone', phone);
+      formData.append('supplierName', record.supplier_name);
+      formData.append('recordId', record.id);
+      formData.append('palletId', record.pallet_id || '');
+      formData.append('filename', result.fileName);
+      formData.append('caption', caption);
+
+      const response = await fetch('/api/whatsapp/send-grn', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const resultJson = await response.json();
+
+      if (!response.ok) {
+        throw new Error(resultJson?.message || resultJson?.error || 'Failed to send GRN via WhatsApp.');
+      }
+
+      const currentUser = await getCurrentUser();
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'GRN_SENT_TO_WHATSAPP',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          supplierId: record.supplier_id,
+          supplierName: record.supplier_name,
+          recordId: record.id,
+          palletId: record.pallet_id,
+          phone,
+          messageId: resultJson?.messageId || '',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'GRN Sent',
+        description: `GRN sent to ${record.supplier_name} on WhatsApp.`,
+      });
+    } catch (error: any) {
+      console.error('Error sending GRN via WhatsApp:', error);
+      toast({
+        title: 'Error Sending GRN',
+        description: error.message || 'Failed to send the GRN. Please try again.',
         variant: 'destructive',
       });
     }
@@ -3865,17 +4054,9 @@ const downloadCSV = (records: CountingRecord[]) => {
     }
   };
 
-  const today = new Date();
-  const todayIntakeRecords = supplierIntakeRecords.filter(record => {
-    const recordDate = new Date(record.timestamp);
-    return isSameDay(recordDate, today);
-  });
-
-  const todayFuerteWeight = todayIntakeRecords.reduce((sum, record) => sum + record.fuerte_weight, 0);
-  const todayHassWeight = todayIntakeRecords.reduce((sum, record) => sum + record.hass_weight, 0);
-  const todayFuerteCrates = todayIntakeRecords.reduce((sum, record) => sum + record.fuerte_crates, 0);
-  const todayHassCrates = todayIntakeRecords.reduce((sum, record) => sum + record.hass_crates, 0);
-  const todayTotalCrates = todayIntakeRecords.reduce((sum, record) => sum + record.total_crates, 0);
+  const loadedTotalIntakeWeight = countingRecords.reduce((sum, r) => sum + (r.total_weight || 0), 0);
+  const loadedTotalRejectedWeight = countingRecords.reduce((sum, r) => sum + (r.rejected_weight || 0), 0);
+  const loadedRejectionRate = loadedTotalIntakeWeight > 0 ? (loadedTotalRejectedWeight / loadedTotalIntakeWeight) * 100 : 0;
 
   return (
     <SidebarProvider>
@@ -3945,167 +4126,6 @@ const downloadCSV = (records: CountingRecord[]) => {
               </button>
             </div>
           </div>
-
-          {/* Statistics Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                Warehouse Statistics Summary
-              </CardTitle>
-              <CardDescription>
-                Real-time statistics from counting history and today's activities
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-gray-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Total Processed</div>
-                    <History className="w-4 h-4 text-blue-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-blue-700">
-                    {stats.total_processed}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    {stats.recent_activity.last_7_days} in last 7 days
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Pending Cold Room</div>
-                    <Package className="w-4 h-4 text-orange-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-orange-700">
-                    {stats.pending_coldroom}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Ready for cold room loading
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Unique Suppliers</div>
-                    <Users className="w-4 h-4 text-green-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-green-700">
-                    {stats.total_suppliers}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Processed suppliers
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-gray-500">Today's Intake</div>
-                    <Truck className="w-4 h-4 text-purple-500" />
-                  </div>
-                  <div className="text-2xl font-bold text-purple-700">
-                    {todayIntakeRecords.length}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    {todayTotalCrates} crates • {todayFuerteWeight + todayHassWeight} kg
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-green-800">Fuerte Avocado Boxes</h4>
-                    <Apple className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-sm text-gray-600">4kg Boxes</div>
-                      <div className="text-2xl font-bold text-green-700">{stats.fuerte_4kg}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">10kg Crates</div>
-                      <div className="text-2xl font-bold text-green-700">{stats.fuerte_10kg}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-green-200">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-green-900">Total Fuerte:</span>
-                      <span className="font-bold text-lg text-green-900">
-                        {stats.fuerte_4kg + stats.fuerte_10kg} boxes/crates
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-purple-800">Hass Avocado Boxes</h4>
-                    <Apple className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-sm text-gray-600">4kg Boxes</div>
-                      <div className="text-2xl font-bold text-purple-700">{stats.hass_4kg}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">10kg Crates</div>
-                      <div className="text-2xl font-bold text-purple-700">{stats.hass_10kg}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-purple-200">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-purple-900">Total Hass:</span>
-                      <span className="font-bold text-lg text-purple-900">
-                        {stats.hass_4kg + stats.hass_10kg} boxes/crates
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {stats.weight_summary && (
-                <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
-                    <Scale className="w-5 h-5" />
-                    Weight & Crate Summary
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                    <div>
-                      <div className="text-sm text-gray-600">Total Intake Weight</div>
-                      <div className="text-xl font-bold text-blue-700">
-                        {safeToFixed(stats.weight_summary.total_intake_weight, 1)} kg
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">Total Intake Crates</div>
-                      <div className="text-xl font-bold text-blue-700">
-                        {stats.weight_summary.total_intake_crates || 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">Total Counted Weight</div>
-                      <div className="text-xl font-bold text-blue-700">
-                        {safeToFixed(stats.weight_summary.total_counted_weight, 1)} kg
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">Total Rejected Weight</div>
-                      <div className="text-xl font-bold text-orange-700">
-                        {safeToFixed(stats.weight_summary.total_rejected_weight, 1)} kg
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">Total Rejected Crates</div>
-                      <div className="text-xl font-bold text-orange-700">
-                        {stats.weight_summary.total_rejected_crates || 0}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>
@@ -5241,6 +5261,15 @@ const downloadCSV = (records: CountingRecord[]) => {
                     </div>
                     <div className="flex gap-2">
                       <Button
+                        onClick={downloadHistoryPDF}
+                        disabled={filteredHistory.length === 0 || isLoading.counting}
+                        variant="outline"
+                        className="gap-2"
+                      >
+                        <FileDown className="w-4 h-4" />
+                        Export PDF
+                      </Button>
+                      <Button
                         onClick={downloadFilteredHistory}
                         disabled={filteredHistory.length === 0 || isLoading.counting}
                         className="gap-2"
@@ -5345,7 +5374,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                     
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-muted-foreground">
-                        Showing {filteredHistory.length} of {countingRecords.length} records
+                        Showing {filteredHistory.length} of {countingTotal || countingRecords.length} records
                         {(startDate || endDate) && ' • Date filter applied'}
                         {searchTerm && ' • Search filter applied'}
                       </div>
@@ -5427,6 +5456,18 @@ const downloadCSV = (records: CountingRecord[]) => {
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap justify-end items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      title="Send GRN via WhatsApp"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        await sendGRNToWhatsApp(record);
+                                      }}
+                                      className="gap-2 whitespace-nowrap text-green-600 border-green-600 hover:bg-green-50"
+                                    >
+                                      <MessageCircle className="w-4 h-4" />
+                                    </Button>
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -5596,12 +5637,12 @@ const downloadCSV = (records: CountingRecord[]) => {
                                     </div>
                                   </div>
 
-                                  {(record.rejected_weight || record.rejected_crates || 0) > 0 && (
-                                    <div className="bg-black-50 p-4 rounded-lg border border-red-200">
-                                      <h4 className="font-semibold text-red-800 mb-3 flex items-center gap-2">
-                                        <AlertTriangle className="w-5 h-5" />
-                                        Rejection Details
-                                      </h4>
+                                  <div className="bg-black-50 p-4 rounded-lg border border-red-200">
+                                    <h4 className="font-semibold text-red-800 mb-3 flex items-center gap-2">
+                                      <AlertTriangle className="w-5 h-5" />
+                                      Rejection Details
+                                    </h4>
+                                    {(record.rejected_weight || record.rejected_crates || 0) > 0 ? (
                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
                                           <div className="text-sm text-gray-600">Rejected Weight</div>
@@ -5625,14 +5666,18 @@ const downloadCSV = (records: CountingRecord[]) => {
                                           </div>
                                         )}
                                       </div>
-                                      {record.rejection_notes && (
-                                        <div className="mt-3 pt-3 border-t border-red-200">
-                                          <div className="text-sm text-gray-600">Notes</div>
-                                          <div className="text-sm">{record.rejection_notes}</div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
+                                    ) : (
+                                      <div className="text-sm text-gray-600 italic">
+                                        None - No reject has been added for this delivery.
+                                      </div>
+                                    )}
+                                    {record.rejection_notes && (
+                                      <div className="mt-3 pt-3 border-t border-red-200">
+                                        <div className="text-sm text-gray-600">Notes</div>
+                                        <div className="text-sm">{record.rejection_notes}</div>
+                                      </div>
+                                    )}
+                                  </div>
 
                                   <div className="bg-black-50 p-4 rounded-lg">
                                     <h4 className="font-semibold mb-3">Variety Breakdown</h4>
@@ -5701,6 +5746,16 @@ const downloadCSV = (records: CountingRecord[]) => {
 
                                   <div className="flex justify-between pt-4 border-t">
                                     <Button
+                                      onClick={async () => {
+                                        await sendGRNToWhatsApp(record);
+                                      }}
+                                      variant="outline"
+                                      className="gap-2 text-green-600 border-green-600 hover:bg-green-50"
+                                    >
+                                      <MessageCircle className="w-4 h-4" />
+                                      Send GRN via WhatsApp
+                                    </Button>
+                                    <Button
                                       onClick={() => handleEditCountingRecord(record)}
                                       className="gap-2"
                                     >
@@ -5725,6 +5780,33 @@ const downloadCSV = (records: CountingRecord[]) => {
                       </div>
                     )}
                   </ScrollArea>
+
+                  {countingRecords.length > 0 && countingTotal > countingRecords.length && (
+                    <div className="mt-4 flex flex-col items-center gap-2">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {countingRecords.length} of {countingTotal} records
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={loadMoreCountingRecords}
+                        disabled={isLoadingMore}
+                        className="gap-2"
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            Load More
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -6059,7 +6141,7 @@ const downloadCSV = (records: CountingRecord[]) => {
                           </div>
                           <div className="text-center">
                             <div className="text-2xl font-bold text-red-700">
-                              {stats.weight_summary ? safeToFixed((stats.weight_summary.total_rejected_weight / stats.weight_summary.total_intake_weight) * 100, 2) : '0'}%
+                              {safeToFixed(loadedRejectionRate, 2)}%
                             </div>
                             <div className="text-sm text-gray-600">Average Rejection Rate</div>
                           </div>

@@ -80,11 +80,13 @@ import {
   Database,
   Calendar,
   User,
-  Apple
+  Apple,
+  Unlock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import * as XLSX from 'xlsx';
 
 // Define permission types
 type Permission = {
@@ -104,12 +106,23 @@ type UserRole = {
   createdAt: Date;
   updatedAt: Date;
   userCount?: number;
+  users?: RoleUser[];
+};
+
+type RoleUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  lastLogin: Date | null;
+  createdAt: Date;
 };
 
 type UserWithRole = {
   id: string;
   email: string;
   name: string | null;
+  phone: string | null;
   role: {
     id: string;
     name: string;
@@ -118,6 +131,7 @@ type UserWithRole = {
   lastLogin: Date | null;
   createdAt: Date;
   loginAttempts: number;
+  lockedUntil: Date | null;
   twoFactorEnabled: boolean;
   password?: string;
 };
@@ -163,10 +177,10 @@ const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'employees.create', name: 'Create Employees', description: 'Add new employees to the system', category: 'HR', icon: UserPlus },
   { id: 'employees.edit', name: 'Edit Employees', description: 'Edit existing employee information', category: 'HR', icon: Edit },
   { id: 'employees.delete', name: 'Delete Employees', description: 'Remove employees from the system', category: 'HR', icon: Trash2 },
-  { id: 'employees.export', name: 'Export Employee Data', description: 'Export employee lists to CSV/Excel', category: 'HR', icon: Download },
-  { id: 'employees.import', name: 'Import Employee Data', description: 'Import employees from CSV/Excel', category: 'HR', icon: Upload },
+  { id: 'employees.export', name: 'Export Employee Data', description: 'Export employee lists to Excel', category: 'HR', icon: Download },
+  { id: 'employees.import', name: 'Import Employee Data', description: 'Import employees from Excel', category: 'HR', icon: Upload },
   { id: 'employees.attendance.view', name: 'View Attendance Log', description: 'View attendance history and records', category: 'HR', icon: Calendar },
-  { id: 'employees.attendance.export', name: 'Export Attendance Data', description: 'Export attendance records to CSV/Excel', category: 'HR', icon: Download },
+  { id: 'employees.attendance.export', name: 'Export Attendance Data', description: 'Export attendance records to Excel', category: 'HR', icon: Download },
   { id: 'employees.attendance.edit', name: 'Edit Attendance Records', description: 'Edit existing attendance records', category: 'HR', icon: Edit },
   { id: 'employees.attendance.delete', name: 'Delete Attendance Records', description: 'Delete attendance records', category: 'HR', icon: Trash2 },
   { id: 'employees.attendance.reports', name: 'Generate Attendance Reports', description: 'Generate detailed attendance reports', category: 'HR', icon: FileText },
@@ -470,7 +484,11 @@ export default function UserRolesPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRoleDetailsDialog, setShowRoleDetailsDialog] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [roleDetails, setRoleDetails] = useState<(UserRole & { users?: RoleUser[] }) | null>(null);
+  const [roleDetailsLoading, setRoleDetailsLoading] = useState(false);
+  const [duplicateSource, setDuplicateSource] = useState<UserRole | null>(null);
   
   // Form states
   const [roleName, setRoleName] = useState('');
@@ -489,13 +507,26 @@ export default function UserRolesPage() {
   const [userAssignments, setUserAssignments] = useState<UserAssignmentState[]>([]);
   const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
   const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
+  const [showEditUserDialog, setShowEditUserDialog] = useState(false);
+  const [showDeleteUserDialog, setShowDeleteUserDialog] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserWithRole | null>(null);
+  const [deletingUser, setDeletingUser] = useState<UserWithRole | null>(null);
   
   // New user creation form states
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserName, setNewUserName] = useState('');
+  const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRoleId, setNewUserRoleId] = useState<string>('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Edit user form states
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserPhone, setEditUserPhone] = useState('');
+  const [editUserRoleId, setEditUserRoleId] = useState<string>('');
+  const [editUserPassword, setEditUserPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   // Get current user
   useEffect(() => {
@@ -520,11 +551,15 @@ export default function UserRolesPage() {
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/user-roles');
+      const response = await fetch('/api/user-roles?includeUserCount=true');
       
       if (response.ok) {
         const data = await response.json();
-        setRoles(data.roles || []);
+        const rolesWithCounts = (data.roles || []).map((role: any) => ({
+          ...role,
+          userCount: role._count?.users ?? role.userCount ?? 0,
+        }));
+        setRoles(rolesWithCounts);
       } else {
         console.error('Failed to fetch roles');
         toast.error('Failed to load user roles');
@@ -723,6 +758,7 @@ export default function UserRolesPage() {
         body: JSON.stringify({
           email: newUserEmail,
           name: newUserName,
+          phone: newUserPhone || null,
           password: newUserPassword,
           roleId: roleIdToAssign,
         }),
@@ -781,6 +817,172 @@ export default function UserRolesPage() {
           timestamp: new Date().toISOString(),
         },
       });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Save updated user (edit dialog)
+  const saveEditUser = async () => {
+    if (!editingUser) return;
+    if (!editUserEmail.trim() || !editUserName.trim()) {
+      toast.error('Please fill all required fields');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const response = await fetch(`/api/user-roles/users/${editingUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: editUserEmail,
+          name: editUserName,
+          phone: editUserPhone || null,
+          roleId: editUserRoleId === 'no-role' ? null : editUserRoleId || null,
+          password: editUserPassword || null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success(result.message || 'User updated successfully');
+
+        // ✅ LOG USER UPDATE
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'USER_UPDATED',
+          status: 'success',
+          metadata: {
+            updatedBy: currentUser?.id,
+            updatedUserId: editingUser.id,
+            userEmail: editUserEmail,
+            userName: editUserName,
+            phoneChanged: editUserPhone !== editingUser.phone,
+            passwordChanged: !!editUserPassword,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        setShowEditUserDialog(false);
+        setEditingUser(null);
+        fetchUsers();
+      } else {
+        throw new Error(result.error || 'Failed to update user');
+      }
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      toast.error(error.message || 'Failed to update user');
+
+      // ✅ LOG USER UPDATE FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'USER_UPDATED',
+        status: 'failure',
+        metadata: {
+          updatedBy: currentUser?.id,
+          updatedUserId: editingUser.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Delete selected user with confirmation
+  const deleteSelectedUser = async () => {
+    if (!deletingUser) return;
+
+    try {
+      setSaving(true);
+      const response = await fetch(`/api/user-roles/users/${deletingUser.id}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success(result.message || 'User deleted successfully');
+
+        // ✅ LOG USER DELETION
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'USER_DELETED',
+          status: 'success',
+          metadata: {
+            deletedBy: currentUser?.id,
+            deletedUserId: deletingUser.id,
+            userEmail: deletingUser.email,
+            userName: deletingUser.name,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        setShowDeleteUserDialog(false);
+        setDeletingUser(null);
+        fetchUsers();
+      } else {
+        throw new Error(result.error || 'Failed to delete user');
+      }
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast.error(error.message || 'Failed to delete user');
+
+      // ✅ LOG USER DELETION FAILURE
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'USER_DELETED',
+        status: 'failure',
+        metadata: {
+          deletedBy: currentUser?.id,
+          deletedUserId: deletingUser.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Unlock a locked user account
+  const unlockUser = async (user: UserWithRole) => {
+    try {
+      setSaving(true);
+      const response = await fetch(`/api/user-roles/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unlock: true }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success(`Account ${user.name || user.email} unlocked`);
+
+        // ✅ LOG USER UNLOCK
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'USER_UNLOCKED',
+          status: 'success',
+          metadata: {
+            unlockedBy: currentUser?.id,
+            unlockedUserId: user.id,
+            userEmail: user.email,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        fetchUsers();
+      } else {
+        throw new Error(result.error || 'Failed to unlock account');
+      }
+    } catch (error: any) {
+      console.error('Error unlocking user:', error);
+      toast.error(error.message || 'Failed to unlock account');
     } finally {
       setSaving(false);
     }
@@ -926,6 +1128,7 @@ export default function UserRolesPage() {
         });
         
         setShowCreateDialog(false);
+        setDuplicateSource(null);
         resetForm();
         fetchRoles();
       } else {
@@ -1097,6 +1300,167 @@ export default function UserRolesPage() {
     setShowDeleteDialog(true);
   };
 
+  // Open role details dialog with member users
+  const openRoleDetails = async (role: UserRole) => {
+    setSelectedRole(role);
+    setRoleDetails(null);
+    setRoleDetailsLoading(true);
+    setShowRoleDetailsDialog(true);
+    try {
+      const response = await fetch(`/api/user-roles/${role.id}?includeUsers=true`);
+      if (response.ok) {
+        const data = await response.json();
+        const roleWithDetails = {
+          ...role,
+          ...data.role,
+          permissions: data.role.permissions || role.permissions,
+          userCount: data.role._count?.users ?? role.userCount ?? 0,
+        };
+        setRoleDetails(roleWithDetails);
+      } else {
+        toast.error('Failed to load role details');
+      }
+    } catch (error) {
+      console.error('Error fetching role details:', error);
+      toast.error('Failed to load role details');
+    } finally {
+      setRoleDetailsLoading(false);
+    }
+  };
+
+  // Toggle a role as default directly from the table
+  const toggleDefaultRole = async (role: UserRole) => {
+    try {
+      setSaving(true);
+      const response = await fetch(`/api/user-roles/${role.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isDefault: !role.isDefault }),
+      });
+
+      if (response.ok) {
+        toast.success(
+          role.isDefault
+            ? `"${role.name}" is no longer the default role`
+            : `"${role.name}" set as default role`
+        );
+
+        // ✅ LOG DEFAULT ROLE CHANGE
+        await logActivity({
+          user: currentUser?.name || 'System',
+          action: 'DEFAULT_ROLE_CHANGED',
+          status: 'success',
+          metadata: {
+            changedBy: currentUser?.id,
+            roleId: role.id,
+            roleName: role.name,
+            isDefault: !role.isDefault,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        fetchRoles();
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update default role');
+      }
+    } catch (error: any) {
+      console.error('Error toggling default role:', error);
+      toast.error(error.message || 'Failed to update default role');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Duplicate a role: prefill create dialog with source role's details
+  const duplicateRole = (role: UserRole) => {
+    setDuplicateSource(role);
+    setRoleName(`${role.name} (Copy)`);
+    setRoleDescription(role.description || '');
+    setSelectedPermissions(role.permissions);
+    setIsDefaultRole(false);
+    setPermissionSearch('');
+    setShowCreateDialog(true);
+  };
+
+  // Jump to the Users tab filtered by a role
+  const goToRoleUsers = (role: UserRole) => {
+    setSelectedRoleFilter(role.id);
+    setActiveTab('users');
+  };
+
+  // Export users as XLSX with logging
+  const exportUsersAsXLSX = () => {
+    const headers = ['Name', 'Email', 'Phone', 'Role', 'Last Login', 'Status', 'Created At'];
+    const rows = users.map(user => [
+      user.name || '',
+      user.email,
+      user.phone || '',
+      user.role?.name || 'Unassigned',
+      user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never',
+      user.loginAttempts > 3 ? 'Locked' : 'Active',
+      new Date(user.createdAt).toLocaleDateString(),
+    ]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Users');
+    XLSX.writeFile(workbook, `user-roles-users-${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    toast.success('Users exported as Excel');
+
+    // ✅ LOG EXPORT
+    logActivity({
+      user: currentUser?.name || 'System',
+      action: 'USERS_EXPORTED',
+      status: 'success',
+      metadata: {
+        exportedBy: currentUser?.id,
+        userCount: users.length,
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(console.error);
+  };
+
+  // Role details helper: expand permission details with icons/categories
+  const getRolePermissionDetails = (permissionIds: string[]) => {
+    return DEFAULT_PERMISSIONS.filter(p => permissionIds.includes(p.id));
+  };
+
+  // Overview stats for the page header
+  const overviewStats = [
+    {
+      label: 'Total Roles',
+      count: roles.length,
+      icon: Shield,
+      color: 'text-primary',
+    },
+    {
+      label: 'Total Users',
+      count: users.length,
+      icon: Users,
+      color: 'text-blue-600',
+    },
+    {
+      label: 'Assigned Users',
+      count: users.filter(u => u.role).length,
+      icon: CheckCircle,
+      color: 'text-green-600',
+    },
+    {
+      label: 'Unassigned Users',
+      count: users.filter(u => !u.role).length,
+      icon: UserMinus,
+      color: 'text-amber-600',
+    },
+    {
+      label: 'Locked Accounts',
+      count: users.filter(u => u.loginAttempts > 3).length,
+      icon: ShieldAlert,
+      color: 'text-red-600',
+    },
+  ];
+
   // Reset form
   const resetForm = () => {
     setRoleName('');
@@ -1111,9 +1475,28 @@ export default function UserRolesPage() {
   const resetNewUserForm = () => {
     setNewUserEmail('');
     setNewUserName('');
+    setNewUserPhone('');
     setNewUserPassword('');
     setNewUserRoleId('');
     setShowPassword(false);
+  };
+
+  // Open edit user dialog with existing values
+  const openEditUserDialog = (user: UserWithRole) => {
+    setEditingUser(user);
+    setEditUserEmail(user.email);
+    setEditUserName(user.name || '');
+    setEditUserPhone(user.phone || '');
+    setEditUserRoleId(user.role?.id || '');
+    setEditUserPassword('');
+    setShowEditPassword(false);
+    setShowEditUserDialog(true);
+  };
+
+  // Open delete user confirmation
+  const openDeleteUserDialog = (user: UserWithRole) => {
+    setDeletingUser(user);
+    setShowDeleteUserDialog(true);
   };
 
   // Toggle user selection
@@ -1219,21 +1602,13 @@ export default function UserRolesPage() {
   const filteredUsers = users.filter(user => {
     const matchesSearch = 
       user.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-      (user.name && user.name.toLowerCase().includes(userSearch.toLowerCase()));
+      (user.name && user.name.toLowerCase().includes(userSearch.toLowerCase())) ||
+      (user.phone && user.phone.toLowerCase().includes(userSearch.toLowerCase()));
     
     if (selectedRoleFilter === 'all') return matchesSearch;
     if (selectedRoleFilter === 'unassigned') return matchesSearch && !user.role;
     return matchesSearch && user.role?.id === selectedRoleFilter;
   });
-
-  // Get category counts for roles
-  const getRoleCountByCategory = () => {
-    return [
-      { category: 'Administrative', count: roles.filter(r => r.isDefault).length },
-      { category: 'Custom', count: roles.filter(r => !PREDEFINED_ROLES.some(pr => pr.name === r.name)).length },
-      { category: 'Total', count: roles.length }
-    ];
-  };
 
   // Copy role permissions as JSON with logging
   const copyPermissionsAsJson = (role: UserRole) => {
@@ -1265,8 +1640,8 @@ export default function UserRolesPage() {
     }).catch(console.error);
   };
 
-  // Export roles as CSV with logging
-  const exportRolesAsCSV = () => {
+  // Export roles as XLSX with logging
+  const exportRolesAsXLSX = () => {
     const headers = ['Role Name', 'Description', 'Permissions Count', 'Default Role', 'Created At', 'Updated At'];
     const rows = roles.map(role => [
       role.name,
@@ -1276,22 +1651,13 @@ export default function UserRolesPage() {
       new Date(role.createdAt).toLocaleDateString(),
       new Date(role.updatedAt).toLocaleDateString()
     ]);
-    
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `user-roles-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    
-    toast.success('Roles exported as CSV');
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'User Roles');
+    XLSX.writeFile(workbook, `user-roles-${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    toast.success('Roles exported as Excel');
     
     // ✅ LOG EXPORT
     logActivity({
@@ -1309,6 +1675,7 @@ export default function UserRolesPage() {
   // Load data on component mount
   useEffect(() => {
     fetchRoles();
+    fetchUsers();
   }, []);
 
   // Load users when tab changes to user assignment
@@ -1336,7 +1703,7 @@ export default function UserRolesPage() {
       <SidebarInset>
         <Header />
         <main className="p-4 md:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="space-y-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -1351,14 +1718,17 @@ export default function UserRolesPage() {
               <div className="flex items-center gap-2">
                 <Button 
                   variant="outline" 
-                  onClick={exportRolesAsCSV}
+                  onClick={exportRolesAsXLSX}
                   disabled={roles.length === 0}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Export CSV
+                  Export Excel
                 </Button>
                 <Button 
-                  onClick={() => setShowCreateDialog(true)}
+                  onClick={() => {
+                    setDuplicateSource(null);
+                    setShowCreateDialog(true);
+                  }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   New Role
@@ -1367,12 +1737,17 @@ export default function UserRolesPage() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {getRoleCountByCategory().map((stat) => (
-                <Card key={stat.category}>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {overviewStats.map((stat) => (
+                <Card key={stat.label}>
                   <CardContent className="p-4">
-                    <div className="text-2xl font-bold">{stat.count}</div>
-                    <div className="text-sm text-muted-foreground">{stat.category} Roles</div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-2xl font-bold">{stat.count}</div>
+                        <div className="text-sm text-muted-foreground">{stat.label}</div>
+                      </div>
+                      <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -1467,7 +1842,10 @@ export default function UserRolesPage() {
                           </Button>
                           <Button 
                             variant="outline" 
-                            onClick={() => setShowCreateDialog(true)}
+                            onClick={() => {
+                              setDuplicateSource(null);
+                              setShowCreateDialog(true);
+                            }}
                           >
                             <Plus className="h-4 w-4 mr-2" />
                             Create First Role
@@ -1499,6 +1877,7 @@ export default function UserRolesPage() {
                               <TableHead>Role Name</TableHead>
                               <TableHead>Description</TableHead>
                               <TableHead>Permissions</TableHead>
+                              <TableHead>Users</TableHead>
                               <TableHead>Default</TableHead>
                               <TableHead>Created</TableHead>
                               <TableHead className="text-right">Actions</TableHead>
@@ -1544,17 +1923,50 @@ export default function UserRolesPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  {role.isDefault ? (
-                                    <Badge className="bg-green-100 text-green-800">Default</Badge>
-                                  ) : (
-                                    <Badge variant="outline">Custom</Badge>
-                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="gap-1 px-2 h-6"
+                                    onClick={() => goToRoleUsers(role)}
+                                    title="View users with this role"
+                                  >
+                                    <Users className="h-3.5 w-3.5" />
+                                    <span className="font-medium">{role.userCount ?? 0}</span>
+                                  </Button>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Switch
+                                      checked={role.isDefault}
+                                      onCheckedChange={() => toggleDefaultRole(role)}
+                                      disabled={saving}
+                                    />
+                                    <Badge variant={role.isDefault ? 'default' : 'outline'}>
+                                      {role.isDefault ? 'Default' : 'Custom'}
+                                    </Badge>
+                                  </div>
                                 </TableCell>
                                 <TableCell>
                                   {new Date(role.createdAt).toLocaleDateString()}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openRoleDetails(role)}
+                                      title="View role details"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => duplicateRole(role)}
+                                      title="Duplicate role"
+                                    >
+                                      <Copy className="h-4 w-4" />
+                                    </Button>
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -1635,7 +2047,15 @@ export default function UserRolesPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="flex items-end gap-2">
+                      <div className="flex items-end gap-2 flex-wrap">
+                        <Button 
+                          variant="outline" 
+                          onClick={exportUsersAsXLSX}
+                          disabled={users.length === 0}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Export
+                        </Button>
                         <Button 
                           variant="outline" 
                           onClick={fetchUsers}
@@ -1747,6 +2167,7 @@ export default function UserRolesPage() {
                                   </div>
                                 </TableHead>
                                 <TableHead>User</TableHead>
+                                <TableHead>Phone</TableHead>
                                 <TableHead>Current Role</TableHead>
                                 <TableHead>Assign Role</TableHead>
                                 <TableHead>Last Login</TableHead>
@@ -1772,6 +2193,13 @@ export default function UserRolesPage() {
                                         <div className="font-medium">{user.name || 'No name'}</div>
                                         <div className="text-sm text-muted-foreground">{user.email}</div>
                                       </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      {user.phone ? (
+                                        <span className="text-sm">{user.phone}</span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
                                     </TableCell>
                                     <TableCell>
                                       {user.role ? (
@@ -1843,28 +2271,62 @@ export default function UserRolesPage() {
                                       </div>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => {
-                                          const assignment = userAssignments.find(a => a.userId === user.id);
-                                          if (assignment?.newRoleId !== assignment?.currentRoleId) {
-                                            assignRoleToUser(user.id, assignment?.newRoleId || null);
-                                          }
-                                        }}
-                                        disabled={
-                                          saving || 
-                                          assignment?.newRoleId === assignment?.currentRoleId
-                                        }
-                                      >
-                                        {saving ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : assignment?.newRoleId !== assignment?.currentRoleId ? (
-                                          'Save'
-                                        ) : (
-                                          <Check className="h-4 w-4 text-green-600" />
+                                      <div className="flex items-center justify-end gap-1">
+                                        {user.loginAttempts > 3 && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                            onClick={() => unlockUser(user)}
+                                            disabled={saving}
+                                            title="Unlock account"
+                                          >
+                                            <Unlock className="h-4 w-4" />
+                                          </Button>
                                         )}
-                                      </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 px-2"
+                                          onClick={() => openEditUserDialog(user)}
+                                          disabled={saving}
+                                          title="Edit user"
+                                        >
+                                          <Edit className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 px-2 text-destructive hover:text-destructive hover:bg-red-50"
+                                          onClick={() => openDeleteUserDialog(user)}
+                                          disabled={saving}
+                                          title="Delete user"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            const assignment = userAssignments.find(a => a.userId === user.id);
+                                            if (assignment?.newRoleId !== assignment?.currentRoleId) {
+                                              assignRoleToUser(user.id, assignment?.newRoleId || null);
+                                            }
+                                          }}
+                                          disabled={
+                                            saving || 
+                                            assignment?.newRoleId === assignment?.currentRoleId
+                                          }
+                                        >
+                                          {saving ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : assignment?.newRoleId !== assignment?.currentRoleId ? (
+                                            'Save'
+                                          ) : (
+                                            <Check className="h-4 w-4 text-green-600" />
+                                          )}
+                                        </Button>
+                                      </div>
                                     </TableCell>
                                   </TableRow>
                                 );
@@ -2047,13 +2509,171 @@ export default function UserRolesPage() {
         </main>
       </SidebarInset>
 
+      {/* Role Details Dialog */}
+      <Dialog open={showRoleDetailsDialog} onOpenChange={setShowRoleDetailsDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Role Details
+            </DialogTitle>
+            <DialogDescription>
+              View role information, permissions and assigned users.
+            </DialogDescription>
+          </DialogHeader>
+
+          {roleDetailsLoading ? (
+            <div className="flex items-center justify-center h-48">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : !roleDetails ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No details available for this role.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-xl font-semibold flex items-center gap-2">
+                    {roleDetails.name}
+                    {roleDetails.isDefault && (
+                      <Badge className="bg-green-100 text-green-800">Default</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {roleDetails.description || 'No description provided.'}
+                  </p>
+                </div>
+                <Badge variant="outline" className="gap-1">
+                  <Users className="h-3 w-3" />
+                  {roleDetails.userCount ?? roleDetails.users?.length ?? 0} user(s)
+                </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Permissions ({roleDetails.permissions.length})</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => copyPermissionsAsJson(roleDetails)}
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      Copy JSON
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => duplicateRole(roleDetails)}
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      Duplicate
+                    </Button>
+                  </div>
+                </div>
+                <ScrollArea className="h-40 border rounded-md p-4">
+                  <div className="flex flex-wrap gap-2">
+                    {getRolePermissionDetails(roleDetails.permissions).map((permission) => {
+                      const IconComponent = permission.icon || Key;
+                      return (
+                        <Badge key={permission.id} variant="outline" className="gap-1 py-1">
+                          <IconComponent className="h-3 w-3" />
+                          {permission.name}
+                        </Badge>
+                      );
+                    })}
+                    {roleDetails.permissions.length === 0 && (
+                      <span className="text-sm text-muted-foreground">
+                        No permissions assigned to this role.
+                      </span>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Assigned Users ({roleDetails.users?.length ?? 0})</Label>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Last Login</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {roleDetails.users && roleDetails.users.length > 0 ? (
+                        roleDetails.users.map((member) => (
+                          <TableRow key={member.id}>
+                            <TableCell className="font-medium">
+                              {member.name || 'No name'}
+                            </TableCell>
+                            <TableCell className="text-sm">{member.email}</TableCell>
+                            <TableCell className="text-sm">
+                              {member.phone || '—'}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {member.lastLogin
+                                ? new Date(member.lastLogin).toLocaleString()
+                                : 'Never'}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                            No users assigned to this role yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            {roleDetails && (
+              <Button
+                variant="outline"
+                className="mr-auto"
+                onClick={() => goToRoleUsers(roleDetails)}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Go to Users
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRoleDetailsDialog(false);
+                setRoleDetails(null);
+                setSelectedRole(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Role Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Create New Role</DialogTitle>
+            <DialogTitle>
+              {duplicateSource ? `Duplicate Role: ${duplicateSource.name}` : 'Create New Role'}
+            </DialogTitle>
             <DialogDescription>
-              Define a new user role with specific permissions.
+              {duplicateSource
+                ? 'This will create a new role with the same permissions as the source role. Adjust the details below and click Create.'
+                : 'Define a new user role with specific permissions.'}
             </DialogDescription>
           </DialogHeader>
           
@@ -2150,6 +2770,7 @@ export default function UserRolesPage() {
               variant="outline"
               onClick={() => {
                 setShowCreateDialog(false);
+                setDuplicateSource(null);
                 resetForm();
               }}
             >
@@ -2351,7 +2972,7 @@ export default function UserRolesPage() {
           <DialogHeader>
             <DialogTitle>Create New User</DialogTitle>
             <DialogDescription>
-              Add a new user account with email and password
+              Add a new user account with email, phone and password
             </DialogDescription>
           </DialogHeader>
           
@@ -2376,6 +2997,17 @@ export default function UserRolesPage() {
                 value={newUserName}
                 onChange={(e) => setNewUserName(e.target.value)}
                 required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="user-phone">Phone Number</Label>
+              <Input
+                id="user-phone"
+                type="tel"
+                placeholder="+254 712 345 678"
+                value={newUserPhone}
+                onChange={(e) => setNewUserPhone(e.target.value)}
               />
             </div>
             
@@ -2456,6 +3088,192 @@ export default function UserRolesPage() {
                 </>
               ) : (
                 'Create User'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={showEditUserDialog} onOpenChange={setShowEditUserDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update user details{editingUser?.role?.name ? ` for ${editingUser.role.name}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-user-email">Email Address *</Label>
+              <Input
+                id="edit-user-email"
+                type="email"
+                placeholder="user@example.com"
+                value={editUserEmail}
+                onChange={(e) => setEditUserEmail(e.target.value)}
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-user-name">Full Name *</Label>
+              <Input
+                id="edit-user-name"
+                placeholder="John Doe"
+                value={editUserName}
+                onChange={(e) => setEditUserName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-user-phone">Phone Number</Label>
+              <Input
+                id="edit-user-phone"
+                type="tel"
+                placeholder="+254 712 345 678"
+                value={editUserPhone}
+                onChange={(e) => setEditUserPhone(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-user-password">New Password</Label>
+              <div className="relative">
+                <Input
+                  id="edit-user-password"
+                  type={showEditPassword ? "text" : "password"}
+                  placeholder="Leave blank to keep current password"
+                  value={editUserPassword}
+                  onChange={(e) => setEditUserPassword(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowEditPassword(!showEditPassword)}
+                >
+                  {showEditPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Must be at least 6 characters if changed
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-user-role">Assign Role</Label>
+              <Select 
+                value={editUserRoleId} 
+                onValueChange={setEditUserRoleId}
+              >
+                <SelectTrigger id="edit-user-role">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no-role">No Role (Unassign)</SelectItem>
+                  {roles.map(role => (
+                    <SelectItem key={role.id} value={role.id}>
+                      <div className="flex items-center gap-2">
+                        {role.name}
+                        {role.name === 'Gate Security' && (
+                          <DoorOpen className="h-3 w-3 text-blue-500" />
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowEditUserDialog(false);
+                setEditingUser(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={saveEditUser}
+              disabled={saving || !editUserEmail || !editUserName}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog open={showDeleteUserDialog} onOpenChange={setShowDeleteUserDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this user? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {deletingUser && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <div className="font-medium text-red-700">
+                    {deletingUser.name || 'No name'}
+                  </div>
+                  <div className="text-red-600">
+                    {deletingUser.email}
+                  </div>
+                  {deletingUser.role && (
+                    <div className="mt-1 text-xs text-red-500">
+                      Role: {deletingUser.role.name}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteUserDialog(false);
+                setDeletingUser(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={deleteSelectedUser}
+              disabled={saving}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete User'
               )}
             </Button>
           </DialogFooter>

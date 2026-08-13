@@ -56,6 +56,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import * as XLSX from 'xlsx';
 
 // Define types based on your database schema
 interface DatabaseShipment {
@@ -1009,18 +1010,17 @@ function LoadingSheet() {
 
   const handleDownload = async () => {
     try {
-      const element = document.createElement('a');
-      const text = generateCSV();
-      element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(text));
-      element.setAttribute('download', `loading-sheet-${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+      const worksheet = XLSX.utils.aoa_to_sheet(generateSheetData());
+      worksheet['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 18 }, { wch: 22 }];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Loading Sheet');
+      XLSX.writeFile(workbook, `loading-sheet-${new Date().toISOString().split('T')[0]}.xlsx`);
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
@@ -1032,17 +1032,17 @@ function LoadingSheet() {
           totalPallets: sheetData.pallets.length,
           totalBoxes: totals.totalBoxes,
           totalWeight: totals.totalWeight,
-          fileType: 'csv',
+          fileType: 'xlsx',
           timestamp: new Date().toISOString(),
         },
       });
     } catch (error: any) {
-      console.error('Error downloading loading sheet CSV:', error);
+      console.error('Error downloading loading sheet Excel:', error);
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -1052,7 +1052,7 @@ function LoadingSheet() {
         },
       });
 
-      toast.error('Failed to download loading sheet CSV');
+      toast.error('Failed to download loading sheet Excel');
     }
   };
 
@@ -1273,30 +1273,30 @@ function LoadingSheet() {
     }
   };
 
-  const generateCSV = () => {
-    const headers = ['LOADING SHEET\n\n'];
-    headers.push(`EXPORTER,${sheetData.exporter || defaultData.exporter},LOADING DATE,${sheetData.loadingDate}`);
-    headers.push(`CLIENT,${sheetData.client || ''},VESSEL,${sheetData.vessel || ''}`);
-    headers.push(`SHIPPING LINE,${sheetData.shippingLine || ''},ETA MSA,${sheetData.etaMSA || ''}`);
-    headers.push(`BILL NUMBER,${sheetData.billNumber || ''},ETD MSA,${sheetData.etdMSA || ''}`);
-    headers.push(`CONTAINER,${sheetData.container || ''},PORT,${sheetData.port || ''}`);
-    headers.push(`SEAL 1,${sheetData.seal1 || ''},ETA PORT,${sheetData.etaPort || ''}`);
-    headers.push(`SEAL 2,${sheetData.seal2 || ''},TEMP REC 1,${sheetData.tempRec1 || ''}`);
-    headers.push(`TRUCK,${sheetData.truck || ''},TEMP REC 2,${sheetData.tempRec2 || ''}\n`);
+  const generateSheetData = (): (string | number)[][] => {
+    const rows: (string | number)[][] = [];
+    rows.push(['LOADING SHEET']);
+    rows.push([]);
+    rows.push(['EXPORTER', sheetData.exporter || defaultData.exporter, 'LOADING DATE', sheetData.loadingDate]);
+    rows.push(['CLIENT', sheetData.client || '', 'VESSEL', sheetData.vessel || '']);
+    rows.push(['SHIPPING LINE', sheetData.shippingLine || '', 'ETA MSA', sheetData.etaMSA || '']);
+    rows.push(['BILL NUMBER', sheetData.billNumber || '', 'ETD MSA', sheetData.etdMSA || '']);
+    rows.push(['CONTAINER', sheetData.container || '', 'PORT', sheetData.port || '']);
+    rows.push(['SEAL 1', sheetData.seal1 || '', 'ETA PORT', sheetData.etaPort || '']);
+    rows.push(['SEAL 2', sheetData.seal2 || '', 'TEMP REC 1', sheetData.tempRec1 || '']);
+    rows.push(['TRUCK', sheetData.truck || '', 'TEMP REC 2', sheetData.tempRec2 || '']);
+    rows.push([]);
+    rows.push(['PALLET NO', 'COLD ROOM', 'VARIETY', 'TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)']);
     
-    const tableHeaders = ['PALLET NO', 'COLD ROOM', 'VARIETY', 'TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'TOTAL BOXES', 'TOTAL WEIGHT (kg)'];
-    headers.push(tableHeaders.join(','));
-    
-    const rows = sheetData.pallets.map((pallet) => {
+    sheetData.pallets.forEach((pallet) => {
       const quantity = getQuantityFromBoxes(pallet);
-      const boxType = getSafeBoxType(pallet);
-      const totalWeight = getSafeWeight(pallet);
       const totalBoxes = pallet.totalBoxes || quantity;
+      const totalWeight = getSafeWeight(pallet);
       const sizeDisplay = formatSizeForDisplay(pallet);
       const varietyDisplay = formatVarietyForDisplay(pallet);
       const gradeDisplay = formatGradeForDisplay(pallet);
       const boxTypeDisplay = formatBoxTypeForDisplay(pallet);
-      return [
+      rows.push([
         pallet.pallet_no,
         pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
         varietyDisplay,
@@ -1306,10 +1306,8 @@ function LoadingSheet() {
         quantity,
         totalBoxes,
         totalWeight
-      ].join(',');
+      ]);
     });
-    
-    headers.push(...rows);
     
     const totals = sheetData.pallets.reduce(
       (acc, pallet) => {
@@ -1325,17 +1323,18 @@ function LoadingSheet() {
       { totalBoxes: 0, totalWeight: 0, totalPallets: 0 }
     );
     
-    headers.push(`\nSUMMARY`);
-    headers.push(`Total Pallets,${totals.totalPallets}`);
-    headers.push(`Total Boxes,${totals.totalBoxes}`);
-    headers.push(`Total Weight,${totals.totalWeight} kg\n`);
+    rows.push([]);
+    rows.push(['SUMMARY']);
+    rows.push(['Total Pallets', totals.totalPallets]);
+    rows.push(['Total Boxes', totals.totalBoxes]);
+    rows.push(['Total Weight', `${totals.totalWeight} kg`]);
+    rows.push([]);
+    rows.push(['LOADING DETAILS']);
+    rows.push(['Loaded by', loadedBy || '']);
+    rows.push(['Checked by', checkedBy || '']);
+    rows.push(['Remarks', remarks || '']);
     
-    headers.push('LOADING DETAILS');
-    headers.push(`Loaded by,${loadedBy || ''}`);
-    headers.push(`Checked by,${checkedBy || ''}`);
-    headers.push(`Remarks,${remarks || ''}`);
-    
-    return headers.join('\n');
+    return rows;
   };
 
   const updateField = (field: keyof LoadingSheetData, value: string) => {
@@ -1517,7 +1516,7 @@ function LoadingSheet() {
             </Button>
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <Download className="h-4 w-4 mr-2" />
-              CSV
+              Excel
             </Button>
             <Button variant="default" size="sm" onClick={handlePrint}>
               <Printer className="h-4 w-4 mr-2" />
@@ -3420,7 +3419,7 @@ function HistoryDownload() {
     return true;
   });
 
-  const downloadLoadingSheetsCSV = async () => {
+  const downloadLoadingSheetsXLSX = async () => {
     try {
       const headers = ['ID', 'Created At', 'Exporter', 'Client', 'Shipping Line', 'Bill Number', 'Container', 'Seal 1', 'Seal 2', 'Truck', 'Vessel', 'Port', 'Loading Date', 'Loaded By', 'Checked By'];
 
@@ -3442,37 +3441,33 @@ function HistoryDownload() {
         sheet.checked_by || ''
         ]);
 
-      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `loading-sheets-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      worksheet['!cols'] = headers.map(header => ({ wch: Math.max(header.length + 2, 14) }));
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Loading Sheets');
+      XLSX.writeFile(workbook, `loading-sheets-${new Date().toISOString().split('T')[0]}.xlsx`);
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_LOADING_SHEETS_CSV_DOWNLOADED',
+        action: 'OUTBOUND_LOADING_SHEETS_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
-          fileType: 'csv',
+          fileType: 'xlsx',
           sheetCount: filteredLoadingSheets.length,
           dateFilter,
           timestamp: new Date().toISOString(),
         },
       });
     } catch (error: any) {
-      console.error('Error downloading loading sheets CSV:', error);
+      console.error('Error downloading loading sheets Excel:', error);
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_LOADING_SHEETS_CSV_DOWNLOADED',
+        action: 'OUTBOUND_LOADING_SHEETS_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -3481,11 +3476,11 @@ function HistoryDownload() {
         },
       });
 
-      toast.error('Failed to download loading sheets CSV');
+      toast.error('Failed to download loading sheets Excel');
     }
   };
 
-  const downloadAssignmentsCSV = async () => {
+  const downloadAssignmentsXLSX = async () => {
     try {
       const headers = ['ID', 'Assigned At', 'Carrier Name', 'Carrier ID', 'Carrier Vehicle', 'Loading Sheet Bill', 'Client', 'Container', 'Assigned By', 'Status', 'Transit Started', 'Transit Completed', 'Notes'];
 
@@ -3505,25 +3500,21 @@ function HistoryDownload() {
         assignment.notes || ''
       ]);
 
-      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `carrier-assignments-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      worksheet['!cols'] = headers.map(header => ({ wch: Math.max(header.length + 2, 14) }));
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Assignments');
+      XLSX.writeFile(workbook, `carrier-assignments-${new Date().toISOString().split('T')[0]}.xlsx`);
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_ASSIGNMENTS_CSV_DOWNLOADED',
+        action: 'OUTBOUND_ASSIGNMENTS_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
-          fileType: 'csv',
+          fileType: 'xlsx',
           assignmentCount: filteredAssignments.length,
           statusFilter,
           dateFilter,
@@ -3531,12 +3522,12 @@ function HistoryDownload() {
         },
       });
     } catch (error: any) {
-      console.error('Error downloading assignments CSV:', error);
+      console.error('Error downloading assignments Excel:', error);
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_ASSIGNMENTS_CSV_DOWNLOADED',
+        action: 'OUTBOUND_ASSIGNMENTS_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -3545,11 +3536,11 @@ function HistoryDownload() {
         },
       });
 
-      toast.error('Failed to download assignments CSV');
+      toast.error('Failed to download assignments Excel');
     }
   };
 
-  const downloadLoadingSheet = async (loadingSheetId: string) => {
+  const downloadLoadingSheetXLSX = async (loadingSheetId: string) => {
     try {
       const loadingSheet = loadingSheets.find(ls => ls.id === loadingSheetId);
       if (!loadingSheet) {
@@ -3591,7 +3582,7 @@ function HistoryDownload() {
         sizeDistribution[sizeDisplay] = (sizeDistribution[sizeDisplay] || 0) + quantity;
       });
 
-      const formatDateForCSV = (dateString: string | Date | null) => {
+      const formatSheetDate = (dateString: string | Date | null) => {
         if (!dateString) return '';
         const date = new Date(dateString);
         return date.toLocaleDateString('en-US', {
@@ -3601,26 +3592,26 @@ function HistoryDownload() {
         });
       };
 
-      const csvRows = [];
+      const sheetRows: (string | number)[][] = [];
       
-      csvRows.push('LOADING SHEET');
-      csvRows.push('');
+      sheetRows.push(['LOADING SHEET']);
+      sheetRows.push([]);
       
-      csvRows.push(`EXPORTER,${loadingSheet.exporter || 'HARIR INTERNATIONAL LTD'},LOADING DATE,${formatDateForCSV(loadingSheet.loading_date)}`);
-      csvRows.push(`CLIENT,${loadingSheet.client || 'N/A'},VESSEL,${loadingSheet.vessel || 'N/A'}`);
-      csvRows.push(`SHIPPING LINE,${loadingSheet.shipping_line || 'N/A'},ETA MSA,${formatDateForCSV(loadingSheet.eta_msa)}`);
-      csvRows.push(`BILL NUMBER,${loadingSheet.bill_number || 'N/A'},ETD MSA,${formatDateForCSV(loadingSheet.etd_msa)}`);
-      csvRows.push(`CONTAINER,${loadingSheet.container || 'N/A'},PORT,${loadingSheet.port || ''}`);
-      csvRows.push(`SEAL 1,${loadingSheet.seal1 || ''},ETA PORT,${formatDateForCSV(loadingSheet.eta_port)}`);
-      csvRows.push(`SEAL 2,${loadingSheet.seal2 || ''},TEMP REC 1,${loadingSheet.temp_rec1 || ''}`);
-      csvRows.push(`TRUCK,${loadingSheet.truck || ''},TEMP REC 2,${loadingSheet.temp_rec2 || ''}`);
-      csvRows.push('');
+      sheetRows.push(['EXPORTER', loadingSheet.exporter || 'HARIR INTERNATIONAL LTD', 'LOADING DATE', formatSheetDate(loadingSheet.loading_date)]);
+      sheetRows.push(['CLIENT', loadingSheet.client || 'N/A', 'VESSEL', loadingSheet.vessel || 'N/A']);
+      sheetRows.push(['SHIPPING LINE', loadingSheet.shipping_line || 'N/A', 'ETA MSA', formatSheetDate(loadingSheet.eta_msa)]);
+      sheetRows.push(['BILL NUMBER', loadingSheet.bill_number || 'N/A', 'ETD MSA', formatSheetDate(loadingSheet.etd_msa)]);
+      sheetRows.push(['CONTAINER', loadingSheet.container || 'N/A', 'PORT', loadingSheet.port || '']);
+      sheetRows.push(['SEAL 1', loadingSheet.seal1 || '', 'ETA PORT', formatSheetDate(loadingSheet.eta_port)]);
+      sheetRows.push(['SEAL 2', loadingSheet.seal2 || '', 'TEMP REC 1', loadingSheet.temp_rec1 || '']);
+      sheetRows.push(['TRUCK', loadingSheet.truck || '', 'TEMP REC 2', loadingSheet.temp_rec2 || '']);
+      sheetRows.push([]);
       
-      csvRows.push(`PALLETS IN LOADING SHEET (${pallets.length})`);
-      csvRows.push(`${totalBoxes} boxes • ${totalWeight} kg`);
-      csvRows.push('');
+      sheetRows.push([`PALLETS IN LOADING SHEET (${pallets.length})`]);
+      sheetRows.push([`${totalBoxes} boxes • ${totalWeight} kg`]);
+      sheetRows.push([]);
       
-      csvRows.push('PALLET NO,COLD ROOM,VARIETY,TYPE,SIZE,GRADE,QUANTITY,WEIGHT (kg)');
+      sheetRows.push(['PALLET NO', 'COLD ROOM', 'VARIETY', 'TYPE', 'SIZE', 'GRADE', 'QUANTITY', 'WEIGHT (kg)']);
       
       pallets.forEach((pallet: any, index: number) => {
         const quantity = pallet.quantity || 0;
@@ -3634,70 +3625,65 @@ function HistoryDownload() {
         const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
         const coldRoom = pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
         
-        csvRows.push(`${index + 1},${coldRoom},${varietyDisplay},${boxType},${sizeDisplay},${grade},${quantity},${weight} kg`);
+        sheetRows.push([index + 1, coldRoom, varietyDisplay, boxType, sizeDisplay, grade, quantity, `${weight} kg`]);
       });
       
-      csvRows.push(`TOTAL,,,,,,${totalBoxes},${totalWeight} kg`);
-      csvRows.push('');
+      sheetRows.push(['TOTAL', '', '', '', '', '', '', totalBoxes, `${totalWeight} kg`]);
+      sheetRows.push([]);
       
-      csvRows.push('SUMMARY');
-      csvRows.push(`Total Pallets,${pallets.length}`);
-      csvRows.push(`Total Boxes,${totalBoxes}`);
-      csvRows.push(`Total Weight,${totalWeight} kg`);
-      csvRows.push(`Average per Pallet,${pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0} boxes`);
-      csvRows.push('');
+      sheetRows.push(['SUMMARY']);
+      sheetRows.push(['Total Pallets', pallets.length]);
+      sheetRows.push(['Total Boxes', totalBoxes]);
+      sheetRows.push(['Total Weight', `${totalWeight} kg`]);
+      sheetRows.push(['Average per Pallet', `${pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0} boxes`]);
+      sheetRows.push([]);
       
-      csvRows.push('Variety Distribution');
+      sheetRows.push(['Variety Distribution']);
       Object.entries(varietyDistribution).forEach(([variety, count]) => {
-        csvRows.push(`${variety},${count}`);
+        sheetRows.push([variety, count]);
       });
-      csvRows.push('');
+      sheetRows.push([]);
       
-      csvRows.push('Box Type Distribution');
+      sheetRows.push(['Box Type Distribution']);
       Object.entries(boxTypeDistribution).forEach(([boxType, count]) => {
-        csvRows.push(`${boxType},${count}`);
+        sheetRows.push([boxType, count]);
       });
-      csvRows.push('');
+      sheetRows.push([]);
       
-      csvRows.push('Grade Distribution');
+      sheetRows.push(['Grade Distribution']);
       Object.entries(gradeDistribution).forEach(([grade, count]) => {
-        csvRows.push(`${grade},${count}`);
+        sheetRows.push([grade, count]);
       });
-      csvRows.push('');
+      sheetRows.push([]);
       
-      csvRows.push('Size Distribution');
+      sheetRows.push(['Size Distribution']);
       Object.entries(sizeDistribution).forEach(([size, count]) => {
-        csvRows.push(`${size},${count}`);
+        sheetRows.push([size, count]);
       });
-      csvRows.push('');
+      sheetRows.push([]);
       
-      csvRows.push('LOADING DETAILS');
-      csvRows.push(`Loaded by,${loadingSheet.loaded_by || "Loader's name & signature"}`);
-      csvRows.push(`Checked by,${loadingSheet.checked_by || "Supervisor's name & signature"}`);
-      csvRows.push(`Remarks,${loadingSheet.remarks || 'Special instructions or notes'}`);
-      csvRows.push('');
+      sheetRows.push(['LOADING DETAILS']);
+      sheetRows.push(['Loaded by', loadingSheet.loaded_by || "Loader's name & signature"]);
+      sheetRows.push(['Checked by', loadingSheet.checked_by || "Supervisor's name & signature"]);
+      sheetRows.push(['Remarks', loadingSheet.remarks || 'Special instructions or notes']);
+      sheetRows.push([]);
       
-      csvRows.push(`Generated by Harir International Logistics System  Document ID: ${loadingSheet.id}`);
-      csvRows.push(`Created: ${formatDateForCSV(loadingSheet.created_at)}`);
+      sheetRows.push([`Generated by Harir International Logistics System  Document ID: ${loadingSheet.id}`]);
+      sheetRows.push([`Created: ${formatSheetDate(loadingSheet.created_at)}`]);
       
-      const csvContent = csvRows.join('\n');
+      const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+      worksheet['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 22 }];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Loading Sheet');
+      XLSX.writeFile(workbook, `loading-sheet-${loadingSheet.bill_number || loadingSheet.id}-${new Date().toISOString().split('T')[0]}.xlsx`);
       
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `loading-sheet-${loadingSheet.bill_number || loadingSheet.id}-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      
-      toast.success('Loading sheet downloaded as CSV successfully!');
+      toast.success('Loading sheet downloaded as Excel successfully!');
 
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
           userId: currentUser?.id,
@@ -3709,7 +3695,7 @@ function HistoryDownload() {
           totalPallets: pallets.length,
           totalBoxes,
           totalWeight,
-          fileType: 'csv',
+          fileType: 'xlsx',
           timestamp: new Date().toISOString(),
         },
       });
@@ -3720,7 +3706,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
-        action: 'OUTBOUND_LOADING_SHEET_CSV_DOWNLOADED',
+        action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
           userId: currentUser?.id,
@@ -3841,11 +3827,11 @@ function HistoryDownload() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Button onClick={downloadLoadingSheetsCSV} className="w-full" disabled={filteredLoadingSheets.length === 0}>
+              <Button onClick={downloadLoadingSheetsXLSX} className="w-full" disabled={filteredLoadingSheets.length === 0}>
                 <FileDown className="h-4 w-4 mr-2" />
                 Download Loading Sheets ({filteredLoadingSheets.length})
               </Button>
-              <Button onClick={downloadAssignmentsCSV} className="w-full" disabled={filteredAssignments.length === 0}>
+              <Button onClick={downloadAssignmentsXLSX} className="w-full" disabled={filteredAssignments.length === 0}>
                 <FileDown className="h-4 w-4 mr-2" />
                 Download Carrier Assignments ({filteredAssignments.length})
               </Button>
@@ -4052,8 +4038,8 @@ function HistoryDownload() {
                           <Button 
                             variant="ghost" 
                             size="sm"
-                            onClick={() => downloadLoadingSheet(sheet.id)}
-                            title="Download loading sheet as CSV"
+                            onClick={() => downloadLoadingSheetXLSX(sheet.id)}
+                            title="Download loading sheet as Excel"
                           >
                             <Download className="h-4 w-4" />
                           </Button>

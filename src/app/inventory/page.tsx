@@ -28,6 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
+import { downloadXlsx, type XlsxColumn } from '@/lib/xlsx-export';
 
 // Avocado Inventory Types
 interface ColdRoomBox {
@@ -704,50 +705,37 @@ export default function InventoryPage() {
     return filtered;
   };
 
-  // Download packaging materials as CSV
-  const downloadPackagingCSV = async () => {
+  // Download packaging materials as XLSX
+  const downloadPackagingXLSX = async () => {
     const filteredMaterials = getFilteredPackagingMaterials();
     
-    // CSV headers
-    const headers = [
-      'ID',
-      'Name',
-      'Category',
-      'Unit',
-      'Current Stock',
-      'Reorder Level',
-      'Status',
-      'Consumption Rate',
-      'Dimensions',
-      'Last Used Date',
-      'Created Date'
+    const columns: XlsxColumn[] = [
+      { header: 'ID', key: 'id', text: true },
+      { header: 'Name', key: 'name' },
+      { header: 'Category', key: 'category' },
+      { header: 'Unit', key: 'unit' },
+      { header: 'Current Stock', key: 'currentStock' },
+      { header: 'Reorder Level', key: 'reorderLevel' },
+      { header: 'Status', key: 'status' },
+      { header: 'Consumption Rate', key: 'consumptionRate' },
+      { header: 'Dimensions', key: 'dimensions' },
+      { header: 'Last Used Date', key: 'lastUsedDate' },
+      { header: 'Created Date', key: 'createdAt' }
     ];
     
-    // CSV rows
-    const rows = filteredMaterials.map(material => [
-      material.id,
-      material.name,
-      material.category,
-      material.unit,
-      material.currentStock,
-      material.reorderLevel,
-      material.currentStock <= material.reorderLevel ? 'Low Stock' : 'In Stock',
-      material.consumptionRate,
-      material.dimensions || 'N/A',
-      new Date(material.lastUsedDate).toLocaleDateString('en-GB'),
-      material.createdAt ? new Date(material.createdAt).toLocaleDateString('en-GB') : 'N/A'
-    ]);
-    
-    // Combine headers and rows
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
-    
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const rows = filteredMaterials.map(material => ({
+      id: material.id,
+      name: material.name,
+      category: material.category,
+      unit: material.unit,
+      currentStock: material.currentStock,
+      reorderLevel: material.reorderLevel,
+      status: material.currentStock <= material.reorderLevel ? 'Low Stock' : 'In Stock',
+      consumptionRate: material.consumptionRate,
+      dimensions: material.dimensions || 'N/A',
+      lastUsedDate: new Date(material.lastUsedDate).toLocaleDateString('en-GB'),
+      createdAt: material.createdAt ? new Date(material.createdAt).toLocaleDateString('en-GB') : 'N/A'
+    }));
     
     // Generate filename with date range
     let fileName = 'packaging-materials';
@@ -759,16 +747,12 @@ export default function InventoryPage() {
       const endStr = new Date(dateFilter.packagingEndDate).toISOString().split('T')[0];
       fileName += `_${startStr}_to_${endStr}`;
     }
-    fileName += `_${new Date().toISOString().split('T')[0]}.csv`;
+    fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
     
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadXlsx(rows, columns, fileName, 'Packaging Materials');
     
     toast({
-      title: 'CSV Downloaded',
+      title: 'XLS Downloaded',
       description: `Downloaded ${filteredMaterials.length} packaging materials`,
     });
 
@@ -779,7 +763,7 @@ export default function InventoryPage() {
       status: 'success',
       metadata: {
         userId: currentUser?.id,
-        fileType: 'csv',
+        fileType: 'xlsx',
         fileName: fileName,
         recordCount: filteredMaterials.length,
         dateFilter: dateFilter.packaging,
@@ -1452,7 +1436,7 @@ export default function InventoryPage() {
                             Filters & Export
                           </CardTitle>
                           <CardDescription>
-                            Filter packaging materials by date and export as CSV
+                            Filter packaging materials by date and export as XLS
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1467,12 +1451,12 @@ export default function InventoryPage() {
                             </Button>
                           )}
                           <Button 
-                            onClick={downloadPackagingCSV} 
+                            onClick={downloadPackagingXLSX} 
                             disabled={filteredPackagingMaterials.length === 0}
                             className="ml-2"
                           >
                             <Download className="w-4 h-4 mr-2" />
-                            Export CSV ({filteredPackagingMaterials.length})
+                            Export XLS ({filteredPackagingMaterials.length})
                           </Button>
                         </div>
                       </div>

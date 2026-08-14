@@ -1,7 +1,7 @@
 // app/warehouse/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import {
   SidebarProvider,
   Sidebar,
@@ -645,10 +645,6 @@ const getSupplierInfoFromCountingData = (countingData: any) => {
   };
 };
 
-const isSupplierCounted = (supplierId: string, countingRecords: CountingRecord[]): boolean => {
-  return countingRecords.some(record => record.supplier_id === supplierId);
-};
-
 // Helper function to get current user
 const getCurrentUser = async () => {
   try {
@@ -1280,6 +1276,7 @@ export default function WarehousePage() {
   const [supplierIntakeRecords, setSupplierIntakeRecords] = useState<SupplierIntakeRecord[]>([]);
   const [qualityChecks, setQualityChecks] = useState<QualityCheck[]>([]);
   const [countingRecords, setCountingRecords] = useState<CountingRecord[]>([]);
+  const [countedSupplierIds, setCountedSupplierIds] = useState<Set<string>>(new Set());
   const [rejects, setRejects] = useState<RejectionEntry[]>([]);
   const [supplierRejectionDrafts, setSupplierRejectionDrafts] = useState<Record<string, SupplierRejectionDraft>>({});
   const [countingTotal, setCountingTotal] = useState<number>(0);
@@ -1901,6 +1898,19 @@ export default function WarehousePage() {
     });
   };
 
+  const fetchCountedSupplierIds = async () => {
+    try {
+      const response = await fetch('/api/counting?action=counted-ids');
+      if (!response.ok) return;
+      const result = await response.json();
+      if (result.success && Array.isArray(result.data)) {
+        setCountedSupplierIds(new Set(result.data));
+      }
+    } catch (err) {
+      console.error('Error fetching counted supplier ids:', err);
+    }
+  };
+
   const calculateSizeStatistics = useCallback((records: CountingRecord[]) => {
     console.log('📊 Calculating size statistics from', records.length, 'records');
     
@@ -2157,6 +2167,7 @@ export default function WarehousePage() {
       fetchIntakeRecords(),
       fetchQualityChecks(),
       fetchCountingRecords({ limit: COUNTING_PAGE_SIZE, offset: 0 }),
+      fetchCountedSupplierIds(),
       fetchSizeStatistics(),
       fetchRejects()
     ]);
@@ -2175,13 +2186,29 @@ useEffect(() => {
     rejects: false 
   }));
   
-  // Load all data in the background
+  // Load the intake tab (default) immediately + tiny counted-ids set.
+  // The rest is fetched lazily the first time its tab is opened.
   fetchIntakeRecords();
-  fetchQualityChecks();
-  fetchCountingRecords({ limit: COUNTING_PAGE_SIZE, offset: 0 });
-  fetchSizeStatistics();
-  fetchRejects();
+  fetchCountedSupplierIds();
 }, []);
+
+  // Lazily load tab data on first visit so the page opens fast
+  const lazyLoadedTabs = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (activeTab === 'intake' || lazyLoadedTabs.current.has(activeTab)) return;
+    lazyLoadedTabs.current.add(activeTab);
+
+    if (activeTab === 'quality') {
+      fetchQualityChecks();
+      fetchRejects();
+    } else if (activeTab === 'history') {
+      fetchCountingRecords({ limit: COUNTING_PAGE_SIZE, offset: 0 });
+      fetchRejects();
+    } else if (activeTab === 'statistics') {
+      fetchSizeStatistics();
+      fetchRejects();
+    }
+  }, [activeTab]);
 
   const toggleIntakeExpansion = (supplierName: string) => {
     const newExpanded = new Set(expandedIntake);
@@ -2220,11 +2247,10 @@ useEffect(() => {
 
   const acceptedSuppliers = supplierIntakeRecords.filter(intake => {
     const qc = qualityChecks.find(q => q.weight_entry_id === intake.id);
-    const inCounting = countingRecords.some(record => record.supplier_id === intake.id);
     
     return qc && 
            qc.overall_status === 'approved' && 
-           !inCounting;
+           !countedSupplierIds.has(intake.id);
   });
 
   const handleSelectSupplier = async (supplier: SupplierIntakeRecord, qc: QualityCheck | null) => {
@@ -2566,6 +2592,11 @@ useEffect(() => {
       }
 
       setCountingRecords(prev => [result.data, ...prev]);
+      setCountedSupplierIds(prev => {
+        const next = new Set(prev);
+        next.add(result.data.supplier_id);
+        return next;
+      });
       
       setSelectedSupplier(null);
       setSelectedQC(null);
@@ -4384,7 +4415,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
                   </CardTitle>
                   <CardDescription>
                     {qualityChecks.filter(qc => {
-                      const alreadyCounted = isSupplierCounted(qc.weight_entry_id, countingRecords);
+                      const alreadyCounted = countedSupplierIds.has(qc.weight_entry_id);
                       return qc.overall_status === 'approved' && !alreadyCounted;
                     }).length} approved supplier(s) ready for counting
                   </CardDescription>
@@ -4408,14 +4439,14 @@ const downloadXLSX = (records: CountingRecord[]) => {
                       <div className="space-y-3">
                         {qualityChecks
                           .filter(qc => {
-                            const alreadyCounted = isSupplierCounted(qc.weight_entry_id, countingRecords);
+                            const alreadyCounted = countedSupplierIds.has(qc.weight_entry_id);
                             return qc.overall_status === 'approved' && !alreadyCounted;
                           })
                           .map((qc) => {
                             const supplierIntake = supplierIntakeRecords.find(r => r.id === qc.weight_entry_id);
                             const hasFuerteQC = qc.fuerte_overall > 0;
                             const hasHassQC = qc.hass_overall > 0;
-                            const alreadyCounted = isSupplierCounted(qc.weight_entry_id, countingRecords);
+                            const alreadyCounted = countedSupplierIds.has(qc.weight_entry_id);
                             const rejectKey = getRejectKey(qc.weight_entry_id, qc.pallet_id, qc.supplier_name);
                             const existingReject = getRejectForSupplier(qc.weight_entry_id, qc.pallet_id, qc.supplier_name);
                             const rejectDraft = getRejectDraft(rejectKey);

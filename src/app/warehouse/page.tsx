@@ -140,6 +140,7 @@ interface XLSRow {
   supplier_name: string;
   telephone_number: string;
   rowClass: string;
+  intake_total_crates: number;
   // 4kg sizes (14-26)
   size_14_4kg: number;
   size_16_4kg: number;
@@ -3150,6 +3151,7 @@ const generateXLSXData = (records: CountingRecord[]): XLSRow[] => {
           supplier_name: record.supplier_name,
           telephone_number: record.supplier_phone || '',
           rowClass: `${variety.charAt(0).toUpperCase() + variety.slice(1)} ${classType === 'class1' ? 'Class 1' : 'Class 2'}`,
+          intake_total_crates: record.intake_total_crates || 0,
           // 4kg sizes (14-26)
           size_14_4kg: 0,
           size_16_4kg: 0,
@@ -3251,7 +3253,8 @@ const downloadXLSX = (records: CountingRecord[]) => {
     'Total 10kg Crates',
     'Grand Total',
     'Unit Price',
-    'Total Price'
+    'Total Price',
+    'Intake Crates'
   ];
 
   // Calculate summary totals
@@ -3277,6 +3280,8 @@ const downloadXLSX = (records: CountingRecord[]) => {
     summaryTotals['Fuerte Class 2'].grand_total + 
     summaryTotals['Hass Class 1'].grand_total + 
     summaryTotals['Hass Class 2'].grand_total;
+
+  const grandTotalIntakeCrates = records.reduce((sum, r) => sum + (r.intake_total_crates || 0), 0);
 
   const rows = xlsxData.map((row, index) => {
     const rowNumber = index + 2;
@@ -3312,7 +3317,8 @@ const downloadXLSX = (records: CountingRecord[]) => {
       row.total_10kg,
       row.grand_total,
       '',
-      totalPriceFormula
+      totalPriceFormula,
+      row.intake_total_crates
     ];
   });
 
@@ -3329,6 +3335,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
       summaryTotals['Fuerte Class 1'].total_10kg,
       summaryTotals['Fuerte Class 1'].grand_total,
       '',
+      '',
       ''
     ],
     [
@@ -3341,6 +3348,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
       summaryTotals['Fuerte Class 2'].total_4kg,
       summaryTotals['Fuerte Class 2'].total_10kg,
       summaryTotals['Fuerte Class 2'].grand_total,
+      '',
       '',
       ''
     ],
@@ -3355,6 +3363,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
       summaryTotals['Hass Class 1'].total_10kg,
       summaryTotals['Hass Class 1'].grand_total,
       '',
+      '',
       ''
     ],
     [
@@ -3367,6 +3376,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
       summaryTotals['Hass Class 2'].total_4kg,
       summaryTotals['Hass Class 2'].total_10kg,
       summaryTotals['Hass Class 2'].grand_total,
+      '',
       '',
       ''
     ],
@@ -3381,7 +3391,8 @@ const downloadXLSX = (records: CountingRecord[]) => {
       summaryTotals['Fuerte Class 1'].total_10kg + summaryTotals['Fuerte Class 2'].total_10kg + summaryTotals['Hass Class 1'].total_10kg + summaryTotals['Hass Class 2'].total_10kg,
       grandTotalAll,
       '',
-      ''
+      '',
+      grandTotalIntakeCrates
     ]
   ];
 
@@ -4371,7 +4382,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
                                         <Input
                                           id={`${rejectKey}-crates`}
                                           type="number"
-                                          step="1"
+                                          step="0.01"
                                           min="0"
                                           value={rejectDraft.total_rejected_crates}
                                           onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_crates', e.target.value)}
@@ -4573,7 +4584,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
                                             <Input
                                               id={`${rejectKey}-crates`}
                                               type="number"
-                                              step="1"
+                                              step="0.01"
                                               min="0"
                                               value={rejectDraft.total_rejected_crates}
                                               onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_crates', e.target.value)}
@@ -5455,6 +5466,10 @@ const downloadXLSX = (records: CountingRecord[]) => {
                           const hasFuerte = record.fuerte_4kg_total + record.fuerte_10kg_total > 0;
                           const hasHass = record.hass_4kg_total + record.hass_10kg_total > 0;
                           const hasRejection = (record.rejected_weight && record.rejected_weight > 0) || (record.rejected_crates && record.rejected_crates > 0);
+                          const rejectionParts: string[] = [];
+                          if (record.rejected_crates && record.rejected_crates > 0) rejectionParts.push(`${record.rejected_crates} crates`);
+                          if (record.rejected_weight && record.rejected_weight > 0) rejectionParts.push(`${safeToFixed(record.rejected_weight)} kg`);
+                          const rejectionSummary = rejectionParts.join(', ');
                           const rejectKey = getRejectKey(record.id, record.pallet_id, record.supplier_name);
                           const existingReject = getRejectForSupplier(record.id, record.pallet_id, record.supplier_name);
                           const rejectDraft = getRejectDraft(rejectKey);
@@ -5476,10 +5491,11 @@ const downloadXLSX = (records: CountingRecord[]) => {
                                       <div className="font-semibold">{record.supplier_name}</div>
                                       <div className="text-sm text-gray-500 flex flex-wrap items-center gap-3">
                                         <span className="whitespace-nowrap">Boxes: {boxesSummary.total} boxes</span>
+                                        <span className="whitespace-nowrap">Crates in: {record.intake_total_crates || 0} crates</span>
                                         <span className="whitespace-nowrap">Weight: {safeToFixed(record.total_counted_weight)} kg</span>
                                         {hasRejection && (
                                           <span className="whitespace-nowrap text-red-600">
-                                            Rejected: {record.rejected_crates && record.rejected_crates > 0 ? `${record.rejected_crates} crates` : `${safeToFixed(record.rejected_weight)} kg`}
+                                            Rejected: {rejectionSummary}
                                           </span>
                                         )}
                                         <span className="whitespace-nowrap">{formatDate(record.submitted_at)}</span>
@@ -5548,7 +5564,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
                                       )}
                                       {hasRejection && (
                                         <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                          Rejected: {record.rejected_crates && record.rejected_crates > 0 ? `${record.rejected_crates} crates` : `${safeToFixed(record.rejected_weight)} kg`}
+                                          Rejected: {rejectionSummary}
                                         </Badge>
                                       )}
                                     </div>
@@ -5627,7 +5643,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
                                             <Input
                                               id={`${rejectKey}-history-crates`}
                                               type="number"
-                                              step="1"
+                                              step="0.01"
                                               min="0"
                                               value={rejectDraft.total_rejected_crates}
                                               onChange={(e) => handleRejectDraftChange(rejectKey, 'total_rejected_crates', e.target.value)}

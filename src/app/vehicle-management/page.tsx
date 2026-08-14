@@ -955,6 +955,71 @@ export default function VehicleManagementPage() {
     setIsActionsSheetOpen(false);
   };
 
+  const handleDeleteVehicle = async (vehicle: VehicleVisit) => {
+    try {
+      const currentUser = await getCurrentUser();
+
+      const response = await fetch(`/api/vehicle-visits?id=${vehicle.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete vehicle visit');
+      }
+
+      setVehicles(prev => prev.filter(v => v.id !== vehicle.id));
+      if (selectedVehicle?.id === vehicle.id) {
+        setSelectedVehicle(null);
+      }
+
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicle.id,
+          visitNumber: vehicle.visitNumber,
+          driverName: vehicle.driverName,
+          company: vehicle.company,
+          vehiclePlate: vehicle.vehiclePlate,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'Vehicle Deleted',
+        description: `Visit #${vehicle.visitNumber} has been deleted.`,
+      });
+    } catch (error: any) {
+      console.error('Error deleting vehicle:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'VEHICLE_DELETED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          vehicleVisitId: vehicle.id,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast({
+        title: 'Delete Failed',
+        description: error.message || 'Failed to delete vehicle visit',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
   const handlePrintReport = async () => {
     try {
       const currentUser = await getCurrentUser();
@@ -2122,26 +2187,26 @@ export default function VehicleManagementPage() {
                       ) : (
                         <>
                           <div className="grid grid-cols-2 gap-2 md:hidden">
-                            <Card className="bg-blue-50 border-blue-100">
+                            <Card>
                               <CardContent className="p-3">
-                                <p className="text-xs text-blue-700 font-medium">Showing</p>
-                                <p className="text-lg font-bold text-blue-900">{filteredVehicles.length}</p>
-                                <p className="text-xs text-blue-600">of {vehicles.length}</p>
+                                <p className="text-xs text-muted-foreground font-medium">Showing</p>
+                                <p className="text-lg font-bold text-foreground">{filteredVehicles.length}</p>
+                                <p className="text-xs text-muted-foreground">of {vehicles.length}</p>
                               </CardContent>
                             </Card>
-                            <Card className="bg-green-50 border-green-100">
+                            <Card>
                               <CardContent className="p-3">
-                                <p className="text-xs text-green-700 font-medium">Status</p>
+                                <p className="text-xs text-muted-foreground font-medium">Status</p>
                                 <div className="space-y-1 mt-1">
                                   <div className="flex justify-between text-xs">
                                     <span>Checked-in:</span>
-                                    <Badge variant="outline" className="text-xs bg-green-100">
+                                    <Badge variant="outline" className="text-xs bg-primary/10 text-primary">
                                       {filteredVehicles.filter(v => v.status === 'Checked-in').length}
                                     </Badge>
                                   </div>
                                   <div className="flex justify-between text-xs">
                                     <span>Pre-reg:</span>
-                                    <Badge variant="outline" className="text-xs bg-amber-100">
+                                    <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-500">
                                       {filteredVehicles.filter(v => v.status === 'Pre-registered').length}
                                     </Badge>
                                   </div>
@@ -2154,6 +2219,7 @@ export default function VehicleManagementPage() {
                             vehicles={filteredVehicles}
                             onCheckIn={handleCheckIn}
                             onCheckOut={handleCheckOut}
+                            onDeleteVehicle={handleDeleteVehicle}
                             onRowClick={handleRowClick}
                             selectedVehicleId={selectedVehicle?.id}
                           />
@@ -2219,6 +2285,7 @@ export default function VehicleManagementPage() {
                             vehicles={onSiteVehicles}
                             onCheckIn={handleCheckIn}
                             onCheckOut={handleCheckOut}
+                            onDeleteVehicle={handleDeleteVehicle}
                             onRowClick={handleRowClick}
                             selectedVehicleId={selectedVehicle?.id}
                           />
@@ -2278,6 +2345,7 @@ export default function VehicleManagementPage() {
                             vehicles={pendingExitVehicles}
                             onCheckIn={handleCheckIn}
                             onCheckOut={handleCheckOut}
+                            onDeleteVehicle={handleDeleteVehicle}
                             onRowClick={handleRowClick}
                             selectedVehicleId={selectedVehicle?.id}
                           />
@@ -2421,6 +2489,7 @@ export default function VehicleManagementPage() {
                             vehicles={filteredCompletedVehicles}
                             onCheckIn={handleCheckIn}
                             onCheckOut={handleCheckOut}
+                            onDeleteVehicle={handleDeleteVehicle}
                             onRowClick={handleRowClick}
                             selectedVehicleId={selectedVehicle?.id}
                           />
@@ -2486,16 +2555,16 @@ export default function VehicleManagementPage() {
                         <>
                           <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-2 md:hidden">
-                              <Card className="bg-indigo-50 border-indigo-100">
+                              <Card>
                                 <CardContent className="p-3">
-                                  <p className="text-xs text-indigo-700">Today's Entries</p>
-                                  <p className="text-lg font-bold text-indigo-900">{stats.todayGateEntries}</p>
+                                  <p className="text-xs text-muted-foreground">Today's Entries</p>
+                                  <p className="text-lg font-bold text-foreground">{stats.todayGateEntries}</p>
                                 </CardContent>
                               </Card>
-                              <Card className="bg-purple-50 border-purple-100">
+                              <Card>
                                 <CardContent className="p-3">
-                                  <p className="text-xs text-purple-700">Recheck-ins</p>
-                                  <p className="text-lg font-bold text-purple-900">
+                                  <p className="text-xs text-muted-foreground">Recheck-ins</p>
+                                  <p className="text-lg font-bold text-foreground">
                                     {gateEntryVehicles.filter(v => v.isRecheckIn).length}
                                   </p>
                                 </CardContent>
@@ -2503,32 +2572,32 @@ export default function VehicleManagementPage() {
                             </div>
 
                             <div className="hidden md:grid grid-cols-4 gap-4">
-                              <Card className="bg-indigo-50 border-indigo-100">
+                              <Card>
                                 <CardContent className="p-4">
-                                  <p className="text-sm text-indigo-700 font-medium">Today's Gate Entries</p>
-                                  <p className="text-2xl font-bold text-indigo-900">{stats.todayGateEntries}</p>
+                                  <p className="text-sm text-muted-foreground font-medium">Today's Gate Entries</p>
+                                  <p className="text-2xl font-bold text-foreground">{stats.todayGateEntries}</p>
                                 </CardContent>
                               </Card>
-                              <Card className="bg-green-50 border-green-100">
+                              <Card>
                                 <CardContent className="p-4">
-                                  <p className="text-sm text-green-700 font-medium">Currently Active</p>
-                                  <p className="text-2xl font-bold text-green-900">
+                                  <p className="text-sm text-muted-foreground font-medium">Currently Active</p>
+                                  <p className="text-2xl font-bold text-foreground">
                                     {gateEntryVehicles.filter(v => v.status === 'Checked-in').length}
                                   </p>
                                 </CardContent>
                               </Card>
-                              <Card className="bg-purple-50 border-purple-100">
+                              <Card>
                                 <CardContent className="p-4">
-                                  <p className="text-sm text-purple-700 font-medium">Recheck-ins</p>
-                                  <p className="text-2xl font-bold text-purple-900">
+                                  <p className="text-sm text-muted-foreground font-medium">Recheck-ins</p>
+                                  <p className="text-2xl font-bold text-foreground">
                                     {gateEntryVehicles.filter(v => v.isRecheckIn).length}
                                   </p>
                                 </CardContent>
                               </Card>
-                              <Card className="bg-amber-50 border-amber-100">
+                              <Card>
                                 <CardContent className="p-4">
-                                  <p className="text-sm text-amber-700 font-medium">Latest Gate ID</p>
-                                  <p className="text-lg font-bold text-amber-900 truncate">
+                                  <p className="text-sm text-muted-foreground font-medium">Latest Gate ID</p>
+                                  <p className="text-lg font-bold text-foreground truncate">
                                     {gateEntryVehicles[0]?.gateEntryId || 'N/A'}
                                   </p>
                                 </CardContent>

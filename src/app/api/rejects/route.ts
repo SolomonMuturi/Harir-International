@@ -78,7 +78,7 @@ const transformedRejects = rejects.map(reject => {
     hass_weight: reject.hass_weight ? parseFloat(reject.hass_weight.toString()) : 0,
     hass_crates: reject.hass_crates || 0,
     total_rejected_weight: reject.total_rejected_weight ? parseFloat(reject.total_rejected_weight.toString()) : 0,
-    total_rejected_crates: reject.total_rejected_crates || 0,
+    total_rejected_crates: reject.total_rejected_crates ? parseFloat(reject.total_rejected_crates.toString()) : 0,
     counted_weight: reject.fuerte_weight ? parseFloat(reject.fuerte_weight.toString()) : 0 + reject.hass_weight ? parseFloat(reject.hass_weight.toString()) : 0, // intake weight
     variance: reject.variance ? parseFloat(reject.variance.toString()) : 0,
     reason: reject.reason || '',

@@ -678,6 +678,24 @@ export async function GET(request: NextRequest) {
         }, { status: 500 });
       }
       
+      } else if (action === 'counted-ids') {
+        // Return the set of supplier IDs already present in counting records so the
+        // Quality Control tab can exclude already-counted suppliers directly from the DB.
+        try {
+          const counted = await prisma.$queryRaw`
+            SELECT DISTINCT supplier_id FROM counting_records WHERE supplier_id IS NOT NULL
+          `;
+          return NextResponse.json({
+            success: true,
+            data: Array.isArray(counted) ? counted.map((r: any) => r.supplier_id) : []
+          });
+        } catch (error) {
+          console.error('Error fetching counted supplier ids:', error);
+          return NextResponse.json({
+            success: false,
+            data: []
+          });
+        }
       } else {
         // Return counting records (default endpoint) with optional pagination
         try {

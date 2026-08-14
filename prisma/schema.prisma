@@ -543,7 +543,7 @@ model rejects {
   hass_weight           Decimal? @db.Decimal(10, 2)
   hass_crates           Int?     @default(0)
   total_rejected_weight Decimal? @db.Decimal(10, 2)
-  total_rejected_crates Int?     @default(0)
+  total_rejected_crates Decimal? @db.Decimal(10, 2) @default(0)
   variance              Decimal? @db.Decimal(10, 2)
   reason                String?
   notes                 String?

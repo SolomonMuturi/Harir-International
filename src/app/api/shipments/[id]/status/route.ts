@@ -4,13 +4,13 @@ import { requirePermission } from '@/lib/api-auth';
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.update', 'shipments.track']);
   if (auth.error) return auth.error;
 
   try {
-    const { id } = params;
+    const { id } = await params;
     const { status } = await request.json();
 
     // Validate status

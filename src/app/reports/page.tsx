@@ -807,21 +807,25 @@ export default function ReportsPage() {
         title: 'COUNTING SUMMARY',
         rows: [
           ['Records', String(summary.counting.records)],
-          ['Fuerte 4kg Boxes Class 1', summary.counting.fuerte4c1.toLocaleString()],
-          ['Fuerte 4kg Boxes Class 2', summary.counting.fuerte4c2.toLocaleString()],
-          ['  Fuerte 4kg Subtotal', summary.counting.fuerte4.toLocaleString()],
-          ['Fuerte 10kg Crates Class 1', summary.counting.fuerte10c1.toLocaleString()],
-          ['Fuerte 10kg Crates Class 2', summary.counting.fuerte10c2.toLocaleString()],
-          ['  Fuerte 10kg Subtotal', summary.counting.fuerte10.toLocaleString()],
-          ['Hass 4kg Boxes Class 1', summary.counting.hass4c1.toLocaleString()],
-          ['Hass 4kg Boxes Class 2', summary.counting.hass4c2.toLocaleString()],
-          ['  Hass 4kg Subtotal', summary.counting.hass4.toLocaleString()],
-          ['Hass 10kg Crates Class 1', summary.counting.hass10c1.toLocaleString()],
-          ['Hass 10kg Crates Class 2', summary.counting.hass10c2.toLocaleString()],
-          ['  Hass 10kg Subtotal', summary.counting.hass10.toLocaleString()],
-          ['Intake Crates', summary.counting.intake.toLocaleString()],
-          ['Rejected Crates', summary.counting.rejected.toLocaleString()],
-          ['Processed Crates', summary.counting.processed.toLocaleString()],
+          ...([
+            ['Fuerte 4kg Boxes Class 1', summary.counting.fuerte4c1],
+            ['Fuerte 4kg Boxes Class 2', summary.counting.fuerte4c2],
+            ['  Fuerte 4kg Subtotal', summary.counting.fuerte4],
+            ['Fuerte 10kg Crates Class 1', summary.counting.fuerte10c1],
+            ['Fuerte 10kg Crates Class 2', summary.counting.fuerte10c2],
+            ['  Fuerte 10kg Subtotal', summary.counting.fuerte10],
+            ['Hass 4kg Boxes Class 1', summary.counting.hass4c1],
+            ['Hass 4kg Boxes Class 2', summary.counting.hass4c2],
+            ['  Hass 4kg Subtotal', summary.counting.hass4],
+            ['Hass 10kg Crates Class 1', summary.counting.hass10c1],
+            ['Hass 10kg Crates Class 2', summary.counting.hass10c2],
+            ['  Hass 10kg Subtotal', summary.counting.hass10],
+            ['Intake Crates', summary.counting.intake],
+            ['Rejected Crates', summary.counting.rejected],
+            ['Processed Crates', summary.counting.processed],
+          ] as [string, number][])
+            .filter(([, value]) => value > 0)
+            .map(([label, value]) => [label, value.toLocaleString()]),
         ],
       },
       {
@@ -836,10 +840,14 @@ export default function ReportsPage() {
       {
         title: 'UTILITY MANAGEMENT SUMMARY',
         rows: [
-          ['Electricity Consumed (kWh)', summary.utilities.power.toLocaleString()],
-          ['Water Consumed (m³)', summary.utilities.water.toLocaleString()],
-          ['Diesel Consumed (L)', summary.utilities.diesel.toLocaleString()],
-          ['Internet Cost (KES)', summary.utilities.internet.toLocaleString()],
+          ...([
+            ['Electricity Consumed (kWh)', summary.utilities.power],
+            ['Water Consumed (m³)', summary.utilities.water],
+            ['Diesel Consumed (L)', summary.utilities.diesel],
+            ['Internet Cost (KES)', summary.utilities.internet],
+          ] as [string, number][])
+            .filter(([, value]) => value > 0)
+            .map(([label, value]) => [label, value.toLocaleString()]),
           ['Utility Readings', String(summary.utilities.readings)],
         ],
       },

@@ -828,7 +828,9 @@ export default function ReportsPage() {
         title: 'CASUALS ATTENDANCE SUMMARY',
         rows: [
           ['Total Records', String(summary.attendance.total)],
-          ...casualDesignationOrder.map(label => [`  ${label}`, String(summary.attendance.byDesignation[label] || 0)]),
+          ...casualDesignationOrder
+            .filter(label => (summary.attendance.byDesignation[label] || 0) > 0)
+            .map(label => [`  ${label}`, String(summary.attendance.byDesignation[label] || 0)]),
         ],
       },
       {

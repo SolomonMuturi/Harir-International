@@ -33,13 +33,13 @@ function serialize(container: any, updates: any[] = []) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.manage', 'inventory.manage', 'shipments.view']);
   if (auth.error) return auth.error;
 
   try {
-    const containerId = params.id;
+    const { id: containerId } = await params;
 
     if (!containerId) {
       return NextResponse.json({ error: 'Container ID is required' }, { status: 400 });
@@ -70,13 +70,13 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.manage', 'inventory.manage', 'shipments.view']);
   if (auth.error) return auth.error;
 
   try {
-    const containerId = params.id;
+    const { id: containerId } = await params;
     const body = await request.json();
 
     const container = await prisma.containers.findUnique({
@@ -160,13 +160,13 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.manage', 'inventory.manage', 'shipments.view']);
   if (auth.error) return auth.error;
 
   try {
-    const containerId = params.id;
+    const { id: containerId } = await params;
 
     await prisma.containers.delete({
       where: { id: containerId },

@@ -1219,9 +1219,9 @@ export default function EmployeesPage() {
     return attendance.filter(record => record.date === dateStr);
   }, [attendance, selectedDate]);
 
-  // Filter employees based on search and contract type
+  // Filter employees based on search and contract type, sorted alphabetically
   const filteredEmployees = useMemo(() => {
-    return employees.filter(employee => {
+    const filtered = employees.filter(employee => {
       // Contract filter
       if (activeFilter !== 'All' && employee.contract !== activeFilter) {
         return false;
@@ -1241,6 +1241,9 @@ export default function EmployeesPage() {
       
       return true;
     });
+    
+    // Sort alphabetically by name
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [employees, activeFilter, searchQuery]);
 
   // Filter employees for Gate In (not checked in yet)

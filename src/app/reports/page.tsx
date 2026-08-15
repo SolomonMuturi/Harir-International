@@ -70,9 +70,10 @@ const designationLabelMap: Record<string, string> = {
   loading: 'Loading',
   counting: 'Counting',
   intake: 'Intake',
+  porter: 'Porter',
 };
 
-const casualDesignationOrder = ['Packer', 'Dipping', 'Palletizing', 'Quality Control', 'Loading', 'Counting', 'Intake'];
+const casualDesignationOrder = ['Packer', 'Dipping', 'Palletizing', 'Quality Control', 'Loading', 'Counting', 'Intake', 'Porter'];
 
 const formatDesignationLabel = (value: string) => {
   if (!value) return 'N/A';

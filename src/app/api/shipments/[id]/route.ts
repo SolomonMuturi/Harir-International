@@ -16,14 +16,14 @@ const VALID_STATUSES = [
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.view', 'shipments.create', 'shipments.update', 'shipments.track', 'shipments.manifest', 'loading.view', 'inventory.view', 'carriers.view']);
   if (auth.error) return auth.error;
 
   try {
     // Extract ID from params
-    const shipmentId = params.id;
+    const { id: shipmentId } = await params;
     
     console.log('📡 API: Fetching shipment with ID:', shipmentId);
     
@@ -86,13 +86,13 @@ export async function GET(
 // ADD THIS PATCH METHOD for Outbound functionality
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.create', 'inventory.manage', 'shipments.update']);
   if (auth.error) return auth.error;
 
   try {
-    const shipmentId = params.id;
+    const { id: shipmentId } = await params;
     const body = await request.json();
     
     console.log(`✏️ Updating shipment ${shipmentId}:`, body);
@@ -177,13 +177,13 @@ export async function PATCH(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.create', 'inventory.manage', 'shipments.update']);
   if (auth.error) return auth.error;
 
   try {
-    const shipmentId = params.id;
+    const { id: shipmentId } = await params;
     const body = await request.json();
     
     // Validate status if provided
@@ -223,13 +223,13 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requirePermission(request, ['shipments.create', 'inventory.manage', 'shipments.update']);
   if (auth.error) return auth.error;
 
   try {
-    const shipmentId = params.id;
+    const { id: shipmentId } = await params;
     
     await prisma.shipments.delete({
       where: { id: shipmentId }

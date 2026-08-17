@@ -1348,47 +1348,57 @@ const fetchRepackingRecords = async () => {
     }
   }, [palletCreation.coldRoomId, palletCreation.showOnlyAvailable, activeTab]);
 
-  const handleToggleGroupSelection = (index: number) => {
+  const handleToggleGroupSelection = (groupKey: string) => {
     setPalletCreation(prev => {
-      const updatedGroups = [...prev.boxGroups];
-      const group = updatedGroups[index];
-      
-      const newSelected = !group.is_selected;
-      group.is_selected = newSelected;
-      group.selectedQuantity = newSelected ? group.totalQuantity : 0;
-      
-      group.boxes.forEach(box => {
-        box.is_selected = newSelected;
-        box.selectedQuantity = newSelected ? box.quantity : 0;
+      const updatedGroups = prev.boxGroups.map(group => {
+        const key = `${group.size}_${group.variety}_${group.box_type}_${group.grade}`;
+        if (key !== groupKey) return group;
+        
+        const newSelected = !group.is_selected;
+        return {
+          ...group,
+          is_selected: newSelected,
+          selectedQuantity: newSelected ? group.totalQuantity : 0,
+          boxes: group.boxes.map(box => ({
+            ...box,
+            is_selected: newSelected,
+            selectedQuantity: newSelected ? box.quantity : 0,
+          }))
+        };
       });
       
       return { ...prev, boxGroups: updatedGroups };
     });
   };
 
-  const handleGroupQuantityChange = (index: number, quantity: number) => {
+  const handleGroupQuantityChange = (groupKey: string, quantity: number) => {
     setPalletCreation(prev => {
-      const updatedGroups = [...prev.boxGroups];
-      const group = updatedGroups[index];
-      
-      const validQuantity = Math.max(0, Math.min(quantity, group.totalQuantity));
-      group.selectedQuantity = validQuantity;
-      group.is_selected = validQuantity > 0;
-      
-      let remainingQty = validQuantity;
-      group.boxes.forEach(box => {
-        if (remainingQty <= 0) {
-          box.is_selected = false;
-          box.selectedQuantity = 0;
-        } else if (box.quantity <= remainingQty) {
-          box.is_selected = true;
-          box.selectedQuantity = box.quantity;
-          remainingQty -= box.quantity;
-        } else {
-          box.is_selected = true;
-          box.selectedQuantity = remainingQty;
-          remainingQty = 0;
-        }
+      const updatedGroups = prev.boxGroups.map(group => {
+        const key = `${group.size}_${group.variety}_${group.box_type}_${group.grade}`;
+        if (key !== groupKey) return group;
+        
+        const validQuantity = Math.max(0, Math.min(quantity, group.totalQuantity));
+        
+        let remainingQty = validQuantity;
+        const updatedBoxes = group.boxes.map(box => {
+          if (remainingQty <= 0) {
+            return { ...box, is_selected: false, selectedQuantity: 0 };
+          } else if (box.quantity <= remainingQty) {
+            remainingQty -= box.quantity;
+            return { ...box, is_selected: true, selectedQuantity: box.quantity };
+          } else {
+            const selected = remainingQty;
+            remainingQty = 0;
+            return { ...box, is_selected: true, selectedQuantity: selected };
+          }
+        });
+        
+        return {
+          ...group,
+          selectedQuantity: validQuantity,
+          is_selected: validQuantity > 0,
+          boxes: updatedBoxes
+        };
       });
       
       return { ...prev, boxGroups: updatedGroups };
@@ -1398,11 +1408,16 @@ const fetchRepackingRecords = async () => {
   const handleSelectAllGroups = (type: 'fuerte' | 'hass' | 'all') => {
     setPalletCreation(prev => {
       const updatedGroups = prev.boxGroups.map(group => {
-        const shouldSelect = type === 'all' || 
+        const matchesType = type === 'all' || 
           (type === 'fuerte' && group.variety === 'fuerte') || 
           (type === 'hass' && group.variety === 'hass');
         
-        if (shouldSelect) {
+        const matchesFilter = 
+          (boxGroupFilter.size === 'all' || group.size === boxGroupFilter.size) &&
+          (boxGroupFilter.variety === 'all' || group.variety === boxGroupFilter.variety) &&
+          (boxGroupFilter.grade === 'all' || group.grade === boxGroupFilter.grade);
+        
+        if (matchesType && matchesFilter) {
           return {
             ...group,
             is_selected: true,
@@ -3572,20 +3587,22 @@ const fetchRepackingRecords = async () => {
                                     if (boxGroupFilter.grade !== 'all' && group.grade !== boxGroupFilter.grade) return false;
                                     return true;
                                   })
-                                  .map((group, index) => (
-                                  <TableRow 
-                                    key={`${group.size}_${group.variety}_${group.box_type}_${group.grade}`}
-                                    className={group.is_selected ? "bg-black-50" : ""}
-                                  >
-                                    <TableCell>
-                                      <div className="flex justify-center">
-                                        <Checkbox
-                                          checked={group.is_selected}
-                                          onCheckedChange={() => handleToggleGroupSelection(index)}
-                                          disabled={group.totalQuantity === 0}
-                                        />
-                                      </div>
-                                    </TableCell>
+                                  .map((group) => {
+                                    const groupKey = `${group.size}_${group.variety}_${group.box_type}_${group.grade}`;
+                                    return (
+                                    <TableRow 
+                                      key={groupKey}
+                                      className={group.is_selected ? "bg-black-50" : ""}
+                                    >
+                                      <TableCell>
+                                        <div className="flex justify-center">
+                                          <Checkbox
+                                            checked={group.is_selected}
+                                            onCheckedChange={() => handleToggleGroupSelection(groupKey)}
+                                            disabled={group.totalQuantity === 0}
+                                          />
+                                        </div>
+                                      </TableCell>
                                     <TableCell>
                                       <Badge variant="outline">{formatSize(group.size)}</Badge>
                                     </TableCell>
@@ -3624,7 +3641,7 @@ const fetchRepackingRecords = async () => {
                                           variant="outline"
                                           size="sm"
                                           className="h-7 w-7 p-0"
-                                          onClick={() => handleGroupQuantityChange(index, group.selectedQuantity - 1)}
+                                          onClick={() => handleGroupQuantityChange(groupKey, group.selectedQuantity - 1)}
                                           disabled={group.selectedQuantity <= 0}
                                         >
                                           <Minus className="w-3 h-3" />
@@ -3635,7 +3652,7 @@ const fetchRepackingRecords = async () => {
                                           min="0"
                                           max={group.totalQuantity}
                                           value={group.selectedQuantity}
-                                          onChange={(e) => handleGroupQuantityChange(index, parseInt(e.target.value) || 0)}
+                                          onChange={(e) => handleGroupQuantityChange(groupKey, parseInt(e.target.value) || 0)}
                                           className="w-20 text-center"
                                         />
                                         
@@ -3644,7 +3661,7 @@ const fetchRepackingRecords = async () => {
                                           variant="outline"
                                           size="sm"
                                           className="h-7 w-7 p-0"
-                                          onClick={() => handleGroupQuantityChange(index, group.selectedQuantity + 1)}
+                                          onClick={() => handleGroupQuantityChange(groupKey, group.selectedQuantity + 1)}
                                           disabled={group.selectedQuantity >= group.totalQuantity}
                                         >
                                           <Plus className="w-3 h-3" />
@@ -3652,7 +3669,8 @@ const fetchRepackingRecords = async () => {
                                       </div>
                                     </TableCell>
                                   </TableRow>
-                                ))}
+                                  );
+                                })}
                               </TableBody>
                             </Table>
                           </ScrollArea>

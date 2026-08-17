@@ -2652,9 +2652,10 @@ const fetchRepackingRecords = async () => {
           </div>
           
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="loading">Load Boxes</TabsTrigger>
               <TabsTrigger value="pallets">Pallets</TabsTrigger>
+              <TabsTrigger value="assigned-pallets">Assigned Pallets</TabsTrigger>
               <TabsTrigger value="temperature">Temperature Control</TabsTrigger>
               <TabsTrigger value="repacking">Repacking</TabsTrigger>
               <TabsTrigger value="inventory">Current Inventory</TabsTrigger>
@@ -3938,161 +3939,114 @@ const fetchRepackingRecords = async () => {
                               </ScrollArea>
                             )}
                           </div>
-                          
-                          <div>
-                            <div className="flex items-center justify-between mb-4">
-                              <div>
-                                <h3 className="font-medium text-lg flex items-center gap-2">
-                                  <Badge variant="outline" className="bg-amber-50 text-amber-700">
-                                    📦 Loaded Pallets
-                                  </Badge>
-                                  <span className="text-amber-700">Assigned to Loading Sheets</span>
-                                </h3>
-                                <p className="text-sm text-gray-500">
-                                  {loadedPallets.length} pallet{loadedPallets.length !== 1 ? 's' : ''} assigned to loading sheets
-                                </p>
-                              </div>
-                              <Badge variant="outline" className="bg-amber-50 text-amber-700">
-                                {loadedPallets.length} loaded
-                              </Badge>
-                            </div>
-                            
-                            {loadedPallets.length === 0 ? (
-                              <div className="text-center py-6 border rounded bg-black-50">
-                                <Truck className="w-8 h-8 mx-auto text-amber-300 mb-2" />
-                                <p className="text-amber-500 font-medium">No pallets assigned to loading sheets</p>
-                                <p className="text-sm text-amber-400 mt-1">
-                                  All pallets are available for assignment
-                                </p>
-                              </div>
-                            ) : (
-                              <ScrollArea className="h-[300px] border rounded">
-                                <div className="space-y-3 p-2">
-                                  {loadedPallets.map((pallet) => {
-                                    const isExpanded = expandedPallets.has(pallet.id);
-                                    const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
-                                    
-                                    return (
-                                      <Card key={pallet.id} className="overflow-hidden border-amber-300 bg-black-50">
-                                        <div 
-                                          className="p-4 cursor-pointer hover:bg-black-100 transition-colors"
-                                          onClick={() => handleTogglePalletExpansion(pallet.id)}
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                              {isExpanded ? (
-                                                <ChevronUp className="w-5 h-5 text-amber-400" />
-                                              ) : (
-                                                <ChevronDown className="w-5 h-5 text-amber-400" />
-                                              )}
-                                              <div>
-                                                <div className="font-medium flex items-center gap-2">
-                                                  <Palette className="w-4 h-4" />
-                                                  {palletName}
-                                                  {pallet.is_manual && (
-                                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
-                                                      Manual
-                                                    </Badge>
-                                                  )}
-                                                  {pallet.is_air_freight && (
-                                                    <Badge variant="outline" className="ml-2 bg-cyan-50 text-cyan-700 text-xs">
-                                                      ✈️ Air Freight
-                                                    </Badge>
-                                                  )}
-                                                  <Badge variant="outline" className="ml-2 bg-black-100 text-amber-800 text-xs">
-                                                    Assigned to Loading Sheet
-                                                  </Badge>
-                                                </div>
-                                                <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                                                  <Snowflake className="w-3 h-3" />
-                                                  {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
-                                                  <span className="mx-1">•</span>
-                                                  <Calendar className="w-3 h-3" />
-                                                  {formatDate(pallet.conversion_date || pallet.created_at)}
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div className="text-right">
-                                              <div className="font-bold text-lg">{pallet.pallet_count} pallet{pallet.pallet_count !== 1 ? 's' : ''}</div>
-                                              <div className="text-sm text-gray-500">
-                                                {pallet.total_boxes?.toLocaleString() || 0} boxes
-                                              </div>
-                                              {pallet.is_air_freight && (
-                                                <div className="text-xs text-cyan-600 mt-1">
-                                                  ✈️ Air freight - No box limit
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                        
-                                        {isExpanded && (
-                                          <div className="border-t">
-                                            <div className="p-4 bg-black-50">
-                                              <div className="mb-4">
-                                                <h4 className="font-medium mb-3 flex items-center gap-2">
-                                                  <Box className="w-4 h-4" />
-                                                  Boxes in this Pallet ({pallet.boxes?.length || 0})
-                                                </h4>
-                                                
-                                                {pallet.boxes && pallet.boxes.length > 0 ? (
-                                                  <div className="border rounded overflow-hidden">
-                                                    <Table>
-                                                      <TableHeader>
-                                                        <TableRow className="bg-black-50">
-                                                          <TableHead>Size</TableHead>
-                                                          <TableHead>Variety</TableHead>
-                                                          <TableHead>Type</TableHead>
-                                                          <TableHead>Grade</TableHead>
-                                                          <TableHead className="text-right">Quantity</TableHead>
-                                                        </TableRow>
-                                                      </TableHeader>
-                                                      <TableBody>
-                                                        {pallet.boxes.map((box) => {
-                                                          return (
-                                                            <TableRow key={box.id}>
-                                                              <TableCell>
-                                                                <Badge variant="outline">{formatSize(box.size)}</Badge>
-                                                              </TableCell>
-                                                              <TableCell className="capitalize">
-                                                                {getVarietyDisplay(box.variety)}
-                                                              </TableCell>
-                                                              <TableCell>{box.box_type}</TableCell>
-                                                              <TableCell>
-                                                                {getGradeDisplay(box.grade)}
-                                                              </TableCell>
-                                                              <TableCell className="text-right font-medium">
-                                                                {box.quantity.toLocaleString()}
-                                                              </TableCell>
-                                                            </TableRow>
-                                                          );
-                                                        })}
-                                                      </TableBody>
-                                                    </Table>
-                                                  </div>
-                                                ) : (
-                                                  <div className="text-center py-6 border rounded bg-black">
-                                                    <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                                                    <p className="text-gray-500">No boxes assigned to this pallet</p>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </Card>
-                                    );
-                                  })}
-                                </div>
-                              </ScrollArea>
-                            )}
-                          </div>
                         </div>
                       )}
                     </div>
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+            
+            <TabsContent value="assigned-pallets" className="space-y-6 mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Truck className="w-5 h-5" />
+                    Loaded Pallets - Assigned to Loading Sheets
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                      {loadedPallets.length} loaded
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    Pallets currently assigned to loading sheets with bill number, client, and container details
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadedPallets.length === 0 ? (
+                    <div className="text-center py-8 border rounded bg-black-50">
+                      <Truck className="w-12 h-12 mx-auto text-amber-300 mb-3" />
+                      <p className="text-amber-500 font-medium">No pallets assigned to loading sheets</p>
+                      <p className="text-sm text-amber-400 mt-1">
+                        All pallets are available for assignment
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div className="text-center p-3 bg-amber-50 rounded-lg border">
+                          <div className="text-2xl font-bold text-amber-700">{loadedPallets.length}</div>
+                          <div className="text-sm text-amber-600">Assigned Pallets</div>
+                        </div>
+                        <div className="text-center p-3 bg-amber-50 rounded-lg border">
+                          <div className="text-2xl font-bold text-amber-700">
+                            {loadedPallets.reduce((sum, p) => sum + (p.total_boxes || 0), 0).toLocaleString()}
+                          </div>
+                          <div className="text-sm text-amber-600">Total Boxes</div>
+                        </div>
+                        <div className="text-center p-3 bg-amber-50 rounded-lg border">
+                          <div className="text-2xl font-bold text-amber-700">
+                            {new Set(loadedPallets.map(p => p.loading_sheet_id).filter(Boolean)).size}
+                          </div>
+                          <div className="text-sm text-amber-600">Loading Sheets</div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-md border max-h-[60vh] overflow-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Pallet Name</TableHead>
+                              <TableHead>Cold Room</TableHead>
+                              <TableHead>Pallets</TableHead>
+                              <TableHead>Boxes</TableHead>
+                              <TableHead>Loading Sheet</TableHead>
+                              <TableHead>Client</TableHead>
+                              <TableHead>Container</TableHead>
+                              <TableHead>Date</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {loadedPallets.map((pallet) => {
+                              const sheet = loadingSheets.find(s => s.id === pallet.loading_sheet_id);
+                              const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
+                              
+                              return (
+                                <TableRow key={pallet.id}>
+                                  <TableCell className="font-medium">
+                                    <div className="flex items-center gap-2">
+                                      <Palette className="w-4 h-4 text-amber-500" />
+                                      {palletName}
+                                      {pallet.is_manual && (
+                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">Manual</Badge>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1">
+                                      <Snowflake className="w-3 h-3" />
+                                      {pallet.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2'}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="font-bold">{pallet.pallet_count}</TableCell>
+                                  <TableCell className="font-bold">{(pallet.total_boxes || 0).toLocaleString()}</TableCell>
+                                  <TableCell>
+                                    <div className="font-medium">{sheet?.bill_number || 'N/A'}</div>
+                                  </TableCell>
+                                  <TableCell>{sheet?.client || 'N/A'}</TableCell>
+                                  <TableCell className="font-mono">{sheet?.container || 'N/A'}</TableCell>
+                                  <TableCell>
+                                    {pallet.conversion_date ? formatDate(pallet.conversion_date) : formatDate(pallet.created_at)}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
             
             <TabsContent value="temperature" className="space-y-6 mt-6">

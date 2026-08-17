@@ -140,9 +140,20 @@ export async function GET(request: NextRequest) {
           totals = JSON.parse(record.totals || '{}');
           boxes_loaded_to_coldroom = JSON.parse(record.boxes_loaded_to_coldroom || '{}');
           
-          // Calculate remaining boxes
+          // Calculate how many boxes are physically loaded in the cold room
+          // from the actual cold_room_boxes records (source of truth)
+          const loadedFromColdRoomBoxes: Record<string, number> = {};
+          (record.cold_room_boxes || []).forEach((box: any) => {
+            const key = `${box.variety}_${box.box_type}_${box.grade}_${box.size}`;
+            loadedFromColdRoomBoxes[key] = (loadedFromColdRoomBoxes[key] || 0) + (Number(box.quantity) || 0);
+          });
+          
+          // Calculate remaining boxes (compare against physical boxes in cold room)
           Object.keys(counting_data).forEach(key => {
-            const loadedQty = boxes_loaded_to_coldroom[key] || 0;
+            const loadedQty = Math.max(
+              loadedFromColdRoomBoxes[key] || 0,
+              boxes_loaded_to_coldroom[key] || 0
+            );
             const originalQty = Number(counting_data[key]) || 0;
             const remaining = Math.max(0, originalQty - loadedQty);
             

@@ -524,6 +524,11 @@ export default function ColdRoomPage() {
   const [activeTab, setActiveTab] = useState('loading');
   const [palletCounts, setPalletCounts] = useState<{ [key: string]: number }>({});
   const [viewingPallet, setViewingPallet] = useState<Pallet | null>(null);
+  const [boxGroupFilter, setBoxGroupFilter] = useState<{
+    size: string;
+    variety: string;
+    grade: string;
+  }>({ size: 'all', variety: 'all', grade: 'all' });
 
   const today = new Date().toISOString().split('T')[0];
   
@@ -3323,6 +3328,64 @@ const fetchRepackingRecords = async () => {
                           Clear All
                         </Button>
                       </div>
+
+                      <div className="flex flex-wrap gap-3 mb-4 p-3 bg-black-50 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <Filter className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">Filters:</span>
+                        </div>
+                        <Select
+                          value={boxGroupFilter.size}
+                          onValueChange={(v) => setBoxGroupFilter(prev => ({ ...prev, size: v }))}
+                        >
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue placeholder="Size" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Sizes</SelectItem>
+                            {BOX_SIZES.map(size => (
+                              <SelectItem key={size} value={size}>{formatSize(size)}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={boxGroupFilter.variety}
+                          onValueChange={(v) => setBoxGroupFilter(prev => ({ ...prev, variety: v }))}
+                        >
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue placeholder="Variety" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Varieties</SelectItem>
+                            <SelectItem value="fuerte">Fuerte</SelectItem>
+                            <SelectItem value="hass">Hass</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={boxGroupFilter.grade}
+                          onValueChange={(v) => setBoxGroupFilter(prev => ({ ...prev, grade: v }))}
+                        >
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue placeholder="Class" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Classes</SelectItem>
+                            <SelectItem value="class1">Class 1</SelectItem>
+                            <SelectItem value="class2">Class 2</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {(boxGroupFilter.size !== 'all' || boxGroupFilter.variety !== 'all' || boxGroupFilter.grade !== 'all') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => setBoxGroupFilter({ size: 'all', variety: 'all', grade: 'all' })}
+                          >
+                            <X className="w-3 h-3 mr-1" />
+                            Clear Filters
+                          </Button>
+                        )}
+                      </div>
                       
                       {(() => {
                         const summary = calculateSelectedGroupsSummary();
@@ -3502,7 +3565,14 @@ const fetchRepackingRecords = async () => {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {palletCreation.boxGroups.map((group, index) => (
+                                {palletCreation.boxGroups
+                                  .filter(group => {
+                                    if (boxGroupFilter.size !== 'all' && group.size !== boxGroupFilter.size) return false;
+                                    if (boxGroupFilter.variety !== 'all' && group.variety !== boxGroupFilter.variety) return false;
+                                    if (boxGroupFilter.grade !== 'all' && group.grade !== boxGroupFilter.grade) return false;
+                                    return true;
+                                  })
+                                  .map((group, index) => (
                                   <TableRow 
                                     key={`${group.size}_${group.variety}_${group.box_type}_${group.grade}`}
                                     className={group.is_selected ? "bg-black-50" : ""}
@@ -3604,7 +3674,14 @@ const fetchRepackingRecords = async () => {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {palletCreation.boxGroups.flatMap(group => 
+                                {palletCreation.boxGroups
+                                  .filter(group => {
+                                    if (boxGroupFilter.size !== 'all' && group.size !== boxGroupFilter.size) return false;
+                                    if (boxGroupFilter.variety !== 'all' && group.variety !== boxGroupFilter.variety) return false;
+                                    if (boxGroupFilter.grade !== 'all' && group.grade !== boxGroupFilter.grade) return false;
+                                    return true;
+                                  })
+                                  .flatMap(group => 
                                   group.boxes.map((box, boxIndex) => (
                                     <TableRow 
                                       key={box.id}

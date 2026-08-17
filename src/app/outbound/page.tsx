@@ -1391,7 +1391,7 @@ function LoadingSheet() {
                     )}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuContent align="start" className="w-64 max-h-72 overflow-auto">
                   <DropdownMenuLabel>Unassigned Loading Sheets</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {existingSheets.length === 0 ? (
@@ -1399,7 +1399,7 @@ function LoadingSheet() {
                       No unassigned sheets found
                     </DropdownMenuItem>
                   ) : (
-                    existingSheets.slice(0, 10).map(sheet => (
+                    existingSheets.map(sheet => (
                       <div key={sheet.id} className="flex items-center justify-between w-full">
                         <DropdownMenuItem 
                           onClick={() => handleLoadSheet(sheet.id)}
@@ -1469,14 +1469,6 @@ function LoadingSheet() {
                         </Button>
                       </div>
                     ))
-                  )}
-                  {existingSheets.length > 10 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled>
-                        +{existingSheets.length - 10} more unassigned sheets
-                      </DropdownMenuItem>
-                    </>
                   )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem disabled className="text-xs">
@@ -3299,12 +3291,14 @@ function HistoryDownload() {
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'assigned' | 'in_transit' | 'completed'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sheetsDisplayCount, setSheetsDisplayCount] = useState(10);
+  const [assignmentsDisplayCount, setAssignmentsDisplayCount] = useState(10);
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
-      const sheetsResponse = await fetch('/api/loading-sheets?limit=100');
+      const sheetsResponse = await fetch('/api/loading-sheets?limit=100&includePallets=false');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
         if (sheetsData.success) {
@@ -3318,7 +3312,7 @@ function HistoryDownload() {
         throw new Error(`HTTP error! status: ${sheetsResponse.status}`);
       }
       
-      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      const assignmentsResponse = await fetch('/api/carrier-assignments?limit=200');
       if (assignmentsResponse.ok) {
         const assignmentsData = await assignmentsResponse.json();
         if (assignmentsData.success) {
@@ -3848,7 +3842,7 @@ function HistoryDownload() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border max-h-[60vh] overflow-auto scrollbar-hide">
+          <div className="rounded-md border max-h-[60vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -3863,7 +3857,7 @@ function HistoryDownload() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLoadingSheets.slice(0, 10).map((sheet) => {
+                {filteredLoadingSheets.slice(0, sheetsDisplayCount).map((sheet) => {
                   const isAssigned = assignments.some(a => a.loading_sheet_id === sheet.id);
                   const palletsCount = Array.isArray(sheet.loading_pallets) ? sheet.loading_pallets.length : 0;
                   const totalBoxes = Array.isArray(sheet.loading_pallets) 
@@ -4060,9 +4054,15 @@ function HistoryDownload() {
               </p>
             </div>
           )}
-          {filteredLoadingSheets.length > 10 && (
-            <div className="mt-4 text-center text-sm text-muted-foreground">
-              Showing 10 of {filteredLoadingSheets.length} loading sheets
+          {filteredLoadingSheets.length > sheetsDisplayCount && (
+            <div className="mt-4 text-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSheetsDisplayCount(prev => prev + 10)}
+              >
+                Load More ({sheetsDisplayCount} of {filteredLoadingSheets.length})
+              </Button>
             </div>
           )}
         </CardContent>
@@ -4076,7 +4076,7 @@ function HistoryDownload() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border max-h-[60vh] overflow-auto scrollbar-hide">
+          <div className="rounded-md border max-h-[60vh] overflow-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -4090,7 +4090,7 @@ function HistoryDownload() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAssignments.slice(0, 10).map((assignment) => {
+                {filteredAssignments.slice(0, assignmentsDisplayCount).map((assignment) => {
                   const transitDays = assignment.transit_started_at && assignment.transit_completed_at 
                     ? calculateDaysBetween(assignment.transit_started_at, assignment.transit_completed_at)
                     : assignment.transit_started_at 
@@ -4135,9 +4135,15 @@ function HistoryDownload() {
               </p>
             </div>
           )}
-          {filteredAssignments.length > 10 && (
-            <div className="mt-4 text-center text-sm text-muted-foreground">
-              Showing 10 of {filteredAssignments.length} assignments
+          {filteredAssignments.length > assignmentsDisplayCount && (
+            <div className="mt-4 text-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssignmentsDisplayCount(prev => prev + 10)}
+              >
+                Load More ({assignmentsDisplayCount} of {filteredAssignments.length})
+              </Button>
             </div>
           )}
         </CardContent>

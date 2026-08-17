@@ -1103,7 +1103,7 @@ const fetchRepackingRecords = async () => {
             has_remaining_boxes,
             total_boxes_loaded: loadedBoxes,
             loading_progress_percentage: loading_progress_percentage,
-            should_show: has_remaining_boxes
+            should_show: has_remaining_boxes && total_remaining_boxes > 0
           };
         }).filter(record => record.should_show);
         
@@ -2009,6 +2009,20 @@ const fetchRepackingRecords = async () => {
         setSizeGroups(updatedGroups);
         
         saveBalanceData(updatedGroups);
+        
+        // Remove fully-loaded records from the selected list so they disappear
+        // from the Available Counting Records section
+        setSelectedRecords(prev => {
+          const next = new Set(prev);
+          Array.from(countingRecordIds).forEach(recordId => {
+            const recordGroups = updatedGroups.filter(g => g.countingRecordId === recordId);
+            const fullyLoaded = recordGroups.length > 0 && recordGroups.every(g => g.remainingQuantity === 0);
+            if (fullyLoaded) {
+              next.delete(recordId);
+            }
+          });
+          return next;
+        });
         
         toast({
           title: '✅ Boxes Loaded Successfully!',

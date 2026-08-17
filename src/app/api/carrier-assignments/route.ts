@@ -128,22 +128,37 @@ export async function GET(request: NextRequest) {
   console.log('📡 GET /api/carrier-assignments');
   
   try {
-    const assignments = await prisma.carrier_assignments.findMany({
-      include: {
-        carrier: true,
-        loading_sheet: true
-      },
-      orderBy: {
-        assigned_at: 'desc'
-      },
-      take: 50
-    });
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '50');
+    const skip = (page - 1) * limit;
+
+    const [assignments, totalCount] = await Promise.all([
+      prisma.carrier_assignments.findMany({
+        include: {
+          carrier: true,
+          loading_sheet: true
+        },
+        orderBy: {
+          assigned_at: 'desc'
+        },
+        skip,
+        take: limit
+      }),
+      prisma.carrier_assignments.count()
+    ]);
     
-    console.log(`✅ Found ${assignments.length} assignments`);
+    console.log(`✅ Found ${assignments.length} assignments out of ${totalCount} total`);
     
     return NextResponse.json({
       success: true,
-      data: assignments
+      data: assignments,
+      meta: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit)
+      }
     });
     
   } catch (error: any) {

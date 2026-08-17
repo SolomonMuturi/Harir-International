@@ -70,6 +70,7 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { logActivity, ActivityTypes } from '@/lib/activity-logger';
 import * as XLSX from 'xlsx';
 
@@ -522,6 +523,7 @@ export default function ColdRoomPage() {
   const [expandedPallets, setExpandedPallets] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState('loading');
   const [palletCounts, setPalletCounts] = useState<{ [key: string]: number }>({});
+  const [viewingPallet, setViewingPallet] = useState<Pallet | null>(null);
 
   const today = new Date().toISOString().split('T')[0];
   
@@ -3958,7 +3960,7 @@ const fetchRepackingRecords = async () => {
                     </Badge>
                   </CardTitle>
                   <CardDescription>
-                    Pallets currently assigned to loading sheets with bill number, client, and container details
+                    Pallets currently assigned to loading sheets
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -3999,15 +4001,12 @@ const fetchRepackingRecords = async () => {
                               <TableHead>Cold Room</TableHead>
                               <TableHead>Pallets</TableHead>
                               <TableHead>Boxes</TableHead>
-                              <TableHead>Loading Sheet</TableHead>
-                              <TableHead>Client</TableHead>
-                              <TableHead>Container</TableHead>
                               <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {loadedPallets.map((pallet) => {
-                              const sheet = loadingSheets.find(s => s.id === pallet.loading_sheet_id);
                               const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
                               
                               return (
@@ -4030,12 +4029,17 @@ const fetchRepackingRecords = async () => {
                                   <TableCell className="font-bold">{pallet.pallet_count}</TableCell>
                                   <TableCell className="font-bold">{(pallet.total_boxes || 0).toLocaleString()}</TableCell>
                                   <TableCell>
-                                    <div className="font-medium">{sheet?.bill_number || 'N/A'}</div>
-                                  </TableCell>
-                                  <TableCell>{sheet?.client || 'N/A'}</TableCell>
-                                  <TableCell className="font-mono">{sheet?.container || 'N/A'}</TableCell>
-                                  <TableCell>
                                     {pallet.conversion_date ? formatDate(pallet.conversion_date) : formatDate(pallet.created_at)}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setViewingPallet(pallet)}
+                                    >
+                                      <Eye className="h-4 w-4 mr-1" />
+                                      View
+                                    </Button>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -4047,6 +4051,100 @@ const fetchRepackingRecords = async () => {
                   )}
                 </CardContent>
               </Card>
+
+              <Dialog open={!!viewingPallet} onOpenChange={(open) => { if (!open) setViewingPallet(null); }}>
+                <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Palette className="w-5 h-5" />
+                      {viewingPallet?.pallet_name || `Pallet ${viewingPallet?.id.substring(0, 8)}`}
+                    </DialogTitle>
+                    <DialogDescription>
+                      Pallet details and box breakdown
+                    </DialogDescription>
+                  </DialogHeader>
+                  {viewingPallet && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="p-3 bg-amber-50 rounded-lg border text-center">
+                          <div className="text-lg font-bold text-amber-700">{viewingPallet.pallet_count}</div>
+                          <div className="text-xs text-amber-600">Pallets</div>
+                        </div>
+                        <div className="p-3 bg-amber-50 rounded-lg border text-center">
+                          <div className="text-lg font-bold text-amber-700">{(viewingPallet.total_boxes || 0).toLocaleString()}</div>
+                          <div className="text-xs text-amber-600">Total Boxes</div>
+                        </div>
+                        <div className="p-3 bg-amber-50 rounded-lg border text-center">
+                          <div className="text-lg font-bold text-amber-700">{viewingPallet.boxes_per_pallet || 'N/A'}</div>
+                          <div className="text-xs text-amber-600">Boxes/Pallet</div>
+                        </div>
+                        <div className="p-3 bg-amber-50 rounded-lg border text-center">
+                          <div className="text-lg font-bold text-amber-700">
+                            {viewingPallet.cold_room_id === 'coldroom1' ? 'CR 1' : 'CR 2'}
+                          </div>
+                          <div className="text-xs text-amber-600">Cold Room</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div><span className="text-muted-foreground">Created:</span> <span className="font-medium">{formatDate(viewingPallet.created_at)}</span></div>
+                        <div><span className="text-muted-foreground">Last Updated:</span> <span className="font-medium">{formatDate(viewingPallet.last_updated)}</span></div>
+                        {viewingPallet.conversion_date && (
+                          <div><span className="text-muted-foreground">Conversion Date:</span> <span className="font-medium">{formatDate(viewingPallet.conversion_date)}</span></div>
+                        )}
+                        {viewingPallet.is_manual && (
+                          <div><Badge variant="outline" className="bg-blue-50 text-blue-700">Manual Pallet</Badge></div>
+                        )}
+                        {viewingPallet.is_air_freight && (
+                          <div><Badge variant="outline" className="bg-cyan-50 text-cyan-700">Air Freight</Badge></div>
+                        )}
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium mb-2 flex items-center gap-2">
+                          <Box className="w-4 h-4" />
+                          Boxes in this Pallet ({viewingPallet.boxes?.length || 0})
+                        </h4>
+                        {viewingPallet.boxes && viewingPallet.boxes.length > 0 ? (
+                          <div className="border rounded overflow-hidden">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-black-50">
+                                  <TableHead>Size</TableHead>
+                                  <TableHead>Variety</TableHead>
+                                  <TableHead>Type</TableHead>
+                                  <TableHead>Grade</TableHead>
+                                  <TableHead className="text-right">Quantity</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {viewingPallet.boxes.map((box, idx) => (
+                                  <TableRow key={idx}>
+                                    <TableCell><Badge variant="outline">{formatSize(box.size)}</Badge></TableCell>
+                                    <TableCell className="capitalize">{getVarietyDisplay(box.variety)}</TableCell>
+                                    <TableCell>{box.box_type}</TableCell>
+                                    <TableCell>{getGradeDisplay(box.grade)}</TableCell>
+                                    <TableCell className="text-right font-medium">{box.quantity.toLocaleString()}</TableCell>
+                                  </TableRow>
+                                ))}
+                                <TableRow className="bg-black-50 font-bold">
+                                  <TableCell colSpan={4} className="text-right">TOTAL</TableCell>
+                                  <TableCell className="text-right">{viewingPallet.boxes.reduce((s, b) => s + b.quantity, 0).toLocaleString()}</TableCell>
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : (
+                          <div className="text-center py-6 border rounded bg-black-50">
+                            <Box className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                            <p className="text-gray-500">No boxes in this pallet</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
             </TabsContent>
             
             <TabsContent value="temperature" className="space-y-6 mt-6">

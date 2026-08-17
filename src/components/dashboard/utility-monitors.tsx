@@ -86,7 +86,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
 
   // Check if user has filled readings today
   const checkIfFilledToday = useCallback((): boolean => {
-    const lastFilledDate = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('lastFilledDate') : null : null : null;
+    const lastFilledDate = typeof window !== "undefined" ? localStorage.getItem('lastFilledDate') : null;
     const today = new Date().toISOString().split('T')[0];
     const filled = lastFilledDate === today;
     setIsTodayFilled(filled);
@@ -166,10 +166,12 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
           description: 'You can enable them later in browser settings.',
         });
         setNotificationSettings(prev => ({ ...prev, enabled: false }));
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
-          ...notificationSettings,
-          enabled: false
-        }));
+        if (typeof window !== "undefined") {
+          localStorage.setItem('notificationSettings', JSON.stringify({
+            ...notificationSettings,
+            enabled: false
+          }));
+        }
       }
       
       setShowPermissionDialog(false);
@@ -245,10 +247,12 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
     const hasPermission = await checkNotificationPermission();
     if (!hasPermission) {
       setNotificationSettings(prev => ({ ...prev, enabled: false }));
-      if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
-        ...notificationSettings,
-        enabled: false
-      }));
+      if (typeof window !== "undefined") {
+        localStorage.setItem('notificationSettings', JSON.stringify({
+          ...notificationSettings,
+          enabled: false
+        }));
+      }
       return;
     }
 
@@ -265,7 +269,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
 
   // Initialize notifications
   const initializeNotifications = useCallback(async () => {
-    const savedSettings = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('notificationSettings') : null : null : null;
+    const savedSettings = typeof window !== "undefined" ? localStorage.getItem('notificationSettings') : null;
     if (savedSettings) {
       try {
         const settings = JSON.parse(savedSettings);
@@ -284,7 +288,7 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       }
     }
 
-    const savedName = typeof window !== "undefined" ? typeof window !== "undefined" ? typeof window !== "undefined" ? localStorage.getItem('recordedBy') : null : null : null || '';
+    const savedName = (typeof window !== "undefined" ? localStorage.getItem('recordedBy') : null) || '';
     if (savedName) setRecordedBy(savedName);
 
     checkIfFilledToday();
@@ -315,10 +319,12 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       }
       
       setNotificationSettings(prev => ({ ...prev, enabled: true }));
-      if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
-        ...notificationSettings,
-        enabled: true
-      }));
+      if (typeof window !== "undefined") {
+        localStorage.setItem('notificationSettings', JSON.stringify({
+          ...notificationSettings,
+          enabled: true
+        }));
+      }
       
       scheduleDailyNotification(notificationSettings.time);
       
@@ -328,10 +334,12 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       });
     } else {
       setNotificationSettings(prev => ({ ...prev, enabled: false }));
-      if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
-        ...notificationSettings,
-        enabled: false
-      }));
+      if (typeof window !== "undefined") {
+        localStorage.setItem('notificationSettings', JSON.stringify({
+          ...notificationSettings,
+          enabled: false
+        }));
+      }
       
       if (notificationTimeoutRef.current) {
         clearTimeout(notificationTimeoutRef.current);
@@ -348,10 +356,12 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
   // Handle notification time change
   const handleNotificationTimeChange = (newTime: string) => {
     setNotificationSettings(prev => ({ ...prev, time: newTime }));
-    if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('notificationSettings', JSON.stringify({
-      ...notificationSettings,
-      time: newTime
-    }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem('notificationSettings', JSON.stringify({
+        ...notificationSettings,
+        time: newTime
+      }));
+    }
     
     if (notificationSettings.enabled && hasNotificationPermission) {
       scheduleDailyNotification(newTime);
@@ -577,8 +587,12 @@ export function UtilityMonitors({ onSaveSuccess }: UtilityMonitorsProps) {
       const result = await response.json();
       
       if (response.ok) {
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('recordedBy', recordedBy);
-        if (typeof window !== "undefined") { if (typeof window !== "undefined") { localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        if (typeof window !== "undefined") {
+          localStorage.setItem('recordedBy', recordedBy);
+        }
+        if (typeof window !== "undefined") {
+          localStorage.setItem('lastFilledDate', new Date().toISOString().split('T')[0]);
+        }
         
         checkIfFilledToday();
         

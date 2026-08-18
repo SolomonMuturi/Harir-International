@@ -3298,7 +3298,7 @@ function HistoryDownload() {
     try {
       setLoading(true);
       
-      const sheetsResponse = await fetch('/api/loading-sheets?limit=100&includePallets=false');
+      const sheetsResponse = await fetch('/api/loading-sheets?limit=100&includePallets=true');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
         if (sheetsData.success) {

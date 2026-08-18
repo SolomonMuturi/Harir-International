@@ -528,7 +528,8 @@ export default function ColdRoomPage() {
     size: string;
     variety: string;
     grade: string;
-  }>({ size: 'all', variety: 'all', grade: 'all' });
+    box_type: string;
+  }>({ size: 'all', variety: 'all', grade: 'all', box_type: 'all' });
 
   const today = new Date().toISOString().split('T')[0];
   
@@ -1415,7 +1416,8 @@ const fetchRepackingRecords = async () => {
         const matchesFilter = 
           (boxGroupFilter.size === 'all' || group.size === boxGroupFilter.size) &&
           (boxGroupFilter.variety === 'all' || group.variety === boxGroupFilter.variety) &&
-          (boxGroupFilter.grade === 'all' || group.grade === boxGroupFilter.grade);
+          (boxGroupFilter.grade === 'all' || group.grade === boxGroupFilter.grade) &&
+          (boxGroupFilter.box_type === 'all' || group.box_type === boxGroupFilter.box_type);
         
         if (matchesType && matchesFilter) {
           return {
@@ -3389,12 +3391,25 @@ const fetchRepackingRecords = async () => {
                             <SelectItem value="class2">Class 2</SelectItem>
                           </SelectContent>
                         </Select>
-                        {(boxGroupFilter.size !== 'all' || boxGroupFilter.variety !== 'all' || boxGroupFilter.grade !== 'all') && (
+                        <Select
+                          value={boxGroupFilter.box_type}
+                          onValueChange={(v) => setBoxGroupFilter(prev => ({ ...prev, box_type: v }))}
+                        >
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue placeholder="Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="4kg">4kg Boxes</SelectItem>
+                            <SelectItem value="10kg">10kg Crates</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {(boxGroupFilter.size !== 'all' || boxGroupFilter.variety !== 'all' || boxGroupFilter.grade !== 'all' || boxGroupFilter.box_type !== 'all') && (
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-8"
-                            onClick={() => setBoxGroupFilter({ size: 'all', variety: 'all', grade: 'all' })}
+                            onClick={() => setBoxGroupFilter({ size: 'all', variety: 'all', grade: 'all', box_type: 'all' })}
                           >
                             <X className="w-3 h-3 mr-1" />
                             Clear Filters
@@ -3585,6 +3600,7 @@ const fetchRepackingRecords = async () => {
                                     if (boxGroupFilter.size !== 'all' && group.size !== boxGroupFilter.size) return false;
                                     if (boxGroupFilter.variety !== 'all' && group.variety !== boxGroupFilter.variety) return false;
                                     if (boxGroupFilter.grade !== 'all' && group.grade !== boxGroupFilter.grade) return false;
+                                    if (boxGroupFilter.box_type !== 'all' && group.box_type !== boxGroupFilter.box_type) return false;
                                     return true;
                                   })
                                   .map((group) => {
@@ -3697,6 +3713,7 @@ const fetchRepackingRecords = async () => {
                                     if (boxGroupFilter.size !== 'all' && group.size !== boxGroupFilter.size) return false;
                                     if (boxGroupFilter.variety !== 'all' && group.variety !== boxGroupFilter.variety) return false;
                                     if (boxGroupFilter.grade !== 'all' && group.grade !== boxGroupFilter.grade) return false;
+                                    if (boxGroupFilter.box_type !== 'all' && group.box_type !== boxGroupFilter.box_type) return false;
                                     return true;
                                   })
                                   .flatMap(group => 

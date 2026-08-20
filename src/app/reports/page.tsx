@@ -848,7 +848,6 @@ export default function ReportsPage() {
           ] as [string, number][])
             .filter(([, value]) => value > 0)
             .map(([label, value]) => [label, value.toLocaleString()]),
-          ['Utility Readings', String(summary.utilities.readings)],
         ],
       },
     ];

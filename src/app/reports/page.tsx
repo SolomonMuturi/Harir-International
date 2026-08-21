@@ -834,6 +834,17 @@ export default function ReportsPage() {
             .map(label => [`  ${label}`, String(summary.attendance.byDesignation[label] || 0)]),
         ],
       },
+      {
+        title: 'UTILITY MANAGEMENT SUMMARY',
+        rows: [
+          ...([
+            ['Electricity Consumed (kWh)', summary.utilities.power],
+            ['Water Consumed (m³)', summary.utilities.water],
+          ] as [string, number][])
+            .filter(([, value]) => value > 0)
+            .map(([label, value]) => [label, value.toLocaleString()]),
+        ],
+      },
     ];
 
     let cursor = yPos + 14;

@@ -681,7 +681,7 @@ const generateWarehouseGRN = async (record: CountingRecord, opts?: { save?: bool
     let rejectionNotes = record.rejection_notes || '';
     
     try {
-      let rejectResponse = await fetch(`/api/rejects?pallet_id=${record.pallet_id}`);
+      const rejectResponse = await fetch(`/api/rejects?pallet_id=${encodeURIComponent(record.pallet_id)}`);
       let rejectResult = [];
       
       if (rejectResponse.ok) {
@@ -689,24 +689,9 @@ const generateWarehouseGRN = async (record: CountingRecord, opts?: { save?: bool
         rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
       }
       
-      // Only use a reject that belongs to this exact pallet/delivery.
+      // Only use a reject that belongs to this exact pallet/delivery - never
+      // fall back to supplier name so same-name suppliers stay independent.
       rejectionData = rejectResult.find((r: any) => r.pallet_id === record.pallet_id) || null;
-      
-      if (!rejectionData) {
-        // Fall back to supplier lookup but only for the same delivery day
-        // so a previous delivery's reject is not shown for this GRN.
-        rejectResponse = await fetch(`/api/rejects?supplier_name=${encodeURIComponent(record.supplier_name)}`);
-        if (rejectResponse.ok) {
-          rejectResult = await rejectResponse.json();
-          rejectResult = Array.isArray(rejectResult) ? rejectResult : (rejectResult.data || []);
-        }
-        
-        const submittedDay = format(new Date(record.submitted_at), 'yyyy-MM-dd');
-        rejectionData = rejectResult.find((r: any) =>
-          r.pallet_id === record.pallet_id ||
-          format(new Date(r.rejected_at), 'yyyy-MM-dd') === submittedDay
-        ) || null;
-      }
       
       if (rejectionData) {
         rejectedFuerteCrates = rejectionData.fuerte_crates || 0;
@@ -1579,10 +1564,11 @@ export default function WarehousePage() {
     palletId?: string,
     supplierName?: string
   ) => {
+    // Exact delivery match only (weight entry / pallet IDs). Never fall back
+    // to supplier name so entries of same-name suppliers stay independent.
     return rejects.find(reject =>
       (weightEntryId && reject.weight_entry_id === weightEntryId) ||
-      (palletId && reject.pallet_id === palletId) ||
-      (supplierName && reject.supplier_name.toLowerCase() === supplierName.toLowerCase())
+      (palletId && reject.pallet_id === palletId)
     );
   };
 
@@ -1855,19 +1841,23 @@ export default function WarehousePage() {
           }
           
           const recordsWithRejects = processedRecords.map((record: CountingRecord) => {
-            const rejection = rejections.find(reject => 
-              reject.weight_entry_id === record.id || 
-              reject.pallet_id === record.pallet_id ||
-              reject.supplier_id === record.supplier_id
+            // Exact delivery match only (pallet / weight-entry / counting-record
+            // IDs). Never match by supplier name so same-name suppliers stay
+            // independent. Legacy duplicates for the same delivery are summed.
+            const matchedRejections = rejections.filter(reject =>
+              (record.pallet_id && reject.pallet_id === record.pallet_id) ||
+              (record.supplier_id && reject.weight_entry_id === record.supplier_id) ||
+              (record.id && reject.weight_entry_id === record.id)
             );
             
-            if (rejection) {
+            if (matchedRejections.length > 0) {
+              const latest = matchedRejections[0];
               return {
                 ...record,
-                rejected_weight: rejection.total_rejected_weight || 0,
-                rejected_crates: rejection.total_rejected_crates || 0,
-                rejection_reason: rejection.reason,
-                rejection_notes: rejection.notes
+                rejected_weight: matchedRejections.reduce((sum, r) => sum + (r.total_rejected_weight || 0), 0),
+                rejected_crates: matchedRejections.reduce((sum, r) => sum + (r.total_rejected_crates || 0), 0),
+                rejection_reason: latest.reason,
+                rejection_notes: latest.notes
               };
             }
             return record;

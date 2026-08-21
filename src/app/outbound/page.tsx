@@ -3714,6 +3714,325 @@ function HistoryDownload() {
     }
   };
 
+  const downloadLoadingSheetPDF = async (loadingSheetId: string) => {
+    try {
+      const loadingSheet = loadingSheets.find(ls => ls.id === loadingSheetId);
+      if (!loadingSheet) {
+        toast.error('Loading sheet not found');
+        return;
+      }
+
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const leftMargin = 15;
+      const contentWidth = pageWidth - 2 * leftMargin;
+
+      const GREEN = [34, 139, 34] as const;
+      const DARK_GREEN = [22, 101, 52] as const;
+      const LIGHT_GREEN = [220, 252, 231] as const;
+
+      const LOGO_PATHS = [
+        '/images/HLogo.png',
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico',
+      ];
+
+      let hasLogo = false;
+      for (const path of LOGO_PATHS) {
+        try {
+          const response = await fetch(path);
+          if (!response.ok) continue;
+          const blob = await response.blob();
+          const base64String = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          pdf.addImage(base64String, 'PNG', (pageWidth - 80) / 2, 8, 80, 14);
+          hasLogo = true;
+          break;
+        } catch {
+          continue;
+        }
+      }
+
+      let yPos = hasLogo ? 28 : 15;
+
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...DARK_GREEN);
+      pdf.text('LOADING SHEET', pageWidth / 2, yPos, { align: 'center' });
+
+      pdf.setDrawColor(...GREEN);
+      pdf.setLineWidth(0.5);
+      pdf.line(leftMargin, yPos + 3, pageWidth - leftMargin, yPos + 3);
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      const fmtDate = (d: string | Date | null) => {
+        if (!d) return 'N/A';
+        return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      };
+      pdf.text(`Bill: ${loadingSheet.bill_number || 'N/A'}  |  Client: ${loadingSheet.client || 'N/A'}  |  Container: ${loadingSheet.container || 'N/A'}`, pageWidth / 2, yPos + 8, { align: 'center' });
+      pdf.text(`Document ID: ${loadingSheet.id}  |  Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPos + 13, { align: 'center' });
+
+      yPos += 22;
+
+      pdf.setFillColor(...LIGHT_GREEN as [number, number, number]);
+      pdf.rect(leftMargin, yPos, contentWidth, 7, 'F');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...DARK_GREEN);
+      pdf.text('SHIPPING INFORMATION', leftMargin + 2, yPos + 5);
+      yPos += 10;
+
+      const pallets = loadingSheet.loading_pallets || [];
+      let totalBoxes = 0;
+      let totalWeight = 0;
+      const varietyDist: Record<string, number> = {};
+      const boxTypeDist: Record<string, number> = {};
+      const gradeDist: Record<string, number> = {};
+
+      pallets.forEach((pallet: any) => {
+        const qty = pallet.quantity || 0;
+        const bt = pallet.box_type || '4kg';
+        const w = qty * (bt === '10kg' ? 10 : 4);
+        totalBoxes += qty;
+        totalWeight += w;
+        const v = pallet.variety || 'fuerte';
+        varietyDist[v === 'hass' ? 'Hass' : v === 'mixed' ? 'Mixed' : 'Fuerte'] = (varietyDist[v === 'hass' ? 'Hass' : v === 'mixed' ? 'Mixed' : 'Fuerte'] || 0) + 1;
+        boxTypeDist[bt === '10kg' ? '10kg Boxes' : '4kg Boxes'] = (boxTypeDist[bt === '10kg' ? '10kg Boxes' : '4kg Boxes'] || 0) + qty;
+        const g = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
+        gradeDist[g] = (gradeDist[g] || 0) + qty;
+      });
+
+      const shippingData = [
+        ['EXPORTER', loadingSheet.exporter || 'HARIR INTERNATIONAL LTD', 'LOADING DATE', fmtDate(loadingSheet.loading_date)],
+        ['CLIENT', loadingSheet.client || 'N/A', 'VESSEL', loadingSheet.vessel || 'N/A'],
+        ['SHIPPING LINE', loadingSheet.shipping_line || 'N/A', 'ETA MSA', fmtDate(loadingSheet.eta_msa)],
+        ['BILL NUMBER', loadingSheet.bill_number || 'N/A', 'ETD MSA', fmtDate(loadingSheet.etd_msa)],
+        ['CONTAINER', loadingSheet.container || 'N/A', 'PORT', loadingSheet.port || 'N/A'],
+        ['SEAL 1', loadingSheet.seal1 || 'N/A', 'ETA PORT', fmtDate(loadingSheet.eta_port)],
+        ['SEAL 2', loadingSheet.seal2 || 'N/A', 'TEMP REC 1', loadingSheet.temp_rec1 || 'N/A'],
+        ['TRUCK', loadingSheet.truck || 'N/A', 'TEMP REC 2', loadingSheet.temp_rec2 || 'N/A'],
+      ];
+
+      autoTable(pdf, {
+        startY: yPos,
+        head: [],
+        body: shippingData,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5, textColor: [30, 30, 30] },
+        columnStyles: {
+          0: { cellWidth: contentWidth * 0.18, fontStyle: 'bold', fillColor: [245, 245, 245] },
+          1: { cellWidth: contentWidth * 0.32 },
+          2: { cellWidth: contentWidth * 0.18, fontStyle: 'bold', fillColor: [245, 245, 245] },
+          3: { cellWidth: contentWidth * 0.32 },
+        },
+        margin: { left: leftMargin, right: leftMargin },
+      });
+
+      yPos = (pdf as any).lastAutoTable.finalY + 6;
+
+      if (pallets.length > 0) {
+        if (yPos > pageHeight - 60) {
+          pdf.addPage();
+          yPos = 15;
+        }
+
+        pdf.setFillColor(...LIGHT_GREEN as [number, number, number]);
+        pdf.rect(leftMargin, yPos, contentWidth, 7, 'F');
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...DARK_GREEN);
+        pdf.text(`PALLET DETAILS (${pallets.length} pallets \u2022 ${totalBoxes.toLocaleString()} boxes \u2022 ${totalWeight.toLocaleString()} kg)`, leftMargin + 2, yPos + 5);
+        yPos += 10;
+
+        const palletRows = pallets.map((pallet: any, index: number) => {
+          const qty = pallet.quantity || 0;
+          const bt = pallet.box_type || '4kg';
+          const w = qty * (bt === '10kg' ? 10 : 4);
+          const v = pallet.variety || 'fuerte';
+          const varietyDisplay = v === 'hass' ? 'Hass' : v === 'mixed' ? 'Mixed' : 'Fuerte';
+          const size = (pallet.size || 'size24').replace('size', 'Size ');
+          const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
+          const cr = pallet.cold_room_id === 'coldroom1' ? 'CR 1' : 'CR 2';
+          return [index + 1, cr, varietyDisplay, bt, size, grade, qty, `${w.toLocaleString()} kg`];
+        });
+
+        palletRows.push(['TOTAL', '', '', '', '', '', totalBoxes, `${totalWeight.toLocaleString()} kg`]);
+
+        autoTable(pdf, {
+          startY: yPos,
+          head: [['#', 'Cold Room', 'Variety', 'Type', 'Size', 'Grade', 'Qty', 'Weight']],
+          body: palletRows,
+          theme: 'grid',
+          headStyles: { fillColor: [...GREEN], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
+          styles: { fontSize: 7, cellPadding: 1.5 },
+          columnStyles: {
+            0: { cellWidth: contentWidth * 0.06, halign: 'center' },
+            1: { cellWidth: contentWidth * 0.1 },
+            2: { cellWidth: contentWidth * 0.14 },
+            3: { cellWidth: contentWidth * 0.12 },
+            4: { cellWidth: contentWidth * 0.12 },
+            5: { cellWidth: contentWidth * 0.12 },
+            6: { cellWidth: contentWidth * 0.14, halign: 'right' },
+            7: { cellWidth: contentWidth * 0.2, halign: 'right' },
+          },
+          margin: { left: leftMargin, right: leftMargin },
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && data.row.index === palletRows.length - 1) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.fillColor = [245, 245, 245];
+            }
+          },
+        });
+
+        yPos = (pdf as any).lastAutoTable.finalY + 6;
+      }
+
+      if (yPos > pageHeight - 80) {
+        pdf.addPage();
+        yPos = 15;
+      }
+
+      pdf.setFillColor(...LIGHT_GREEN as [number, number, number]);
+      pdf.rect(leftMargin, yPos, contentWidth, 7, 'F');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...DARK_GREEN);
+      pdf.text('SUMMARY', leftMargin + 2, yPos + 5);
+      yPos += 10;
+
+      const avgPerPallet = pallets.length > 0 ? Math.round(totalBoxes / pallets.length) : 0;
+
+      const summaryData = [
+        ['Total Pallets', String(pallets.length)],
+        ['Total Boxes', totalBoxes.toLocaleString()],
+        ['Total Weight', `${totalWeight.toLocaleString()} kg`],
+        ['Average per Pallet', `${avgPerPallet} boxes`],
+      ];
+
+      if (Object.keys(varietyDist).length > 0) {
+        summaryData.push(['Variety', Object.entries(varietyDist).map(([k, v]) => `${k}: ${v}`).join(', ')]);
+      }
+      if (Object.keys(boxTypeDist).length > 0) {
+        summaryData.push(['Box Types', Object.entries(boxTypeDist).map(([k, v]) => `${k}: ${v.toLocaleString()}`).join(', ')]);
+      }
+      if (Object.keys(gradeDist).length > 0) {
+        summaryData.push(['Grades', Object.entries(gradeDist).map(([k, v]) => `${k}: ${v.toLocaleString()}`).join(', ')]);
+      }
+
+      autoTable(pdf, {
+        startY: yPos,
+        head: [],
+        body: summaryData,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        columnStyles: {
+          0: { cellWidth: contentWidth * 0.25, fontStyle: 'bold', fillColor: [245, 245, 245] },
+          1: { cellWidth: contentWidth * 0.75 },
+        },
+        margin: { left: leftMargin, right: leftMargin },
+      });
+
+      yPos = (pdf as any).lastAutoTable.finalY + 6;
+
+      if (yPos > pageHeight - 40) {
+        pdf.addPage();
+        yPos = 15;
+      }
+
+      pdf.setFillColor(...LIGHT_GREEN as [number, number, number]);
+      pdf.rect(leftMargin, yPos, contentWidth, 7, 'F');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...DARK_GREEN);
+      pdf.text('LOADING DETAILS', leftMargin + 2, yPos + 5);
+      yPos += 10;
+
+      const loadingData = [
+        ['Loaded by', loadingSheet.loaded_by || "Loader's name & signature"],
+        ['Checked by', loadingSheet.checked_by || "Supervisor's name & signature"],
+        ['Remarks', loadingSheet.remarks || 'None'],
+      ];
+
+      autoTable(pdf, {
+        startY: yPos,
+        head: [],
+        body: loadingData,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        columnStyles: {
+          0: { cellWidth: contentWidth * 0.25, fontStyle: 'bold', fillColor: [245, 245, 245] },
+          1: { cellWidth: contentWidth * 0.75 },
+        },
+        margin: { left: leftMargin, right: leftMargin },
+      });
+
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(128, 128, 128);
+      pdf.text(
+        `Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} by Harir International Logistics System`,
+        pageWidth / 2,
+        pageHeight - 8,
+        { align: 'center' }
+      );
+
+      pdf.save(`loading-sheet-${loadingSheet.bill_number || loadingSheet.id}-${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('Loading sheet downloaded as PDF successfully!');
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEET_PDF_DOWNLOADED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          sheetId: loadingSheet.id,
+          billNumber: loadingSheet.bill_number,
+          client: loadingSheet.client,
+          container: loadingSheet.container,
+          destination: loadingSheet.port,
+          totalPallets: pallets.length,
+          totalBoxes,
+          totalWeight,
+          fileType: 'pdf',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error downloading loading sheet PDF:', error);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'OUTBOUND_LOADING_SHEET_PDF_DOWNLOADED',
+        status: 'failure',
+        metadata: {
+          userId: currentUser?.id,
+          loadingSheetId,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      toast.error('Failed to download loading sheet as PDF');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -3821,14 +4140,36 @@ function HistoryDownload() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Button onClick={downloadLoadingSheetsXLSX} className="w-full" disabled={filteredLoadingSheets.length === 0}>
-                <FileDown className="h-4 w-4 mr-2" />
-                Download Loading Sheets ({filteredLoadingSheets.length})
-              </Button>
-              <Button onClick={downloadAssignmentsXLSX} className="w-full" disabled={filteredAssignments.length === 0}>
-                <FileDown className="h-4 w-4 mr-2" />
-                Download Carrier Assignments ({filteredAssignments.length})
-              </Button>
+              <Card className="border border-dashed">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <FileSpreadsheet className="h-5 w-5 text-green-600" />
+                    <div>
+                      <div className="font-medium text-sm">Loading Sheets</div>
+                      <div className="text-xs text-muted-foreground">{filteredLoadingSheets.length} sheets</div>
+                    </div>
+                  </div>
+                  <Button onClick={downloadLoadingSheetsXLSX} className="w-full" size="sm" disabled={filteredLoadingSheets.length === 0}>
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Export as Excel
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="border border-dashed">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <Truck className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <div className="font-medium text-sm">Carrier Assignments</div>
+                      <div className="text-xs text-muted-foreground">{filteredAssignments.length} assignments</div>
+                    </div>
+                  </div>
+                  <Button onClick={downloadAssignmentsXLSX} className="w-full" size="sm" disabled={filteredAssignments.length === 0}>
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Export as Excel
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </CardContent>
@@ -4029,14 +4370,23 @@ function HistoryDownload() {
                             </DialogContent>
                           </Dialog>
                           
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => downloadLoadingSheetXLSX(sheet.id)}
-                            title="Download loading sheet as Excel"
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" title="Download loading sheet">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => downloadLoadingSheetXLSX(sheet.id)}>
+                                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                                Download as Excel
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => downloadLoadingSheetPDF(sheet.id)}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                Download as PDF
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>

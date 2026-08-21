@@ -820,9 +820,6 @@ export default function ReportsPage() {
             ['Hass 10kg Crates Class 1', summary.counting.hass10c1],
             ['Hass 10kg Crates Class 2', summary.counting.hass10c2],
             ['  Hass 10kg Subtotal', summary.counting.hass10],
-            ['Intake Crates', summary.counting.intake],
-            ['Rejected Crates', summary.counting.rejected],
-            ['Processed Crates', summary.counting.processed],
           ] as [string, number][])
             .filter(([, value]) => value > 0)
             .map(([label, value]) => [label, value.toLocaleString()]),

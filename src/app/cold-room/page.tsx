@@ -3925,7 +3925,7 @@ const fetchRepackingRecords = async () => {
                                 <div className="space-y-3 p-2">
                                   {notLoadedPallets.map((pallet) => {
                                     const isExpanded = expandedPallets.has(pallet.id);
-                                    const palletCode = pallet.pallet_name || `${pallet.id.substring(0, 8)}`;
+                                    const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
                                     
                                     return (
                                       <Card key={pallet.id} className="overflow-hidden border-green-200">
@@ -3943,10 +3943,7 @@ const fetchRepackingRecords = async () => {
                                               <div>
                                                 <div className="font-medium flex items-center gap-2">
                                                   <Palette className="w-4 h-4" />
-                                                  Pallet {pallet.id.substring(0, 8)}
-                                                  <Badge variant="outline" className="bg-gray-100 text-gray-600 text-xs font-mono">
-                                                    {palletCode}
-                                                  </Badge>
+                                                  {palletName}
                                                   {pallet.is_manual && (
                                                     <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 text-xs">
                                                       Manual
@@ -4122,17 +4119,14 @@ const fetchRepackingRecords = async () => {
                           </TableHeader>
                           <TableBody>
                             {loadedPallets.map((pallet) => {
-                              const palletCode = pallet.pallet_name || `${pallet.id.substring(0, 8)}`;
+                              const palletName = pallet.pallet_name || `Pallet ${pallet.id.substring(0, 8)}`;
                               
                               return (
                                 <TableRow key={pallet.id}>
                                   <TableCell className="font-medium">
                                     <div className="flex items-center gap-2">
                                       <Palette className="w-4 h-4 text-amber-500" />
-                                      Pallet {pallet.id.substring(0, 8)}
-                                      <Badge variant="outline" className="bg-gray-100 text-gray-600 text-xs font-mono">
-                                        {palletCode}
-                                      </Badge>
+                                      {palletName}
                                       {pallet.is_manual && (
                                         <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">Manual</Badge>
                                       )}

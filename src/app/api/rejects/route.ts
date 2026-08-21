@@ -120,30 +120,51 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Create new reject entry
-    const newReject = await prisma.rejects.create({
-      data: {
-        weight_entry_id: body.weight_entry_id || null,
-        pallet_id: body.pallet_id,
-        supplier_name: body.supplier_name,
-        driver_name: body.driver_name || '',
-        vehicle_plate: body.vehicle_plate || '',
-        region: body.region || '',
-        fuerte_weight: body.fuerte_weight || 0,
-        fuerte_crates: body.fuerte_crates || 0,
-        hass_weight: body.hass_weight || 0,
-        hass_crates: body.hass_crates || 0,
-        total_rejected_weight: body.total_rejected_weight ?? 
-          ((body.fuerte_weight || 0) + (body.hass_weight || 0)),
-        total_rejected_crates: body.total_rejected_crates ?? 
-          ((body.fuerte_crates || 0) + (body.hass_crates || 0)),
-        variance: body.variance || 0,
-        reason: body.reason || '',
-        notes: body.notes || '',
-        rejected_at: new Date(body.rejected_at || new Date()),
-        created_by: body.created_by || 'Weight Capture Station'
-      }
-    });
+    const rejectData = {
+      weight_entry_id: body.weight_entry_id || null,
+      pallet_id: body.pallet_id,
+      supplier_name: body.supplier_name,
+      driver_name: body.driver_name || '',
+      vehicle_plate: body.vehicle_plate || '',
+      region: body.region || '',
+      fuerte_weight: body.fuerte_weight || 0,
+      fuerte_crates: body.fuerte_crates || 0,
+      hass_weight: body.hass_weight || 0,
+      hass_crates: body.hass_crates || 0,
+      total_rejected_weight: body.total_rejected_weight ?? 
+        ((body.fuerte_weight || 0) + (body.hass_weight || 0)),
+      total_rejected_crates: body.total_rejected_crates ?? 
+        ((body.fuerte_crates || 0) + (body.hass_crates || 0)),
+      variance: body.variance || 0,
+      reason: body.reason || '',
+      notes: body.notes || '',
+      rejected_at: new Date(body.rejected_at || new Date()),
+      created_by: body.created_by || 'Weight Capture Station'
+    };
+    
+    // Upsert per delivery: match by weight_entry_id first, then pallet_id,
+    // so re-saving a delivery updates its reject instead of stacking
+    // duplicate rows that leak between entries of same-name suppliers.
+    let existingReject = null;
+    if (body.weight_entry_id) {
+      existingReject = await prisma.rejects.findFirst({
+        where: { weight_entry_id: body.weight_entry_id },
+        orderBy: { rejected_at: 'desc' }
+      });
+    }
+    if (!existingReject) {
+      existingReject = await prisma.rejects.findFirst({
+        where: { pallet_id: body.pallet_id },
+        orderBy: { rejected_at: 'desc' }
+      });
+    }
+    
+    const newReject = existingReject
+      ? await prisma.rejects.update({
+          where: { id: existingReject.id },
+          data: rejectData
+        })
+      : await prisma.rejects.create({ data: rejectData });
     
     return NextResponse.json({
       success: true,

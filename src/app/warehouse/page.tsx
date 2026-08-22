@@ -3215,29 +3215,39 @@ const downloadXLSX = (records: CountingRecord[]) => {
 
   const xlsxData = generateXLSXData(records);
 
+  const sizeColumns: Array<{ header: string; key: keyof XLSRow }> = [
+    // 4kg sizes (14-26)
+    { header: 'Size 14 (4kg)', key: 'size_14_4kg' },
+    { header: 'Size 16 (4kg)', key: 'size_16_4kg' },
+    { header: 'Size 18 (4kg)', key: 'size_18_4kg' },
+    { header: 'Size 20 (4kg)', key: 'size_20_4kg' },
+    { header: 'Size 22 (4kg)', key: 'size_22_4kg' },
+    { header: 'Size 24 (4kg)', key: 'size_24_4kg' },
+    { header: 'Size 26 (4kg)', key: 'size_26_4kg' },
+    // 10kg sizes (14-30)
+    { header: 'Size 14 (10kg)', key: 'size_14_10kg' },
+    { header: 'Size 16 (10kg)', key: 'size_16_10kg' },
+    { header: 'Size 18 (10kg)', key: 'size_18_10kg' },
+    { header: 'Size 20 (10kg)', key: 'size_20_10kg' },
+    { header: 'Size 22 (10kg)', key: 'size_22_10kg' },
+    { header: 'Size 24 (10kg)', key: 'size_24_10kg' },
+    { header: 'Size 26 (10kg)', key: 'size_26_10kg' },
+    { header: 'Size 28 (10kg)', key: 'size_28_10kg' },
+    { header: 'Size 30 (10kg)', key: 'size_30_10kg' }
+  ];
+
+  // Only include box-count columns that actually contain data (> 0 in at
+  // least one exported row) so empty/all-zero size columns are hidden.
+  const activeSizeColumns = sizeColumns.filter(col =>
+    xlsxData.some(row => Number(row[col.key]) > 0)
+  );
+
   const headers = [
     'Date',
     'Supplier Name',
     'Telephone Number',
     'Class',
-    // 4kg sizes (14-26)
-    'Size 14 (4kg)',
-    'Size 16 (4kg)',
-    'Size 18 (4kg)',
-    'Size 20 (4kg)',
-    'Size 22 (4kg)',
-    'Size 24 (4kg)',
-    'Size 26 (4kg)',
-    // 10kg sizes (14-30)
-    'Size 14 (10kg)',
-    'Size 16 (10kg)',
-    'Size 18 (10kg)',
-    'Size 20 (10kg)',
-    'Size 22 (10kg)',
-    'Size 24 (10kg)',
-    'Size 26 (10kg)',
-    'Size 28 (10kg)',
-    'Size 30 (10kg)',
+    ...activeSizeColumns.map(col => col.header),
     // Totals at the end
     'Total 4kg Boxes',
     'Total 10kg Crates',
@@ -3273,9 +3283,23 @@ const downloadXLSX = (records: CountingRecord[]) => {
 
   const grandTotalIntakeCrates = records.reduce((sum, r) => sum + (r.intake_total_crates || 0), 0);
 
+  // Column letters for the Total Price formula depend on how many size
+  // columns are included.
+  const colLetter = (index: number): string => {
+    let result = '';
+    let n = index;
+    while (n >= 0) {
+      result = String.fromCharCode(65 + (n % 26)) + result;
+      n = Math.floor(n / 26) - 1;
+    }
+    return result;
+  };
+  const grandTotalCol = colLetter(4 + activeSizeColumns.length + 2);
+  const unitPriceCol = colLetter(4 + activeSizeColumns.length + 3);
+
   const rows = xlsxData.map((row, index) => {
     const rowNumber = index + 2;
-    const totalPriceFormula = `=L${rowNumber}*K${rowNumber}`;
+    const totalPriceFormula = `=${unitPriceCol}${rowNumber}*${grandTotalCol}${rowNumber}`;
 
     const telephoneNumber = row.telephone_number || '';
 
@@ -3284,24 +3308,7 @@ const downloadXLSX = (records: CountingRecord[]) => {
       row.supplier_name,
       telephoneNumber,
       row.rowClass,
-      // 4kg sizes (14-26)
-      row.size_14_4kg,
-      row.size_16_4kg,
-      row.size_18_4kg,
-      row.size_20_4kg,
-      row.size_22_4kg,
-      row.size_24_4kg,
-      row.size_26_4kg,
-      // 10kg sizes (14-30)
-      row.size_14_10kg,
-      row.size_16_10kg,
-      row.size_18_10kg,
-      row.size_20_10kg,
-      row.size_22_10kg,
-      row.size_24_10kg,
-      row.size_26_10kg,
-      row.size_28_10kg,
-      row.size_30_10kg,
+      ...activeSizeColumns.map(col => row[col.key]),
       // Totals at the end
       row.total_4kg,
       row.total_10kg,
@@ -3312,78 +3319,41 @@ const downloadXLSX = (records: CountingRecord[]) => {
     ];
   });
 
+  const buildSummaryRow = (
+    label: string,
+    className: string,
+    totals: { total_4kg: number; total_10kg: number; grand_total: number },
+    intakeCell: any = ''
+  ) => [
+    label,
+    className,
+    '',
+    '',
+    ...activeSizeColumns.map(() => ''),
+    totals.total_4kg,
+    totals.total_10kg,
+    totals.grand_total,
+    '',
+    '',
+    intakeCell
+  ];
+
   // Add summary rows
   const summaryRows = [
-    [
-      'TOTAL',
-      'Fuerte Class 1',
-      '',
-      '',
-      '', '', '', '', '', '', '',
-      '', '', '', '', '', '', '', '', '',
-      summaryTotals['Fuerte Class 1'].total_4kg,
-      summaryTotals['Fuerte Class 1'].total_10kg,
-      summaryTotals['Fuerte Class 1'].grand_total,
-      '',
-      '',
-      ''
-    ],
-    [
-      'TOTAL',
-      'Fuerte Class 2',
-      '',
-      '',
-      '', '', '', '', '', '', '',
-      '', '', '', '', '', '', '', '', '',
-      summaryTotals['Fuerte Class 2'].total_4kg,
-      summaryTotals['Fuerte Class 2'].total_10kg,
-      summaryTotals['Fuerte Class 2'].grand_total,
-      '',
-      '',
-      ''
-    ],
-    [
-      'TOTAL',
-      'Hass Class 1',
-      '',
-      '',
-      '', '', '', '', '', '', '',
-      '', '', '', '', '', '', '', '', '',
-      summaryTotals['Hass Class 1'].total_4kg,
-      summaryTotals['Hass Class 1'].total_10kg,
-      summaryTotals['Hass Class 1'].grand_total,
-      '',
-      '',
-      ''
-    ],
-    [
-      'TOTAL',
-      'Hass Class 2',
-      '',
-      '',
-      '', '', '', '', '', '', '',
-      '', '', '', '', '', '', '', '', '',
-      summaryTotals['Hass Class 2'].total_4kg,
-      summaryTotals['Hass Class 2'].total_10kg,
-      summaryTotals['Hass Class 2'].grand_total,
-      '',
-      '',
-      ''
-    ],
-    [
+    buildSummaryRow('TOTAL', 'Fuerte Class 1', summaryTotals['Fuerte Class 1']),
+    buildSummaryRow('TOTAL', 'Fuerte Class 2', summaryTotals['Fuerte Class 2']),
+    buildSummaryRow('TOTAL', 'Hass Class 1', summaryTotals['Hass Class 1']),
+    buildSummaryRow('TOTAL', 'Hass Class 2', summaryTotals['Hass Class 2']),
+    buildSummaryRow(
       'GRAND TOTAL',
       'ALL CLASSES',
-      '',
-      '',
-      '', '', '', '', '', '', '',
-      '', '', '', '', '', '', '', '', '',
-      summaryTotals['Fuerte Class 1'].total_4kg + summaryTotals['Fuerte Class 2'].total_4kg + summaryTotals['Hass Class 1'].total_4kg + summaryTotals['Hass Class 2'].total_4kg,
-      summaryTotals['Fuerte Class 1'].total_10kg + summaryTotals['Fuerte Class 2'].total_10kg + summaryTotals['Hass Class 1'].total_10kg + summaryTotals['Hass Class 2'].total_10kg,
-      grandTotalAll,
-      '',
-      '',
+      {
+        total_4kg: summaryTotals['Fuerte Class 1'].total_4kg + summaryTotals['Fuerte Class 2'].total_4kg + summaryTotals['Hass Class 1'].total_4kg + summaryTotals['Hass Class 2'].total_4kg,
+        total_10kg: summaryTotals['Fuerte Class 1'].total_10kg + summaryTotals['Fuerte Class 2'].total_10kg + summaryTotals['Hass Class 1'].total_10kg + summaryTotals['Hass Class 2'].total_10kg,
+        grand_total: grandTotalAll
+      },
       grandTotalIntakeCrates
-    ]
+    )
   ];
 
   // Combine data rows with summary rows

@@ -3875,7 +3875,7 @@ function HistoryDownload() {
 
         autoTable(pdf, {
           startY: yPos,
-          head: [['#', 'Pallet Name/Code', 'Variety', 'Type', 'Size', 'Grade', 'Qty', 'Weight']],
+          head: [['#', 'Pallet Code', 'Variety', 'Type', 'Size', 'Grade', 'Qty', 'Weight']],
           body: palletRows,
           theme: 'grid',
           headStyles: { fillColor: [...GREEN], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },

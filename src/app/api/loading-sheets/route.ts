@@ -27,6 +27,33 @@ function generateShortId(prefix: string = 'ls'): string {
   return `${prefix}${timestamp}${random}`; // Should be < 20 chars
 }
 
+// Attach the cold room pallet name (e.g. "200401") to each loading pallet
+async function enrichPalletsWithNames(sheets: any[]): Promise<void> {
+  const originalIds = Array.from(
+    new Set(
+      sheets
+        .flatMap((s: any) => s.loading_pallets || [])
+        .map((p: any) => p.original_pallet_id)
+        .filter(Boolean)
+    )
+  );
+
+  if (originalIds.length === 0) return;
+
+  const coldRoomPallets = await prisma.cold_room_pallets.findMany({
+    where: { id: { in: originalIds } },
+    select: { id: true, pallet_name: true }
+  });
+
+  const nameMap = new Map(coldRoomPallets.map(p => [p.id, p.pallet_name]));
+
+  sheets.forEach((sheet: any) => {
+    (sheet.loading_pallets || []).forEach((p: any) => {
+      p.pallet_name = nameMap.get(p.original_pallet_id) || null;
+    });
+  });
+}
+
 // GET: Fetch loading sheets
 export async function GET(request: NextRequest) {
   const auth = await requirePermission(request, ['loading.view', 'loading.create', 'loading.manage', 'loading.assign']);
@@ -99,6 +126,8 @@ export async function GET(request: NextRequest) {
     ]);
 
     console.log(`✅ Found ${loadingSheets.length} loading sheet(s) out of ${totalCount} total`);
+
+    await enrichPalletsWithNames(loadingSheets as any[]);
 
     return NextResponse.json({
       success: true,
@@ -415,6 +444,8 @@ export async function GET_BY_ID(request: NextRequest, { params }: { params: { id
 
     console.log(`✅ Found loading sheet: ${loadingSheet.bill_number || loadingSheet.id}`);
 
+    await enrichPalletsWithNames([loadingSheet as any]);
+
     return NextResponse.json({
       success: true,
       data: loadingSheet
@@ -681,6 +712,8 @@ export async function PUT(request: NextRequest) {
       return completeSheet;
     });
 
+    await enrichPalletsWithNames([updatedSheet as any]);
+
     return NextResponse.json({
       success: true,
       message: 'Loading sheet updated successfully',
@@ -834,6 +867,8 @@ export async function PATCH(request: NextRequest) {
         }
       }
     });
+
+    await enrichPalletsWithNames([updatedSheet as any]);
 
     return NextResponse.json({
       success: true,

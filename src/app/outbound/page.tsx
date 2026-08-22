@@ -3867,28 +3867,28 @@ function HistoryDownload() {
           const varietyDisplay = v === 'hass' ? 'Hass' : v === 'mixed' ? 'Mixed' : 'Fuerte';
           const size = (pallet.size || 'size24').replace('size', 'Size ');
           const grade = pallet.grade === 'class2' ? 'Class 2' : 'Class 1';
-          const cr = pallet.cold_room_id === 'coldroom1' ? 'CR 1' : 'CR 2';
-          return [index + 1, cr, varietyDisplay, bt, size, grade, qty, `${w.toLocaleString()} kg`];
+          const palletCode = pallet.pallet_name || pallet.original_pallet_id || 'N/A';
+          return [index + 1, String(palletCode), varietyDisplay, bt, size, grade, qty, `${w.toLocaleString()} kg`];
         });
 
         palletRows.push(['TOTAL', '', '', '', '', '', totalBoxes, `${totalWeight.toLocaleString()} kg`]);
 
         autoTable(pdf, {
           startY: yPos,
-          head: [['#', 'Cold Room', 'Variety', 'Type', 'Size', 'Grade', 'Qty', 'Weight']],
+          head: [['#', 'Pallet Name/Code', 'Variety', 'Type', 'Size', 'Grade', 'Qty', 'Weight']],
           body: palletRows,
           theme: 'grid',
           headStyles: { fillColor: [...GREEN], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
           styles: { fontSize: 7, cellPadding: 1.5 },
           columnStyles: {
             0: { cellWidth: contentWidth * 0.06, halign: 'center' },
-            1: { cellWidth: contentWidth * 0.1 },
-            2: { cellWidth: contentWidth * 0.14 },
-            3: { cellWidth: contentWidth * 0.12 },
+            1: { cellWidth: contentWidth * 0.16 },
+            2: { cellWidth: contentWidth * 0.13 },
+            3: { cellWidth: contentWidth * 0.09 },
             4: { cellWidth: contentWidth * 0.12 },
             5: { cellWidth: contentWidth * 0.12 },
             6: { cellWidth: contentWidth * 0.14, halign: 'right' },
-            7: { cellWidth: contentWidth * 0.2, halign: 'right' },
+            7: { cellWidth: contentWidth * 0.18, halign: 'right' },
           },
           margin: { left: leftMargin, right: leftMargin },
           didParseCell: (data: any) => {

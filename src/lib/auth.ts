@@ -62,7 +62,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.name || user.email,
             role: user.role?.name || 'No Role',
-            roleId: user.roleId,
+            roleId: user.roleId || undefined,
             permissions: user.role?.permissions ? JSON.parse(user.role.permissions) : []
           };
         } catch (error: any) {

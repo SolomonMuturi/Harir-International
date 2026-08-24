@@ -16,7 +16,7 @@ export function getClientIp(request: NextRequest): string {
   if (forwarded) return forwarded.split(',')[0].trim();
   const realIp = request.headers.get('x-real-ip');
   if (realIp) return realIp.trim();
-  return request.ip || 'unknown';
+  return 'unknown';
 }
 
 export class SlidingWindowRateLimiter {

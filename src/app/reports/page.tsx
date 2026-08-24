@@ -703,6 +703,29 @@ export default function ReportsPage() {
       attendanceDesignationCounts[key] = (attendanceDesignationCounts[key] || 0) + 1;
     });
 
+    const utilityReadingRows: any[] = Array.isArray(utilityRes?.readings) ? utilityRes.readings : [];
+    const orderedUtilityReadings = [...utilityReadingRows].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    const powerOpeningKeys = ['powerOfficeOpening', 'powerMachineOpening', 'powerColdroom1Opening', 'powerColdroom2Opening', 'powerOtherOpening'];
+    const powerClosingKeys = ['powerOfficeClosing', 'powerMachineClosing', 'powerColdroom1Closing', 'powerColdroom2Closing', 'powerOtherClosing'];
+
+    let electricityOpening = 0;
+    let electricityClosing = 0;
+    let waterOpening = 0;
+    let waterClosing = 0;
+
+    if (orderedUtilityReadings.length > 0) {
+      const firstMeta = orderedUtilityReadings[0]?.metadata || {};
+      const lastMeta = orderedUtilityReadings[orderedUtilityReadings.length - 1]?.metadata || {};
+
+      electricityOpening = powerOpeningKeys.reduce((sum, key) => sum + Number(firstMeta[key] || 0), 0);
+      electricityClosing = powerClosingKeys.reduce((sum, key) => sum + Number(lastMeta[key] || 0), 0);
+      waterOpening = Number(firstMeta.waterMeter1Opening || 0) + Number(firstMeta.waterMeter2Opening || 0);
+      waterClosing = Number(lastMeta.waterMeter1Closing || 0) + Number(lastMeta.waterMeter2Closing || 0);
+    }
+
     const utilities = utilityRes
       ? {
           power: Number(utilityRes.totals?.power || 0),
@@ -710,8 +733,12 @@ export default function ReportsPage() {
           diesel: Number(utilityRes.totals?.diesel || 0),
           internet: Number(utilityRes.totals?.internet || 0),
           readings: Number(utilityRes.meta?.count || 0),
+          electricityOpening,
+          electricityClosing,
+          waterOpening,
+          waterClosing,
         }
-      : { power: 0, water: 0, diesel: 0, internet: 0, readings: 0 };
+      : { power: 0, water: 0, diesel: 0, internet: 0, readings: 0, electricityOpening: 0, electricityClosing: 0, waterOpening: 0, waterClosing: 0 };
 
     return {
       vehicle: { total: vehicleRows.length, byStatus: vehicleStatusCounts, rows: vehicleRows },
@@ -839,7 +866,11 @@ export default function ReportsPage() {
         rows: [
           ...([
             ['Electricity Consumed (kWh)', summary.utilities.power],
+            ['Electricity Opening Reading (kWh)', summary.utilities.electricityOpening],
+            ['Electricity Closing Reading (kWh)', summary.utilities.electricityClosing],
             ['Water Consumed (m³)', summary.utilities.water],
+            ['Water Opening Reading (m³)', summary.utilities.waterOpening],
+            ['Water Closing Reading (m³)', summary.utilities.waterClosing],
           ] as [string, number][])
             .filter(([, value]) => value > 0)
             .map(([label, value]) => [label, value.toLocaleString()]),

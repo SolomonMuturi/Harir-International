@@ -1039,7 +1039,7 @@ function calculateProduceWeights(): Produce[] {
     { id: 'prod-1', name: 'Rose', variety: 'Red Naomi', category: 'Flower', storageTemp: 2 },
     { id: 'prod-2', name: 'Avocado', variety: 'Hass', category: 'Fruit', storageTemp: 5 },
     { id: 'prod-3', name: 'Blueberry', variety: 'Duke', category: 'Fruit', storageTemp: 1 },
-    { id: 'prod-4', name: 'French Beans', variety: 'Vegetable', storageTemp: 4 },
+    { id: 'prod-4', name: 'French Beans', variety: 'Vegetable', category: 'Vegetable', storageTemp: 4 },
     { id: 'prod-5', name: 'Carnation', variety: 'White', category: 'Flower', storageTemp: 2 },
     { id: 'prod-6', name: 'Tomato', variety: 'Anna F1', category: 'Vegetable', storageTemp: 10 },
   ];
@@ -1495,11 +1495,11 @@ export type Carrier = {
 };
 
 export const carrierData: Carrier[] = [
-    { id: 'carrier-1', name: 'SpeedyLogistics', contactName: 'John Speed', contactEmail: 'john@speedy.com', contactPhone: '0712345678', rating: 4.5, status: 'Active', idNumber: '12345678', vehicleRegistration: 'KDA 123B' },
-    { id: 'carrier-2', name: 'QuickHaul', contactName: 'Jane Quick', contactEmail: 'jane@quickhaul.com', contactPhone: '0723456789', rating: 4.2, status: 'Active', idNumber: '23456789', vehicleRegistration: 'KDB 234C' },
-    { id: 'carrier-3', name: 'ReliableTrans', contactName: 'Peter Reliable', contactEmail: 'peter@reliable.com', contactPhone: '0734567890', rating: 4.8, status: 'Active', idNumber: '34567890', vehicleRegistration: 'KDC 345D' },
-    { id: 'carrier-4', name: 'GlobalMovers', contactName: 'Susan Global', contactEmail: 'susan@global.com', contactPhone: '0745678901', rating: 3.9, status: 'Inactive', idNumber: '45678901', vehicleRegistration: 'KDD 456E' },
-    { id: 'carrier-5', name: 'EcoFreight', contactName: 'David Eco', contactEmail: 'david@eco.com', contactPhone: '0756789012', rating: 4.6, status: 'Active', idNumber: '56789012', vehicleRegistration: 'KDE 567F' },
+    { id: 'carrier-1', name: 'SpeedyLogistics', contact_name: 'John Speed', contact_email: 'john@speedy.com', contact_phone: '0712345678', rating: 4.5, status: 'Active', id_number: '12345678', vehicle_registration: 'KDA 123B' },
+    { id: 'carrier-2', name: 'QuickHaul', contact_name: 'Jane Quick', contact_email: 'jane@quickhaul.com', contact_phone: '0723456789', rating: 4.2, status: 'Active', id_number: '23456789', vehicle_registration: 'KDB 234C' },
+    { id: 'carrier-3', name: 'ReliableTrans', contact_name: 'Peter Reliable', contact_email: 'peter@reliable.com', contact_phone: '0734567890', rating: 4.8, status: 'Active', id_number: '34567890', vehicle_registration: 'KDC 345D' },
+    { id: 'carrier-4', name: 'GlobalMovers', contact_name: 'Susan Global', contact_email: 'susan@global.com', contact_phone: '0745678901', rating: 3.9, status: 'Inactive', id_number: '45678901', vehicle_registration: 'KDD 456E' },
+    { id: 'carrier-5', name: 'EcoFreight', contact_name: 'David Eco', contact_email: 'david@eco.com', contact_phone: '0756789012', rating: 4.6, status: 'Active', id_number: '56789012', vehicle_registration: 'KDE 567F' },
 ];
 
 export type PredictiveMaintenanceAlert = {

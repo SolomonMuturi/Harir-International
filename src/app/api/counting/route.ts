@@ -1,4 +1,4 @@
-// app/api/counting/route.ts
+﻿// app/api/counting/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requirePermission } from '@/lib/api-auth';
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const boxes = searchParams.get('boxes') === 'true';
     
-    console.log('📡 GET /api/counting?action=', action);
+    console.log('ðŸ“¡ GET /api/counting?action=', action);
     
     if (boxes) {
       // Get total boxes counted within date range
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
         };
       }
       
-      const result = await prisma.counting_records.aggregate({
+      const result = await prisma.countingRecord.aggregate({
         where,
         _sum: {
           fuerte_4kg_total: true,
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     if (action === 'size-stats') {
       // FIXED: Enhanced size statistics endpoint
       try {
-        console.log('📊 Fetching detailed size statistics...');
+        console.log('ðŸ“Š Fetching detailed size statistics...');
         
         // Get all counting records with valid data
         const allRecords = await prisma.$queryRaw`
@@ -181,7 +181,11 @@ export async function GET(request: NextRequest) {
         }
 
         // Initialize statistics
-        const sizeStats = {
+        type SizeGroup = { variety: string; boxType: string } & Record<`size${number}_class1` | `size${number}_class2`, number>;
+        const sizeStats: {
+          fuerte: { '4kg': SizeGroup; '10kg': SizeGroup };
+          hass: { '4kg': SizeGroup; '10kg': SizeGroup };
+        } = {
           fuerte: {
             '4kg': {
               variety: 'fuerte',
@@ -347,7 +351,7 @@ export async function GET(request: NextRequest) {
           };
 
           // Aggregate Fuerte 4kg sizes
-          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26'] as const) {
             const class1Key = `fuerte_4kg_class1_size${size}`;
             const class2Key = `fuerte_4kg_class2_size${size}`;
             
@@ -359,7 +363,7 @@ export async function GET(request: NextRequest) {
           }
 
           // Aggregate Fuerte 10kg sizes
-          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'] as const) {
             const class1Key = `fuerte_10kg_class1_size${size}`;
             const class2Key = `fuerte_10kg_class2_size${size}`;
             
@@ -371,7 +375,7 @@ export async function GET(request: NextRequest) {
           }
 
           // Aggregate Hass 4kg sizes
-          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26'] as const) {
             const class1Key = `hass_4kg_class1_size${size}`;
             const class2Key = `hass_4kg_class2_size${size}`;
             
@@ -383,7 +387,7 @@ export async function GET(request: NextRequest) {
           }
 
           // Aggregate Hass 10kg sizes
-          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+          for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'] as const) {
             const class1Key = `hass_10kg_class1_size${size}`;
             const class2Key = `hass_10kg_class2_size${size}`;
             
@@ -411,13 +415,13 @@ export async function GET(request: NextRequest) {
         };
 
         // Calculate Fuerte totals
-        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26'] as const) {
           totals.fuerte['4kg'].class1 += sizeStats.fuerte['4kg'][`size${size}_class1`] || 0;
           totals.fuerte['4kg'].class2 += sizeStats.fuerte['4kg'][`size${size}_class2`] || 0;
         }
         totals.fuerte['4kg'].total = totals.fuerte['4kg'].class1 + totals.fuerte['4kg'].class2;
         
-        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'] as const) {
           totals.fuerte['10kg'].class1 += sizeStats.fuerte['10kg'][`size${size}_class1`] || 0;
           totals.fuerte['10kg'].class2 += sizeStats.fuerte['10kg'][`size${size}_class2`] || 0;
         }
@@ -425,13 +429,13 @@ export async function GET(request: NextRequest) {
         totals.fuerte.overall = totals.fuerte['4kg'].total + totals.fuerte['10kg'].total;
 
         // Calculate Hass totals
-        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26']) {
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26'] as const) {
           totals.hass['4kg'].class1 += sizeStats.hass['4kg'][`size${size}_class1`] || 0;
           totals.hass['4kg'].class2 += sizeStats.hass['4kg'][`size${size}_class2`] || 0;
         }
         totals.hass['4kg'].total = totals.hass['4kg'].class1 + totals.hass['4kg'].class2;
         
-        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32']) {
+        for (const size of ['12', '14', '16', '18', '20', '22', '24', '26', '28', '30', '32'] as const) {
           totals.hass['10kg'].class1 += sizeStats.hass['10kg'][`size${size}_class1`] || 0;
           totals.hass['10kg'].class2 += sizeStats.hass['10kg'][`size${size}_class2`] || 0;
         }
@@ -440,7 +444,7 @@ export async function GET(request: NextRequest) {
 
         totals.grandTotal = totals.fuerte.overall + totals.hass.overall;
 
-        console.log('📊 Detailed size statistics calculated:', {
+        console.log('ðŸ“Š Detailed size statistics calculated:', {
           recordCount: allRecords.length,
           fuerteTotal: totals.fuerte.overall,
           hassTotal: totals.hass.overall,
@@ -463,7 +467,7 @@ export async function GET(request: NextRequest) {
         });
 
       } catch (error) {
-        console.error('❌ Error fetching size statistics:', error);
+        console.error('âŒ Error fetching size statistics:', error);
         return NextResponse.json({
           success: false,
           error: 'Failed to fetch size statistics: ' + (error as any).message
@@ -525,7 +529,7 @@ export async function GET(request: NextRequest) {
     } else if (action === 'coldroom') {
       // Get counting records ready for cold room loading
       try {
-        console.log('📦 Getting counting records ready for cold room...');
+        console.log('ðŸ“¦ Getting counting records ready for cold room...');
         
         const coldroomRecords = await prisma.$queryRaw`
           SELECT * FROM counting_records 
@@ -535,7 +539,7 @@ export async function GET(request: NextRequest) {
           LIMIT 100
         `;
         
-        console.log(`✅ Found ${Array.isArray(coldroomRecords) ? coldroomRecords.length : 0} records ready for cold room`);
+        console.log(`âœ… Found ${Array.isArray(coldroomRecords) ? coldroomRecords.length : 0} records ready for cold room`);
         
         // Process the data to ensure counting_data and totals are properly parsed
         const processedRecords = Array.isArray(coldroomRecords) ? coldroomRecords.map((record: any) => {
@@ -768,7 +772,7 @@ export async function GET(request: NextRequest) {
     }
     
   } catch (error: any) {
-    console.error('❌ GET /api/counting Error:', error.message);
+    console.error('âŒ GET /api/counting Error:', error.message);
     return NextResponse.json({
       success: false,
       error: 'Failed to fetch counting data: ' + error.message
@@ -784,7 +788,7 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
 
-    console.log('📨 POST /api/counting - Saving counting data:', {
+    console.log('ðŸ“¨ POST /api/counting - Saving counting data:', {
       supplier_name: data.supplier_name,
       supplier_id: data.supplier_id,
       pallet_id: data.pallet_id,
@@ -906,7 +910,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Save to database
-    console.log('💾 Saving to counting_records table with for_coldroom:', for_coldroom);
+    console.log('ðŸ’¾ Saving to counting_records table with for_coldroom:', for_coldroom);
 
     await prisma.$executeRaw`
       INSERT INTO counting_records (
@@ -993,7 +997,7 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to retrieve saved counting record');
     }
 
-    console.log(`✅ Counting record saved: ${data.supplier_name} with ID: ${id}, status: ${status}, for_coldroom: ${for_coldroom}`);
+    console.log(`âœ… Counting record saved: ${data.supplier_name} with ID: ${id}, status: ${status}, for_coldroom: ${for_coldroom}`);
 
     // Parse the data for response
     let countingData = savedRecord.counting_data;
@@ -1057,7 +1061,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error: any) {
-    console.error('❌ POST /api/counting Error:', error);
+    console.error('âŒ POST /api/counting Error:', error);
     return NextResponse.json({
       success: false,
       error: 'Failed to save counting record: ' + error.message
@@ -1073,7 +1077,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const data = await request.json();
 
-    console.log('🔄 PATCH /api/counting - Updating counting record for cold room completion');
+    console.log('ðŸ”„ PATCH /api/counting - Updating counting record for cold room completion');
 
     // Validate required fields
     if (!data.id || !data.status) {
@@ -1096,7 +1100,7 @@ export async function PATCH(request: NextRequest) {
     `;
 
     // Check if any row was updated
-    if (typeof result === 'object' && 'affectedRows' in result && result.affectedRows === 0) {
+    if (result === 0) {
       return NextResponse.json(
         { 
           success: false,
@@ -1106,7 +1110,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    console.log(`✅ Updated counting record: ${data.id} to status: ${data.status}, marked as loaded to cold room`);
+    console.log(`âœ… Updated counting record: ${data.id} to status: ${data.status}, marked as loaded to cold room`);
 
     return NextResponse.json({
       success: true,
@@ -1114,7 +1118,7 @@ export async function PATCH(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ PATCH /api/counting Error:', error.message);
+    console.error('âŒ PATCH /api/counting Error:', error.message);
     return NextResponse.json(
       { 
         success: false,
@@ -1133,7 +1137,7 @@ export async function PUT(request: NextRequest) {
   try {
     const data = await request.json();
 
-    console.log('🔄 PUT /api/counting - Moving to rejection');
+    console.log('ðŸ”„ PUT /api/counting - Moving to rejection');
 
     // Validate required fields
     if (!data.counting_record_id || !data.rejection_data) {
@@ -1227,7 +1231,7 @@ export async function PUT(request: NextRequest) {
       DELETE FROM counting_records WHERE id = ${data.counting_record_id}
     `;
 
-    console.log(`✅ Moved to rejection: ${countingRecord.supplier_name}`);
+    console.log(`âœ… Moved to rejection: ${countingRecord.supplier_name}`);
 
     return NextResponse.json({
       success: true,
@@ -1254,7 +1258,7 @@ export async function PUT(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ PUT /api/counting Error:', error.message);
+    console.error('âŒ PUT /api/counting Error:', error.message);
     return NextResponse.json(
       { 
         success: false,
@@ -1290,7 +1294,7 @@ export async function DELETE(request: NextRequest) {
     `;
 
     // Check if any row was deleted
-    if (typeof result === 'object' && 'affectedRows' in result && result.affectedRows === 0) {
+    if (result === 0) {
       return NextResponse.json(
         { 
           success: false,
@@ -1306,7 +1310,7 @@ export async function DELETE(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ DELETE /api/counting Error:', error.message);
+    console.error('âŒ DELETE /api/counting Error:', error.message);
     return NextResponse.json(
       { 
         success: false,

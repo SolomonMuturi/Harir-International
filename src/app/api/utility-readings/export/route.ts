@@ -29,27 +29,27 @@ export async function GET(request: NextRequest) {
     });
 
     // Parse metadata
+    const powerOpeningKeys = ['powerOfficeOpening', 'powerMachineOpening', 'powerColdroom1Opening', 'powerColdroom2Opening', 'powerOtherOpening'];
+    const powerClosingKeys = ['powerOfficeClosing', 'powerMachineClosing', 'powerColdroom1Closing', 'powerColdroom2Closing', 'powerOtherClosing'];
+
     const parsedReadings = readings.map(reading => {
       const metadata = reading.metadata ? JSON.parse(reading.metadata as string) : {};
-      
+
       return {
         id: reading.id,
         date: format(new Date(reading.date), 'yyyy-MM-dd'),
         recordedBy: reading.recordedBy,
         shift: reading.shift,
         notes: reading.notes,
-        
+
         // Power
-        powerOfficeConsumed: metadata.powerOfficeConsumed || 0,
-        powerMachineConsumed: metadata.powerMachineConsumed || 0,
-        powerColdroom1Consumed: metadata.powerColdroom1Consumed || 0,
-        powerColdroom2Consumed: metadata.powerColdroom2Consumed || 0,
-        powerOtherConsumed: metadata.powerOtherConsumed || 0,
+        powerOpening: powerOpeningKeys.reduce((sum, key) => sum + Number(metadata[key] || 0), 0),
+        powerClosing: powerClosingKeys.reduce((sum, key) => sum + Number(metadata[key] || 0), 0),
         totalPowerConsumed: reading.powerConsumed,
-        
+
         // Water
-        waterMeter1Consumed: metadata.waterMeter1Consumed || 0,
-        waterMeter2Consumed: metadata.waterMeter2Consumed || 0,
+        waterOpening: Number(metadata.waterMeter1Opening || 0) + Number(metadata.waterMeter2Opening || 0),
+        waterClosing: Number(metadata.waterMeter1Closing || 0) + Number(metadata.waterMeter2Closing || 0),
         totalWaterConsumed: reading.waterConsumed,
         
         // Generator
@@ -76,15 +76,12 @@ export async function GET(request: NextRequest) {
       'Date',
       'Recorded By',
       'Shift',
-      'Power Office (kWh)',
-      'Power Machine (kWh)',
-      'Power Coldroom 1 (kWh)',
-      'Power Coldroom 2 (kWh)',
-      'Power Other (kWh)',
-      'Total Power (kWh)',
-      'Water Meter 1 (m³)',
-      'Water Meter 2 (m³)',
-      'Total Water (m³)',
+      'Power Opening (kWh)',
+      'Power Closing (kWh)',
+      'Power Consumed (kWh)',
+      'Water Opening (m³)',
+      'Water Closing (m³)',
+      'Water Consumed (m³)',
       'Generator Start',
       'Generator Stop',
       'Runtime',
@@ -101,14 +98,11 @@ export async function GET(request: NextRequest) {
       reading.date,
       reading.recordedBy,
       reading.shift || '',
-      reading.powerOfficeConsumed,
-      reading.powerMachineConsumed,
-      reading.powerColdroom1Consumed,
-      reading.powerColdroom2Consumed,
-      reading.powerOtherConsumed,
+      reading.powerOpening,
+      reading.powerClosing,
       reading.totalPowerConsumed,
-      reading.waterMeter1Consumed,
-      reading.waterMeter2Consumed,
+      reading.waterOpening,
+      reading.waterClosing,
       reading.totalWaterConsumed,
       reading.generatorStart,
       reading.generatorStop,

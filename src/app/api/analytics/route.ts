@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       }),
       
       // 5. Counting Records
-      prisma.counting_records.findMany({
+      prisma.countingRecord.findMany({
         where: {
           submitted_at: { gte: thirtyDaysAgo }
         },
@@ -133,6 +133,11 @@ export async function GET(request: NextRequest) {
         _sum: {
           total: true
         },
+        orderBy: {
+          _sum: {
+            total: 'desc'
+          }
+        },
         take: 10
       }),
       
@@ -144,9 +149,9 @@ export async function GET(request: NextRequest) {
       }),
       
       // 16. Rejection Records
-      prisma.rejection_records.findMany({
+      prisma.rejects.findMany({
         take: 5,
-        orderBy: { submitted_at: 'desc' }
+        orderBy: { rejected_at: 'desc' }
       })
     ]);
     
@@ -528,7 +533,7 @@ function generateRecentActivity(
   countingRecords: any[],
   rejectionRecords: any[]
 ) {
-  const activities = [];
+  const activities: any[] = [];
   const now = new Date();
   
   // Weight entries (last 24 hours)

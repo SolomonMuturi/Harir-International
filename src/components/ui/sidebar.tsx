@@ -694,7 +694,7 @@ const SidebarMenuSubTrigger = React.forwardRef<
     children: React.ReactNode
   }
 >(({ asChild = false, children, ...props }, ref) => {
-  const Comp = asChild ? Slot : "div"
+  const Comp = (asChild ? Slot : "div") as React.ElementType
 
   return (
     <Comp {...props} ref={ref}>

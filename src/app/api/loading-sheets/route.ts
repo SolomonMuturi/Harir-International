@@ -635,7 +635,7 @@ export async function PUT(request: NextRequest) {
           },
           data: {
             loading_sheet_id: null,
-            updated_at: new Date()
+            last_updated: new Date()
           }
         });
 
@@ -692,7 +692,7 @@ export async function PUT(request: NextRequest) {
               },
               data: {
                 loading_sheet_id: id,
-                updated_at: new Date()
+                last_updated: new Date()
               }
             });
             

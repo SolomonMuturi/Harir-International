@@ -2354,7 +2354,7 @@ const fetchRepackingRecords = async () => {
           returnedBoxes: safeArray(repackingForm.returnedBoxes),
           rejectedBoxes: 0,
           notes: repackingForm.notes,
-          processedBy: 'Warehouse Staff',
+          processedBy: (await getCurrentUser())?.name || 'Unknown',
         }),
       });
       
@@ -4400,7 +4400,7 @@ const fetchRepackingRecords = async () => {
                         </p>
                       </div>
                     ) : (
-                      <ScrollArea className="h-[400px]">
+                      <ScrollArea className="h-[calc(100vh-300px)]">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -4438,24 +4438,26 @@ const fetchRepackingRecords = async () => {
                                   <TableRow key={record.id}>
                                     <TableCell>{formatDate(record.timestamp)}</TableCell>
                                     <TableCell>
-                                      <div className="space-y-1">
+                                      <div className="space-y-1.5">
                                         {removedBoxes.map((box, idx) => (
-                                          <div key={idx} className="text-xs bg-black p-1 rounded text-green-600">
+                                          <div key={idx} className="text-sm font-medium bg-red-950 border border-red-800 p-1.5 rounded text-red-300">
                                             -{box.quantity} {box.variety} {box.boxType} {formatSize(box.size)} {box.grade}
                                           </div>
                                         ))}
                                       </div>
                                     </TableCell>
                                     <TableCell>
-                                      <div className="space-y-1">
+                                      <div className="space-y-1.5">
                                         {returnedBoxes.map((box, idx) => (
-                                          <div key={idx} className="text-xs bg-black p-1 rounded text-green-700">
+                                          <div key={idx} className="text-sm font-medium bg-green-950 border border-green-800 p-1.5 rounded text-green-300">
                                             +{box.quantity} {box.variety} {box.boxType} {formatSize(box.size)} {box.grade}
                                           </div>
                                         ))}
                                       </div>
                                     </TableCell>
-                                    <TableCell>{record.processed_by}</TableCell>
+                                    <TableCell>
+                                      <span className="text-sm font-medium">{record.processed_by}</span>
+                                    </TableCell>
                                   </TableRow>
                                 );
                               })}

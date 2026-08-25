@@ -1174,11 +1174,24 @@ function LoadingSheet({ editSheetId, onEditDone, onNavigateToHistory }: { editSh
           },
         });
         
+        const wasEditing = !!sheetData.id;
+        
         await fetchLoadingSheets();
         await fetchAssignments();
         await fetchColdRoomPallets();
         
-        handleNewSheet();
+        setSheetData({
+          ...defaultData,
+          loadingDate: new Date().toISOString().split('T')[0],
+          pallets: []
+        });
+        setLoadedBy('');
+        setCheckedBy('');
+        setRemarks('');
+
+        if (wasEditing && onNavigateToHistory) {
+          onNavigateToHistory();
+        }
       } else {
         if (result.error?.includes('already assigned')) {
           toast.error(`❌ Some pallets are already assigned to other loading sheets. Please remove them and try again.`);
@@ -4348,7 +4361,7 @@ function HistoryDownload({ onEditSheet }: { onEditSheet: (sheetId: string) => vo
                               </DialogHeader>
                               
                               <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-black rounded-lg">
                                   <div className="text-center">
                                     <div className="text-2xl font-bold text-gray-800">{palletsCount}</div>
                                     <div className="text-sm text-gray-600">Total Pallets</div>
@@ -4426,7 +4439,7 @@ function HistoryDownload({ onEditSheet }: { onEditSheet: (sheetId: string) => vo
                                           );
                                         })}
                                         
-                                        <TableRow className="bg-gray-50">
+                                        <TableRow className="bg-black">
                                           <TableCell colSpan={6} className="font-bold text-right">TOTAL</TableCell>
                                           <TableCell className="text-right font-bold">{totalBoxes.toLocaleString()}</TableCell>
                                           <TableCell className="text-right font-bold text-blue-700">{totalWeight.toLocaleString()} kg</TableCell>
@@ -5095,7 +5108,7 @@ export default function OutboundPage() {
             </TabsContent>
 
             <TabsContent value="loading-sheet">
-              <LoadingSheet editSheetId={editSheetId} onEditDone={() => setEditSheetId(null)} />
+              <LoadingSheet editSheetId={editSheetId} onEditDone={() => setEditSheetId(null)} onNavigateToHistory={() => setActiveTab('history')} />
             </TabsContent>
 
             <TabsContent value="carrier-assignment">

@@ -441,9 +441,9 @@ const getCurrentUser = async () => {
   try {
     const response = await fetch('/api/auth/session');
     const session = await response.json();
-    return session?.user || { name: 'System', id: 'system' };
+    return session?.user || { name: 'System', id: 'system', email: null };
   } catch (error) {
-    return { name: 'System', id: 'system' };
+    return { name: 'System', id: 'system', email: null };
   }
 };
 
@@ -672,6 +672,7 @@ export default function ColdRoomPage() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'COLD_ROOM_INVENTORY_EXPORTED',
         status: 'success',
         metadata: {
@@ -683,9 +684,10 @@ export default function ColdRoomPage() {
         },
       });
     } catch (error: any) {
-      const currentUser = await getCurrentUser();
+      const failUser = await getCurrentUser();
       await logActivity({
-        user: currentUser?.name || 'System',
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
         action: 'COLD_ROOM_INVENTORY_EXPORTED',
         status: 'failure',
         metadata: {
@@ -1683,6 +1685,7 @@ const fetchRepackingRecords = async () => {
 
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'COLD_ROOM_PALLET_CREATED',
           status: 'success',
           metadata: {
@@ -1728,8 +1731,10 @@ const fetchRepackingRecords = async () => {
         }
       }
     } catch (error: any) {
+      const failUser = await getCurrentUser();
       await logActivity({
-        user: (await getCurrentUser())?.name || 'System',
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
         action: 'COLD_ROOM_PALLET_CREATED',
         status: 'failure',
         metadata: {
@@ -1789,6 +1794,7 @@ const fetchRepackingRecords = async () => {
 
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'COLD_ROOM_PALLET_DISSOLVED',
           status: 'success',
           metadata: {
@@ -1812,8 +1818,10 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || 'Failed to dissolve pallet');
       }
     } catch (error: any) {
+      const failUser = await getCurrentUser();
       await logActivity({
-        user: (await getCurrentUser())?.name || 'System',
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
         action: 'COLD_ROOM_PALLET_DISSOLVED',
         status: 'failure',
         metadata: {
@@ -2083,6 +2091,7 @@ const fetchRepackingRecords = async () => {
 
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'COLD_ROOM_BOXES_LOADED',
           status: 'success',
           metadata: {
@@ -2108,8 +2117,10 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || `Failed to load boxes: ${result.message || 'Unknown error'}`);
       }
     } catch (error: any) {
+      const failUser = await getCurrentUser();
       await logActivity({
-        user: (await getCurrentUser())?.name || 'System',
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
         action: 'COLD_ROOM_BOXES_LOADED',
         status: 'failure',
         metadata: {
@@ -2200,6 +2211,7 @@ const fetchRepackingRecords = async () => {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'COLD_ROOM_TEMPERATURE_UPDATED',
           status: 'success',
           metadata: {
@@ -2218,8 +2230,10 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || 'Failed to record temperature');
       }
     } catch (error: any) {
+      const failUser = await getCurrentUser();
       await logActivity({
-        user: (await getCurrentUser())?.name || 'System',
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
         action: 'COLD_ROOM_TEMPERATURE_UPDATED',
         status: 'failure',
         metadata: {
@@ -2375,6 +2389,7 @@ const fetchRepackingRecords = async () => {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'COLD_ROOM_REPACKING_RECORDED',
           status: 'success',
           metadata: {
@@ -2397,8 +2412,10 @@ const fetchRepackingRecords = async () => {
         throw new Error(result.error || 'Failed to record repacking');
       }
     } catch (error: any) {
+      const failUser = await getCurrentUser();
       await logActivity({
-        user: (await getCurrentUser())?.name || 'System',
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
         action: 'COLD_ROOM_REPACKING_RECORDED',
         status: 'failure',
         metadata: {

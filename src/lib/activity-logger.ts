@@ -3,6 +3,7 @@
 
 interface LogActivityParams {
   user?: string | null;
+  email?: string | null;
   action: string;
   status?: 'success' | 'failure' | 'pending';
   ip?: string;
@@ -15,6 +16,7 @@ export async function logActivity(params: LogActivityParams): Promise<boolean> {
   try {
     const payload = {
       user: params.user || 'System',
+      email: params.email || null,
       action: params.action,
       status: params.status || 'success',
       ip: params.ip || null,

@@ -833,7 +833,7 @@ function LoadingSheet({ editSheetId, onEditDone, onNavigateToHistory }: { editSh
 
   const fetchAssignments = useCallback(async () => {
     try {
-      const response = await fetch('/api/carrier-assignments');
+      const response = await fetch('/api/carrier-assignments?limit=500');
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -2229,7 +2229,7 @@ function CarrierAssignmentForm() {
         }
       }
       
-      const sheetsResponse = await fetch('/api/loading-sheets?limit=50');
+      const sheetsResponse = await fetch('/api/loading-sheets?limit=500');
       if (sheetsResponse.ok) {
         const sheetsData = await sheetsResponse.json();
         if (sheetsData.success) {
@@ -2237,7 +2237,7 @@ function CarrierAssignmentForm() {
         }
       }
       
-      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      const assignmentsResponse = await fetch('/api/carrier-assignments?limit=500');
       if (assignmentsResponse.ok) {
         const assignmentsData = await assignmentsResponse.json();
         if (assignmentsData.success) {
@@ -4661,7 +4661,7 @@ export default function OutboundPage() {
         ? await carriersResponse.json() 
         : { success: false, data: [] };
       
-      const assignmentsResponse = await fetch('/api/carrier-assignments');
+      const assignmentsResponse = await fetch('/api/carrier-assignments?limit=500');
       const assignmentsData = assignmentsResponse.ok 
         ? await assignmentsResponse.json() 
         : { success: false, data: [] };

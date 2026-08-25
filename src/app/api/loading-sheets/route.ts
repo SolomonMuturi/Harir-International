@@ -558,8 +558,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Validate loading date if provided
-    const loadingDate = body.loadingDate ? parseDate(body.loadingDate) : undefined;
+    // Validate loading date - fallback to existing value or current date
+    const loadingDate = body.loadingDate 
+      ? (parseDate(body.loadingDate) || existingSheet.loading_date || new Date())
+      : (existingSheet.loading_date || new Date());
 
     const updatedSheet = await prisma.$transaction(async (tx) => {
       // Update the loading sheet

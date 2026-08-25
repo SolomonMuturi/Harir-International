@@ -11,7 +11,7 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff, Pencil } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
@@ -56,6 +56,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import * as XLSX from 'xlsx';
 
 // Define types based on your database schema
@@ -326,9 +337,9 @@ const getCurrentUser = async () => {
   try {
     const response = await fetch('/api/auth/session');
     const session = await response.json();
-    return session?.user || { name: 'System', id: 'system' };
+    return session?.user || { name: 'System', id: 'system', email: null };
   } catch (error) {
-    return { name: 'System', id: 'system' };
+    return { name: 'System', id: 'system', email: null };
   }
 };
 
@@ -990,6 +1001,7 @@ function LoadingSheet() {
     const currentUser = await getCurrentUser();
     await logActivity({
       user: currentUser?.name || 'System',
+      email: currentUser?.email || null,
       action: 'OUTBOUND_LOADING_SHEET_PRINTED',
       status: 'success',
       metadata: {
@@ -1020,6 +1032,7 @@ function LoadingSheet() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
@@ -1042,6 +1055,7 @@ function LoadingSheet() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
@@ -1133,6 +1147,7 @@ function LoadingSheet() {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: sheetData.id ? 'LOADING_SHEET_UPDATED' : 'LOADING_SHEET_CREATED',
           status: 'success',
           metadata: {
@@ -1169,6 +1184,7 @@ function LoadingSheet() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: sheetData.id ? 'LOADING_SHEET_UPDATED' : 'LOADING_SHEET_CREATED',
         status: 'failure',
         metadata: {
@@ -1429,6 +1445,7 @@ function LoadingSheet() {
                                   const currentUser = await getCurrentUser();
                                   await logActivity({
                                     user: currentUser?.name || 'System',
+                                    email: currentUser?.email || null,
                                     action: 'LOADING_SHEET_DELETED',
                                     status: 'success',
                                     metadata: {
@@ -1449,6 +1466,7 @@ function LoadingSheet() {
                                 const currentUser = await getCurrentUser();
                                 await logActivity({
                                   user: currentUser?.name || 'System',
+                                  email: currentUser?.email || null,
                                   action: 'LOADING_SHEET_DELETED',
                                   status: 'failure',
                                   metadata: {
@@ -2241,6 +2259,7 @@ function CarrierAssignmentForm() {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'LOADING_ASSIGNED',
           status: 'success',
           metadata: {
@@ -2273,6 +2292,7 @@ function CarrierAssignmentForm() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'LOADING_ASSIGNED',
         status: 'failure',
         metadata: {
@@ -2663,6 +2683,7 @@ function TransitManagement() {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'OUTBOUND_TRANSIT_STARTED',
           status: 'success',
           metadata: {
@@ -2692,6 +2713,7 @@ function TransitManagement() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_TRANSIT_STARTED',
         status: 'failure',
         metadata: {
@@ -2750,6 +2772,7 @@ function TransitManagement() {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'OUTBOUND_TRANSIT_COMPLETED',
           status: 'success',
           metadata: {
@@ -2779,6 +2802,7 @@ function TransitManagement() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_TRANSIT_COMPLETED',
         status: 'failure',
         metadata: {
@@ -2840,6 +2864,7 @@ function TransitManagement() {
         const currentUser = await getCurrentUser();
         await logActivity({
           user: currentUser?.name || 'System',
+          email: currentUser?.email || null,
           action: 'OUTBOUND_SHIPMENT_DELIVERED',
           status: 'success',
           metadata: {
@@ -2863,6 +2888,7 @@ function TransitManagement() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_SHIPMENT_DELIVERED',
         status: 'failure',
         metadata: {
@@ -3445,6 +3471,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEETS_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
@@ -3461,6 +3488,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEETS_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
@@ -3504,6 +3532,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_ASSIGNMENTS_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
@@ -3521,6 +3550,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_ASSIGNMENTS_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
@@ -3677,6 +3707,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'success',
         metadata: {
@@ -3700,6 +3731,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEET_XLS_DOWNLOADED',
         status: 'failure',
         metadata: {
@@ -3997,6 +4029,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEET_PDF_DOWNLOADED',
         status: 'success',
         metadata: {
@@ -4019,6 +4052,7 @@ function HistoryDownload() {
       const currentUser = await getCurrentUser();
       await logActivity({
         user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
         action: 'OUTBOUND_LOADING_SHEET_PDF_DOWNLOADED',
         status: 'failure',
         metadata: {
@@ -4506,6 +4540,7 @@ export default function OutboundPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [editSheetId, setEditSheetId] = useState<string | null>(null);
   const router = useRouter();
 
   const [stats, setStats] = useState({
@@ -4643,6 +4678,7 @@ export default function OutboundPage() {
     const currentUser = await getCurrentUser();
     await logActivity({
       user: currentUser?.name || 'System',
+      email: currentUser?.email || null,
       action: 'OUTBOUND_DISPATCH_NOTE_VIEWED',
       status: 'success',
       metadata: {
@@ -4660,6 +4696,7 @@ export default function OutboundPage() {
     const currentUser = await getCurrentUser();
     await logActivity({
       user: currentUser?.name || 'System',
+      email: currentUser?.email || null,
       action: 'OUTBOUND_MANIFEST_VIEWED',
       status: 'success',
       metadata: {
@@ -4982,7 +5019,7 @@ export default function OutboundPage() {
             </TabsContent>
 
             <TabsContent value="loading-sheet">
-              <LoadingSheet />
+              <LoadingSheet editSheetId={editSheetId} onEditDone={() => setEditSheetId(null)} />
             </TabsContent>
 
             <TabsContent value="carrier-assignment">
@@ -4994,7 +5031,7 @@ export default function OutboundPage() {
             </TabsContent>
 
             <TabsContent value="history">
-              <HistoryDownload />
+              <HistoryDownload onEditSheet={(sheetId) => { setEditSheetId(sheetId); setActiveTab('loading-sheet'); }} />
             </TabsContent>
           </Tabs>
         </main>

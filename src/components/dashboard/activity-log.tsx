@@ -95,6 +95,7 @@ import {
 interface ActivityLogEntry {
   id: string;
   user: string | null;
+  email: string | null;
   avatar: string | null;
   action: string | null;
   ip: string | null;
@@ -624,6 +625,10 @@ export function ActivityLog() {
                     </Avatar>
                     <p className="text-sm">{selectedLog.user || 'System'}</p>
                   </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground">Email</h4>
+                  <p className="text-sm mt-1">{selectedLog.email || 'N/A'}</p>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground">Timestamp</h4>

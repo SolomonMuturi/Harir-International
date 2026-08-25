@@ -193,6 +193,7 @@ model accounts_receivable {
 model activity_logs {
   id         String               @id @default(cuid()) @db.VarChar(20)
   user       String?              @db.VarChar(100)
+  email      String?              @db.VarChar(255)
   avatar     String?              @db.VarChar(255)
   action     String?              @db.Text
   ip         String?              @db.VarChar(45)

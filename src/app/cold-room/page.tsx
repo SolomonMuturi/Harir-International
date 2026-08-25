@@ -3510,7 +3510,7 @@ const fetchRepackingRecords = async () => {
                                             <div className="text-xs text-gray-600">
                                               full pallet{stats.pallets !== 1 ? 's' : ''}
                                             </div>
-                                            {stats.remaining > 0 && !summary.boxesPerPallet && (
+                                            {stats.remaining > 0 && summary.boxesPerPallet > 0 && (
                                               <div className="text-xs text-amber-600 mt-1">
                                                 +{stats.remaining} box{stats.remaining !== 1 ? 'es' : ''} extra
                                               </div>
@@ -3521,60 +3521,7 @@ const fetchRepackingRecords = async () => {
                                     ))}
                                   </div>
                                   
-                                  <div className="grid grid-cols-2 gap-4 mt-2">
-                                    {Object.entries(palletCounts).map(([key, count]) => {
-                                      if (key.endsWith('_remaining')) return null;
-                                      
-                                      const type = key;
-                                      const isAirFreight = palletCreation.boxesPerPallet === 0;
-                                      
-                                      return (
-                                        <div key={type} className={`p-3 rounded border ${isAirFreight ? 'bg-cyan-50 border-cyan-200' : 'bg-gradient-to-r from-amber-50 to-amber-100 border-amber-200'}`}>
-                                          <div className="flex items-center justify-between">
-                                            <div>
-                                              <div className="text-sm font-medium text-amber-800">
-                                                {type === '4kg' ? '4kg Boxes' : '10kg Crates'}
-                                                {isAirFreight && (
-                                                  <Badge variant="outline" className="ml-2 bg-cyan-100 text-cyan-700 text-xs">
-                                                    ✈️ Air
-                                                  </Badge>
-                                                )}
-                                              </div>
-                                              <div className="text-xs text-amber-600">
-                                                {count} pallet{count !== 1 ? 's' : ''}
-                                              </div>
-                                            </div>
-                                            {!isAirFreight && palletCounts[`${type}_remaining`] > 0 && (
-                                              <div className="text-right">
-                                                <div className="text-lg font-bold text-amber-700">
-                                                  {(type === '4kg' ? palletCreation.boxesPerPallet : 120) - palletCounts[`${type}_remaining`]} more
-                                                </div>
-                                                <div className="text-xs text-amber-600">
-                                                  for next pallet ({palletCounts[`${type}_remaining`]} available)
-                                                </div>
-                                              </div>
-                                            )}
-                                          </div>
-                                          {!isAirFreight && palletCounts[`${type}_remaining`] > 0 && (
-                                            <div className="mt-2">
-                                              <div className="w-full bg-amber-200 rounded-full h-2">
-                                                <div 
-                                                  className="bg-amber-500 h-2 rounded-full" 
-                                                  style={{ 
-                                                    width: `${(palletCounts[`${type}_remaining`] / (type === '4kg' ? palletCreation.boxesPerPallet : 120)) * 100}%` 
-                                                  }}
-                                                />
-                                              </div>
-                                              <div className="text-xs text-amber-700 mt-1 text-center">
-                                                {palletCounts[`${type}_remaining`]}/{type === '4kg' ? palletCreation.boxesPerPallet : 120} 
-                                                ({Math.round((palletCounts[`${type}_remaining`] / (type === '4kg' ? palletCreation.boxesPerPallet : 120)) * 100)}%)
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
+
                                 </div>
                               </CardContent>
                             </Card>

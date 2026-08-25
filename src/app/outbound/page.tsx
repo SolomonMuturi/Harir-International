@@ -3310,7 +3310,7 @@ function TransitManagement() {
 }
 
 // History Component for downloading lists (unchanged, kept as is)
-function HistoryDownload() {
+function HistoryDownload({ onEditSheet }: { onEditSheet: (sheetId: string) => void }) {
   const [loadingSheets, setLoadingSheets] = useState<DatabaseLoadingSheet[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3319,6 +3319,7 @@ function HistoryDownload() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sheetsDisplayCount, setSheetsDisplayCount] = useState(10);
   const [assignmentsDisplayCount, setAssignmentsDisplayCount] = useState(10);
+  const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {

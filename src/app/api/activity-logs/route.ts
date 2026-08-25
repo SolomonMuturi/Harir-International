@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
     const data = {
       id: id,
       user: body.user || null,
+      email: body.email || null,
       avatar: body.avatar || null,
       action: body.action,
       ip: body.ip || ip,
@@ -165,6 +166,7 @@ export async function POST(request: NextRequest) {
           data: {
             id: newId,
             user: body.user || null,
+            email: body.email || null,
             avatar: body.avatar || null,
             action: body.action,
             ip: body.ip || ip,

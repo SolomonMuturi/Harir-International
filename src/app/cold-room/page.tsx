@@ -4440,7 +4440,7 @@ const fetchRepackingRecords = async () => {
                                     <TableCell>
                                       <div className="space-y-1">
                                         {removedBoxes.map((box, idx) => (
-                                          <div key={idx} className="text-xs bg-red-50 p-1 rounded text-green-600">
+                                          <div key={idx} className="text-xs bg-black p-1 rounded text-green-600">
                                             -{box.quantity} {box.variety} {box.boxType} {formatSize(box.size)} {box.grade}
                                           </div>
                                         ))}
@@ -4449,7 +4449,7 @@ const fetchRepackingRecords = async () => {
                                     <TableCell>
                                       <div className="space-y-1">
                                         {returnedBoxes.map((box, idx) => (
-                                          <div key={idx} className="text-xs bg-green-50 p-1 rounded text-green-700">
+                                          <div key={idx} className="text-xs bg-black p-1 rounded text-green-700">
                                             +{box.quantity} {box.variety} {box.boxType} {formatSize(box.size)} {box.grade}
                                           </div>
                                         ))}
@@ -4511,9 +4511,9 @@ const fetchRepackingRecords = async () => {
                           </div>
                         ) : (
                           safeArray(repackingForm.removedBoxes).map((box, index) => (
-                            <div key={index} className="border rounded p-3 mb-3 bg-blue-50">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="font-medium text-red-700">Remove Box #{index + 1}</span>
+<div key={index} className="border rounded p-3 mb-3 bg-black">
+                               <div className="flex justify-between items-center mb-2">
+                                 <span className="font-medium text-red-700">Remove Box #{index + 1}</span>
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -4640,9 +4640,9 @@ const fetchRepackingRecords = async () => {
                           </div>
                         ) : (
                           safeArray(repackingForm.returnedBoxes).map((box, index) => (
-                            <div key={index} className="border rounded p-3 mb-3 bg-blue-50">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="font-medium text-green-700">Return Box #{index + 1}</span>
+<div key={index} className="border rounded p-3 mb-3 bg-black">
+                               <div className="flex justify-between items-center mb-2">
+                                 <span className="font-medium text-green-700">Return Box #{index + 1}</span>
                                 <Button
                                   type="button"
                                   variant="ghost"

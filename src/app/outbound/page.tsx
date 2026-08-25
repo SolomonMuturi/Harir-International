@@ -11,7 +11,7 @@ import {
 import { FreshTraceLogo } from '@/components/icons';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff, Pencil } from 'lucide-react';
+import { Truck, PackageCheck, Clock, RefreshCw, Printer, Download, FileText, BarChart3, Layers, Users, Calendar, Grid, Plus, Trash2, Save, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, FileSpreadsheet, Container, ArrowRight, History, Search, Play, StopCircle, MapPin, CalendarDays, FileDown, Filter, Eye, Box, Snowflake, Warehouse, ChevronUp, ChevronRight, EyeOff, Pencil, MoreHorizontal } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentDataTable } from '@/components/dashboard/shipment-data-table';
 import { useRouter } from 'next/navigation';
@@ -551,7 +551,7 @@ function PalletDetailsModal({ loadingSheet }: { loadingSheet: DatabaseLoadingShe
 }
 
 // Loading Sheet Component - UPDATED WITH NEW DISPLAY FORMAT
-function LoadingSheet() {
+function LoadingSheet({ editSheetId, onEditDone, onNavigateToHistory }: { editSheetId?: string | null; onEditDone?: () => void; onNavigateToHistory?: () => void }) {
   const defaultData: LoadingSheetData = {
     exporter: 'HARIR INTERNATIONAL LTD',
     client: '',
@@ -902,6 +902,14 @@ function LoadingSheet() {
     fetchColdRoomPallets();
   }, [selectedColdRoom, fetchColdRoomPallets]);
 
+  useEffect(() => {
+    if (editSheetId) {
+      handleLoadSheet(editSheetId).then(() => {
+        if (onEditDone) onEditDone();
+      });
+    }
+  }, [editSheetId]);
+
   const togglePalletExpansion = (palletId: string) => {
     setExpandedPallet(expandedPallet === palletId ? null : palletId);
   };
@@ -1131,8 +1139,9 @@ function LoadingSheet() {
 
       console.log('📤 Saving loading sheet to database...', saveData);
 
-      const response = await fetch('/api/loading-sheets', {
-        method: 'POST',
+      const isEditing = !!sheetData.id;
+      const response = await fetch(isEditing ? `/api/loading-sheets?id=${sheetData.id}` : '/api/loading-sheets', {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1203,8 +1212,23 @@ function LoadingSheet() {
     }
   };
 
-  const handleLoadSheet = (sheetId: string) => {
-    const selectedSheet = existingSheets.find(sheet => sheet.id === sheetId);
+  const handleLoadSheet = async (sheetId: string) => {
+    let selectedSheet = existingSheets.find(sheet => sheet.id === sheetId);
+    
+    if (!selectedSheet) {
+      try {
+        const response = await fetch(`/api/loading-sheets?limit=1&search=${sheetId}&includePallets=true`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data && result.data.length > 0) {
+            selectedSheet = result.data.find((s: DatabaseLoadingSheet) => s.id === sheetId) || result.data[0];
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching sheet for editing:', err);
+      }
+    }
+
     if (selectedSheet) {
       console.log('Loading sheet data:', selectedSheet);
       
@@ -3361,6 +3385,24 @@ function HistoryDownload({ onEditSheet }: { onEditSheet: (sheetId: string) => vo
     fetchData();
   }, [fetchData]);
 
+  const deleteSheet = async (sheetId: string) => {
+    try {
+      setDeletingSheetId(sheetId);
+      const response = await fetch(`/api/loading-sheets?id=${sheetId}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.success) {
+        toast.success('Loading sheet deleted successfully');
+        fetchData();
+      } else {
+        toast.error(result.error || 'Failed to delete loading sheet');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete loading sheet');
+    } finally {
+      setDeletingSheetId(null);
+    }
+  };
+
   const filteredLoadingSheets = loadingSheets.filter(sheet => {
     if (dateFilter !== 'all') {
       const sheetDate = new Date(sheet.created_at);
@@ -4407,11 +4449,15 @@ function HistoryDownload({ onEditSheet }: { onEditSheet: (sheetId: string) => vo
                           
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" title="Download loading sheet">
-                                <Download className="h-4 w-4" />
+                              <Button variant="ghost" size="sm" title="Actions">
+                                <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => onEditSheet(sheet.id)}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => downloadLoadingSheetXLSX(sheet.id)}>
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Download as Excel
@@ -4420,6 +4466,35 @@ function HistoryDownload({ onEditSheet }: { onEditSheet: (sheetId: string) => vo
                                 <FileText className="h-4 w-4 mr-2" />
                                 Download as PDF
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <DropdownMenuItem
+                                    onSelect={(e) => e.preventDefault()}
+                                    className="text-red-600 focus:text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Loading Sheet?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete loading sheet {sheet.bill_number || sheet.id.substring(0, 8)} and unlink all its pallets. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="bg-red-600 hover:bg-red-700"
+                                      onClick={() => deleteSheet(sheet.id)}
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>

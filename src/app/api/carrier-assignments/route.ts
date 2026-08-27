@@ -131,7 +131,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
+    const simple = searchParams.get('simple') === 'true';
     const skip = (page - 1) * limit;
+
+    if (simple) {
+      const assignments = await prisma.carrier_assignments.findMany({
+        select: { loading_sheet_id: true },
+        orderBy: { assigned_at: 'desc' }
+      });
+      return NextResponse.json({
+        success: true,
+        data: assignments,
+        meta: { total: assignments.length }
+      });
+    }
 
     const [assignments, totalCount] = await Promise.all([
       prisma.carrier_assignments.findMany({

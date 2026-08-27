@@ -1744,51 +1744,16 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       const pageWidth = doc.internal.pageSize.getWidth();
       const leftMargin = 10;
 
-      const logoPaths = [
-        '/images/HLogo.png',
-        '/Harirlogo.svg',
-        '/Harirlogo.png',
-        '/Harirlogo.jpg',
-        '/logo.png',
-        '/logo.jpg',
-        '/favicon.ico',
-        '/public/favicon.ico'
-      ];
-
-      let hasLogo = false;
-
-      for (const path of logoPaths) {
-        try {
-          const response = await fetch(path);
-          if (response.ok) {
-            const blob = await response.blob();
-            const base64String = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.readAsDataURL(blob);
-            });
-            const logoWidth = 110;
-            const logoHeightRect = 18;
-            const x = (pageWidth - logoWidth) / 2;
-            doc.addImage(base64String as string, 'PNG', x, 4, logoWidth, logoHeightRect);
-            hasLogo = true;
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-
-      const titleY = hasLogo ? 28 : 13;
-      doc.setFontSize(12);
+      const headerBandTop = 6;
+      doc.setFillColor(34, 139, 34);
+      doc.rect(0, headerBandTop, pageWidth, 24, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(120, 120, 120);
-      doc.text('Weight Capture Report', pageWidth / 2, titleY, { align: 'center' });
-
-      const dividerY = titleY + 5;
-      doc.setDrawColor(120, 120, 120);
-      doc.setLineWidth(0.4);
-      doc.line(leftMargin, dividerY, pageWidth - leftMargin, dividerY);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(15);
+      doc.text('HARIR INTERNATIONAL', pageWidth / 2, headerBandTop + 9.5, { align: 'center' });
+      doc.setFontSize(11);
+      doc.text('Weight Capture Report', pageWidth / 2, headerBandTop + 18, { align: 'center' });
+      doc.setTextColor(0, 0, 0);
 
       const { from, to } = dateRangeFilter;
       let periodLabel = 'All time';
@@ -1798,7 +1763,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
         periodLabel = format(from, 'dd/MM/yyyy');
       }
 
-      const infoBoxTop = dividerY + 5;
+      const infoBoxTop = headerBandTop + 27;
       doc.setFillColor(248, 249, 250);
       doc.rect(leftMargin, infoBoxTop, pageWidth - 2 * leftMargin, 9, 'F');
       doc.setFontSize(9);
@@ -1811,7 +1776,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
         head: [headers],
         body,
         theme: 'grid',
-        headStyles: { fillColor: [178, 235, 178], textColor: [33, 63, 33], fontSize: 7, fontStyle: 'bold' },
+        headStyles: { fillColor: [34, 139, 34], fontSize: 7, fontStyle: 'bold' },
         styles: { fontSize: 7, cellPadding: 1.5 },
         columnStyles: {
           0: { cellWidth: 19 },
@@ -1976,14 +1941,14 @@ const fetchCheckedInSuppliers = useCallback(async () => {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
-      doc.text('GOODS RECEIVED NOTE - CRATES RECEIVED', pageWidth / 2, startY + 7, { align: 'center' });
+      doc.text('GOODS RECEIVED NOTE - BOX COUNTING', pageWidth / 2, startY + 7, { align: 'center' });
       let yPos = startY + 13;
       
       doc.setFillColor(248, 249, 250);
       doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.text(`GRN: GRN-${format(new Date(), 'yyyyMMdd')}`, leftMargin + 2, yPos + 7);
+      doc.text(`GRN: GRN-${supplierId.slice(0, 8)}`, leftMargin + 2, yPos + 7);
       doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, leftMargin + 35, yPos + 7);
       doc.text(`Time: ${format(new Date(), 'HH:mm')}`, leftMargin + 70, yPos + 7);
       yPos += 13;
@@ -2048,7 +2013,7 @@ const fetchCheckedInSuppliers = useCallback(async () => {
         doc.text('GRAND TOTAL', leftMargin + 2, yPos + 5);
         doc.text(totalWeight.toFixed(2), leftMargin + 70, yPos + 5);
         doc.text(totalCrates.toString(), leftMargin + 110, yPos + 5);
-        yPos += 13;
+        yPos += 10;
       }
       
       doc.setFontSize(7);

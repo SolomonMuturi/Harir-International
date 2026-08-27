@@ -29,10 +29,6 @@ export async function GET(request: NextRequest) {
     // Fetch cold room boxes
     if (action === 'boxes') {
       const boxes = await prisma.cold_room_boxes.findMany({
-        include: {
-          counting_record: true,
-          pallet: true,
-        },
         orderBy: {
           created_at: 'desc',
         },
@@ -57,51 +53,60 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: pallets });
     }
 
-    // Fetch temperature logs
+    // Fetch temperature logs (most recent only - this table grows without bound)
     if (action === 'temperature') {
       const logs = await prisma.temperature_logs.findMany({
         orderBy: {
           timestamp: 'desc',
         },
+        take: 200,
       });
       return NextResponse.json({ success: true, data: logs });
     }
 
-    // Fetch repacking records
+    // Fetch repacking records (most recent only - this table grows without bound)
     if (action === 'repacking') {
       const records = await prisma.repacking_records.findMany({
         orderBy: {
           timestamp: 'desc',
         },
+        take: 200,
       });
       return NextResponse.json({ success: true, data: records });
     }
 
     // Fetch cold room stats
     if (action === 'stats') {
-      const boxes = await prisma.cold_room_boxes.findMany();
-      const pallets = await prisma.cold_room_pallets.findMany({
-        include: { boxes: true },
-      });
-      const temperatureLogs = await prisma.temperature_logs.findMany({
-        orderBy: { timestamp: 'desc' },
-        take: 10,
-      });
-      const repackingRecords = await prisma.repacking_records.findMany({
-        orderBy: { timestamp: 'desc' },
-        take: 10,
-      });
+      // Aggregate in the database instead of pulling every box/pallet row into Node
+      const [quantityGroups, palletTypeGroups, temperatureLogs, repackingRecords] = await Promise.all([
+        prisma.cold_room_boxes.groupBy({
+          by: ['cold_room_id', 'box_type', 'variety', 'grade'],
+          _sum: { quantity: true },
+        }),
+        prisma.cold_room_boxes.groupBy({
+          by: ['cold_room_id', 'box_type', 'pallet_id'],
+          where: { pallet_id: { not: null } },
+        }),
+        prisma.temperature_logs.findMany({
+          orderBy: { timestamp: 'desc' },
+          take: 10,
+        }),
+        prisma.repacking_records.findMany({
+          orderBy: { timestamp: 'desc' },
+          take: 10,
+        }),
+      ]);
 
       // Calculate stats
       const stats = {
-        overall: calculateStats(boxes, pallets),
+        overall: calculateStats(quantityGroups, palletTypeGroups),
         coldroom1: calculateStats(
-          boxes.filter(b => b.cold_room_id === 'coldroom1'),
-          pallets.filter(p => p.cold_room_id === 'coldroom1')
+          quantityGroups.filter(g => g.cold_room_id === 'coldroom1'),
+          palletTypeGroups.filter(g => g.cold_room_id === 'coldroom1')
         ),
         coldroom2: calculateStats(
-          boxes.filter(b => b.cold_room_id === 'coldroom2'),
-          pallets.filter(p => p.cold_room_id === 'coldroom2')
+          quantityGroups.filter(g => g.cold_room_id === 'coldroom2'),
+          palletTypeGroups.filter(g => g.cold_room_id === 'coldroom2')
         ),
         lastTemperatureLogs: temperatureLogs,
         recentRepacking: repackingRecords,
@@ -883,52 +888,34 @@ export async function POST(request: NextRequest) {
 }
 
 // Helper functions
-function calculateStats(boxes: any[], pallets: any[]) {
-  const total4kgBoxes = boxes
-    .filter(b => b.box_type === '4kg')
-    .reduce((sum, b) => sum + (b.quantity || 0), 0);
-  
-  const total10kgBoxes = boxes
-    .filter(b => b.box_type === '10kg')
-    .reduce((sum, b) => sum + (b.quantity || 0), 0);
-  
-  const total4kgPallets = pallets
-    .filter(p => p.boxes?.some((b: any) => b.box_type === '4kg'))
-    .length;
-  
-  const total10kgPallets = pallets
-    .filter(p => p.boxes?.some((b: any) => b.box_type === '10kg'))
-    .length;
+// quantityGroups: cold_room_boxes grouped by [cold_room_id, box_type, variety, grade] with summed quantity
+// palletTypeGroups: distinct [cold_room_id, box_type, pallet_id] combos (one row per pallet/box_type pairing)
+function calculateStats(quantityGroups: any[], palletTypeGroups: any[]) {
+  const sumWhere = (predicate: (g: any) => boolean) =>
+    quantityGroups
+      .filter(predicate)
+      .reduce((sum, g) => sum + (g._sum?.quantity || 0), 0);
+
+  const palletCount = (boxType: string) =>
+    new Set(
+      palletTypeGroups
+        .filter(g => g.box_type === boxType)
+        .map(g => g.pallet_id)
+    ).size;
 
   return {
-    total4kgBoxes,
-    total10kgBoxes,
-    total4kgPallets,
-    total10kgPallets,
-    fuerteClass14kg: boxes
-      .filter(b => b.variety === 'fuerte' && b.grade === 'class1' && b.box_type === '4kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    fuerteClass24kg: boxes
-      .filter(b => b.variety === 'fuerte' && b.grade === 'class2' && b.box_type === '4kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    fuerteClass110kg: boxes
-      .filter(b => b.variety === 'fuerte' && b.grade === 'class1' && b.box_type === '10kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    fuerteClass210kg: boxes
-      .filter(b => b.variety === 'fuerte' && b.grade === 'class2' && b.box_type === '10kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    hassClass14kg: boxes
-      .filter(b => b.variety === 'hass' && b.grade === 'class1' && b.box_type === '4kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    hassClass24kg: boxes
-      .filter(b => b.variety === 'hass' && b.grade === 'class2' && b.box_type === '4kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    hassClass110kg: boxes
-      .filter(b => b.variety === 'hass' && b.grade === 'class1' && b.box_type === '10kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
-    hassClass210kg: boxes
-      .filter(b => b.variety === 'hass' && b.grade === 'class2' && b.box_type === '10kg')
-      .reduce((sum, b) => sum + (b.quantity || 0), 0),
+    total4kgBoxes: sumWhere(g => g.box_type === '4kg'),
+    total10kgBoxes: sumWhere(g => g.box_type === '10kg'),
+    total4kgPallets: palletCount('4kg'),
+    total10kgPallets: palletCount('10kg'),
+    fuerteClass14kg: sumWhere(g => g.variety === 'fuerte' && g.grade === 'class1' && g.box_type === '4kg'),
+    fuerteClass24kg: sumWhere(g => g.variety === 'fuerte' && g.grade === 'class2' && g.box_type === '4kg'),
+    fuerteClass110kg: sumWhere(g => g.variety === 'fuerte' && g.grade === 'class1' && g.box_type === '10kg'),
+    fuerteClass210kg: sumWhere(g => g.variety === 'fuerte' && g.grade === 'class2' && g.box_type === '10kg'),
+    hassClass14kg: sumWhere(g => g.variety === 'hass' && g.grade === 'class1' && g.box_type === '4kg'),
+    hassClass24kg: sumWhere(g => g.variety === 'hass' && g.grade === 'class2' && g.box_type === '4kg'),
+    hassClass110kg: sumWhere(g => g.variety === 'hass' && g.grade === 'class1' && g.box_type === '10kg'),
+    hassClass210kg: sumWhere(g => g.variety === 'hass' && g.grade === 'class2' && g.box_type === '10kg'),
   };
 }
 

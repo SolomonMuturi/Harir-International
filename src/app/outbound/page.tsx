@@ -833,7 +833,7 @@ function LoadingSheet({ editSheetId, onEditDone, onNavigateToHistory }: { editSh
 
   const fetchAssignments = useCallback(async () => {
     try {
-      const response = await fetch('/api/carrier-assignments?limit=500');
+      const response = await fetch('/api/carrier-assignments?simple=true');
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -889,13 +889,6 @@ function LoadingSheet({ editSheetId, onEditDone, onNavigateToHistory }: { editSh
 
   useEffect(() => {
     fetchLoadingSheets();
-    fetchColdRoomPallets();
-  }, [fetchLoadingSheets, fetchColdRoomPallets]);
-
-  useEffect(() => {
-    if (assignments.length > 0) {
-      fetchLoadingSheets();
-    }
   }, [assignments, fetchLoadingSheets]);
 
   useEffect(() => {

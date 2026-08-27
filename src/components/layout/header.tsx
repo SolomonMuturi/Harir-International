@@ -33,6 +33,7 @@ export function Header() {
   const router = useRouter();
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
   const logoutCountdownRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
   const INACTIVITY_TIMEOUT = 5 * 60 * 1000;
   const [showWarning, setShowWarning] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -115,17 +116,23 @@ export function Header() {
     }
   };
 
-  const resetLogoutTimer = () => {
+  // Schedules the warning + logout timers to fire `remainingMs` from now.
+  const scheduleLogoutTimers = (remainingMs: number) => {
     clearLogoutTimers();
     setShowWarning(false);
-    // Show warning modal 1 minute before logout
+    const warnIn = Math.max(0, remainingMs - 60 * 1000);
     logoutTimerRef.current = setTimeout(() => {
       setShowWarning(true);
       logoutCountdownRef.current = setTimeout(() => {
         toast.warning("Session expired due to inactivity");
         handleLogout();
       }, 60 * 1000);
-    }, INACTIVITY_TIMEOUT - 60 * 1000);
+    }, warnIn);
+  };
+
+  const resetLogoutTimer = () => {
+    lastActivityRef.current = Date.now();
+    scheduleLogoutTimers(INACTIVITY_TIMEOUT);
   };
 
   const setupActivityListeners = () => {
@@ -159,7 +166,40 @@ export function Header() {
         clearLogoutTimers();
       };
     }
-  }, [session?.user]);
+    // Keyed on email (a stable primitive) rather than the session.user object,
+    // which next-auth replaces with a new reference on every background
+    // refetch (e.g. on window/tab focus). Depending on the object itself was
+    // tearing down and recreating the timer on every refocus, silently
+    // resetting the inactivity countdown without any real user activity.
+  }, [session?.user?.email]);
+
+  // Browsers/mobile OSes throttle or freeze setTimeout while a tab is
+  // backgrounded or the screen is locked, so the countdown above can stall
+  // instead of firing. When the page becomes visible/focused again, check how
+  // much wall-clock time actually passed and log out immediately if the
+  // inactivity window already elapsed, rather than silently granting a fresh
+  // timeout just because the user glanced back at the screen.
+  useEffect(() => {
+    if (!session?.user) return;
+
+    const checkElapsedOnResume = () => {
+      if (document.visibilityState === "hidden") return;
+      const elapsed = Date.now() - lastActivityRef.current;
+      if (elapsed >= INACTIVITY_TIMEOUT) {
+        toast.warning("Session expired due to inactivity");
+        handleLogout();
+      } else {
+        scheduleLogoutTimers(INACTIVITY_TIMEOUT - elapsed);
+      }
+    };
+
+    document.addEventListener("visibilitychange", checkElapsedOnResume);
+    window.addEventListener("focus", checkElapsedOnResume);
+    return () => {
+      document.removeEventListener("visibilitychange", checkElapsedOnResume);
+      window.removeEventListener("focus", checkElapsedOnResume);
+    };
+  }, [session?.user?.email]);
 
   useEffect(() => {
     const handleOffline = () => {

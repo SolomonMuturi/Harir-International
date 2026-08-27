@@ -557,36 +557,40 @@ export default function ColdRoomPage() {
     return grade === 'class1' ? 'Class 1' : 'Class 2';
   };
 
-  // Builds a nested Variety -> Box Type -> (Grade, Size, Quantity) report,
+  // Builds a nested Variety -> Box Type -> Grade -> (Size, Quantity) report,
   // each level carrying its own subtotal, plus an overall grand total.
   const buildInventoryReport = (data: ColdRoomBox[]) => {
     const varietyOrder: Array<'fuerte' | 'hass'> = ['fuerte', 'hass'];
     const boxTypeOrder: Array<'4kg' | '10kg'> = ['4kg', '10kg'];
+    const gradeOrder: Array<'class1' | 'class2'> = ['class1', 'class2'];
 
     const sections = varietyOrder
       .map(variety => {
         const boxTypeSections = boxTypeOrder
           .map(box_type => {
-            const grouped: Record<string, { grade: string; size: string; quantity: number }> = {};
+            const gradeSections = gradeOrder
+              .map(grade => {
+                const grouped: Record<string, { size: string; quantity: number }> = {};
 
-            data
-              .filter(box => box.variety === variety && box.box_type === box_type)
-              .forEach(box => {
-                const key = `${box.grade}_${box.size}`;
-                if (!grouped[key]) {
-                  grouped[key] = { grade: box.grade, size: box.size, quantity: 0 };
-                }
-                grouped[key].quantity += box.quantity || 0;
-              });
+                data
+                  .filter(box => box.variety === variety && box.box_type === box_type && box.grade === grade)
+                  .forEach(box => {
+                    if (!grouped[box.size]) {
+                      grouped[box.size] = { size: box.size, quantity: 0 };
+                    }
+                    grouped[box.size].quantity += box.quantity || 0;
+                  });
 
-            const rows = Object.values(grouped).sort((a, b) => {
-              if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
-              return a.size.localeCompare(b.size);
-            });
+                const rows = Object.values(grouped).sort((a, b) => a.size.localeCompare(b.size));
 
-            return { box_type, rows, subtotal: rows.reduce((sum, r) => sum + r.quantity, 0) };
+                return { grade, rows, subtotal: rows.reduce((sum, r) => sum + r.quantity, 0) };
+              })
+              .filter(section => section.rows.length > 0);
+
+            const boxTypeTotal = gradeSections.reduce((sum, s) => sum + s.subtotal, 0);
+            return { box_type, gradeSections, subtotal: boxTypeTotal };
           })
-          .filter(section => section.rows.length > 0);
+          .filter(section => section.gradeSections.length > 0);
 
         const varietyTotal = boxTypeSections.reduce((sum, s) => sum + s.subtotal, 0);
         return { variety, boxTypeSections, varietyTotal };
@@ -611,18 +615,23 @@ export default function ColdRoomPage() {
       sections.forEach(section => {
         section.boxTypeSections.forEach(boxTypeSection => {
           aoa.push([`${getVarietyDisplay(section.variety)} - ${boxTypeSection.box_type}`]);
-          aoa.push(['Grade', 'Size', 'Quantity']);
-          boxTypeSection.rows.forEach(row => {
-            aoa.push([getGradeDisplay(row.grade), formatSize(row.size), row.quantity]);
+          boxTypeSection.gradeSections.forEach(gradeSection => {
+            aoa.push([getGradeDisplay(gradeSection.grade)]);
+            aoa.push(['Size', 'Quantity']);
+            gradeSection.rows.forEach(row => {
+              aoa.push([formatSize(row.size), row.quantity]);
+            });
+            aoa.push([`Total ${getGradeDisplay(gradeSection.grade)}`, gradeSection.subtotal]);
+            aoa.push([]);
           });
-          aoa.push(['', `Total ${boxTypeSection.box_type}`, boxTypeSection.subtotal]);
+          aoa.push([`Total ${boxTypeSection.box_type}`, boxTypeSection.subtotal]);
           aoa.push([]);
         });
-        aoa.push(['', `Total ${getVarietyDisplay(section.variety)}`, section.varietyTotal]);
+        aoa.push([`Total ${getVarietyDisplay(section.variety)}`, section.varietyTotal]);
         aoa.push([]);
       });
 
-      aoa.push(['', 'GRAND TOTAL', grandTotal]);
+      aoa.push(['GRAND TOTAL', grandTotal]);
 
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       const workbook = XLSX.utils.book_new();
@@ -753,23 +762,37 @@ export default function ColdRoomPage() {
           pdf.text(`${getVarietyDisplay(section.variety).toUpperCase()} - ${boxTypeSection.box_type}`, leftMargin + 2, yPos + 4.5);
           yPos += 9;
 
-          autoTable(pdf, {
-            startY: yPos,
-            head: [['Grade', 'Size', 'Quantity']],
-            body: boxTypeSection.rows.map(row => [
-              getGradeDisplay(row.grade),
-              formatSize(row.size),
-              row.quantity,
-            ]),
-            foot: [['', `Total ${boxTypeSection.box_type}`, boxTypeSection.subtotal]],
-            theme: 'grid',
-            headStyles: { fillColor: GREEN as unknown as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-            footStyles: { fillColor: [245, 245, 245], textColor: [30, 30, 30], fontStyle: 'bold', fontSize: 8 },
-            styles: { fontSize: 8, cellPadding: 2, textColor: [30, 30, 30] },
-            margin: { left: leftMargin, right: leftMargin },
+          boxTypeSection.gradeSections.forEach(gradeSection => {
+            ensureSpace(18);
+
+            pdf.setFontSize(8);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setTextColor(60, 60, 60);
+            pdf.text(getGradeDisplay(gradeSection.grade), leftMargin + 2, yPos + 3);
+            yPos += 5;
+
+            autoTable(pdf, {
+              startY: yPos,
+              head: [['Size', 'Quantity']],
+              body: gradeSection.rows.map(row => [formatSize(row.size), row.quantity]),
+              foot: [[`Total ${getGradeDisplay(gradeSection.grade)}`, gradeSection.subtotal]],
+              theme: 'grid',
+              headStyles: { fillColor: GREEN as unknown as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+              footStyles: { fillColor: [245, 245, 245], textColor: [30, 30, 30], fontStyle: 'bold', fontSize: 8 },
+              styles: { fontSize: 8, cellPadding: 2, textColor: [30, 30, 30] },
+              margin: { left: leftMargin, right: leftMargin },
+              tableWidth: contentWidth * 0.6,
+            });
+
+            yPos = (pdf as any).lastAutoTable.finalY + 4;
           });
 
-          yPos = (pdf as any).lastAutoTable.finalY + 6;
+          ensureSpace(8);
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...DARK_GREEN);
+          pdf.text(`Total ${boxTypeSection.box_type}: ${boxTypeSection.subtotal.toLocaleString()}`, pageWidth - leftMargin, yPos, { align: 'right' });
+          yPos += 8;
         });
 
         ensureSpace(10);

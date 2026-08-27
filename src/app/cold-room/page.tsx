@@ -557,48 +557,45 @@ export default function ColdRoomPage() {
     return grade === 'class1' ? 'Class 1' : 'Class 2';
   };
 
-  // Groups boxes by variety/box_type/size/grade. "lotCount" is how many separate
-  // box entries (lots) were merged into that row, kept distinct from totalQuantity
-  // (the summed unit count) so the export can show both a "Boxes" and "Quantity" column.
-  const summarizeColdRoomBoxes = (data: ColdRoomBox[]) => {
-    const groupedBoxes: Record<string, {
-      variety: string;
-      box_type: string;
-      size: string;
-      grade: string;
-      totalQuantity: number;
-      lotCount: number;
-    }> = {};
+  // Builds a nested Variety -> Box Type -> (Grade, Size, Quantity) report,
+  // each level carrying its own subtotal, plus an overall grand total.
+  const buildInventoryReport = (data: ColdRoomBox[]) => {
+    const varietyOrder: Array<'fuerte' | 'hass'> = ['fuerte', 'hass'];
+    const boxTypeOrder: Array<'4kg' | '10kg'> = ['4kg', '10kg'];
 
-    data.forEach(box => {
-      const key = `${box.variety}_${box.box_type}_${box.size}_${box.grade}`;
+    const sections = varietyOrder
+      .map(variety => {
+        const boxTypeSections = boxTypeOrder
+          .map(box_type => {
+            const grouped: Record<string, { grade: string; size: string; quantity: number }> = {};
 
-      if (!groupedBoxes[key]) {
-        groupedBoxes[key] = {
-          variety: box.variety,
-          box_type: box.box_type,
-          size: box.size,
-          grade: box.grade,
-          totalQuantity: 0,
-          lotCount: 0,
-        };
-      }
+            data
+              .filter(box => box.variety === variety && box.box_type === box_type)
+              .forEach(box => {
+                const key = `${box.grade}_${box.size}`;
+                if (!grouped[key]) {
+                  grouped[key] = { grade: box.grade, size: box.size, quantity: 0 };
+                }
+                grouped[key].quantity += box.quantity || 0;
+              });
 
-      groupedBoxes[key].totalQuantity += box.quantity || 0;
-      groupedBoxes[key].lotCount += 1;
-    });
+            const rows = Object.values(grouped).sort((a, b) => {
+              if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
+              return a.size.localeCompare(b.size);
+            });
 
-    const groups = Object.values(groupedBoxes).sort((a, b) => {
-      if (a.variety !== b.variety) return a.variety.localeCompare(b.variety);
-      if (a.box_type !== b.box_type) return a.box_type.localeCompare(b.box_type);
-      if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
-      return a.size.localeCompare(b.size);
-    });
+            return { box_type, rows, subtotal: rows.reduce((sum, r) => sum + r.quantity, 0) };
+          })
+          .filter(section => section.rows.length > 0);
 
-    const totalBoxes = groups.reduce((sum, g) => sum + g.lotCount, 0);
-    const totalQuantity = groups.reduce((sum, g) => sum + g.totalQuantity, 0);
+        const varietyTotal = boxTypeSections.reduce((sum, s) => sum + s.subtotal, 0);
+        return { variety, boxTypeSections, varietyTotal };
+      })
+      .filter(section => section.boxTypeSections.length > 0);
 
-    return { groups, totalBoxes, totalQuantity };
+    const grandTotal = sections.reduce((sum, s) => sum + s.varietyTotal, 0);
+
+    return { sections, grandTotal };
   };
 
   const exportColdRoomBoxesToXLSX = async (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
@@ -607,22 +604,27 @@ export default function ColdRoomPage() {
     }
 
     try {
-      const { groups, totalBoxes, totalQuantity } = summarizeColdRoomBoxes(data);
+      const { sections, grandTotal } = buildInventoryReport(data);
 
-      const headers = ['Boxes', 'Grade', 'Size', 'Box Type', 'Variety', 'Quantity'];
+      const aoa: (string | number)[][] = [];
 
-      const rows = groups.map(box => [
-        box.lotCount,
-        getGradeDisplay(box.grade),
-        formatSize(box.size),
-        box.box_type,
-        getVarietyDisplay(box.variety),
-        box.totalQuantity,
-      ]);
+      sections.forEach(section => {
+        section.boxTypeSections.forEach(boxTypeSection => {
+          aoa.push([`${getVarietyDisplay(section.variety)} - ${boxTypeSection.box_type}`]);
+          aoa.push(['Grade', 'Size', 'Quantity']);
+          boxTypeSection.rows.forEach(row => {
+            aoa.push([getGradeDisplay(row.grade), formatSize(row.size), row.quantity]);
+          });
+          aoa.push(['', `Total ${boxTypeSection.box_type}`, boxTypeSection.subtotal]);
+          aoa.push([]);
+        });
+        aoa.push(['', `Total ${getVarietyDisplay(section.variety)}`, section.varietyTotal]);
+        aoa.push([]);
+      });
 
-      rows.push([totalBoxes, '', '', '', 'TOTAL', totalQuantity]);
+      aoa.push(['', 'GRAND TOTAL', grandTotal]);
 
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Cold Room Inventory');
       XLSX.writeFile(workbook, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -667,7 +669,7 @@ export default function ColdRoomPage() {
     }
 
     try {
-      const { groups, totalBoxes, totalQuantity } = summarizeColdRoomBoxes(data);
+      const { sections, grandTotal } = buildInventoryReport(data);
 
       const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
         import('jspdf'),
@@ -676,11 +678,13 @@ export default function ColdRoomPage() {
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const leftMargin = 15;
       const contentWidth = pageWidth - 2 * leftMargin;
 
       const GREEN = [34, 139, 34] as const;
       const DARK_GREEN = [22, 101, 52] as const;
+      const LIGHT_GREEN = [220, 252, 231] as const;
 
       const LOGO_PATHS = [
         '/images/HLogo.png',
@@ -730,24 +734,61 @@ export default function ColdRoomPage() {
 
       yPos += 16;
 
-      autoTable(pdf, {
-        startY: yPos,
-        head: [['Boxes', 'Grade', 'Size', 'Box Type', 'Variety', 'Quantity']],
-        body: groups.map(box => [
-          box.lotCount,
-          getGradeDisplay(box.grade),
-          formatSize(box.size),
-          box.box_type,
-          getVarietyDisplay(box.variety),
-          box.totalQuantity,
-        ]),
-        foot: [[totalBoxes, '', '', '', 'TOTAL', totalQuantity]],
-        theme: 'grid',
-        headStyles: { fillColor: GREEN as unknown as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-        footStyles: { fillColor: [245, 245, 245], textColor: [30, 30, 30], fontStyle: 'bold', fontSize: 8 },
-        styles: { fontSize: 8, cellPadding: 2, textColor: [30, 30, 30] },
-        margin: { left: leftMargin, right: leftMargin },
+      const ensureSpace = (needed: number) => {
+        if (yPos + needed > pageHeight - 15) {
+          pdf.addPage();
+          yPos = 15;
+        }
+      };
+
+      sections.forEach(section => {
+        section.boxTypeSections.forEach(boxTypeSection => {
+          ensureSpace(24);
+
+          pdf.setFillColor(...(LIGHT_GREEN as unknown as [number, number, number]));
+          pdf.rect(leftMargin, yPos, contentWidth, 6, 'F');
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...DARK_GREEN);
+          pdf.text(`${getVarietyDisplay(section.variety).toUpperCase()} - ${boxTypeSection.box_type}`, leftMargin + 2, yPos + 4.5);
+          yPos += 9;
+
+          autoTable(pdf, {
+            startY: yPos,
+            head: [['Grade', 'Size', 'Quantity']],
+            body: boxTypeSection.rows.map(row => [
+              getGradeDisplay(row.grade),
+              formatSize(row.size),
+              row.quantity,
+            ]),
+            foot: [['', `Total ${boxTypeSection.box_type}`, boxTypeSection.subtotal]],
+            theme: 'grid',
+            headStyles: { fillColor: GREEN as unknown as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+            footStyles: { fillColor: [245, 245, 245], textColor: [30, 30, 30], fontStyle: 'bold', fontSize: 8 },
+            styles: { fontSize: 8, cellPadding: 2, textColor: [30, 30, 30] },
+            margin: { left: leftMargin, right: leftMargin },
+          });
+
+          yPos = (pdf as any).lastAutoTable.finalY + 6;
+        });
+
+        ensureSpace(10);
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...DARK_GREEN);
+        pdf.text(`Total ${getVarietyDisplay(section.variety)}: ${section.varietyTotal.toLocaleString()}`, pageWidth - leftMargin, yPos, { align: 'right' });
+        yPos += 10;
       });
+
+      ensureSpace(14);
+      pdf.setDrawColor(...GREEN);
+      pdf.setLineWidth(0.5);
+      pdf.line(leftMargin, yPos, pageWidth - leftMargin, yPos);
+      yPos += 7;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...DARK_GREEN);
+      pdf.text(`GRAND TOTAL: ${grandTotal.toLocaleString()}`, pageWidth - leftMargin, yPos, { align: 'right' });
 
       pdf.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
 

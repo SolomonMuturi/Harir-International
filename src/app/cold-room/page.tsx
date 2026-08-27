@@ -557,112 +557,70 @@ export default function ColdRoomPage() {
     return grade === 'class1' ? 'Class 1' : 'Class 2';
   };
 
+  // Groups boxes by variety/box_type/size/grade. "lotCount" is how many separate
+  // box entries (lots) were merged into that row, kept distinct from totalQuantity
+  // (the summed unit count) so the export can show both a "Boxes" and "Quantity" column.
+  const summarizeColdRoomBoxes = (data: ColdRoomBox[]) => {
+    const groupedBoxes: Record<string, {
+      variety: string;
+      box_type: string;
+      size: string;
+      grade: string;
+      totalQuantity: number;
+      lotCount: number;
+    }> = {};
+
+    data.forEach(box => {
+      const key = `${box.variety}_${box.box_type}_${box.size}_${box.grade}`;
+
+      if (!groupedBoxes[key]) {
+        groupedBoxes[key] = {
+          variety: box.variety,
+          box_type: box.box_type,
+          size: box.size,
+          grade: box.grade,
+          totalQuantity: 0,
+          lotCount: 0,
+        };
+      }
+
+      groupedBoxes[key].totalQuantity += box.quantity || 0;
+      groupedBoxes[key].lotCount += 1;
+    });
+
+    const groups = Object.values(groupedBoxes).sort((a, b) => {
+      if (a.variety !== b.variety) return a.variety.localeCompare(b.variety);
+      if (a.box_type !== b.box_type) return a.box_type.localeCompare(b.box_type);
+      if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
+      return a.size.localeCompare(b.size);
+    });
+
+    const totalBoxes = groups.reduce((sum, g) => sum + g.lotCount, 0);
+    const totalQuantity = groups.reduce((sum, g) => sum + g.totalQuantity, 0);
+
+    return { groups, totalBoxes, totalQuantity };
+  };
+
   const exportColdRoomBoxesToXLSX = async (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
     if (!data || data.length === 0) {
       return;
     }
 
     try {
-      const groupedBoxes: Record<string, {
-        variety: string;
-        box_type: string;
-        size: string;
-        grade: string;
-        totalQuantity: number;
-        cold_room_id: string;
-        supplier_names: Set<string>;
-        regions: Set<string>;
-        created_dates: Set<string>;
-        hasMultipleGrades: boolean;
-        hasMultipleVarieties: boolean;
-      }> = {};
+      const { groups, totalBoxes, totalQuantity } = summarizeColdRoomBoxes(data);
 
-      data.forEach(box => {
-        const key = `${box.cold_room_id}_${box.variety}_${box.box_type}_${box.size}`;
-        
-        if (!groupedBoxes[key]) {
-          groupedBoxes[key] = {
-            variety: box.variety,
-            box_type: box.box_type,
-            size: box.size,
-            grade: box.grade,
-            totalQuantity: 0,
-            cold_room_id: box.cold_room_id,
-            supplier_names: new Set<string>(),
-            regions: new Set<string>(),
-            created_dates: new Set<string>(),
-            hasMultipleGrades: false,
-            hasMultipleVarieties: false
-          };
-        }
-        
-        groupedBoxes[key].totalQuantity += box.quantity || 0;
-        if (box.supplier_name) groupedBoxes[key].supplier_names.add(box.supplier_name);
-        if (box.region) groupedBoxes[key].regions.add(box.region);
-        if (box.created_at) {
-          const date = new Date(box.created_at).toISOString().split('T')[0];
-          groupedBoxes[key].created_dates.add(date);
-        }
-        
-        if (groupedBoxes[key].grade !== box.grade) {
-          groupedBoxes[key].hasMultipleGrades = true;
-        }
-        
-        if (groupedBoxes[key].variety !== box.variety) {
-          groupedBoxes[key].hasMultipleVarieties = true;
-        }
-      });
+      const headers = ['Boxes', 'Grade', 'Size', 'Box Type', 'Variety', 'Quantity'];
 
-      const headers = [
-        'Added Date',
-        'Supplier Name',
-        'Region',
-        'Variety',
-        'Box Type',
-        'Size',
-        'Grade',
-        'Quantity',
-        'Weight Per Box (kg)',
-        'Total Weight (kg)',
-        'Cold Room',
-        'Status',
-        'Created Date'
-      ];
+      const rows = groups.map(box => [
+        box.lotCount,
+        getGradeDisplay(box.grade),
+        formatSize(box.size),
+        box.box_type,
+        getVarietyDisplay(box.variety),
+        box.totalQuantity,
+      ]);
 
-      const rows = Object.values(groupedBoxes).map(box => {
-        const boxWeight = box.box_type === '4kg' ? 4 : 10;
-        const totalWeight = box.totalQuantity * boxWeight;
-        const addedDate = Array.from(box.created_dates).join(', ') || '';
-        const status = 'Available in Cold Room';
-        const supplierName = Array.from(box.supplier_names).join(', ') || 'Unknown';
-        const region = Array.from(box.regions).join(', ') || '';
-        
-        let varietyDisplay = getVarietyDisplay(box.variety);
-        if (box.hasMultipleVarieties) {
-          varietyDisplay = 'Mixed';
-        }
-        
-        let gradeDisplay = getGradeDisplay(box.grade);
-        if (box.hasMultipleGrades) {
-          gradeDisplay = 'Mixed';
-        }
-        
-        return [
-          addedDate,
-          supplierName,
-          region,
-          varietyDisplay,
-          box.box_type,
-          formatSize(box.size),
-          gradeDisplay,
-          box.totalQuantity,
-          boxWeight,
-          totalWeight,
-          box.cold_room_id === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2',
-          status,
-          addedDate
-        ];
-      });
+      rows.push([totalBoxes, '', '', '', 'TOTAL', totalQuantity]);
 
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       const workbook = XLSX.utils.book_new();
@@ -691,10 +649,134 @@ export default function ColdRoomPage() {
         action: 'COLD_ROOM_INVENTORY_EXPORTED',
         status: 'failure',
         metadata: {
-          userId: currentUser?.id,
+          userId: failUser?.id,
           error: error.message || 'Unknown error',
           filename: filename,
           fileType: 'xlsx',
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      throw error;
+    }
+  };
+
+  const exportColdRoomBoxesToPDF = async (data: ColdRoomBox[], filename: string = 'cold-room-inventory') => {
+    if (!data || data.length === 0) {
+      return;
+    }
+
+    try {
+      const { groups, totalBoxes, totalQuantity } = summarizeColdRoomBoxes(data);
+
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const leftMargin = 15;
+      const contentWidth = pageWidth - 2 * leftMargin;
+
+      const GREEN = [34, 139, 34] as const;
+      const DARK_GREEN = [22, 101, 52] as const;
+
+      const LOGO_PATHS = [
+        '/images/HLogo.png',
+        '/Harirlogo.svg',
+        '/Harirlogo.png',
+        '/Harirlogo.jpg',
+        '/logo.png',
+        '/logo.jpg',
+        '/favicon.ico',
+      ];
+
+      let hasLogo = false;
+      for (const path of LOGO_PATHS) {
+        try {
+          const response = await fetch(path);
+          if (!response.ok) continue;
+          const blob = await response.blob();
+          const base64String = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          pdf.addImage(base64String, 'PNG', (pageWidth - 80) / 2, 8, 80, 14);
+          hasLogo = true;
+          break;
+        } catch {
+          continue;
+        }
+      }
+
+      let yPos = hasLogo ? 28 : 15;
+
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...DARK_GREEN);
+      pdf.text('COLD ROOM INVENTORY', pageWidth / 2, yPos, { align: 'center' });
+
+      pdf.setDrawColor(...GREEN);
+      pdf.setLineWidth(0.5);
+      pdf.line(leftMargin, yPos + 3, pageWidth - leftMargin, yPos + 3);
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      const coldRoomLabel = selectedColdRoom === 'all' ? 'All Cold Rooms' : selectedColdRoom === 'coldroom1' ? 'Cold Room 1' : 'Cold Room 2';
+      pdf.text(`Cold Room: ${coldRoomLabel}  |  Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPos + 8, { align: 'center' });
+
+      yPos += 16;
+
+      autoTable(pdf, {
+        startY: yPos,
+        head: [['Boxes', 'Grade', 'Size', 'Box Type', 'Variety', 'Quantity']],
+        body: groups.map(box => [
+          box.lotCount,
+          getGradeDisplay(box.grade),
+          formatSize(box.size),
+          box.box_type,
+          getVarietyDisplay(box.variety),
+          box.totalQuantity,
+        ]),
+        foot: [[totalBoxes, '', '', '', 'TOTAL', totalQuantity]],
+        theme: 'grid',
+        headStyles: { fillColor: GREEN as unknown as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+        footStyles: { fillColor: [245, 245, 245], textColor: [30, 30, 30], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 2, textColor: [30, 30, 30] },
+        margin: { left: leftMargin, right: leftMargin },
+      });
+
+      pdf.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
+
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        email: currentUser?.email || null,
+        action: 'COLD_ROOM_INVENTORY_EXPORTED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          recordCount: data.length,
+          filename: `${filename}_${new Date().toISOString().split('T')[0]}.pdf`,
+          fileType: 'pdf',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      const failUser = await getCurrentUser();
+      await logActivity({
+        user: failUser?.name || 'System',
+        email: failUser?.email || null,
+        action: 'COLD_ROOM_INVENTORY_EXPORTED',
+        status: 'failure',
+        metadata: {
+          userId: failUser?.id,
+          error: error.message || 'Unknown error',
+          filename: filename,
+          fileType: 'pdf',
           timestamp: new Date().toISOString(),
         },
       });
@@ -4824,6 +4906,40 @@ const fetchRepackingRecords = async () => {
                         >
                           <Download className="w-4 h-4" />
                           Export Available to XLS
+                        </Button>
+                        <Button
+                          onClick={async () => {
+                            const availableBoxes = calculateAvailableBoxes(coldRoomBoxes);
+                            if (availableBoxes.length === 0) {
+                              toast({
+                                title: 'No data to export',
+                                description: 'There is no available inventory data to download',
+                                variant: 'destructive',
+                              });
+                              return;
+                            }
+
+                            try {
+                              await exportColdRoomBoxesToPDF(availableBoxes, 'cold-room-available-inventory');
+
+                              toast({
+                                title: 'PDF Export Started',
+                                description: `Downloading ${availableBoxes.length} available inventory records as PDF file`,
+                              });
+                            } catch (error) {
+                              toast({
+                                title: 'Export Failed',
+                                description: 'Could not generate PDF file. Please try again.',
+                                variant: 'destructive',
+                              });
+                            }
+                          }}
+                          variant="outline"
+                          disabled={realTimeStats.totalAvailableBoxes === 0}
+                          className="flex items-center gap-2"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Export Available to PDF
                         </Button>
                         <Button
                           onClick={() => {

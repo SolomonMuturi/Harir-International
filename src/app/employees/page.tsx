@@ -28,7 +28,7 @@ import { CreateEmployeeForm } from '@/components/dashboard/create-employee-form'
 import {
   PlusCircle, Users, CheckCircle, LogOut, TrendingUp, Printer, LogIn,
   Settings, XCircle, Clock, ChevronDown, ChevronUp, Calendar as CalendarIcon,
-  AlertCircle, Search, RefreshCw, Eye, Edit, Trash2, User, Briefcase,
+  AlertCircle, Search, RefreshCw, Eye, Edit, Trash2, User,
   Phone, Building, BadgeCheck, Award, DollarSign, CalendarDays,
   Shield, FileText, Download, Filter, MoreVertical, UserPlus,
   ChevronLeft, ChevronRight, DownloadCloud, UploadCloud, BarChart,
@@ -50,7 +50,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { format, parseISO, addDays, differenceInHours, startOfDay, endOfDay, isToday, isSameDay, eachDayOfInterval, differenceInDays } from 'date-fns';
-import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -228,11 +227,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
             </Avatar>
             <div>
               <div className="font-medium text-base">{employee.name}</div>
-              <div className="text-sm text-muted-foreground">{employee.role}</div>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="outline" className="text-xs">
-                  {employee.contract}
-                </Badge>
                 {todayRecord && (
                   <Badge className={`${statusColor} text-xs font-medium`}>
                     {StatusIcon && <StatusIcon className="w-3 h-3 mr-1" />}
@@ -516,11 +511,7 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
             </Avatar>
             <div>
               <div className="font-medium text-base">{employee.name}</div>
-              <div className="text-sm text-muted-foreground">{employee.role}</div>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="outline" className="text-xs">
-                  {employee.contract}
-                </Badge>
                 {todayRecord && (
                   <Badge className={cn(
                     "text-xs font-medium",
@@ -675,11 +666,7 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
             </Avatar>
             <div>
               <div className="font-medium text-base">{employee.name}</div>
-              <div className="text-sm text-muted-foreground">{employee.role}</div>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="outline" className="text-xs">
-                  {employee.contract}
-                </Badge>
                 {hasDesignation && todayRecord?.designation && (
                   <Badge className={cn(
                     "text-xs font-medium",
@@ -758,19 +745,6 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
       </CardContent>
     </Card>
   );
-};
-
-// Helper function to determine shift type based on hours worked
-const getShiftType = (clockInTime?: string, clockOutTime?: string): string => {
-  if (!clockInTime || !clockOutTime) return 'N/A';
-  
-  const inTime = parseISO(clockInTime);
-  const outTime = parseISO(clockOutTime);
-  const hoursWorked = differenceInHours(outTime, inTime);
-  
-  if (hoursWorked >= 8) return 'Full';
-  if (hoursWorked >= 4) return 'Half';
-  return 'Short';
 };
 
 // Helper function to calculate number of days in date range
@@ -989,7 +963,6 @@ const generateAttendancePDF = async (
       return [
         format(parseISO(record.date), 'dd/MM/yyyy'),
         employee?.name || 'Unknown',
-        employee?.contract || 'N/A',
         record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : '-',
         record.clockOutTime ? format(parseISO(record.clockOutTime), 'HH:mm') : '-',
         record.designation ? designationLabels[record.designation] : '-',
@@ -1000,7 +973,7 @@ const generateAttendancePDF = async (
     
     autoTable(doc, {
       startY: infoY + 20,
-      head: [['Date', 'Casual', 'Type', 'Check In', 'Check Out', 'Designation', 'Status', 'Hours']],
+      head: [['Date', 'Casual', 'Check In', 'Check Out', 'Designation', 'Status', 'Hours']],
       body: tableData,
       theme: 'grid',
       headStyles: { 
@@ -1070,7 +1043,6 @@ export default function EmployeesPage() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [activeFilter, setActiveFilter] = useState<'All' | 'Full-time' | 'Part-time' | 'Contract'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
   const router = useRouter();
@@ -1096,7 +1068,6 @@ export default function EmployeesPage() {
     to: new Date() // Current date and time
   });
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
-  const [attendanceEmployeeFilter, setAttendanceEmployeeFilter] = useState<string>('all');
   const [attendanceTypeFilter, setAttendanceTypeFilter] = useState<string>('all');
   // New: time filter state
   const [attendanceStartTime, setAttendanceStartTime] = useState('');
@@ -1222,17 +1193,11 @@ export default function EmployeesPage() {
   // Filter employees based on search and contract type, sorted alphabetically
   const filteredEmployees = useMemo(() => {
     const filtered = employees.filter(employee => {
-      // Contract filter
-      if (activeFilter !== 'All' && employee.contract !== activeFilter) {
-        return false;
-      }
-      
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
           employee.name.toLowerCase().includes(query) ||
-          employee.role.toLowerCase().includes(query) ||
           (employee.id_number && employee.id_number.toLowerCase().includes(query)) ||
           (employee.phone && employee.phone.toLowerCase().includes(query)) ||
           (employee.company && employee.company.toLowerCase().includes(query))
@@ -1244,7 +1209,7 @@ export default function EmployeesPage() {
     
     // Sort alphabetically by name
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
-  }, [employees, activeFilter, searchQuery]);
+  }, [employees, searchQuery]);
 
   // Filter employees for Gate In (not checked in yet)
   const gateInEmployees = useMemo(() => {
@@ -2418,12 +2383,6 @@ export default function EmployeesPage() {
         if (!matchesSearch) return false;
       }
 
-      // Filter by employee type
-      if (attendanceEmployeeFilter !== 'all') {
-        const employee = employees.find(emp => emp.id === record.employeeId);
-        if (!employee || employee.contract !== attendanceEmployeeFilter) return false;
-      }
-
       // Filter by status
       if (attendanceTypeFilter !== 'all') {
         if (record.status !== attendanceTypeFilter) return false;
@@ -2433,7 +2392,7 @@ export default function EmployeesPage() {
     });
 
     setFilteredAttendance(filtered);
-  }, [attendance, dateRange, attendanceSearchTerm, attendanceEmployeeFilter, attendanceTypeFilter, employees, attendanceStartTime, attendanceEndTime]);
+  }, [attendance, dateRange, attendanceSearchTerm, attendanceTypeFilter, employees, attendanceStartTime, attendanceEndTime]);
 
   // Export attendance to XLS with enhanced headers
   const exportToXLSX = async () => {
@@ -2462,7 +2421,6 @@ export default function EmployeesPage() {
         { header: 'Tel Number', key: 'telNumber', text: true },
         { header: 'Designation', key: 'designation' },
         { header: 'Designation Assignment Count', key: 'designationAssignmentCount' },
-        { header: 'Shift(Full/Half)', key: 'shift' },
       ];
       
       // Group attendance by employee for the date range
@@ -2478,7 +2436,6 @@ export default function EmployeesPage() {
         
         employeeAttendanceMap.get(employee.id)?.push({
           date: record.date,
-          shift: getShiftType(record.clockInTime, record.clockOutTime),
           designation: record.designation ? designationLabels[record.designation] : 'N/A'
         });
       });
@@ -2495,15 +2452,6 @@ export default function EmployeesPage() {
         // Count the number of times the employee was assigned any designation (excluding 'N/A')
         const designationAssignmentCount = records.filter(r => r.designation !== 'N/A').length;
 
-        // Get most common shift type
-        const shiftCounts = records.reduce((acc, record) => {
-          acc[record.shift] = (acc[record.shift] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>);
-
-        const mostCommonShift = Object.entries(shiftCounts).sort((a, b) => b[1] - a[1])[0];
-        const shift = mostCommonShift ? `${mostCommonShift[0]} (${mostCommonShift[1]} days)` : '';
-
         return {
           fromDate: format(dateRange.from, 'yyyy-MM-dd'),
           toDate: format(dateRange.to, 'yyyy-MM-dd'),
@@ -2512,7 +2460,6 @@ export default function EmployeesPage() {
           telNumber: employee?.phone || 'N/A',
           designation,
           designationAssignmentCount: designationAssignmentCount.toString(),
-          shift,
         };
       }).filter(row => row !== null) as Record<string, unknown>[];
 
@@ -2588,17 +2535,11 @@ export default function EmployeesPage() {
         { header: 'ID Number', key: 'idNumber', text: true },
         { header: 'Tel Number', key: 'telNumber', text: true },
         { header: 'Designation', key: 'designation' },
-        { header: 'Shift(Full/Half)', key: 'shift' },
-        { header: 'Casual Type', key: 'contract' },
         { header: 'Status', key: 'status' },
       ];
       
       // Create XLS data rows
       const xlsData = employees.map(employee => {
-        // Determine shift based on contract type
-        const shift = employee.contract === 'Full-time' ? 'Full' : 
-                     employee.contract === 'Part-time' ? 'Half' : 'Varies';
-        
         // Get the latest assigned designation from attendance records
         const latestAttendance = attendance
           .filter(record => record.employeeId === employee.id && record.designation)
@@ -2614,8 +2555,6 @@ export default function EmployeesPage() {
           idNumber: employee.id_number || 'N/A',
           telNumber: employee.phone || 'N/A',
           designation,
-          shift,
-          contract: employee.contract,
           status: employee.status,
         };
       });
@@ -2866,40 +2805,6 @@ export default function EmployeesPage() {
                     </div>
                   </CardContent>
                 </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Casual Distribution</CardTitle>
-                    <CardDescription>
-                      Breakdown by casual type
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium">Full-time</span>
-                          <span className="text-sm text-muted-foreground">{stats.fullTimeCount}</span>
-                        </div>
-                        <Progress value={(stats.fullTimeCount / stats.totalEmployees) * 100} className="h-2" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium">Part-time</span>
-                          <span className="text-sm text-muted-foreground">{stats.partTimeCount}</span>
-                        </div>
-                        <Progress value={(stats.partTimeCount / stats.totalEmployees) * 100} className="h-2" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium">Casual</span>
-                          <span className="text-sm text-muted-foreground">{stats.contractCount}</span>
-                        </div>
-                        <Progress value={(stats.contractCount / stats.totalEmployees) * 100} className="h-2" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
 
               {/* Quick Actions */}
@@ -3087,18 +2992,6 @@ export default function EmployeesPage() {
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
-                          <SelectTrigger className="w-[150px] h-8 text-xs">
-                            <SelectValue placeholder="Filter by casual" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="All">All Casuals</SelectItem>
-                            <SelectItem value="Full-time">Full-time</SelectItem>
-                            <SelectItem value="Part-time">Part-time</SelectItem>
-                            <SelectItem value="Contract">Casual</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
                           <Input
@@ -3449,18 +3342,6 @@ export default function EmployeesPage() {
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
-                          <SelectTrigger className="w-[150px] h-8 text-xs">
-                            <SelectValue placeholder="Filter by casual" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="All">All Casuals</SelectItem>
-                            <SelectItem value="Full-time">Full-time</SelectItem>
-                            <SelectItem value="Part-time">Part-time</SelectItem>
-                            <SelectItem value="Contract">Casual</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        
                         <div className="relative">
                           <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
                           <Input
@@ -3523,17 +3404,6 @@ export default function EmployeesPage() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                         />
                       </div>
-                      <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
-                        <SelectTrigger className="w-[150px]">
-                          <SelectValue placeholder="Filter by casual" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="All">All Casuals</SelectItem>
-                          <SelectItem value="Full-time">Full-time</SelectItem>
-                          <SelectItem value="Part-time">Part-time</SelectItem>
-                          <SelectItem value="Contract">Casual</SelectItem>
-                        </SelectContent>
-                      </Select>
                       <Button onClick={exportEmployeeXLSX} variant="outline">
                         <Download className="mr-2 w-4 h-4" />
                         Export XLS
@@ -3557,7 +3427,6 @@ export default function EmployeesPage() {
                           <TableRow className="hover:bg-transparent border-b">
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Casual ID</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Name</TableHead>
-                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Type</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">ID Number</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Status</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Phone</TableHead>
@@ -3578,14 +3447,6 @@ export default function EmployeesPage() {
                                   </Avatar>
                                   <span className="text-sm font-medium">{employee.name}</span>
                                 </div>
-                              </TableCell>
-                              <TableCell className="py-2 px-3 whitespace-nowrap">
-                                <Badge variant={
-                                  employee.contract === 'Full-time' ? 'default' :
-                                  employee.contract === 'Part-time' ? 'secondary' : 'outline'
-                                } className="text-xs">
-                                  {employee.contract}
-                                </Badge>
                               </TableCell>
                               <TableCell className="py-2 px-3 whitespace-nowrap text-sm">{employee.id_number || 'N/A'}</TableCell>
                               <TableCell className="py-2 px-3 whitespace-nowrap">
@@ -3754,18 +3615,6 @@ export default function EmployeesPage() {
                         />
                       </div>
                       
-                      <Select value={attendanceEmployeeFilter} onValueChange={setAttendanceEmployeeFilter}>
-                        <SelectTrigger className="w-[140px]">
-                          <SelectValue placeholder="Casual Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Types</SelectItem>
-                          <SelectItem value="Full-time">Full-time</SelectItem>
-                          <SelectItem value="Part-time">Part-time</SelectItem>
-                          <SelectItem value="Contract">Casual</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      
                       <Select value={attendanceTypeFilter} onValueChange={setAttendanceTypeFilter}>
                         <SelectTrigger className="w-[140px]">
                           <SelectValue placeholder="Status" />
@@ -3809,26 +3658,22 @@ export default function EmployeesPage() {
                           <TableRow>
                             <TableHead>Date</TableHead>
                             <TableHead>Casual</TableHead>
-                            <TableHead>Type</TableHead>
                             <TableHead>Check In</TableHead>
                             <TableHead>Check Out</TableHead>
                             <TableHead>Designation</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Hours</TableHead>
-                            <TableHead>Shift</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredAttendance.map((record) => {
                             const employee = employees.find(emp => emp.id === record.employeeId);
                             let hoursWorked = 'N/A';
-                            let shift = 'N/A';
                             if (record.clockInTime && record.clockOutTime) {
                               const inTime = parseISO(record.clockInTime);
                               const outTime = parseISO(record.clockOutTime);
                               const hours = differenceInHours(outTime, inTime);
                               hoursWorked = `${hours} hours`;
-                              shift = getShiftType(record.clockInTime, record.clockOutTime);
                             }
                             const StatusIcon = statusInfo[record.status as keyof typeof statusInfo]?.icon || Clock;
                             const statusColor = statusInfo[record.status as keyof typeof statusInfo]?.color || 'bg-gray-100 text-gray-800';
@@ -3854,11 +3699,6 @@ export default function EmployeesPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  <Badge variant="outline">
-                                    {employee?.contract || 'Unknown'}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
                                   {record.clockInTime ? format(parseISO(record.clockInTime), 'HH:mm') : '-'}
                                 </TableCell>
                                 <TableCell>
@@ -3880,11 +3720,6 @@ export default function EmployeesPage() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell>{hoursWorked}</TableCell>
-                                <TableCell>
-                                  <Badge variant={shift === 'Full' ? 'default' : shift === 'Half' ? 'secondary' : 'outline'}>
-                                    {shift}
-                                  </Badge>
-                                </TableCell>
                               </TableRow>
                             );
                           })}
@@ -3913,12 +3748,6 @@ export default function EmployeesPage() {
                     <div>
                       <p className="text-lg font-semibold">{selectedEmployee.name}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge variant={
-                          selectedEmployee.contract === 'Full-time' ? 'default' :
-                          selectedEmployee.contract === 'Part-time' ? 'secondary' : 'outline'
-                        }>
-                          {selectedEmployee.contract}
-                        </Badge>
                         <Badge variant={selectedEmployee.status === 'active' ? 'default' : 'secondary'}>
                           {selectedEmployee.status}
                         </Badge>
@@ -3928,9 +3757,6 @@ export default function EmployeesPage() {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <BadgeCheck className="w-4 h-4" /> {selectedEmployee.employeeId || 'N/A'}
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Briefcase className="w-4 h-4" /> {selectedEmployee.role}
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Phone className="w-4 h-4" /> {selectedEmployee.phone || 'Not provided'}

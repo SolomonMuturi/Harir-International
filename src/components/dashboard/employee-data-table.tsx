@@ -61,7 +61,6 @@ export function EmployeeDataTable({ employees, selectedEmployeeId, onSelectEmplo
                 </Avatar>
                 <div className="flex-1">
                   <div className="font-semibold">{employee.name}</div>
-                  <div className="text-sm text-muted-foreground">{employee.role}</div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                     <StarRating rating={employee.rating} />

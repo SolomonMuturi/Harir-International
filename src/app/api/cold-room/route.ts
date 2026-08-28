@@ -133,7 +133,8 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      const processedRecords = records.map(record => {
+      const processedRecords = records
+        .map(record => {
         let counting_data = {};
         let totals = {};
         let boxes_loaded_to_coldroom = {};
@@ -191,7 +192,8 @@ export async function GET(request: NextRequest) {
           total_boxes_loaded: loadedBoxes,
           loading_progress_percentage,
         };
-      });
+        })
+        .filter(record => record.total_remaining_boxes > 0);
 
       return NextResponse.json({ success: true, data: processedRecords });
     }

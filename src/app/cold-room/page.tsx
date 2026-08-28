@@ -581,7 +581,7 @@ export default function ColdRoomPage() {
                     grouped[box.size].quantity += box.quantity || 0;
                   });
 
-                const rows = Object.values(grouped).sort((a, b) => a.size.localeCompare(b.size));
+                const rows = Object.values(grouped).filter(row => row.quantity > 0).sort((a, b) => a.size.localeCompare(b.size));
 
                 return { grade, rows, subtotal: rows.reduce((sum, r) => sum + r.quantity, 0) };
               })
@@ -3523,7 +3523,7 @@ const fetchRepackingRecords = async () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">All Sizes</SelectItem>
-                            {BOX_SIZES.map(size => (
+                            {BOX_SIZES.filter(size => palletCreation.boxGroups.some(group => group.size === size && group.totalQuantity > 0)).map(size => (
                               <SelectItem key={size} value={size}>{formatSize(size)}</SelectItem>
                             ))}
                           </SelectContent>

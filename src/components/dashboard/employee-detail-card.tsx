@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StarRating } from '../ui/star-rating';
 import type { Employee, TimeAttendance } from '@/lib/data';
-import { Briefcase, Calendar, Edit, Mail, Phone, UserCheck, CreditCard } from 'lucide-react';
+import { Calendar, Edit, Mail, Phone, UserCheck, CreditCard } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TimeAttendanceCard } from './time-attendance-card';
 import { incidentTrendData } from '@/lib/data';
@@ -64,7 +64,6 @@ export function EmployeeDetailCard({ employee, onEdit, onAction, onPrintId, atte
             </div>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <Badge variant="secondary">{employee.role}</Badge>
             <Badge variant={statusVariant[employee.status]} className="capitalize">{employee.status}</Badge>
           </div>
           <div className="mt-2">
@@ -80,12 +79,11 @@ export function EmployeeDetailCard({ employee, onEdit, onAction, onPrintId, atte
             <TabsTrigger value="performance">Performance</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="mt-4 space-y-4">
-             <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground"><Phone /> {employee.phone || 'Not provided'}</div>
-                <div className="flex items-center gap-2 text-muted-foreground"><Mail /> {employee.email}</div>
-                <div className="flex items-center gap-2 text-muted-foreground"><Briefcase /> {employee.contract}</div>
-                <div className="flex items-center gap-2 text-muted-foreground"><UserCheck /> ID: {employee.idNumber || 'Not provided'}</div>
-             </div>
+                 <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground"><Phone /> {employee.phone || 'Not provided'}</div>
+                    <div className="flex items-center gap-2 text-muted-foreground"><Mail /> {employee.email}</div>
+                    <div className="flex items-center gap-2 text-muted-foreground"><UserCheck /> ID: {employee.idNumber || 'Not provided'}</div>
+                 </div>
              <div className="space-y-2">
                 <h4 className="font-semibold">Salary</h4>
                 <div className="font-mono text-lg p-2 bg-muted rounded-md w-fit">KES {employee.salary.toLocaleString()}</div>

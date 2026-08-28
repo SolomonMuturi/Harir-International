@@ -2008,7 +2008,18 @@ const fetchRepackingRecords = async () => {
   };
   
   const handleSelectAllRecords = () => {
-    const allIds = new Set(filteredCountingRecords.map(record => record.id));
+    const allIds = new Set(filteredCountingRecords
+      .filter(record => {
+        const totals = record.totals || {};
+        const hasRemainingType = (
+          totals.fuerte_4kg_total > 0 ||
+          totals.fuerte_10kg_total > 0 ||
+          totals.hass_4kg_total > 0 ||
+          totals.hass_10kg_total > 0
+        );
+        return hasRemainingType && (record.total_remaining_boxes || 0) > 0;
+      })
+      .map(record => record.id));
     setSelectedRecords(allIds);
   };
   
@@ -2972,7 +2983,16 @@ const fetchRepackingRecords = async () => {
                       <>
                         <div>
                           <div className="flex items-center justify-between mb-4">
-                            <Label>Available Records ({filteredCountingRecords.length})</Label>
+                            <Label>Available Records ({filteredCountingRecords.filter(record => {
+                                const totals = record.totals || {};
+                                const hasRemainingType = (
+                                  totals.fuerte_4kg_total > 0 ||
+                                  totals.fuerte_10kg_total > 0 ||
+                                  totals.hass_4kg_total > 0 ||
+                                  totals.hass_10kg_total > 0
+                                );
+                                return hasRemainingType && (record.total_remaining_boxes || 0) > 0;
+                              }).length})</Label>
                             <div className="flex items-center gap-2">
                               <Badge variant="outline">
                                 {selectedRecords.size} selected
@@ -2991,16 +3011,23 @@ const fetchRepackingRecords = async () => {
                                 <TableRow>
                                   <TableHead className="w-12">Select</TableHead>
                                   <TableHead>Supplier</TableHead>
-                                  <TableHead>Pallet ID</TableHead>
                                   <TableHead>Region</TableHead>
-                                  <TableHead>Total Weight</TableHead>
                                   <TableHead>Counted Weight</TableHead>
                                   <TableHead>Box Types</TableHead>
                                   <TableHead>Submitted</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {filteredCountingRecords.map((record) => {
+                                {filteredCountingRecords.filter(record => {
+                                  const totals = record.totals || {};
+                                  const hasRemainingType = (
+                                    totals.fuerte_4kg_total > 0 ||
+                                    totals.fuerte_10kg_total > 0 ||
+                                    totals.hass_4kg_total > 0 ||
+                                    totals.hass_10kg_total > 0
+                                  );
+                                  return hasRemainingType && (record.total_remaining_boxes || 0) > 0;
+                                }).map((record) => {
                                   const totals = record.totals || {};
                                   const totalBoxes = record.total_remaining_boxes || 0;
                                   const boxTypes = [
@@ -3031,27 +3058,13 @@ const fetchRepackingRecords = async () => {
                                         <div className="font-medium">{record.supplier_name}</div>
                                       </TableCell>
                                       <TableCell>
-                                        <div className="font-mono text-sm">{record.pallet_id}</div>
-                                      </TableCell>
-                                      <TableCell>
                                         <div className="text-sm">{record.region || 'N/A'}</div>
-                                      </TableCell>
-                                      <TableCell>
-                                        <div className="font-medium">{safeToFixed(record.total_weight)} kg</div>
                                       </TableCell>
                                       <TableCell>
                                         <div className="font-medium text-green-600">{safeToFixed(record.total_counted_weight)} kg</div>
                                       </TableCell>
                                       <TableCell>
                                         <div className="text-sm">{boxTypes || 'No boxes'}</div>
-                                        <div className="text-xs text-gray-500">
-                                          {remainingBoxes} boxes remaining
-                                          {loadedBoxes > 0 && (
-                                            <span className="text-green-600 ml-1">
-                                              ({loadedBoxes} already loaded)
-                                            </span>
-                                          )}
-                                        </div>
                                       </TableCell>
                                       <TableCell>
                                         <div className="text-sm">{formatDate(record.submitted_at)}</div>

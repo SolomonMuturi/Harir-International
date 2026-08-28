@@ -165,6 +165,23 @@ interface DashboardStats {
     region: string;
     lastDelivery: string;
   }>;
+  warehouseProcessing: {
+    intake: number;
+    qcApproved: number;
+    counting: number;
+    toColdRoom: number;
+    recentIntake: Array<{
+      id: string;
+      pallet_id: string;
+      supplier_name: string;
+      vehicle_plate: string;
+      net_weight: number;
+      region: string;
+      driver_name: string;
+      varieties: any[];
+      timestamp: string;
+    }>;
+  };
 }
 
 export default function DashboardPage() {
@@ -547,6 +564,89 @@ export default function DashboardPage() {
                         </div>
                       </CardContent>
                     </Card>
+
+                    {/* Warehouse Processing */}
+                    {(() => {
+                      const wp = stats.warehouseProcessing || { intake: 0, qcApproved: 0, counting: 0, toColdRoom: 0, recentIntake: [] };
+                      return (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Warehouse className="w-5 h-5" />
+                          Warehouse Processing
+                          <Badge variant="outline" className="ml-2">
+                            {wp.toColdRoom} pending
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription>
+                          Real-time processing status and pipeline overview
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-6">
+                          {/* Processing Pipeline */}
+                          <div className="grid grid-cols-4 gap-4">
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-blue-600">{wp.intake}</div>
+                              <div className="text-sm text-muted-foreground">Intake</div>
+                              <div className="text-xs text-blue-500 mt-1">Received</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-amber-600">{wp.qcApproved}</div>
+                              <div className="text-sm text-muted-foreground">QC Check</div>
+                              <div className="text-xs text-amber-500 mt-1">Approved</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-green-600">{wp.counting}</div>
+                              <div className="text-sm text-muted-foreground">Counting</div>
+                              <div className="text-xs text-green-500 mt-1">Completed</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-purple-600">{wp.toColdRoom}</div>
+                              <div className="text-sm text-muted-foreground">To Cold Room</div>
+                              <div className="text-xs text-purple-500 mt-1">Ready</div>
+                            </div>
+                          </div>
+
+                          {/* Recent Supplier Intake */}
+                          <div>
+                            <h3 className="text-sm font-medium mb-3">Recent Supplier Intake</h3>
+                            <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                              {wp.recentIntake.length > 0 ? (
+                                wp.recentIntake.map((supplier) => (
+                                  <div key={supplier.id} className="p-3 border rounded-lg hover:bg-black-50 transition-colors">
+                                    <div className="flex items-start justify-between">
+                                      <div>
+                                        <div className="font-medium">{supplier.supplier_name}</div>
+                                        <div className="text-sm text-gray-500 mt-1">
+                                          <div className="flex items-center gap-4">
+                                            <span>🚚 {supplier.vehicle_plate || 'No plate'}</span>
+                                            <span>⚖️ {supplier.net_weight} kg</span>
+                                            <span>📦 {supplier.varieties.length} varieties</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1">
+                                        <Badge variant="secondary">Intake Complete</Badge>
+                                        <div className="text-xs text-gray-400">
+                                          {formatDate(supplier.timestamp)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-sm text-muted-foreground">
+                                  No recent intake records
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                      );
+                    })()}
                   </div>
 
                   {/* Right Column - Cold Chain & Alerts */}

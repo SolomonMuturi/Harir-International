@@ -114,6 +114,10 @@ export async function GET(request: NextRequest) {
 
       // Supplier Performance Data
       supplierPerformanceData,
+
+      // Warehouse Processing Data
+      recentIntakeEntries,
+      pendingColdRoomCount,
       
     ] = await Promise.all([
       // Supplier queries
@@ -280,6 +284,18 @@ export async function GET(request: NextRequest) {
           return [];
         }
       })(),
+
+      // Recent intake entries for the warehouse processing pipeline
+      safeFindMany(models.weightEntries, {
+        orderBy: { created_at: 'desc' },
+        take: 6
+      }),
+
+      // Counting records not yet fully loaded to a cold room (pending / partially loaded)
+      safeCount(models.countingRecord, {
+        for_coldroom: true,
+        OR: [{ status: 'pending_coldroom' }, { status: 'partially_loaded' }]
+      }),
     ]);
 
     // Calculate derived metrics
@@ -426,6 +442,47 @@ export async function GET(request: NextRequest) {
         }, 0)
       : 0;
 
+    // Warehouse processing pipeline (for the "Warehouse Processing" dashboard card)
+    let warehouseProcessing = {
+      intake: 0,
+      qcApproved: 0,
+      counting: 0,
+      toColdRoom: 0,
+      recentIntake: [],
+    };
+    try {
+      const recentIntake = (recentIntakeEntries || []).map((entry: any) => ({
+        id: entry.id,
+        pallet_id: entry.pallet_id || `WE-${entry.id}`,
+        supplier_name: entry.supplier || 'Unknown Supplier',
+        vehicle_plate: entry.vehicle_plate || entry.truck_id || '',
+        net_weight: Number(entry.net_weight || entry.weight || 0),
+        region: entry.region || '',
+        driver_name: entry.driver_name || '',
+        varieties: Array.isArray(entry.perVarietyWeights)
+          ? entry.perVarietyWeights
+          : (() => {
+              try {
+                const parsed = JSON.parse(entry.perVarietyWeights || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+              } catch (e) {
+                return [];
+              }
+            })(),
+        timestamp: entry.created_at || entry.timestamp || new Date().toISOString(),
+      }));
+
+      warehouseProcessing = {
+        intake: recentIntake.length,
+        qcApproved: approvedQualityChecks || 0,
+        counting: processedCountingRecords || 0,
+        toColdRoom: pendingColdRoomCount || 0,
+        recentIntake,
+      };
+    } catch (e) {
+      console.error('Error building warehouse processing data:', e);
+    }
+
     // Build the complete response
     const dashboardStats = {
       // Employee Stats
@@ -507,6 +564,9 @@ export async function GET(request: NextRequest) {
       // Additional Metrics
       weeklyIntakeTrend: weeklyTrendData || [],
       supplierPerformance: supplierPerformance || [],
+
+      // Warehouse Processing Pipeline
+      warehouseProcessing,
     };
 
     console.log('✅ Dashboard stats fetched successfully');

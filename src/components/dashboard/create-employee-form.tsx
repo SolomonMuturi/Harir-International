@@ -13,13 +13,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { EmployeeFormValues, Employee } from '@/lib/data';
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
@@ -34,7 +27,6 @@ const formSchema = z.object({
   idNumber: z.string().min(5, {
     message: 'ID number must be at least 5 characters.',
   }),
-  shift: z.enum(['Day', 'Night']),
   date: z.string().min(1, {
     message: 'Date is required.',
   }),
@@ -64,7 +56,6 @@ export function CreateEmployeeForm({
       name: '',
       phone: '',
       idNumber: '',
-      shift: 'Day',
       date: format(new Date(), 'yyyy-MM-dd'),
       contract: 'Full-time',
       role: 'Driver',
@@ -77,7 +68,6 @@ export function CreateEmployeeForm({
         name: employee.name || '',
         phone: employee.phone || '',
         idNumber: employee.idNumber || '',
-        shift: (employee.shift as 'Day' | 'Night') || 'Day',
         date: employee.date ? format(new Date(employee.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
         contract: (employee.contract as 'Full-time' | 'Part-time' | 'Contract') || 'Full-time',
         role: (employee.role as 'Manager' | 'Driver' | 'Warehouse' | 'Admin' | 'Security') || 'Driver',
@@ -111,7 +101,6 @@ export function CreateEmployeeForm({
           name: '',
           phone: '',
           idNumber: '',
-          shift: 'Day',
           date: format(new Date(), 'yyyy-MM-dd'),
           contract: 'Full-time',
           role: 'Driver',
@@ -204,78 +193,6 @@ export function CreateEmployeeForm({
             )}
           />
           
-          {/* Shift */}
-          <FormField
-            control={form.control}
-            name="shift"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Shift *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select shift" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="Day">Day Shift</SelectItem>
-                    <SelectItem value="Night">Night Shift</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          
-          {/* Contract Type */}
-          <FormField
-            control={form.control}
-            name="contract"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Casual Type *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select casual type" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="Full-time">Full-time</SelectItem>
-                    <SelectItem value="Part-time">Part-time</SelectItem>
-                    <SelectItem value="Contract">Casual</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          
-          {/* Role */}
-          <FormField
-            control={form.control}
-            name="role"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Role *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select role" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="Manager">Manager</SelectItem>
-                    <SelectItem value="Driver">Driver</SelectItem>
-                    <SelectItem value="Warehouse">Warehouse Staff</SelectItem>
-                    <SelectItem value="Admin">Admin</SelectItem>
-                    <SelectItem value="Security">Security</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
         </div>
         
         <div className="flex justify-end pt-4 border-t">

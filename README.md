@@ -26,7 +26,6 @@
 - [Available Scripts](#available-scripts)
 - [Security](#security)
 - [Roadmap](#roadmap)
-- [License](#license)
 
 ---
 
@@ -353,12 +352,6 @@ docker compose up -d --build
 - Additional report types and scheduled exports
 - Expanded cold-chain IoT integrations
 - Multi-branch support
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
 
 ---
 

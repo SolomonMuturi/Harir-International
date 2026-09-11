@@ -92,17 +92,17 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
 export async function POST(request: NextRequest) {
+  let body: any;
+  const ip = request.headers.get('x-forwarded-for') ||
+             request.headers.get('x-real-ip') ||
+             'unknown';
+
   try {
-    const body = await request.json();
-    const ip = request.headers.get('x-forwarded-for') ||
-               request.headers.get('x-real-ip') ||
-               'unknown';
+    body = await request.json();
 
     // Log what we're receiving
     console.log('📝 Received activity log request:', body);
@@ -156,11 +156,6 @@ export async function POST(request: NextRequest) {
     if (error.code === 'P2002') {
       // Unique constraint failed - retry with new ID
       try {
-        const body = await request.json();
-        const ip = request.headers.get('x-forwarded-for') ||
-                   request.headers.get('x-real-ip') ||
-                   'unknown';
-        
         const newId = generateId();
         const log = await prisma.activity_logs.create({
           data: {
@@ -204,8 +199,6 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -259,7 +252,5 @@ export async function DELETE(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

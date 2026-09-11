@@ -579,23 +579,36 @@ export default function QualityControlPage() {
   const handlePrintQrSticker = () => {
     const printableArea = document.querySelector('.printable-qr-sticker-area');
     if (!printableArea) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write('<html><head>');
-    printWindow.document.write(`<style>
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write('<html><head>');
+    doc.write(`<style>
       @page { size: 50mm 25mm; margin: 0; }
       html, body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .qr-sticker { width: 50mm; height: 25mm; display: flex; align-items: center; justify-content: center; box-sizing: border-box; border: 0.3mm solid #000; }
       .qr-sticker img { width: 23mm; height: 23mm; }
     </style>`);
-    printWindow.document.write('</head><body>');
-    printWindow.document.write(printableArea.innerHTML);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-    printWindow.focus();
+    doc.write('</head><body>');
+    doc.write(printableArea.innerHTML);
+    doc.write('</body></html>');
+    doc.close();
+    const printWindow = iframe.contentWindow;
+    if (!printWindow) return;
     setTimeout(() => {
+      printWindow.focus();
       printWindow.print();
-      printWindow.close();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
     }, 250);
   };
 

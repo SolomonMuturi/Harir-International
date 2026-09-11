@@ -34,6 +34,7 @@ export function Header() {
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
   const logoutCountdownRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
+  const loggingOutRef = useRef(false);
   const INACTIVITY_TIMEOUT = 5 * 60 * 1000;
   const [showWarning, setShowWarning] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -88,6 +89,8 @@ export function Header() {
   };
 
   const handleLogout = async () => {
+    if (loggingOutRef.current) return;
+    loggingOutRef.current = true;
     try {
       await logActivity({
         user: session?.user?.email || session?.user?.name || "Unknown",
@@ -102,6 +105,8 @@ export function Header() {
     } catch (error) {
       console.error("Logout error:", error);
       toast.error("Failed to logout");
+    } finally {
+      loggingOutRef.current = false;
     }
   };
 
@@ -136,16 +141,36 @@ export function Header() {
   };
 
   const setupActivityListeners = () => {
-    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    // Also cover touch/pointer events and capture-phase scroll so activity is
+    // tracked reliably on tablets/phones (mouse + window-scroll alone miss
+    // most gestures on touch screens and inside nested scroll containers).
+    const events = [
+      "pointermove",
+      "pointerdown",
+      "touchstart",
+      "touchmove",
+      "mousemove",
+      "click",
+      "keydown",
+      "scroll",
+      "wheel",
+    ];
     const handleUserActivity = () => {
       resetLogoutTimer();
     };
     events.forEach((event) => {
-      window.addEventListener(event, handleUserActivity);
+      window.addEventListener(event, handleUserActivity, { passive: true });
+      document.addEventListener(event, handleUserActivity, {
+        passive: true,
+        capture: true,
+      });
     });
     return () => {
       events.forEach((event) => {
         window.removeEventListener(event, handleUserActivity);
+        document.removeEventListener(event, handleUserActivity, {
+          capture: true,
+        });
       });
     };
   };
@@ -199,6 +224,23 @@ export function Header() {
       document.removeEventListener("visibilitychange", checkElapsedOnResume);
       window.removeEventListener("focus", checkElapsedOnResume);
     };
+  }, [session?.user?.email]);
+
+  // Wall-clock watchdog: on tablets/phones (esp. iOS) the OS can freeze or
+  // drop the events above and even skip visibilitychange when the screen
+  // locks, so timers stall. This lightweight interval checks the actual
+  // elapsed time and force-logs-out if the inactivity window was exceeded,
+  // guaranteeing sign-out regardless of how the tab was backgrounded.
+  useEffect(() => {
+    if (!session?.user) return;
+    const watchdog = setInterval(() => {
+      const elapsed = Date.now() - lastActivityRef.current;
+      if (elapsed >= INACTIVITY_TIMEOUT) {
+        toast.warning("Session expired due to inactivity");
+        handleLogout();
+      }
+    }, 30 * 1000);
+    return () => clearInterval(watchdog);
   }, [session?.user?.email]);
 
   useEffect(() => {

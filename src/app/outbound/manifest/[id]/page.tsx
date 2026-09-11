@@ -51,8 +51,9 @@ export default function OutboundManifestPage() {
         try {
           // Fetch shipment from API
           const shipmentResponse = await fetch(`/api/shipments/${shipmentId}`);
+          let shipmentData: any = null;
           if (shipmentResponse.ok) {
-            const shipmentData = await shipmentResponse.json();
+            shipmentData = await shipmentResponse.json();
             setShipment(shipmentData);
           }
 

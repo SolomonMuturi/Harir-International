@@ -31,14 +31,20 @@ export function EmployeeIdCardDialog({ isOpen, onOpenChange, employee, onEdit }:
 
   const handlePrint = () => {
     const printContent = document.getElementById('printable-id-card-area');
-    const windowUrl = 'about:blank';
-    const uniqueName = new Date().getTime();
-    const windowName = 'Print' + uniqueName;
-    const printWindow = window.open(windowUrl, windowName, 'left=50,top=50,width=800,height=600');
-
-    if (printWindow && printContent) {
-        printWindow.document.write('<html><head><title>Print Employee ID</title>');
-        printWindow.document.write(`
+    if (!printContent) return;
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write('<html><head><title>Print Employee ID</title>');
+    doc.write(`
             <style>
                 @media print {
                     @page { size: 85.6mm 53.98mm; margin: 0; }
@@ -86,16 +92,19 @@ export function EmployeeIdCardDialog({ isOpen, onOpenChange, employee, onEdit }:
                 .id-footer { display: flex; justify-content: space-between; font-size: 9px; padding: 4px 8px; font-weight: bold; color: #22c55e; }
             </style>
         `);
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printContent.innerHTML);
-        printWindow.document.write('</body></html>');
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-        }, 250);
-    }
+    doc.write('</head><body>');
+    doc.write(printContent.innerHTML);
+    doc.write('</body></html>');
+    doc.close();
+    const printWindow = iframe.contentWindow;
+    if (!printWindow) return;
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 250);
   };
 
   return (

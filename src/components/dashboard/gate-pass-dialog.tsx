@@ -57,7 +57,7 @@ export function GatePassDialog({ isOpen, onOpenChange, visitor }: GatePassDialog
                       {gatePassId}
                     </p>
                   </div>
-                   <a href={verificationUrl} target="_blank" rel="noopener noreferrer" className="block p-1 bg-white rounded-md w-20 h-20 shadow-md hover:shadow-lg transition-shadow">
+                   <a href={verificationUrl} className="block p-1 bg-white rounded-md w-20 h-20 shadow-md hover:shadow-lg transition-shadow">
                       <img 
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verificationUrl)}`} 
                           alt="QR Code for verification"

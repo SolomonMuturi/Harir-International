@@ -14,7 +14,6 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { TwoFactorAuth } from '@/components/dashboard/two-factor-auth';
 import { ActivityLog } from '@/components/dashboard/activity-log';
-import { activityLogData } from '@/lib/data';
 
 export default function SecurityPage() {
 
@@ -48,7 +47,7 @@ export default function SecurityPage() {
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-3">
-                    <ActivityLog logs={activityLogData} />
+                    <ActivityLog />
                 </div>
                 <div className="lg:col-span-1">
                     <TwoFactorAuth />

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   SidebarProvider,
   Sidebar,
@@ -165,6 +166,7 @@ const getCurrentUser = async () => {
 };
 
 export default function InventoryPage() {
+  const router = useRouter();
   const [stockTakeMode, setStockTakeMode] = useState(false);
   const [coldRoomBoxes, setColdRoomBoxes] = useState<ColdRoomBox[]>([]);
   const [pallets, setPallets] = useState<Pallet[]>([]);
@@ -857,7 +859,7 @@ export default function InventoryPage() {
   };
 
   const handleViewLoadingSheet = (loadingSheetId: string) => {
-    window.open(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`, '_blank');
+    router.push(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`);
   };
 
   if (isLoading.boxes || isLoading.pallets || isLoading.packaging) {

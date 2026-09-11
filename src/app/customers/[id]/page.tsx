@@ -512,7 +512,6 @@ export default function CustomerDetailPage() {
                                 <Link
                                     key={doc.name} 
                                     href={doc.url || '#'}
-                                    target={doc.url && doc.url.startsWith('http') ? '_blank' : '_self'}
                                     rel={doc.url && doc.url.startsWith('http') ? 'noopener noreferrer' : ''}
                                     passHref
                                     className={cn("flex items-center justify-between p-3 rounded-md border hover:bg-muted/50 transition-colors", !doc.url && "pointer-events-none opacity-50")}

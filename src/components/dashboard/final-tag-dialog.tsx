@@ -83,19 +83,33 @@ export function FinalTagDialog({
   const handlePrint = () => {
     const printableArea = document.querySelector('.printable-final-tag-area');
     if (printableArea) {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-            printWindow.document.write('<html><head><title>Print Tag</title>');
-            printWindow.document.write('<style>@media print { @page { size: 4in 3in; margin: 0; } body { margin: 0; padding: 0.15rem; font-family: sans-serif; -webkit-print-color-adjust: exact; } .tag-card { border: 2px solid black; padding: 0.25rem; width: 100%; height: 100%; display: flex; flex-direction: column; } .logo { display: flex; align-items: center; gap: 0.5rem; } .logo-svg { width: 24px; height: 24px; } .logo-text { font-weight: bold; font-size: 14px; } .content-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 0.25rem; align-items: start; margin-top: 4px; } .qr-code { width: 100%; height: auto; } .details { font-size: 9px; } .details p { margin: 1px 0; } .weight-display { font-size: 1.5rem; font-weight: bold; text-align: right; } table { width: 100%; border-collapse: collapse; font-size: 8px; } th, td { border: 1px solid #ddd; padding: 1px 2px; text-align: left; } th { background-color: #f2f2f2; } }</style>');
-            printWindow.document.write('</head><body>');
-            printWindow.document.write(printableArea.innerHTML);
-            printWindow.document.write('</body></html>');
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => { // Timeout to ensure content is rendered
-              printWindow.print();
-              printWindow.close();
-            }, 250);
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentDocument;
+        if (doc) {
+            doc.open();
+            doc.write('<html><head><title>Print Tag</title>');
+            doc.write('<style>@media print { @page { size: 4in 3in; margin: 0; } body { margin: 0; padding: 0.15rem; font-family: sans-serif; -webkit-print-color-adjust: exact; } .tag-card { border: 2px solid black; padding: 0.25rem; width: 100%; height: 100%; display: flex; flex-direction: column; } .logo { display: flex; align-items: center; gap: 0.5rem; } .logo-svg { width: 24px; height: 24px; } .logo-text { font-weight: bold; font-size: 14px; } .content-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 0.25rem; align-items: start; margin-top: 4px; } .qr-code { width: 100%; height: auto; } .details { font-size: 9px; } .details p { margin: 1px 0; } .weight-display { font-size: 1.5rem; font-weight: bold; text-align: right; } table { width: 100%; border-collapse: collapse; font-size: 8px; } th, td { border: 1px solid #ddd; padding: 1px 2px; text-align: left; } th { background-color: #f2f2f2; } }</style>');
+            doc.write('</head><body>');
+            doc.write(printableArea.innerHTML);
+            doc.write('</body></html>');
+            doc.close();
+            const printWindow = iframe.contentWindow;
+            if (printWindow) {
+                setTimeout(() => { // Timeout to ensure content is rendered
+                    printWindow.focus();
+                    printWindow.print();
+                    setTimeout(() => {
+                        document.body.removeChild(iframe);
+                    }, 1000);
+                }, 250);
+            }
         }
     }
   };

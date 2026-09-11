@@ -282,7 +282,7 @@ function SupplierPortalContent() {
                     <CardHeader><CardTitle>Recent Documents</CardTitle></CardHeader>
                     <CardContent className="space-y-2">
                          {recentDocuments.map(doc => (
-                            <Link key={doc.name} href={doc.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-md border hover:bg-muted/50">
+                            <Link key={doc.name} href={doc.url} className="flex items-center justify-between p-3 rounded-md border hover:bg-muted/50">
                                 <div className="flex items-center gap-2">
                                     <FileText className="text-muted-foreground" />
                                     <div>

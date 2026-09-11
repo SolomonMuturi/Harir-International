@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   SidebarProvider,
   Sidebar,
@@ -449,6 +450,7 @@ const getCurrentUser = async () => {
 
 export default function ColdRoomPage() {
   const { toast } = useToast();
+  const router = useRouter();
   
   const [coldRooms, setColdRooms] = useState<Array<{
     id: string;
@@ -2693,7 +2695,7 @@ const fetchRepackingRecords = async () => {
   };
 
   const handleViewLoadingSheet = (loadingSheetId: string) => {
-    window.open(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`, '_blank');
+    router.push(`/outbound?tab=loading-sheet&sheet=${loadingSheetId}`);
   };
 
   const getFilteredPallets = () => {

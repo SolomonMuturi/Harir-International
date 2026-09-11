@@ -34,13 +34,26 @@ export function RegistrationSuccess({ visitor, onDone }: RegistrationSuccessProp
       <p><strong>Visitor Code:</strong> ${visitor.visitorCode}</p>
       <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(registrationUrl)}" alt="QR Code" />
     `;
-    const printWindow = window.open('', '', 'height=600,width=800');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-    }
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(printContent);
+    doc.close();
+    const printWindow = iframe.contentWindow;
+    if (!printWindow) return;
+    printWindow.focus();
+    printWindow.print();
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
   };
 
   return (

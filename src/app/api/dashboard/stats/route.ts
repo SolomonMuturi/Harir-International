@@ -56,14 +56,14 @@ export async function GET(request: NextRequest) {
       vehicleVisits: prisma.vehicle_visits,
       weightEntries: prisma.weight_entries,
       qualityChecks: prisma.quality_checks,
-      countingRecord: prisma.CountingRecord, // Note: Capital C, Capital R
+      countingRecord: prisma.countingRecord,
       coldRooms: prisma.cold_rooms,
       coldRoomBoxes: prisma.cold_room_boxes,
       rejects: prisma.rejects,
-      employee: prisma.Employee, // Note: Capital E
-      attendance: prisma.Attendance, // Note: Capital A
-      user: prisma.User,
-      userRole: prisma.UserRole,
+      employee: prisma.employee,
+      attendance: prisma.attendance,
+      user: prisma.user,
+      userRole: prisma.userRole,
     };
 
     // Run all queries in parallel

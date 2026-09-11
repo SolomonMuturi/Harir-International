@@ -41,9 +41,7 @@ export async function GET(
           select: {
             id: true,
             name: true,
-            location: true,
-            phone: true,
-            email: true
+            location: true
           }
         }
       }

@@ -1,10 +1,6 @@
 # Harir International — Production & Warehouse Management System
 
 <p align="center">
-  <img src="./public/images/HLogo.png" alt="Harir International Logo" width="220" />
-</p>
-
-<p align="center">
   <strong>A modern, full-stack production and warehouse management platform</strong> built with Next.js, TypeScript, Prisma, and Tailwind CSS — purpose-built to manage fresh-produce intake, quality control, cold room operations, shipments, HR, and user access across the entire supply chain.
 </p>
 
@@ -47,7 +43,7 @@ Built on a clean, modular architecture, the system is permission-driven: every r
 ### Login
 
 <p align="center">
-  <img src="./public/images/Harirlogo.jpg" alt="Login" width="640" />
+  <img src="./public/images/login.png" alt="Login" width="640" />
 </p>
 
 ### Dashboard
@@ -371,3 +367,9 @@ This project is licensed under the **MIT License**.
 **Harir International** — Production & Warehouse Management System.
 
 Built with Next.js, TypeScript, Prisma, and Tailwind CSS.
+
+---
+
+### Contact [Solomon Muturi]
+
+- Phone : +24745945248

@@ -40,8 +40,15 @@ const routePermissions: Record<string, string[]> = {
   '/suppliers/weigh': ['suppliers.weigh'],
   '/suppliers/visitors': ['suppliers.visitors'],
   
-  // HR - Employees
-  '/employees': ['employees.overview.view', 'employees.list.view'],
+  // HR - Employees (any employee permission grants access)
+  '/employees': [
+    'employees.overview.view', 'employees.list.view', 'employees.overview.export', 'employees.overview.bulk_actions',
+    'employees.checkin.view', 'employees.checkin.perform', 'employees.checkin.bulk',
+    'employees.attendance.mark', 'employees.attendance.late', 'employees.attendance.view', 'employees.attendance.export', 'employees.attendance.edit', 'employees.attendance.delete', 'employees.attendance.reports', 'employees.attendance.record',
+    'employees.designation.view', 'employees.designation.assign', 'employees.designation.bulk', 'employees.designation.manage',
+    'employees.checkout.view', 'employees.checkout.perform', 'employees.checkout.bulk', 'employees.checkout.override',
+    'employees.create', 'employees.edit', 'employees.delete', 'employees.export', 'employees.import',
+  ],
   '/employees/manage': ['employees.edit', 'employees.create'],
   '/employees/attendance': ['employees.attendance.view'],
   
@@ -118,7 +125,14 @@ const apiRoutePermissions: Record<string, { permissions?: string[]; methods?: Re
     permissions: [],
   },
   '/api/user-roles': { permissions: ['admin.roles', 'admin.settings'] },
-  '/api/attendance': { permissions: ['employees.attendance.view', 'employees.attendance.record'] },
+'/api/attendance': {
+    methods: {
+      GET: ['employees.attendance.view', 'employees.attendance.record'],
+      POST: ['employees.attendance.view', 'employees.attendance.record', 'employees.attendance.edit', 'employees.attendance.mark', 'employees.attendance.late', 'employees.checkin.perform', 'employees.checkin.bulk', 'employees.designation.assign', 'employees.designation.bulk', 'employees.designation.manage'],
+      PUT: ['employees.attendance.view', 'employees.attendance.record', 'employees.attendance.edit', 'employees.attendance.mark', 'employees.attendance.late', 'employees.checkin.perform', 'employees.checkin.bulk', 'employees.checkout.perform', 'employees.checkout.bulk', 'employees.designation.assign', 'employees.designation.bulk', 'employees.designation.manage'],
+      DELETE: ['employees.attendance.delete', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record', 'employees.checkin.perform', 'employees.checkin.bulk', 'employees.checkout.perform', 'employees.checkout.bulk'],
+    },
+  },
   '/api/employees': { permissions: ['employees.overview.view', 'employees.list.view', 'employees.edit', 'employees.create'] },
   '/api/weights': {
     methods: {

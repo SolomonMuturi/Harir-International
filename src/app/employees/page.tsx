@@ -192,6 +192,8 @@ interface EmployeeCheckCardProps {
   onMarkAbsent: (employeeId: string) => void;
   onMarkOnLeave: (employeeId: string) => void;
   showActions?: boolean;
+  canCheckIn?: boolean;
+  canMarkAttendance?: boolean;
 }
 
 const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
@@ -200,7 +202,9 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
   onCheckIn,
   onMarkAbsent,
   onMarkOnLeave,
-  showActions = true
+  showActions = true,
+  canCheckIn = true,
+  canMarkAttendance = true
 }) => {
   const isPresent = todayRecord?.status === 'Present' || todayRecord?.status === 'Late';
   const isAbsent = todayRecord?.status === 'Absent';
@@ -269,6 +273,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
                   size="sm"
                   className="h-9 text-sm bg-green-600 hover:bg-green-700"
                   onClick={() => onCheckIn(employee.id, false)}
+                  disabled={!canCheckIn}
                 >
                   <DoorOpen className="w-4 h-4 mr-1" />
                   Check In
@@ -278,6 +283,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
                   variant="outline"
                   className="h-9 text-sm"
                   onClick={() => onMarkAbsent(employee.id)}
+                  disabled={!canMarkAttendance}
                 >
                   <XCircle className="w-4 h-4 mr-1" />
                   Absent
@@ -294,6 +300,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
                   size="sm"
                   className="h-9 text-sm bg-green-600 hover:bg-green-700"
                   onClick={() => onCheckIn(employee.id, isAfternoon)}
+                  disabled={!canCheckIn}
                 >
                   <LogIn className="w-4 h-4 mr-1" />
                   {isAfternoon ? 'Check In Late' : 'Check In'}
@@ -303,6 +310,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
                   variant="outline"
                   className="h-9 text-sm"
                   onClick={() => onMarkOnLeave(employee.id)}
+                  disabled={!canMarkAttendance}
                 >
                   <CalendarIcon className="w-4 h-4 mr-1" />
                   On Leave
@@ -314,6 +322,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
                   size="sm"
                   className="h-9 text-sm bg-green-600 hover:bg-green-700"
                   onClick={() => onCheckIn(employee.id, isAfternoon)}
+                  disabled={!canCheckIn}
                 >
                   <LogIn className="w-4 h-4 mr-1" />
                   {isAfternoon ? 'Check In Late' : 'Check In'}
@@ -323,6 +332,7 @@ const EmployeeCheckCard: React.FC<EmployeeCheckCardProps> = ({
                   variant="outline"
                   className="h-9 text-sm"
                   onClick={() => onMarkAbsent(employee.id)}
+                  disabled={!canMarkAttendance}
                 >
                   <XCircle className="w-4 h-4 mr-1" />
                   Absent
@@ -350,6 +360,8 @@ interface DesignationCardProps {
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
   disabled?: boolean;
   isSaving?: boolean;
+  canAssign?: boolean;
+  canDelete?: boolean;
 }
 
 const DesignationCard: React.FC<DesignationCardProps> = ({
@@ -360,7 +372,9 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
   onSave,
   setAttendance,
   disabled = false,
-  isSaving = false
+  isSaving = false,
+  canAssign = true,
+  canDelete = false
 }) => {
   const isPresent = todayRecord?.status === 'Present' || todayRecord?.status === 'Late';
   const hasCheckedIn = !!todayRecord?.clockInTime;
@@ -586,7 +600,7 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
             {hasCheckedIn && (
               <Button
                 onClick={handleSave}
-                disabled={disabled || !hasCheckedIn || isSaving}
+                disabled={disabled || !hasCheckedIn || isSaving || !canAssign}
                 className="bg-green-600 hover:bg-green-700"
                 size="sm"
               >
@@ -604,16 +618,18 @@ const DesignationCard: React.FC<DesignationCardProps> = ({
               </Button>
             )}
             {/* Delete Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-red-100 hover:bg-red-200 text-red-700"
-              onClick={handleDelete}
-              disabled={disabled}
-            >
-              <Trash className="w-4 h-4 mr-2" />
-              Delete
-            </Button>
+            {canDelete && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-red-100 hover:bg-red-200 text-red-700"
+                onClick={handleDelete}
+                disabled={disabled}
+              >
+                <Trash className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            )}
           </div>
           {!hasCheckedIn && (
             <p className="text-xs text-amber-600 mt-2 text-center">
@@ -631,6 +647,9 @@ interface GateOutCardProps {
   employee: Employee;
   todayRecord?: Attendance;
   onCheckOut: (employeeId: string) => void;
+  onDelete?: (record: Attendance) => void;
+  canCheckOut?: boolean;
+  canDelete?: boolean;
   disabled?: boolean;
 }
 
@@ -638,6 +657,9 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
   employee,
   todayRecord,
   onCheckOut,
+  onDelete,
+  canCheckOut = true,
+  canDelete = false,
   disabled = false
 }) => {
   const hasCheckedIn = !!todayRecord?.clockInTime;
@@ -646,7 +668,7 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
   
   // Only contract employees require designation
   const requiresDesignation = employee.contract === 'Contract';
-  const canCheckOut = hasCheckedIn && !hasCheckedOut && (!requiresDesignation || hasDesignation);
+  const readyToCheckOut = hasCheckedIn && !hasCheckedOut && (!requiresDesignation || hasDesignation);
   
   return (
     <Card className={cn(
@@ -719,7 +741,7 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
               size="sm"
               className="h-10 w-full text-sm bg-red-600 hover:bg-red-700"
               onClick={() => onCheckOut(employee.id)}
-              disabled={disabled || (requiresDesignation && !hasDesignation)}
+              disabled={disabled || (requiresDesignation && !hasDesignation) || !canCheckOut}
             >
               <DoorClosed className="w-4 h-4 mr-2" />
               {requiresDesignation && !hasDesignation ? "Assign Designation First" : "Check Out"}
@@ -740,6 +762,19 @@ const GateOutCard: React.FC<GateOutCardProps> = ({
             <p className="text-xs text-orange-600 mt-2 text-center">
               Designation must be assigned before checking out
             </p>
+          )}
+
+          {canDelete && onDelete && todayRecord && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2 h-8 w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => onDelete(todayRecord)}
+              disabled={disabled}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Delete Attendance
+            </Button>
           )}
         </div>
       </CardContent>
@@ -1043,6 +1078,7 @@ export default function EmployeesPage() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [viewAttendanceRecord, setViewAttendanceRecord] = useState<Attendance | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
   const router = useRouter();
@@ -1056,6 +1092,56 @@ export default function EmployeesPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  // Current user role/permissions (drives tab + action gating)
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [userRole, setUserRole] = useState('');
+
+  // Load the current user's permissions once
+  useEffect(() => {
+    let cancelled = false;
+    const loadMe = async () => {
+      try {
+        const res = await fetch('/api/auth/session');
+        const session = await res.json();
+        if (cancelled) return;
+        setUserPermissions(session?.user?.permissions || []);
+        setUserRole(session?.user?.role || '');
+      } catch {
+        if (cancelled) return;
+        setUserPermissions([]);
+        setUserRole('');
+      }
+    };
+    loadMe();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Permission helpers - admins always pass
+  const can = (required: string[]): boolean => {
+    if (userRole === 'Administrator' || userPermissions.includes('admin.all')) return true;
+    return required.some(p => userPermissions.includes(p));
+  };
+
+  const hasTabAccess = (tab: string): boolean => {
+    if (tab === 'overview') return true;
+    if (tab === 'gate-in') return can(['employees.checkin.view']);
+    if (tab === 'assign-designation') return can(['employees.designation.view', 'employees.designation.assign']);
+    if (tab === 'gate-out') return can(['employees.checkout.view']);
+    if (tab === 'employees') return can(['employees.list.view']);
+    if (tab === 'attendance') return can(['employees.attendance.view']);
+    return false;
+  };
+
+  // Keep the active tab valid once permissions finish loading
+  useEffect(() => {
+    if (userRole === '' && userPermissions.length === 0) return;
+    if (!hasTabAccess(activeTab)) {
+      const fallback = ['overview', 'gate-in', 'gate-out', 'assign-designation', 'employees', 'attendance'].find(t => hasTabAccess(t));
+      setActiveTab(fallback || 'overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, userPermissions]);
 
   // Gate In/Out state
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -1781,11 +1867,8 @@ export default function EmployeesPage() {
 
       toast({
         title: '✅ Designation Assigned',
-        description: `${employee.name} assigned to ${designationLabels[designation]}. Moving to Gate Out tab.`,
+        description: `${employee.name} assigned to ${designationLabels[designation]}.`,
       });
-      
-      // Automatically switch to Gate Out tab after successful save
-      setActiveTab('gate-out');
 
       const currentUser = await getCurrentUser();
       await logActivity({
@@ -2036,6 +2119,42 @@ export default function EmployeesPage() {
       toast({
         title: 'Bulk Designation Failed',
         description: error.message || 'Bulk designation failed',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Delete a single attendance record (shared by Attendance Log + Gate Out tab)
+  const handleDeleteAttendanceRecord = async (record: Attendance) => {
+    try {
+      const response = await fetch(`/api/attendance?id=${record.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete attendance');
+      }
+      setAttendance(prev => prev.filter(r => r.id !== record.id));
+      setViewAttendanceRecord(null);
+      const currentUser = await getCurrentUser();
+      await logActivity({
+        user: currentUser?.name || 'System',
+        action: 'EMPLOYEE_ATTENDANCE_DELETED',
+        status: 'success',
+        metadata: {
+          userId: currentUser?.id,
+          employeeId: record.employeeId,
+          attendanceId: record.id,
+          date: record.date,
+          status: record.status,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      toast({ title: 'Attendance deleted', description: 'This attendance record has been deleted.' });
+    } catch (error: any) {
+      toast({
+        title: 'Delete Failed',
+        description: error.message || 'Failed to delete attendance',
         variant: 'destructive',
       });
     }
@@ -2715,31 +2834,41 @@ export default function EmployeesPage() {
 
           {/* Main Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="flex w-full flex-wrap gap-1">
               <TabsTrigger value="overview" className="flex items-center gap-2">
                 <BarChart className="w-4 h-4" />
                 <span className="hidden md:inline">Overview</span>
               </TabsTrigger>
-              <TabsTrigger value="gate-in" className="flex items-center gap-2">
-                <DoorOpen className="w-4 h-4" />
-                <span className="hidden md:inline">Gate In</span>
-              </TabsTrigger>
-              <TabsTrigger value="assign-designation" className="flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                <span className="hidden md:inline">Assign Designation</span>
-              </TabsTrigger>
-              <TabsTrigger value="gate-out" className="flex items-center gap-2">
-                <DoorClosed className="w-4 h-4" />
-                <span className="hidden md:inline">Gate Out</span>
-              </TabsTrigger>
-              <TabsTrigger value="employees" className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                <span className="hidden md:inline">Casuals</span>
-              </TabsTrigger>
-              <TabsTrigger value="attendance" className="flex items-center gap-2">
-                <ListChecks className="w-4 h-4" />
-                <span className="hidden md:inline">Attendance Log</span>
-              </TabsTrigger>
+              {hasTabAccess('gate-in') && (
+                <TabsTrigger value="gate-in" className="flex items-center gap-2">
+                  <DoorOpen className="w-4 h-4" />
+                  <span className="hidden md:inline">Gate In</span>
+                </TabsTrigger>
+              )}
+              {hasTabAccess('assign-designation') && (
+                <TabsTrigger value="assign-designation" className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  <span className="hidden md:inline">Assign Designation</span>
+                </TabsTrigger>
+              )}
+              {hasTabAccess('gate-out') && (
+                <TabsTrigger value="gate-out" className="flex items-center gap-2">
+                  <DoorClosed className="w-4 h-4" />
+                  <span className="hidden md:inline">Gate Out</span>
+                </TabsTrigger>
+              )}
+              {hasTabAccess('employees') && (
+                <TabsTrigger value="employees" className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  <span className="hidden md:inline">Casuals</span>
+                </TabsTrigger>
+              )}
+              {hasTabAccess('attendance') && (
+                <TabsTrigger value="attendance" className="flex items-center gap-2">
+                  <ListChecks className="w-4 h-4" />
+                  <span className="hidden md:inline">Attendance Log</span>
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {/* Overview Tab */}
@@ -2807,43 +2936,71 @@ export default function EmployeesPage() {
                 </Card>
               </div>
 
-              {/* Quick Actions */}
+              {/* Attended Today */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
+                  <CardTitle>Attended Today ({stats.checkedInToday})</CardTitle>
                   <CardDescription>
-                    Perform bulk operations for today
+                    Casuals who have checked in for {format(selectedDate, 'EEEE, MMMM d, yyyy')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Button 
-                      onClick={handleBulkCheckInAll}
-                      className="bg-green-600 hover:bg-green-700"
-                      disabled={gateInEmployees.length === 0}
-                    >
-                      <DoorOpen className="mr-2 w-4 h-4" />
-                      Check In All ({gateInEmployees.length})
-                    </Button>
-                    
-                    <Button 
-                      onClick={handleBulkAssignDesignation}
-                      variant="outline"
-                      disabled={assignDesignationEmployees.length === 0}
-                    >
-                      <MapPin className="mr-2 w-4 h-4" />
-                      Assign Designations ({assignDesignationEmployees.length})
-                    </Button>
-                    
-                    <Button 
-                      onClick={handleBulkCheckOutAll}
-                      variant="destructive"
-                      disabled={gateOutEmployees.length === 0}
-                    >
-                      <DoorClosed className="mr-2 w-4 h-4" />
-                      Check Out All ({gateOutEmployees.length})
-                    </Button>
-                  </div>
+                  {(() => {
+                    const attendedToday = filteredEmployees.filter(employee => {
+                      const record = getAttendanceForDate.find(r => r.employeeId === employee.id);
+                      return !!record?.clockInTime;
+                    });
+                    if (attendedToday.length === 0) {
+                      return (
+                        <div className="text-center py-6 text-muted-foreground">
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                          <p className="text-sm">No casuals have checked in yet today.</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <ScrollArea className="h-[220px]">
+                        <div className="space-y-2">
+                          {attendedToday.map((employee) => {
+                            const record = getAttendanceForDate.find(r => r.employeeId === employee.id);
+                            const StatusIcon = record ? statusInfo[record.status as keyof typeof statusInfo]?.icon || Clock : Clock;
+                            return (
+                              <div key={employee.id} className="flex items-center gap-3 rounded-md border p-2">
+                                <Avatar className="h-9 w-9">
+                                  <AvatarImage src={employee.image} />
+                                  <AvatarFallback className="text-xs">{getInitials(employee.name)}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-grow min-w-0">
+                                  <div className="text-sm font-medium truncate">{employee.name}</div>
+                                  <div className="text-xs text-muted-foreground">{employee.employeeId || employee.id_number || ''}</div>
+                                </div>
+                                {record?.designation && (
+                                  <Badge className={cn("text-xs", designationColors[record.designation])}>
+                                    <MapPin className="w-3 h-3 mr-1" />
+                                    {designationLabels[record.designation]}
+                                  </Badge>
+                                )}
+                                {record?.status && (
+                                  <Badge className="text-xs">
+                                    <StatusIcon className="w-3 h-3 mr-1" />
+                                    {record.status}
+                                  </Badge>
+                                )}
+                                <div className="text-xs text-muted-foreground font-mono whitespace-nowrap">
+                                  {record?.clockInTime
+                                    ? `In: ${format(parseISO(record.clockInTime), 'HH:mm')}`
+                                    : ''}
+                                  {record?.clockOutTime
+                                    ? ` / Out: ${format(parseISO(record.clockOutTime), 'HH:mm')}`
+                                    : ''}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -2912,24 +3069,6 @@ export default function EmployeesPage() {
                       >
                         Today
                       </Button>
-                      
-<DropdownMenu>
-  <DropdownMenuTrigger asChild>
-    <Button variant="ghost" size="sm">
-      <MoreHorizontal className="h-4 w-4" />
-    </Button>
-  </DropdownMenuTrigger>
-  <DropdownMenuContent align="end">
-    <DropdownMenuItem 
-      onClick={handleBulkCheckInAll}
-      disabled={gateInEmployees.length === 0}
-      className="text-green-600 focus:text-green-700 cursor-pointer"
-    >
-      <DoorOpen className="mr-2 h-4 w-4" />
-      <span>Check In All</span>
-    </DropdownMenuItem>
-  </DropdownMenuContent>
-</DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>
@@ -3023,6 +3162,8 @@ export default function EmployeesPage() {
                               onCheckIn={handleCheckIn}
                               onMarkAbsent={handleMarkAbsent}
                               onMarkOnLeave={handleMarkOnLeave}
+                              canCheckIn={can(['employees.checkin.perform', 'employees.checkin.bulk'])}
+                              canMarkAttendance={can(['employees.attendance.mark', 'employees.attendance.late', 'employees.attendance.edit'])}
                             />
                           );
                         })}
@@ -3044,7 +3185,7 @@ export default function EmployeesPage() {
                         Assign Designation
                       </CardTitle>
                       <CardDescription>
-                        Assign work areas to casual employees who have checked in. Click Save to confirm designation and proceed to Gate Out.
+                        Assign work areas to casual employees who have checked in. Click Save to confirm each designation.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-4">
@@ -3075,24 +3216,6 @@ export default function EmployeesPage() {
                           <ChevronRight className="w-4 h-4" />
                         </Button>
                       </div>
-                      
-<DropdownMenu>
-  <DropdownMenuTrigger asChild>
-    <Button variant="ghost" size="sm">
-      <MoreHorizontal className="h-4 w-4" />
-    </Button>
-  </DropdownMenuTrigger>
-  <DropdownMenuContent align="end">
-    <DropdownMenuItem 
-      onClick={handleBulkAssignDesignation}
-      disabled={assignDesignationEmployees.length === 0}
-      className="text-blue-600 focus:text-blue-700 cursor-pointer"
-    >
-      <MapPin className="mr-2 h-4 w-4" />
-      <span>Assign All</span>
-    </DropdownMenuItem>
-  </DropdownMenuContent>
-</DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>
@@ -3209,6 +3332,8 @@ export default function EmployeesPage() {
                                 onSave={handleAssignDesignation}
                                 setAttendance={setAttendance}
                                 isSaving={isSaving}
+                                canAssign={can(['employees.designation.assign', 'employees.designation.bulk', 'employees.designation.manage'])}
+                                canDelete={can(['employees.attendance.delete', 'employees.attendance.edit'])}
                               />
                             );
                           });
@@ -3259,27 +3384,9 @@ export default function EmployeesPage() {
                           onClick={() => setSelectedDate(addDays(selectedDate, 1))}
                           disabled={isToday(selectedDate)}
                         >
-                          <ChevronRight className="w-4 h-4" />
+<ChevronRight className="w-4 h-4" />
                         </Button>
                       </div>
-                      
-<DropdownMenu>
-  <DropdownMenuTrigger asChild>
-    <Button variant="ghost" size="sm">
-      <MoreHorizontal className="h-4 w-4" />
-    </Button>
-  </DropdownMenuTrigger>
-  <DropdownMenuContent align="end">
-    <DropdownMenuItem 
-      onClick={handleBulkCheckOutAll}
-      disabled={gateOutEmployees.length === 0}
-      className="text-red-600 focus:text-red-700 cursor-pointer"
-    >
-      <DoorClosed className="mr-2 h-4 w-4" />
-      <span>Check Out All ({gateOutEmployees.length})</span>
-    </DropdownMenuItem>
-  </DropdownMenuContent>
-</DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>
@@ -3373,6 +3480,9 @@ export default function EmployeesPage() {
                               employee={employee}
                               todayRecord={todayRecord}
                               onCheckOut={handleCheckOut}
+                              onDelete={handleDeleteAttendanceRecord}
+                              canCheckOut={can(['employees.checkout.perform', 'employees.checkout.bulk'])}
+                              canDelete={can(['employees.attendance.delete', 'employees.attendance.edit'])}
                             />
                           );
                         })}
@@ -3425,6 +3535,7 @@ export default function EmployeesPage() {
                       <Table className="min-w-[760px]">
                         <TableHeader>
                           <TableRow className="hover:bg-transparent border-b">
+                            <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold w-10">#</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Casual ID</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">Name</TableHead>
                             <TableHead className="h-9 px-3 text-xs uppercase tracking-wider font-semibold">ID Number</TableHead>
@@ -3434,8 +3545,11 @@ export default function EmployeesPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredEmployees.map((employee) => (
+                          {filteredEmployees.map((employee, index) => (
                             <TableRow key={employee.id}>
+                              <TableCell className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">
+                                {index + 1}
+                              </TableCell>
                               <TableCell className="py-2 px-3 whitespace-nowrap font-medium text-sm">
                                 {employee.employeeId || 'N/A'}
                               </TableCell>
@@ -3663,6 +3777,7 @@ export default function EmployeesPage() {
                             <TableHead>Designation</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Hours</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -3720,6 +3835,17 @@ export default function EmployeesPage() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell>{hoursWorked}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                    onClick={() => setViewAttendanceRecord(record)}
+                                    title="View record"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                </TableCell>
                               </TableRow>
                             );
                           })}
@@ -3817,6 +3943,95 @@ export default function EmployeesPage() {
                 employee={editingEmployee} 
                 onUpdate={handleUpdateEmployee} 
               />
+            </DialogContent>
+          </Dialog>
+
+          {/* View Attendance Record Dialog */}
+          <Dialog open={!!viewAttendanceRecord} onOpenChange={() => setViewAttendanceRecord(null)}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Attendance Record</DialogTitle>
+                <DialogDescription>
+                  {viewAttendanceRecord
+                    ? format(parseISO(viewAttendanceRecord.date), 'EEEE, MMMM d, yyyy')
+                    : ''}
+                </DialogDescription>
+              </DialogHeader>
+              {viewAttendanceRecord && (() => {
+                const emp = employees.find(e => e.id === viewAttendanceRecord.employeeId);
+                const rec = viewAttendanceRecord;
+                let hoursWorked = 'N/A';
+                if (rec.clockInTime && rec.clockOutTime) {
+                  hoursWorked = `${differenceInHours(parseISO(rec.clockOutTime), parseISO(rec.clockInTime))} hours`;
+                }
+                const StatusIcon = statusInfo[rec.status as keyof typeof statusInfo]?.icon || Clock;
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-14 w-14">
+                        <AvatarImage src={emp?.image} />
+                        <AvatarFallback className="text-lg">{getInitials(emp?.name || '')}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-lg font-semibold">{emp?.name || 'Unknown'}</p>
+                        <p className="text-sm text-muted-foreground">{emp?.employeeId || rec.employeeId}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground block mb-1">Check In</span>
+                        <span className="font-mono font-medium">
+                          {rec.clockInTime ? format(parseISO(rec.clockInTime), 'HH:mm') : '—'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block mb-1">Check Out</span>
+                        <span className="font-mono font-medium">
+                          {rec.clockOutTime ? format(parseISO(rec.clockOutTime), 'HH:mm') : '—'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block mb-1">Designation</span>
+                        {rec.designation ? (
+                          <Badge className={cn("text-xs", designationColors[rec.designation])}>
+                            <MapPin className="w-3 h-3 mr-1" />
+                            {designationLabels[rec.designation]}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block mb-1">Status</span>
+                        <Badge className="text-xs">
+                          <StatusIcon className="w-3 h-3 mr-1" />
+                          {rec.status}
+                        </Badge>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground block mb-1">Hours Worked</span>
+                        <span className="font-medium">{hoursWorked}</span>
+                      </div>
+                    </div>
+                    <DialogFooter className="gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          if (viewAttendanceRecord) {
+                            handleDeleteAttendanceRecord(viewAttendanceRecord);
+                            setViewAttendanceRecord(null);
+                          }
+                        }}
+                        disabled={!can(['employees.attendance.delete', 'employees.attendance.edit'])}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete Record
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                );
+              })()}
             </DialogContent>
           </Dialog>
         </main>

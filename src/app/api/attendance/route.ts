@@ -62,16 +62,29 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create or update attendance record
+// POST - Create attendance record
 export async function POST(request: NextRequest) {
-  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const hasDesignation = !!body?.designation;
+  const isMark = ['Absent', 'On Leave'].includes(body?.status);
+  const required = hasDesignation
+    ? ['employees.designation.assign', 'employees.designation.bulk', 'employees.designation.manage', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record']
+    : isMark
+      ? ['employees.attendance.mark', 'employees.attendance.late', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record']
+      : ['employees.checkin.perform', 'employees.checkin.bulk', 'employees.attendance.mark', 'employees.attendance.late', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record'];
+
+  const auth = await requirePermission(request, required);
   if (auth.error) return auth.error;
   try {
     console.log('📨 POST /api/attendance - Creating/updating attendance');
-    
-    const body = await request.json();
     console.log('📦 Request data:', body);
-    
+
     // Validate required fields
     if (!body.employeeId || !body.date) {
       return NextResponse.json(
@@ -79,7 +92,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     // Validate date format (should be YYYY-MM-DD)
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(body.date)) {
@@ -88,19 +101,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     // Check if the employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: body.employeeId }
     });
-    
+
     if (!employee) {
       return NextResponse.json(
         { error: `Employee with ID ${body.employeeId} not found` },
         { status: 404 }
       );
     }
-    
+
     // Check if attendance record already exists
     const existingAttendance = await prisma.attendance.findUnique({
       where: {
@@ -110,11 +123,10 @@ export async function POST(request: NextRequest) {
         }
       }
     });
-    
+
     let attendanceRecord;
-    
+
     if (existingAttendance) {
-      // Update existing record
       attendanceRecord = await prisma.attendance.update({
         where: {
           employeeId_date: {
@@ -132,7 +144,6 @@ export async function POST(request: NextRequest) {
       });
       console.log('✅ Attendance record updated:', attendanceRecord.id);
     } else {
-      // Create new record
       attendanceRecord = await prisma.attendance.create({
         data: {
           employeeId: body.employeeId,
@@ -145,30 +156,29 @@ export async function POST(request: NextRequest) {
       });
       console.log('✅ Attendance record created:', attendanceRecord.id);
     }
-    
+
     return NextResponse.json(attendanceRecord, { status: existingAttendance ? 200 : 201 });
-    
+
   } catch (error: any) {
     console.error('❌ Error creating/updating attendance:', error);
-    
-    // Handle specific Prisma errors
+
     if (error.code === 'P2002') {
       return NextResponse.json(
         { error: 'Attendance record already exists for this employee and date' },
         { status: 400 }
       );
     }
-    
+
     if (error.code === 'P2003') {
       return NextResponse.json(
         { error: 'Invalid employee ID. Employee does not exist.' },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(
-      { 
-        error: 'Failed to save attendance record', 
+      {
+        error: 'Failed to save attendance record',
         details: error.message,
         code: error.code,
         suggestion: 'Make sure the employee exists and date format is YYYY-MM-DD'
@@ -180,36 +190,54 @@ export async function POST(request: NextRequest) {
 
 // PUT - Update attendance record
 export async function PUT(request: NextRequest) {
-  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
+
+  if (!id) {
+    return NextResponse.json(
+      { error: 'Missing attendance record ID' },
+      { status: 400 }
+    );
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  // Detect the operation type from the payload so each permission works independently
+  const isDesignation = !!body?.designation && !body?.clockOutTime;
+  const isCheckout = !!body?.clockOutTime;
+  const isMark = ['Absent', 'On Leave'].includes(body?.status) && !body?.clockInTime;
+
+  const required = isDesignation
+    ? ['employees.designation.assign', 'employees.designation.bulk', 'employees.designation.manage', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record']
+    : isCheckout
+      ? ['employees.checkout.perform', 'employees.checkout.bulk', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record']
+      : isMark
+        ? ['employees.attendance.mark', 'employees.attendance.late', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record']
+        : ['employees.checkin.perform', 'employees.checkin.bulk', 'employees.attendance.mark', 'employees.attendance.late', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record'];
+
+  const auth = await requirePermission(request, required);
   if (auth.error) return auth.error;
   try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Missing attendance record ID' },
-        { status: 400 }
-      );
-    }
-    
     console.log(`📨 PUT /api/attendance?id=${id} - Updating attendance`);
-    
-    const body = await request.json();
     console.log('📦 Update data:', body);
-    
+
     // Check if record exists
     const existingRecord = await prisma.attendance.findUnique({
       where: { id }
     });
-    
+
     if (!existingRecord) {
       return NextResponse.json(
         { error: 'Attendance record not found' },
         { status: 404 }
       );
     }
-    
+
     const attendanceRecord = await prisma.attendance.update({
       where: { id },
       data: {
@@ -225,14 +253,14 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(attendanceRecord);
   } catch (error: any) {
     console.error('❌ Error updating attendance:', error);
-    
+
     if (error.code === 'P2025') {
       return NextResponse.json(
         { error: 'Attendance record not found' },
         { status: 404 }
       );
     }
-    
+
     return NextResponse.json(
       { 
         error: 'Failed to update attendance record', 
@@ -246,7 +274,7 @@ export async function PUT(request: NextRequest) {
 
 // DELETE - Delete attendance record
 export async function DELETE(request: NextRequest) {
-  const auth = await requirePermission(request, ['employees.attendance.view', 'employees.attendance.record']);
+  const auth = await requirePermission(request, ['employees.attendance.delete', 'employees.attendance.edit', 'employees.attendance.view', 'employees.attendance.record', 'employees.checkin.perform', 'employees.checkin.bulk', 'employees.checkout.perform', 'employees.checkout.bulk']);
   if (auth.error) return auth.error;
   try {
     const { searchParams } = new URL(request.url);

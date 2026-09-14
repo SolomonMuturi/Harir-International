@@ -1133,6 +1133,17 @@ export default function EmployeesPage() {
     return false;
   };
 
+  // Spread visible tabs evenly (same look as the original 6-tab grid)
+  const visibleTabCount = ['overview', 'gate-in', 'assign-designation', 'gate-out', 'employees', 'attendance'].filter(t => hasTabAccess(t)).length;
+  const tabsGridClass = ({
+    1: 'grid-cols-1',
+    2: 'grid-cols-2',
+    3: 'grid-cols-3',
+    4: 'grid-cols-4',
+    5: 'grid-cols-5',
+    6: 'grid-cols-6',
+  } as Record<number, string>)[visibleTabCount] || 'grid-cols-6';
+
   // Keep the active tab valid once permissions finish loading
   useEffect(() => {
     if (userRole === '' && userPermissions.length === 0) return;
@@ -2834,7 +2845,7 @@ export default function EmployeesPage() {
 
           {/* Main Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="flex w-full flex-wrap gap-1">
+            <TabsList className={`grid w-full ${tabsGridClass}`}>
               <TabsTrigger value="overview" className="flex items-center gap-2">
                 <BarChart className="w-4 h-4" />
                 <span className="hidden md:inline">Overview</span>
